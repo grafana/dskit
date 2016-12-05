@@ -5,7 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/weaveworks/scope/common/exec"
+	"github.com/weaveworks/common/exec"
 )
 
 type mockCmd struct {

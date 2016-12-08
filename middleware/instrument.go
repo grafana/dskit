@@ -19,7 +19,8 @@ type Instrument struct {
 	Duration *prometheus.HistogramVec
 }
 
-func isWSHandshakeRequest(req *http.Request) bool {
+// IsWSHandshakeRequest returns true if the given request is a websocket handshake request.
+func IsWSHandshakeRequest(req *http.Request) bool {
 	if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
 		// Connection header values can be of form "foo, bar, ..."
 		parts := strings.Split(strings.ToLower(req.Header.Get("Connection")), ",")
@@ -36,7 +37,7 @@ func isWSHandshakeRequest(req *http.Request) bool {
 func (i Instrument) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		begin := time.Now()
-		isWS := strconv.FormatBool(isWSHandshakeRequest(r))
+		isWS := strconv.FormatBool(IsWSHandshakeRequest(r))
 		interceptor := &interceptor{ResponseWriter: w, statusCode: http.StatusOK}
 		route := i.getRouteName(r)
 		next.ServeHTTP(interceptor, r)

@@ -15,7 +15,7 @@ type Redirect struct {
 }
 
 // Match specifies a match for a redirect.  Host and/or Scheme can be empty
-// signifiy match-all.
+// signify match-all.
 type Match struct {
 	Host, Scheme string
 }

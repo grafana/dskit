@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
 	"github.com/mwitkow/go-grpc-middleware"
@@ -54,11 +56,20 @@ type HTTPoGRPCClient struct {
 }
 
 // NewHTTPoGRPCClient makes a new NewHTTPoGRPCClient, given a kubernetes
-// service address.
-func NewHTTPoGRPCClient(service, namespace string, port int) (*HTTPoGRPCClient, error) {
+// service address.  Expects an address of the form <service>.<namespace>:<port>
+func NewHTTPoGRPCClient(address string) (*HTTPoGRPCClient, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.SplitN(host, ".", 2)
+	service, namespace := parts[0], "default"
+	if len(parts) == 2 {
+		namespace = parts[1]
+	}
 	balancer := kuberesolver.NewWithNamespace(namespace)
 	conn, err := grpc.Dial(
-		fmt.Sprintf("kubernetes://%s:%d", service, port),
+		fmt.Sprintf("kubernetes://%s:%s", service, port),
 		balancer.DialOption(),
 		grpc.WithInsecure(),
 		grpc.WithUnaryInterceptor(grpc_middleware.ChainUnaryClient(

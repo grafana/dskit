@@ -19,20 +19,21 @@ import (
 	"github.com/weaveworks/common/middleware"
 )
 
-// HTTPoGRPCServer is a HTTPServer (ie gRPC) implementation
-type HTTPoGRPCServer struct {
+// Server implements HTTPServer.  HTTPServer is a generated interface that gRPC
+// servers must implement.
+type Server struct {
 	handler http.Handler
 }
 
-// NewHTTPoGRPCServer makes a new HTTPoGRPCServer
-func NewHTTPoGRPCServer(handler http.Handler) *HTTPoGRPCServer {
-	return &HTTPoGRPCServer{
+// NewServer makes a new Server.
+func NewServer(handler http.Handler) *Server {
+	return &Server{
 		handler: handler,
 	}
 }
 
-// Handle implements HTTPServer
-func (s HTTPoGRPCServer) Handle(ctx context.Context, r *HTTPRequest) (*HTTPResponse, error) {
+// Handle implements HTTPServer.
+func (s Server) Handle(ctx context.Context, r *HTTPRequest) (*HTTPResponse, error) {
 	req, err := http.NewRequest(r.Method, r.Url, ioutil.NopCloser(bytes.NewReader(r.Body)))
 	if err != nil {
 		return nil, err
@@ -49,15 +50,15 @@ func (s HTTPoGRPCServer) Handle(ctx context.Context, r *HTTPRequest) (*HTTPRespo
 	return resp, nil
 }
 
-// HTTPoGRPCClient is a http.Handler that forward the request over gRPC
-type HTTPoGRPCClient struct {
+// Client is a http.Handler that forwards the request over gRPC.
+type Client struct {
 	client HTTPClient
 	conn   *grpc.ClientConn
 }
 
-// NewHTTPoGRPCClient makes a new NewHTTPoGRPCClient, given a kubernetes
-// service address.  Expects an address of the form <service>.<namespace>:<port>
-func NewHTTPoGRPCClient(address string) (*HTTPoGRPCClient, error) {
+// NewClient makes a new Client, given a kubernetes service address.  Expects
+// an address of the form <service>.<namespace>:<port>
+func NewClient(address string) (*Client, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
@@ -80,14 +81,14 @@ func NewHTTPoGRPCClient(address string) (*HTTPoGRPCClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &HTTPoGRPCClient{
+	return &Client{
 		client: NewHTTPClient(conn),
 		conn:   conn,
 	}, nil
 }
 
 // ServeHTTP implements http.Handler
-func (c *HTTPoGRPCClient) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

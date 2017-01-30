@@ -92,7 +92,7 @@ go test -i "${GO_TEST_ARGS[@]}" "${TESTDIRS[@]}"
 run_test() {
     local dir=$1
     if [ -z "$NO_GO_GET" ]; then
-        go get -t $TAGS "$dir"
+        go get -t "$TAGS" "$dir"
     fi
 
     local GO_TEST_ARGS_RUN=("${GO_TEST_ARGS[@]}")

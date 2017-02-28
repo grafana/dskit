@@ -44,6 +44,8 @@ type Config struct {
 	HTTPServerReadTimeout         time.Duration
 	HTTPServerWriteTimeout        time.Duration
 	HTTPServerIdleTimeout         time.Duration
+
+	GRPCMiddleware []grpc.UnaryServerInterceptor
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -98,12 +100,17 @@ func New(cfg Config) (*Server, error) {
 	router.Handle("/traces", loki.Handler())
 	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
 
+	grpcMiddleware := []grpc.UnaryServerInterceptor{
+		middleware.ServerLoggingInterceptor(cfg.LogSuccess),
+		middleware.ServerInstrumentInterceptor(requestDuration),
+		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
+		middleware.ServerUserHeaderInterceptor,
+	}
+	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
+
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
-			middleware.ServerLoggingInterceptor(cfg.LogSuccess),
-			middleware.ServerInstrumentInterceptor(requestDuration),
-			otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
-			middleware.ServerUserHeaderInterceptor,
+			grpcMiddleware...,
 		)),
 	)
 

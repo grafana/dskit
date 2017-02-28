@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof" // anonymous import to get the pprof handler registered
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
@@ -14,6 +15,7 @@ import (
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
 	"github.com/weaveworks-experiments/loki/pkg/client"
@@ -37,6 +39,11 @@ type Config struct {
 	LogSuccess       bool
 	HTTPListenPort   int
 	GRPCListenPort   int
+
+	ServerGracefulShutdownTimeout time.Duration
+	HTTPServerReadTimeout         time.Duration
+	HTTPServerWriteTimeout        time.Duration
+	HTTPServerIdleTimeout         time.Duration
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -44,6 +51,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.LogSuccess, "server.log-success", false, "Log successful requests")
 	f.IntVar(&cfg.HTTPListenPort, "server.http-listen-port", 80, "HTTP server listen port.")
 	f.IntVar(&cfg.GRPCListenPort, "server.grpc-listen-port", 9095, "gRPC server listen port.")
+	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 5*time.Second, "Timeout for graceful shutdowns")
+	f.DurationVar(&cfg.HTTPServerReadTimeout, "server.http-read-timeout", 5*time.Second, "Read timeout for HTTP server")
+	f.DurationVar(&cfg.HTTPServerWriteTimeout, "server.http-write-timeout", 5*time.Second, "Write timeout for HTTP server")
+	f.DurationVar(&cfg.HTTPServerIdleTimeout, "server.http-idle-timeout", 120*time.Second, "Idle timeout for HTTP server")
 }
 
 // Server wraps a HTTP and gRPC server, and some common initialization.
@@ -53,19 +64,33 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 type Server struct {
 	cfg             Config
 	requestDuration *prometheus.HistogramVec
+	handler         *signals.Handler
+
+	httpListener, grpcListener net.Listener
 
 	HTTP *mux.Router
 	GRPC *grpc.Server
 }
 
 // New makes a new Server
-func New(cfg Config) *Server {
+func New(cfg Config) (*Server, error) {
+	httpListener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.HTTPListenPort))
+	if err != nil {
+		return nil, err
+	}
+
+	grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCListenPort))
+	if err != nil {
+		return nil, err
+	}
+
 	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: cfg.MetricsNamespace,
 		Name:      "request_duration_seconds",
 		Help:      "Time (in seconds) spent serving HTTP requests.",
 		Buckets:   prometheus.DefBuckets,
 	}, []string{"method", "route", "status_code", "ws"})
+
 	prometheus.MustRegister(requestDuration)
 
 	router := mux.NewRouter()
@@ -85,17 +110,23 @@ func New(cfg Config) *Server {
 	return &Server{
 		cfg:             cfg,
 		requestDuration: requestDuration,
-		HTTP:            router,
-		GRPC:            grpcServer,
-	}
+		httpListener:    httpListener,
+		grpcListener:    grpcListener,
+		handler:         signals.NewHandler(log.StandardLogger()),
+
+		HTTP: router,
+		GRPC: grpcServer,
+	}, nil
 }
 
 // Run the server; blocks until SIGTERM is received.
 func (s *Server) Run() {
 	// Setup HTTP server
-	go http.ListenAndServe(
-		fmt.Sprintf(":%d", s.cfg.HTTPListenPort),
-		middleware.Merge(
+	httpServer := &http.Server{
+		ReadTimeout:  s.cfg.HTTPServerReadTimeout,
+		WriteTimeout: s.cfg.HTTPServerWriteTimeout,
+		IdleTimeout:  s.cfg.HTTPServerIdleTimeout,
+		Handler: middleware.Merge(
 			middleware.Log{
 				LogSuccess: s.cfg.LogSuccess,
 			},
@@ -107,21 +138,30 @@ func (s *Server) Run() {
 				return nethttp.Middleware(opentracing.GlobalTracer(), handler)
 			}),
 		).Wrap(s.HTTP),
-	)
+	}
+
+	go httpServer.Serve(s.httpListener)
+
+	httpServerCtx, cancel := context.WithCancel(context.Background())
+	defer httpServer.Shutdown(httpServerCtx)
 
 	// Setup gRPC server
 	// for HTTP over gRPC, ensure we don't double-count the middleware
 	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc.NewServer(s.HTTP))
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.cfg.GRPCListenPort))
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-	go s.GRPC.Serve(lis)
+	go s.GRPC.Serve(s.grpcListener)
+	defer s.GRPC.GracefulStop()
 
-	signals.SignalHandlerLoop(log.StandardLogger())
+	// Wait for a signal
+	s.handler.Loop()
+
+	go func() {
+		time.Sleep(s.cfg.ServerGracefulShutdownTimeout)
+		cancel()
+		s.GRPC.Stop()
+	}()
 }
 
-// Stop the server.  Does not unblock Run!
+// Stop the server, gracefully.  Unblocks Run().
 func (s *Server) Stop() {
-	s.GRPC.Stop()
+	s.handler.Stop()
 }

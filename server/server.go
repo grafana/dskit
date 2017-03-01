@@ -104,7 +104,6 @@ func New(cfg Config) (*Server, error) {
 		middleware.ServerLoggingInterceptor(cfg.LogSuccess),
 		middleware.ServerInstrumentInterceptor(requestDuration),
 		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
-		middleware.ServerUserHeaderInterceptor,
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 

@@ -17,13 +17,16 @@ const (
 
 	// LowerOrgIDHeaderName as gRPC / HTTP2.0 headers are lowercased.
 	lowerOrgIDHeaderName = "x-scope-orgid"
+)
 
+// Errors that we return
+const (
 	ErrNoUserID           = errors.Error("no user id")
 	ErrDifferentIDPresent = errors.Error("different user ID already present")
 	ErrTooManyUserIDs     = errors.Error("multiple user IDs present")
 )
 
-// GetID returns the user from the context
+// Extract gets the user ID from the context
 func Extract(ctx context.Context) (string, error) {
 	userID, ok := ctx.Value(userIDContextKey).(string)
 	if !ok {

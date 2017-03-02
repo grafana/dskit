@@ -77,7 +77,7 @@ type Server struct {
 
 // New makes a new Server
 func New(cfg Config) (*Server, error) {
-	// Setup listeners firt, so we can fail early if the port is in use.
+	// Setup listeners first, so we can fail early if the port is in use.
 	httpListener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.HTTPListenPort))
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
-	// Prometheus historgrams for requests.
+	// Prometheus histograms for requests.
 	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: cfg.MetricsNamespace,
 		Name:      "request_duration_seconds",

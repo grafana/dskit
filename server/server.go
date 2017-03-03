@@ -46,6 +46,7 @@ type Config struct {
 	HTTPServerIdleTimeout         time.Duration
 
 	GRPCMiddleware []grpc.UnaryServerInterceptor
+	HTTPMiddleware []middleware.Interface
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -64,11 +65,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 // Servers will be automatically instrumented for Prometheus metrics
 // and Loki tracing.  HTTP over gRPC
 type Server struct {
-	cfg             Config
-	requestDuration *prometheus.HistogramVec
-	handler         *signals.Handler
-
-	httpListener, grpcListener net.Listener
+	cfg          Config
+	handler      *signals.Handler
+	httpListener net.Listener
+	grpcListener net.Listener
+	httpServer   *http.Server
 
 	HTTP *mux.Router
 	GRPC *grpc.Server
@@ -76,6 +77,7 @@ type Server struct {
 
 // New makes a new Server
 func New(cfg Config) (*Server, error) {
+	// Setup listeners first, so we can fail early if the port is in use.
 	httpListener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.HTTPListenPort))
 	if err != nil {
 		return nil, err
@@ -86,39 +88,59 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
+	// Prometheus histograms for requests.
 	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: cfg.MetricsNamespace,
 		Name:      "request_duration_seconds",
 		Help:      "Time (in seconds) spent serving HTTP requests.",
 		Buckets:   prometheus.DefBuckets,
 	}, []string{"method", "route", "status_code", "ws"})
-
 	prometheus.MustRegister(requestDuration)
 
-	router := mux.NewRouter()
-	router.Handle("/metrics", prometheus.Handler())
-	router.Handle("/traces", loki.Handler())
-	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
-
+	// Setup gRPC server
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		middleware.ServerLoggingInterceptor(cfg.LogSuccess),
 		middleware.ServerInstrumentInterceptor(requestDuration),
 		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
-
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
 			grpcMiddleware...,
 		)),
 	)
 
+	// Setup HTTP server
+	router := mux.NewRouter()
+	router.Handle("/metrics", prometheus.Handler())
+	router.Handle("/traces", loki.Handler())
+	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
+	httpMiddleware := []middleware.Interface{
+		middleware.Log{
+			LogSuccess: cfg.LogSuccess,
+		},
+		middleware.Instrument{
+			Duration:     requestDuration,
+			RouteMatcher: router,
+		},
+		middleware.Func(func(handler http.Handler) http.Handler {
+			return nethttp.Middleware(opentracing.GlobalTracer(), handler)
+		}),
+	}
+	httpMiddleware = append(httpMiddleware, cfg.HTTPMiddleware...)
+	httpServer := &http.Server{
+		ReadTimeout:  cfg.HTTPServerReadTimeout,
+		WriteTimeout: cfg.HTTPServerWriteTimeout,
+		IdleTimeout:  cfg.HTTPServerIdleTimeout,
+		Handler:      middleware.Merge(httpMiddleware...).Wrap(router),
+	}
+
 	return &Server{
-		cfg:             cfg,
-		requestDuration: requestDuration,
-		httpListener:    httpListener,
-		grpcListener:    grpcListener,
-		handler:         signals.NewHandler(log.StandardLogger()),
+		cfg:          cfg,
+		httpListener: httpListener,
+		grpcListener: grpcListener,
+		httpServer:   httpServer,
+		handler:      signals.NewHandler(log.StandardLogger()),
 
 		HTTP: router,
 		GRPC: grpcServer,
@@ -127,29 +149,9 @@ func New(cfg Config) (*Server, error) {
 
 // Run the server; blocks until SIGTERM is received.
 func (s *Server) Run() {
-	// Setup HTTP server
-	httpServer := &http.Server{
-		ReadTimeout:  s.cfg.HTTPServerReadTimeout,
-		WriteTimeout: s.cfg.HTTPServerWriteTimeout,
-		IdleTimeout:  s.cfg.HTTPServerIdleTimeout,
-		Handler: middleware.Merge(
-			middleware.Log{
-				LogSuccess: s.cfg.LogSuccess,
-			},
-			middleware.Instrument{
-				Duration:     s.requestDuration,
-				RouteMatcher: s.HTTP,
-			},
-			middleware.Func(func(handler http.Handler) http.Handler {
-				return nethttp.Middleware(opentracing.GlobalTracer(), handler)
-			}),
-		).Wrap(s.HTTP),
-	}
-
-	go httpServer.Serve(s.httpListener)
-
+	go s.httpServer.Serve(s.httpListener)
 	httpServerCtx, cancel := context.WithCancel(context.Background())
-	defer httpServer.Shutdown(httpServerCtx)
+	defer s.httpServer.Shutdown(httpServerCtx)
 
 	// Setup gRPC server
 	// for HTTP over gRPC, ensure we don't double-count the middleware

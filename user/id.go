@@ -11,12 +11,6 @@ type contextKey int
 const (
 	// UserIDContextKey is the key used in contexts to find the userid
 	userIDContextKey contextKey = 0
-
-	// orgIDHeaderName is a legacy from scope as a service.
-	orgIDHeaderName = "X-Scope-OrgID"
-
-	// LowerOrgIDHeaderName as gRPC / HTTP2.0 headers are lowercased.
-	lowerOrgIDHeaderName = "x-scope-orgid"
 )
 
 // Errors that we return

@@ -3,37 +3,30 @@ package user
 import (
 	"net/http"
 
-	"github.com/weaveworks/common/errors"
-
 	"golang.org/x/net/context"
 )
 
 const (
 	// orgIDHeaderName is a legacy from scope as a service.
-	orgIDHeaderName = "X-Scope-OrgID"
+	orgIDHeaderName  = "X-Scope-OrgID"
+	userIDHeaderName = "X-Scope-UserID"
 
 	// LowerOrgIDHeaderName as gRPC / HTTP2.0 headers are lowercased.
 	lowerOrgIDHeaderName = "x-scope-orgid"
 )
 
-// Errors that we return
-const (
-	ErrNoOrgID               = errors.Error("no org id")
-	ErrDifferentOrgIDPresent = errors.Error("different org ID already present")
-)
-
-// ExtractFromHTTPRequest extracts the org ID from the request headers and returns
+// ExtractOrgIDFromHTTPRequest extracts the org ID from the request headers and returns
 // the org ID and a context with the org ID embbedded.
-func ExtractFromHTTPRequest(r *http.Request) (string, context.Context, error) {
+func ExtractOrgIDFromHTTPRequest(r *http.Request) (string, context.Context, error) {
 	orgID := r.Header.Get(orgIDHeaderName)
 	if orgID == "" {
 		return "", r.Context(), ErrNoOrgID
 	}
-	return orgID, Inject(r.Context(), orgID), nil
+	return orgID, InjectOrgID(r.Context(), orgID), nil
 }
 
-// InjectIntoHTTPRequest injects the orgID from the context into the request headers.
-func InjectIntoHTTPRequest(ctx context.Context, r *http.Request) error {
+// InjectOrgIDIntoHTTPRequest injects the orgID from the context into the request headers.
+func InjectOrgIDIntoHTTPRequest(ctx context.Context, r *http.Request) error {
 	orgID, err := Extract(ctx)
 	if err != nil {
 		return err
@@ -44,4 +37,38 @@ func InjectIntoHTTPRequest(ctx context.Context, r *http.Request) error {
 	}
 	r.Header.Set(orgIDHeaderName, orgID)
 	return nil
+}
+
+// ExtractUserIDFromHTTPRequest extracts the org ID from the request headers and returns
+// the org ID and a context with the org ID embbedded.
+func ExtractUserIDFromHTTPRequest(r *http.Request) (string, context.Context, error) {
+	userID := r.Header.Get(userIDHeaderName)
+	if userID == "" {
+		return "", r.Context(), ErrNoUserID
+	}
+	return userID, InjectUserID(r.Context(), userID), nil
+}
+
+// InjectUserIDIntoHTTPRequest injects the userID from the context into the request headers.
+func InjectUserIDIntoHTTPRequest(ctx context.Context, r *http.Request) error {
+	userID, err := Extract(ctx)
+	if err != nil {
+		return err
+	}
+	existingID := r.Header.Get(userIDHeaderName)
+	if existingID != "" && existingID != userID {
+		return ErrDifferentUserIDPresent
+	}
+	r.Header.Set(userIDHeaderName, userID)
+	return nil
+}
+
+// ExtractFromHTTPRequest is deprecated. Use ExtractOrgIDFromHTTPRequest.
+func ExtractFromHTTPRequest(r *http.Request) (string, context.Context, error) {
+	return ExtractOrgIDFromHTTPRequest(r)
+}
+
+// InjectIntoHTTPRequest is deprecated. Use InjectOrgIDIntoHTTPRequest.
+func InjectIntoHTTPRequest(ctx context.Context, r *http.Request) error {
+	return InjectOrgIDIntoHTTPRequest(ctx, r)
 }

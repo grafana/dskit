@@ -27,7 +27,7 @@ func ExtractOrgIDFromHTTPRequest(r *http.Request) (string, context.Context, erro
 
 // InjectOrgIDIntoHTTPRequest injects the orgID from the context into the request headers.
 func InjectOrgIDIntoHTTPRequest(ctx context.Context, r *http.Request) error {
-	orgID, err := Extract(ctx)
+	orgID, err := ExtractOrgID(ctx)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func ExtractUserIDFromHTTPRequest(r *http.Request) (string, context.Context, err
 
 // InjectUserIDIntoHTTPRequest injects the userID from the context into the request headers.
 func InjectUserIDIntoHTTPRequest(ctx context.Context, r *http.Request) error {
-	userID, err := Extract(ctx)
+	userID, err := ExtractUserID(ctx)
 	if err != nil {
 		return err
 	}
@@ -61,14 +61,4 @@ func InjectUserIDIntoHTTPRequest(ctx context.Context, r *http.Request) error {
 	}
 	r.Header.Set(userIDHeaderName, userID)
 	return nil
-}
-
-// ExtractFromHTTPRequest is deprecated. Use ExtractOrgIDFromHTTPRequest.
-func ExtractFromHTTPRequest(r *http.Request) (string, context.Context, error) {
-	return ExtractOrgIDFromHTTPRequest(r)
-}
-
-// InjectIntoHTTPRequest is deprecated. Use InjectOrgIDIntoHTTPRequest.
-func InjectIntoHTTPRequest(ctx context.Context, r *http.Request) error {
-	return InjectOrgIDIntoHTTPRequest(ctx, r)
 }

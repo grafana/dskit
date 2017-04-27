@@ -52,13 +52,3 @@ func ExtractUserID(ctx context.Context) (string, error) {
 func InjectUserID(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, interface{}(userIDContextKey), userID)
 }
-
-// Extract is deprecated. Use ExtractOrgID.
-func Extract(ctx context.Context) (string, error) {
-	return ExtractOrgID(ctx)
-}
-
-// Inject is deprecated. Use returns a derived context containing the org ID.
-func Inject(ctx context.Context, orgID string) context.Context {
-	return InjectOrgID(ctx, orgID)
-}

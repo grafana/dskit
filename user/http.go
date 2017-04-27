@@ -16,7 +16,7 @@ const (
 )
 
 // ExtractOrgIDFromHTTPRequest extracts the org ID from the request headers and returns
-// the org ID and a context with the org ID embbedded.
+// the org ID and a context with the org ID embedded.
 func ExtractOrgIDFromHTTPRequest(r *http.Request) (string, context.Context, error) {
 	orgID := r.Header.Get(orgIDHeaderName)
 	if orgID == "" {
@@ -40,7 +40,7 @@ func InjectOrgIDIntoHTTPRequest(ctx context.Context, r *http.Request) error {
 }
 
 // ExtractUserIDFromHTTPRequest extracts the org ID from the request headers and returns
-// the org ID and a context with the org ID embbedded.
+// the org ID and a context with the org ID embedded.
 func ExtractUserIDFromHTTPRequest(r *http.Request) (string, context.Context, error) {
 	userID := r.Header.Get(userIDHeaderName)
 	if userID == "" {

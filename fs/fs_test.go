@@ -20,7 +20,7 @@ func openDevNullFiles(b *testing.B, n int) []*os.File {
 
 }
 func closeDevNullFiles(b *testing.B, arr []*os.File) {
-	for i, _ := range arr {
+	for i := range arr {
 		err := arr[i].Close()
 		if err != nil {
 			b.Fatalf("Cannot close /dev/null.")

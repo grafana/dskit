@@ -11,12 +11,12 @@ import (
 	"strings"
 	"sync"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
 	"github.com/mwitkow/go-grpc-middleware"
 	"github.com/opentracing/opentracing-go"
-	"github.com/prometheus/common/log"
 	"github.com/sercand/kuberesolver"
 	"golang.org/x/net/context"
 	spb "google.golang.org/genproto/googleapis/rpc/status"

@@ -79,12 +79,17 @@ func ParseURL(unparsed string) (string, []grpc.DialOption, error) {
 		return "", nil, err
 	}
 
-	switch parsed.Scheme {
-	case "direct":
-		return parsed.Host, nil, err
+	scheme, host := parsed.Scheme, parsed.Host
+	if !strings.Contains(unparsed, "://") {
+		scheme, host = "kubernetes", unparsed
+	}
 
-	case "kubernetes", "":
-		host, port, err := net.SplitHostPort(parsed.Host)
+	switch scheme {
+	case "direct":
+		return host, nil, err
+
+	case "kubernetes":
+		host, port, err := net.SplitHostPort(host)
 		if err != nil {
 			return "", nil, err
 		}

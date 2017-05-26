@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -80,4 +81,22 @@ func TestError(t *testing.T) {
 
 	assert.Equal(t, "foo\n", string(recorder.Body.Bytes()))
 	assert.Equal(t, 500, recorder.Code)
+}
+
+func TestParseURL(t *testing.T) {
+	for _, tc := range []struct {
+		input    string
+		expected string
+		err      error
+	}{
+		{"direct://foo", "foo", nil},
+		{"kubernetes://foo:123", "kubernetes://foo:123", nil},
+		{"querier.cortex:995", "kubernetes://querier:995", nil},
+	} {
+		got, _, err := ParseURL(tc.input)
+		if !reflect.DeepEqual(tc.err, err) {
+			t.Fatalf("Got: %v, expected: %v", err, tc.err)
+		}
+		assert.Equal(t, tc.expected, got)
+	}
 }

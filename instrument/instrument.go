@@ -17,19 +17,21 @@ type collector interface {
 }
 
 // HistogramCollector collects the duration of a request
-type HistogramCollector prometheus.HistogramVec
+type HistogramCollector struct {
+	metric *prometheus.HistogramVec
+}
 
 // HistogramCollectorBuckets define the buckets when passing the metric
 var HistogramCollectorBuckets = []string{"operation", "status_code"}
 
-// NewHistogramCollector creates a collector.
+// NewHistogramCollector creates a collector from a metric.
 func NewHistogramCollector(metric *prometheus.HistogramVec) *HistogramCollector {
-	return &HistogramCollector(metric)
+	return &HistogramCollector{metric}
 }
 
 // Register registers metrics.
 func (c *HistogramCollector) Register() {
-	prometheus.MustRegister(c)
+	prometheus.MustRegister(c.metric)
 }
 
 // Before collects for the upcoming request.
@@ -38,7 +40,7 @@ func (c *HistogramCollector) Before(method string, start time.Time) {
 
 // After collects when the request is done.
 func (c *HistogramCollector) After(method, statusCode string, start time.Time) {
-	prometheus.HistogramVec(c).WithLabelValues(method, statusCode).Observe(time.Now().Sub(start).Seconds())
+	c.metric.WithLabelValues(method, statusCode).Observe(time.Now().Sub(start).Seconds())
 }
 
 // JobCollector collects metrics for jobs. Designed for batch jobs which run on a regular,

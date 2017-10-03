@@ -11,6 +11,7 @@ import (
 	"golang.org/x/net/context"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/marccarre/promrus"
 	"github.com/weaveworks/common/user"
 )
 
@@ -27,6 +28,11 @@ func Setup(logLevel string) error {
 	}
 	log.SetLevel(level)
 	log.SetFormatter(&textFormatter{})
+	hook, err := promrus.NewPrometheusHook() // Expose number of log messages as Prometheus metrics.
+	if err != nil {
+		return err
+	}
+	log.AddHook(hook)
 	return nil
 }
 

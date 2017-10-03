@@ -10,8 +10,8 @@ import (
 
 	"golang.org/x/net/context"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/marccarre/promrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/weaveworks/common/user"
 )
 

@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/marccarre/promrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/weaveworks/common/user"
+	"github.com/weaveworks/promrus"
 )
 
 const (

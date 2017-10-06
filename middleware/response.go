@@ -26,6 +26,7 @@ type badResponseLoggingWriter struct {
 func newBadResponseLoggingWriter(rw http.ResponseWriter, buffer io.Writer) *badResponseLoggingWriter {
 	return &badResponseLoggingWriter{
 		rw:            rw,
+		buffer:        buffer,
 		logBody:       false,
 		bodyBytesLeft: maxResponseBodyInLogs,
 	}

@@ -83,7 +83,5 @@ func (i *interceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("interceptor: can't cast parent ResponseWriter to Hijacker")
 	}
-	// Set the status code because further interactions will bypass this object
-	i.statusCode = http.StatusSwitchingProtocols
 	return hj.Hijack()
 }

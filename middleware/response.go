@@ -29,6 +29,7 @@ func newBadResponseLoggingWriter(rw http.ResponseWriter, buffer io.Writer) *badR
 		buffer:        buffer,
 		logBody:       false,
 		bodyBytesLeft: maxResponseBodyInLogs,
+		statusCode:    http.StatusOK,
 	}
 }
 

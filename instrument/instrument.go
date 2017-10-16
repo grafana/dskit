@@ -40,7 +40,9 @@ func (c *HistogramCollector) Before(method string, start time.Time) {
 
 // After collects when the request is done.
 func (c *HistogramCollector) After(method, statusCode string, start time.Time) {
-	c.metric.WithLabelValues(method, statusCode).Observe(time.Now().Sub(start).Seconds())
+	if c.metric != nil {
+		c.metric.WithLabelValues(method, statusCode).Observe(time.Now().Sub(start).Seconds())
+	}
 }
 
 // JobCollector collects metrics for jobs. Designed for batch jobs which run on a regular,

@@ -111,6 +111,7 @@ func New(cfg Config) (*Server, error) {
 		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
 			grpcMiddleware...,
 		)),
+		grpc.RPCDecompressor(grpc.NewGZIPDecompressor()),
 	)
 
 	// Setup HTTP server

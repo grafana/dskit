@@ -39,9 +39,10 @@ type Config struct {
 	HTTPServerWriteTimeout        time.Duration
 	HTTPServerIdleTimeout         time.Duration
 
-	GRPCOptions    []grpc.ServerOption
-	GRPCMiddleware []grpc.UnaryServerInterceptor
-	HTTPMiddleware []middleware.Interface
+	GRPCOptions          []grpc.ServerOption
+	GRPCMiddleware       []grpc.UnaryServerInterceptor
+	GRPCStreamMiddleware []grpc.StreamServerInterceptor
+	HTTPMiddleware       []middleware.Interface
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -95,13 +96,24 @@ func New(cfg Config) (*Server, error) {
 	serverLog := middleware.GRPCServerLog{WithRequest: !cfg.ExcludeRequestInLog}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
-		middleware.ServerInstrumentInterceptor(requestDuration),
+		middleware.UnaryServerInstrumentInterceptor(requestDuration),
 		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
+
+	grpcStreamMiddleware := []grpc.StreamServerInterceptor{
+		serverLog.StreamServerInterceptor,
+		middleware.StreamServerInstrumentInterceptor(requestDuration),
+		otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
+	}
+	grpcStreamMiddleware = append(grpcStreamMiddleware, cfg.GRPCStreamMiddleware...)
+
 	grpcOptions := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
 			grpcMiddleware...,
+		)),
+		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(
+			grpcStreamMiddleware...,
 		)),
 	}
 	grpcOptions = append(grpcOptions, cfg.GRPCOptions...)

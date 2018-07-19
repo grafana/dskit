@@ -14,13 +14,13 @@ import (
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
 	"github.com/weaveworks/common/httpgrpc"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/instrument"
+	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/signals"
 )
@@ -43,6 +43,9 @@ type Config struct {
 	GRPCMiddleware       []grpc.UnaryServerInterceptor
 	GRPCStreamMiddleware []grpc.StreamServerInterceptor
 	HTTPMiddleware       []middleware.Interface
+
+	LogLevel logging.Level
+	Log      logging.Interface
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -54,6 +57,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.HTTPServerReadTimeout, "server.http-read-timeout", 5*time.Second, "Read timeout for HTTP server")
 	f.DurationVar(&cfg.HTTPServerWriteTimeout, "server.http-write-timeout", 5*time.Second, "Write timeout for HTTP server")
 	f.DurationVar(&cfg.HTTPServerIdleTimeout, "server.http-idle-timeout", 120*time.Second, "Idle timeout for HTTP server")
+	cfg.LogLevel.RegisterFlags(f)
 }
 
 // Server wraps a HTTP and gRPC server, and some common initialization.
@@ -68,6 +72,7 @@ type Server struct {
 
 	HTTP *mux.Router
 	GRPC *grpc.Server
+	Log  logging.Interface
 }
 
 // New makes a new Server
@@ -92,8 +97,18 @@ func New(cfg Config) (*Server, error) {
 	}, []string{"method", "route", "status_code", "ws"})
 	prometheus.MustRegister(requestDuration)
 
+	// If user doesn't supply a logging implementation, by default instantiate
+	// logrus.
+	log := cfg.Log
+	if log == nil {
+		log = logging.NewLogrus(cfg.LogLevel)
+	}
+
 	// Setup gRPC server
-	serverLog := middleware.GRPCServerLog{WithRequest: !cfg.ExcludeRequestInLog}
+	serverLog := middleware.GRPCServerLog{
+		WithRequest: !cfg.ExcludeRequestInLog,
+		Log:         log,
+	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
 		middleware.UnaryServerInstrumentInterceptor(requestDuration),
@@ -125,7 +140,9 @@ func New(cfg Config) (*Server, error) {
 		RegisterInstrumentation(router)
 	}
 	httpMiddleware := []middleware.Interface{
-		middleware.Log{},
+		middleware.Log{
+			Log: log,
+		},
 		middleware.Instrument{
 			Duration:     requestDuration,
 			RouteMatcher: router,
@@ -147,10 +164,11 @@ func New(cfg Config) (*Server, error) {
 		httpListener: httpListener,
 		grpcListener: grpcListener,
 		httpServer:   httpServer,
-		handler:      signals.NewHandler(log.StandardLogger()),
+		handler:      signals.NewHandler(log),
 
 		HTTP: router,
 		GRPC: grpcServer,
+		Log:  log,
 	}, nil
 }
 

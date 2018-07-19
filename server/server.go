@@ -186,7 +186,6 @@ func (s *Server) Run() {
 	// for HTTP over gRPC, ensure we don't double-count the middleware
 	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP))
 	go s.GRPC.Serve(s.grpcListener)
-	defer s.GRPC.GracefulStop()
 
 	// Wait for a signal
 	s.handler.Loop()
@@ -203,5 +202,5 @@ func (s *Server) Shutdown() {
 	defer cancel() // releases resources if httpServer.Shutdown completes before timeout elapses
 
 	s.httpServer.Shutdown(ctx)
-	s.GRPC.Stop()
+	s.GRPC.GracefulStop()
 }

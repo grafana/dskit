@@ -10,8 +10,10 @@ import (
 	"reflect"
 	"testing"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
@@ -100,4 +102,35 @@ func TestParseURL(t *testing.T) {
 		}
 		assert.Equal(t, tc.expected, got)
 	}
+}
+
+func TestTracePropagation(t *testing.T) {
+	jaeger := jaegercfg.Configuration{}
+	closer, err := jaeger.InitGlobalTracer("test")
+	defer closer.Close()
+	require.NoError(t, err)
+
+	server, err := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		span := opentracing.SpanFromContext(r.Context())
+		fmt.Fprint(w, span.BaggageItem("name"))
+	}))
+
+	require.NoError(t, err)
+	defer server.grpcServer.GracefulStop()
+
+	client, err := NewClient(server.URL)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("GET", "/hello", &bytes.Buffer{})
+	require.NoError(t, err)
+
+	sp, ctx := opentracing.StartSpanFromContext(context.Background(), "Test")
+	sp.SetBaggageItem("name", "world")
+
+	req = req.WithContext(user.InjectOrgID(ctx, "1"))
+	recorder := httptest.NewRecorder()
+	client.ServeHTTP(recorder, req)
+
+	assert.Equal(t, "world", string(recorder.Body.Bytes()))
+	assert.Equal(t, 200, recorder.Code)
 }

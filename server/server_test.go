@@ -94,3 +94,40 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 		"/server.FakeServer/Succeed":           "success",
 	}, statuses)
 }
+
+func TestRunReturnsError(t *testing.T) {
+	cfg := Config{
+		HTTPListenPort: 9190,
+		GRPCListenPort: 9191,
+	}
+	t.Run("http", func(t *testing.T) {
+		cfg.MetricsNamespace = "testing_http"
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		require.NoError(t, srv.httpListener.Close())
+		require.NotNil(t, <-errChan)
+
+		// So that address is freed for further tests.
+		srv.GRPC.Stop()
+	})
+
+	t.Run("grpc", func(t *testing.T) {
+		cfg.MetricsNamespace = "testing_grpc"
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		require.NoError(t, srv.grpcListener.Close())
+		require.NotNil(t, <-errChan)
+	})
+}

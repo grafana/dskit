@@ -178,17 +178,48 @@ func RegisterInstrumentation(router *mux.Router) {
 	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
 }
 
-// Run the server; blocks until SIGTERM is received.
-func (s *Server) Run() {
-	go s.httpServer.Serve(s.httpListener)
+// Run the server; blocks until SIGTERM or an error is received.
+func (s *Server) Run() error {
+	errChan := make(chan error)
+
+	// Wait for a signal
+	go func() {
+		s.handler.Loop()
+		select {
+		case errChan <- nil:
+		default:
+		}
+	}()
+
+	go func() {
+		err := s.httpServer.Serve(s.httpListener)
+		if err == http.ErrServerClosed {
+			err = nil
+		}
+
+		select {
+		case errChan <- err:
+		default:
+		}
+	}()
 
 	// Setup gRPC server
 	// for HTTP over gRPC, ensure we don't double-count the middleware
 	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP))
-	go s.GRPC.Serve(s.grpcListener)
 
-	// Wait for a signal
-	s.handler.Loop()
+	go func() {
+		err := s.GRPC.Serve(s.grpcListener)
+		if err == grpc.ErrServerStopped {
+			err = nil
+		}
+
+		select {
+		case errChan <- err:
+		default:
+		}
+	}()
+
+	return <-errChan
 }
 
 // Stop unblocks Run().

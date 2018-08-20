@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/logging"
+	"github.com/weaveworks/common/middleware"
 	"golang.org/x/net/context"
 )
 
@@ -130,4 +132,29 @@ func TestRunReturnsError(t *testing.T) {
 		require.NoError(t, srv.grpcListener.Close())
 		require.NotNil(t, <-errChan)
 	})
+}
+
+// Test to see what the logging of a 500 error looks like
+func TestMiddlewareLogging(t *testing.T) {
+	var level logging.Level
+	level.Set("info")
+	cfg := Config{
+		HTTPListenPort:   9192,
+		HTTPMiddleware:   []middleware.Interface{middleware.Logging},
+		MetricsNamespace: "testing_logging",
+		LogLevel:         level,
+	}
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	})
+
+	go server.Run()
+	defer server.Shutdown()
+
+	req, err := http.NewRequest("GET", "http://127.0.0.1:9192/error500", nil)
+	require.NoError(t, err)
+	http.DefaultClient.Do(req)
 }

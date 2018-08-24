@@ -11,7 +11,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
 	"github.com/mwitkow/go-grpc-middleware"
-	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
@@ -147,9 +146,7 @@ func New(cfg Config) (*Server, error) {
 			Duration:     requestDuration,
 			RouteMatcher: router,
 		},
-		middleware.Func(func(handler http.Handler) http.Handler {
-			return nethttp.Middleware(opentracing.GlobalTracer(), handler)
-		}),
+		middleware.Tracer{},
 	}
 	httpMiddleware = append(httpMiddleware, cfg.HTTPMiddleware...)
 	httpServer := &http.Server{

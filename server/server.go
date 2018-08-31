@@ -139,6 +139,7 @@ func New(cfg Config) (*Server, error) {
 		RegisterInstrumentation(router)
 	}
 	httpMiddleware := []middleware.Interface{
+		middleware.Tracer{},
 		middleware.Log{
 			Log: log,
 		},
@@ -146,8 +147,8 @@ func New(cfg Config) (*Server, error) {
 			Duration:     requestDuration,
 			RouteMatcher: router,
 		},
-		middleware.Tracer{},
 	}
+
 	httpMiddleware = append(httpMiddleware, cfg.HTTPMiddleware...)
 	httpServer := &http.Server{
 		ReadTimeout:  cfg.HTTPServerReadTimeout,

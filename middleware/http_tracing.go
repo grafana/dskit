@@ -5,6 +5,8 @@ import (
 
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
+	jaeger "github.com/uber/jaeger-client-go"
+	"golang.org/x/net/context"
 )
 
 // Tracer is a middleware which traces incoming requests.
@@ -24,4 +26,18 @@ func (t Tracer) Wrap(next http.Handler) http.Handler {
 		}
 		maybeTracer.ServeHTTP(w, r)
 	})
+}
+
+// ExtractTraceID extracts the trace id, if any from the context.
+func ExtractTraceID(ctx context.Context) (string, bool) {
+	sp := opentracing.SpanFromContext(ctx)
+	if sp == nil {
+		return "", false
+	}
+	sctx, ok := sp.Context().(jaeger.SpanContext)
+	if !ok {
+		return "", false
+	}
+
+	return sctx.TraceID().String(), true
 }

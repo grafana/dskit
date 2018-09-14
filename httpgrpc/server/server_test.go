@@ -14,9 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
+
+	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/middleware"
+	"github.com/weaveworks/common/user"
 )
 
 type testServer struct {
@@ -110,10 +112,12 @@ func TestTracePropagation(t *testing.T) {
 	defer closer.Close()
 	require.NoError(t, err)
 
-	server, err := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		span := opentracing.SpanFromContext(r.Context())
-		fmt.Fprint(w, span.BaggageItem("name"))
-	}))
+	server, err := newTestServer(middleware.Tracer{}.Wrap(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			span := opentracing.SpanFromContext(r.Context())
+			fmt.Fprint(w, span.BaggageItem("name"))
+		}),
+	))
 
 	require.NoError(t, err)
 	defer server.grpcServer.GracefulStop()

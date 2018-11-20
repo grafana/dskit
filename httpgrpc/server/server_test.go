@@ -99,7 +99,7 @@ func TestParseURL(t *testing.T) {
 		{"querier.cortex:995", "kubernetes://querier.cortex:995", nil},
 		{"foo.bar.svc.local:995", "kubernetes://foo.bar.svc.local:995", nil},
 	} {
-		got, _, err := ParseURL(tc.input)
+		got, err := ParseURL(tc.input)
 		if !reflect.DeepEqual(tc.err, err) {
 			t.Fatalf("Got: %v, expected: %v", err, tc.err)
 		}

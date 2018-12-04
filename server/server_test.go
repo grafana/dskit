@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"flag"
 	"net/http"
 	"strconv"
 	"testing"
@@ -33,7 +34,9 @@ func (f FakeServer) Succeed(ctx context.Context, req *google_protobuf.Empty) (*g
 }
 
 func TestErrorInstrumentationMiddleware(t *testing.T) {
-	cfg := Config{GRPCListenPort: 1234}
+	var cfg Config
+	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+	cfg.GRPCListenPort = 1234
 	server, err := New(cfg)
 	require.NoError(t, err)
 

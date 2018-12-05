@@ -103,6 +103,8 @@ func New(cfg Config) (*Server, error) {
 		log = logging.NewLogrus(cfg.LogLevel)
 	}
 
+	log.WithField("http", httpListener.Addr()).WithField("grpc", grpcListener.Addr()).Infof("server listening on addresses")
+
 	// Setup gRPC server
 	serverLog := middleware.GRPCServerLog{
 		WithRequest: !cfg.ExcludeRequestInLog,

@@ -45,6 +45,8 @@ type Config struct {
 
 	LogLevel logging.Level
 	Log      logging.Interface
+
+	PathPrefix string
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -56,6 +58,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.HTTPServerReadTimeout, "server.http-read-timeout", 30*time.Second, "Read timeout for HTTP server")
 	f.DurationVar(&cfg.HTTPServerWriteTimeout, "server.http-write-timeout", 30*time.Second, "Write timeout for HTTP server")
 	f.DurationVar(&cfg.HTTPServerIdleTimeout, "server.http-idle-timeout", 120*time.Second, "Idle timeout for HTTP server")
+	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Base path to serve all API routes from (e.g. /v1/)")
 	cfg.LogLevel.RegisterFlags(f)
 }
 
@@ -139,6 +142,9 @@ func New(cfg Config) (*Server, error) {
 	router := mux.NewRouter()
 	if cfg.RegisterInstrumentation {
 		RegisterInstrumentation(router)
+	}
+	if cfg.PathPrefix != "" {
+		router = router.PathPrefix(cfg.PathPrefix).Subrouter()
 	}
 	httpMiddleware := []middleware.Interface{
 		middleware.Tracer{

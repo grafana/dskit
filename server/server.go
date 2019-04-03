@@ -150,11 +150,13 @@ func New(cfg Config) (*Server, error) {
 
 	// Setup HTTP server
 	router := mux.NewRouter()
+	if cfg.PathPrefix != "" {
+		// Expect metrics and pprof handlers to be prefixed with server's path prefix.
+		// e.g. /loki/metrics or /loki/debug/pprof
+		router = router.PathPrefix(cfg.PathPrefix).Subrouter()
+	}
 	if cfg.RegisterInstrumentation {
 		RegisterInstrumentation(router)
-	}
-	if cfg.PathPrefix != "" {
-		router = router.PathPrefix(cfg.PathPrefix).Subrouter()
 	}
 	httpMiddleware := []middleware.Interface{
 		middleware.Tracer{

@@ -1,13 +1,15 @@
-package ring
+package consul
 
 import (
 	fmt "fmt"
 	"sync"
 	"time"
 
-	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
+
+	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
+	"github.com/cortexproject/cortex/pkg/util"
 )
 
 type mockKV struct {
@@ -17,14 +19,14 @@ type mockKV struct {
 	current uint64 // the current 'index in the log'
 }
 
-// NewInMemoryKVClient makes a new mock consul client.
-func NewInMemoryKVClient(codec Codec) KVClient {
+// NewInMemoryClient makes a new mock consul client.
+func NewInMemoryClient(codec codec.Codec) *Client {
 	m := mockKV{
 		kvps: map[string]*consul.KVPair{},
 	}
 	m.cond = sync.NewCond(&m.mtx)
 	go m.loop()
-	return &consulClient{
+	return &Client{
 		kv:    &m,
 		codec: codec,
 	}

@@ -36,9 +36,9 @@ func (f FakeServer) Succeed(ctx context.Context, req *google_protobuf.Empty) (*g
 func TestErrorInstrumentationMiddleware(t *testing.T) {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
-	cfg.HTTPListenHost = "localhost"
+	cfg.HTTPListenAddress = "localhost"
 	cfg.HTTPListenPort = 9190
-	cfg.GRPCListenHost = "localhost"
+	cfg.GRPCListenAddress = "localhost"
 	cfg.GRPCListenPort = 1234
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -105,10 +105,10 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 
 func TestRunReturnsError(t *testing.T) {
 	cfg := Config{
-		HTTPListenHost: "localhost",
-		HTTPListenPort: 9190,
-		GRPCListenHost: "localhost",
-		GRPCListenPort: 9191,
+		HTTPListenAddress: "localhost",
+		HTTPListenPort:    9190,
+		GRPCListenAddress: "localhost",
+		GRPCListenPort:    9191,
 	}
 	t.Run("http", func(t *testing.T) {
 		cfg.MetricsNamespace = "testing_http"
@@ -147,12 +147,12 @@ func TestMiddlewareLogging(t *testing.T) {
 	var level logging.Level
 	level.Set("info")
 	cfg := Config{
-		HTTPListenHost:   "localhost",
-		HTTPListenPort:   9192,
-		GRPCListenHost:   "localhost",
-		HTTPMiddleware:   []middleware.Interface{middleware.Logging},
-		MetricsNamespace: "testing_logging",
-		LogLevel:         level,
+		HTTPListenAddress: "localhost",
+		HTTPListenPort:    9192,
+		GRPCListenAddress: "localhost",
+		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
+		MetricsNamespace:  "testing_logging",
+		LogLevel:          level,
 	}
 	server, err := New(cfg)
 	require.NoError(t, err)

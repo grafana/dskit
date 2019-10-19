@@ -36,8 +36,6 @@ func (f FakeServer) Succeed(ctx context.Context, req *google_protobuf.Empty) (*g
 func TestErrorInstrumentationMiddleware(t *testing.T) {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
-	cfg.HTTPListenAddress = "localhost"
-	cfg.HTTPListenPort = 9190
 	cfg.GRPCListenAddress = "localhost"
 	cfg.GRPCListenPort = 1234
 	server, err := New(cfg)

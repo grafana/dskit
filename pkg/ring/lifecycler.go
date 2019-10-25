@@ -695,7 +695,7 @@ func (i *Lifecycler) updateCounters(ringDesc *Desc) {
 }
 
 func (i *Lifecycler) processShutdown(ctx context.Context) {
-	flushRequired := true
+	flushRequired := i.flushOnShutdown
 	transferStart := time.Now()
 	if err := i.flushTransferer.TransferOut(ctx); err != nil {
 		if err == ErrTransferDisabled {

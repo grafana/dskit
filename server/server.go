@@ -27,9 +27,11 @@ import (
 
 // Config for a Server
 type Config struct {
-	MetricsNamespace string `yaml:"-"`
-	HTTPListenPort   int    `yaml:"http_listen_port"`
-	GRPCListenPort   int    `yaml:"grpc_listen_port"`
+	MetricsNamespace  string `yaml:"-"`
+	HTTPListenAddress string `yaml:"http_listen_address"`
+	HTTPListenPort    int    `yaml:"http_listen_port"`
+	GRPCListenAddress string `yaml:"grpc_listen_address"`
+	GRPCListenPort    int    `yaml:"grpc_listen_port"`
 
 	RegisterInstrumentation bool `yaml:"register_instrumentation"`
 	ExcludeRequestInLog     bool `yaml:"-"`
@@ -56,7 +58,9 @@ type Config struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&cfg.HTTPListenAddress, "server.http-listen-address", "", "HTTP server listen address.")
 	f.IntVar(&cfg.HTTPListenPort, "server.http-listen-port", 80, "HTTP server listen port.")
+	f.StringVar(&cfg.GRPCListenAddress, "server.grpc-listen-address", "", "gRPC server listen address.")
 	f.IntVar(&cfg.GRPCListenPort, "server.grpc-listen-port", 9095, "gRPC server listen port.")
 	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the intrumentation handlers (/metrics etc).")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Timeout for graceful shutdowns")
@@ -88,12 +92,12 @@ type Server struct {
 // New makes a new Server
 func New(cfg Config) (*Server, error) {
 	// Setup listeners first, so we can fail early if the port is in use.
-	httpListener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.HTTPListenPort))
+	httpListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.HTTPListenAddress, cfg.HTTPListenPort))
 	if err != nil {
 		return nil, err
 	}
 
-	grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCListenPort))
+	grpcListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.GRPCListenAddress, cfg.GRPCListenPort))
 	if err != nil {
 		return nil, err
 	}

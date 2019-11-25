@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/context"
+	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 
 	"github.com/weaveworks/common/httpgrpc"
@@ -30,8 +31,10 @@ type Config struct {
 	MetricsNamespace  string `yaml:"-"`
 	HTTPListenAddress string `yaml:"http_listen_address"`
 	HTTPListenPort    int    `yaml:"http_listen_port"`
+	HTTPConnLimit     int    `yaml:"http_listen_conn_limit"`
 	GRPCListenAddress string `yaml:"grpc_listen_address"`
 	GRPCListenPort    int    `yaml:"grpc_listen_port"`
+	GRPCConnLimit     int    `yaml:"grpc_listen_conn_limit"`
 
 	RegisterInstrumentation bool `yaml:"register_instrumentation"`
 	ExcludeRequestInLog     bool `yaml:"-"`
@@ -60,8 +63,10 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.HTTPListenAddress, "server.http-listen-address", "", "HTTP server listen address.")
 	f.IntVar(&cfg.HTTPListenPort, "server.http-listen-port", 80, "HTTP server listen port.")
+	f.IntVar(&cfg.HTTPConnLimit, "server.http-conn-limit", 0, "Maximum number of simultaneous http connections, <=0 to disable")
 	f.StringVar(&cfg.GRPCListenAddress, "server.grpc-listen-address", "", "gRPC server listen address.")
 	f.IntVar(&cfg.GRPCListenPort, "server.grpc-listen-port", 9095, "gRPC server listen port.")
+	f.IntVar(&cfg.GRPCConnLimit, "server.grpc-conn-limit", 0, "Maximum number of simultaneous grpc connections, <=0 to disable")
 	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the intrumentation handlers (/metrics etc).")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Timeout for graceful shutdowns")
 	f.DurationVar(&cfg.HTTPServerReadTimeout, "server.http-read-timeout", 30*time.Second, "Read timeout for HTTP server")
@@ -96,10 +101,17 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.HTTPConnLimit > 0 {
+		httpListener = netutil.LimitListener(httpListener, cfg.HTTPConnLimit)
+	}
 
 	grpcListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.GRPCListenAddress, cfg.GRPCListenPort))
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.GRPCConnLimit > 0 {
+		grpcListener = netutil.LimitListener(grpcListener, cfg.GRPCConnLimit)
 	}
 
 	// Prometheus histograms for requests.

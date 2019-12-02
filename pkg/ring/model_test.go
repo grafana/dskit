@@ -45,18 +45,6 @@ func TestIngesterDesc_IsHealthy(t *testing.T) {
 			readExpected:   true,
 			reportExpected: true,
 		},
-		"PENDING ingester with last keepalive newer than timeout": {
-			ingester:      &IngesterDesc{State: PENDING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
-			timeout:       time.Minute,
-			writeExpected: false,
-			readExpected:  false,
-		},
-		"LEFT ingester with last keepalive newer than timeout": {
-			ingester:      &IngesterDesc{State: LEFT, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
-			timeout:       time.Minute,
-			writeExpected: false,
-			readExpected:  false,
-		},
 	}
 
 	for testName, testData := range tests {

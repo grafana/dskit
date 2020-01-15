@@ -37,7 +37,7 @@ type Config struct {
 // store flag with the prefix ring, so ring.store. For everything else we pass the prefix
 // to the Consul flags.
 // If prefix is not an empty string it should end with a period.
-func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+func (cfg *Config) RegisterFlagsWithPrefix(flagsPrefix, defaultPrefix string, f *flag.FlagSet) {
 	// We need Consul flags to not have the ring prefix to maintain compatibility.
 	// This needs to be fixed in the future (1.0 release maybe?) when we normalize flags.
 	// At the moment we have consul.<flag-name>, and ring.store, going forward it would

@@ -95,9 +95,10 @@ func TestParseURL(t *testing.T) {
 		err      error
 	}{
 		{"direct://foo", "foo", nil},
-		{"kubernetes://foo:123", "kubernetes://foo:123", nil},
-		{"querier.cortex:995", "kubernetes://querier.cortex:995", nil},
-		{"foo.bar.svc.local:995", "kubernetes://foo.bar.svc.local:995", nil},
+		{"kubernetes://foo:123", "kubernetes:///foo:123", nil},
+		{"querier.cortex:995", "kubernetes:///querier.cortex:995", nil},
+		{"foo.bar.svc.local:995", "kubernetes:///foo.bar.svc.local:995", nil},
+		{"kubernetes:///foo:123", "kubernetes:///foo:123", nil},
 	} {
 		got, err := ParseURL(tc.input)
 		if !reflect.DeepEqual(tc.err, err) {

@@ -43,15 +43,6 @@ func testLifecyclerConfig(ringConfig Config, id string) LifecyclerConfig {
 	return lifecyclerConfig
 }
 
-func checkDenormalisedLeaving(d interface{}, id string) bool {
-	desc, ok := d.(*Desc)
-	return ok &&
-		len(desc.Ingesters) == 1 &&
-		desc.Ingesters[id].State == LEAVING &&
-		len(desc.Ingesters[id].Tokens) == 0 &&
-		len(desc.Tokens) == 1
-}
-
 func checkNormalised(d interface{}, id string) bool {
 	desc, ok := d.(*Desc)
 	return ok &&
@@ -381,8 +372,7 @@ func TestTokensOnDisk(t *testing.T) {
 		return ok &&
 			len(desc.Ingesters) == 1 &&
 			desc.Ingesters["ing1"].State == ACTIVE &&
-			len(desc.Ingesters["ing1"].Tokens) == 512 &&
-			len(desc.Tokens) == 0
+			len(desc.Ingesters["ing1"].Tokens) == 512
 	})
 
 	l1.Shutdown()
@@ -406,8 +396,7 @@ func TestTokensOnDisk(t *testing.T) {
 		return ok &&
 			len(desc.Ingesters) == 1 &&
 			desc.Ingesters["ing2"].State == ACTIVE &&
-			len(desc.Ingesters["ing2"].Tokens) == 512 &&
-			len(desc.Tokens) == 0
+			len(desc.Ingesters["ing2"].Tokens) == 512
 	})
 
 	// Check for same tokens.
@@ -441,15 +430,8 @@ func TestJoinInLeavingState(t *testing.T) {
 					State:  LEAVING,
 					Tokens: []uint32{1, 4},
 				},
-			},
-			Tokens: []TokenDesc{
-				{
-					Ingester: "ing2",
-					Token:    2,
-				},
-				{
-					Ingester: "ing2",
-					Token:    3,
+				"ing2": {
+					Tokens: []uint32{2, 3},
 				},
 			},
 		}
@@ -468,9 +450,9 @@ func TestJoinInLeavingState(t *testing.T) {
 		require.NoError(t, err)
 		desc, ok := d.(*Desc)
 		return ok &&
-			len(desc.Ingesters) == 1 &&
+			len(desc.Ingesters) == 2 &&
 			desc.Ingesters["ing1"].State == ACTIVE &&
 			len(desc.Ingesters["ing1"].Tokens) == cfg.NumTokens &&
-			len(desc.Tokens) == 2
+			len(desc.Ingesters["ing2"].Tokens) == 2
 	})
 }

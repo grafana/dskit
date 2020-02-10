@@ -2,6 +2,8 @@ package memberlist
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/cortexproject/cortex/pkg/util"
 )
 
 func (m *Client) createAndRegisterMetrics() {

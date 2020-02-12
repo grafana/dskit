@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
 	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
 	"github.com/cortexproject/cortex/pkg/ring/kv/etcd"
@@ -74,9 +72,6 @@ type Client interface {
 
 	// WatchPrefix calls f whenever any value stored under prefix changes.
 	WatchPrefix(ctx context.Context, prefix string, f func(string, interface{}) bool)
-
-	// If client needs to do some cleanup, it can do it here.
-	Stop()
 }
 
 // NewClient creates a new Client (consul, etcd or inmemory) based on the config,
@@ -105,8 +100,14 @@ func NewClient(cfg Config, codec codec.Codec) (Client, error) {
 		client = inmemoryStore
 
 	case "memberlist":
-		cfg.Memberlist.MetricsRegisterer = prometheus.DefaultRegisterer
-		client, err = memberlist.NewMemberlistClient(cfg.Memberlist, codec)
+		kv, err := cfg.MemberlistKV()
+		if err != nil {
+			return nil, err
+		}
+		client, err = memberlist.NewClient(kv, codec)
+		if err != nil {
+			return nil, err
+		}
 
 	default:
 		return nil, fmt.Errorf("invalid KV store type: %s", cfg.Store)

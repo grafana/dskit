@@ -71,21 +71,23 @@ func init() {
 func init() { proto.RegisterFile("server/fake_server.proto", fileDescriptor_2267b95bf2c64cdc) }
 
 var fileDescriptor_2267b95bf2c64cdc = []byte{
-	// 223 bytes of a gzipped FileDescriptorProto
+	// 246 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x92, 0x28, 0x4e, 0x2d, 0x2a,
 	0x4b, 0x2d, 0xd2, 0x4f, 0x4b, 0xcc, 0x4e, 0x8d, 0x87, 0xb0, 0xf5, 0x0a, 0x8a, 0xf2, 0x4b, 0xf2,
 	0x85, 0xd8, 0x20, 0x3c, 0x29, 0xe9, 0xf4, 0xfc, 0xfc, 0xf4, 0x9c, 0x54, 0x7d, 0xb0, 0x68, 0x52,
 	0x69, 0x9a, 0x7e, 0x6a, 0x6e, 0x41, 0x49, 0x25, 0x44, 0x91, 0x92, 0x1e, 0x97, 0x84, 0x5b, 0x62,
 	0x66, 0x4e, 0x78, 0x66, 0x49, 0x86, 0x47, 0x48, 0x48, 0x80, 0x6b, 0x51, 0x51, 0x7e, 0x51, 0x50,
 	0x6a, 0x61, 0x69, 0x6a, 0x71, 0x89, 0x90, 0x10, 0x17, 0x8b, 0x73, 0x7e, 0x4a, 0xaa, 0x04, 0xa3,
-	0x02, 0xa3, 0x06, 0x6b, 0x10, 0x98, 0x6d, 0x74, 0x97, 0x91, 0x8b, 0xcb, 0x2d, 0x31, 0x3b, 0x35,
+	0x02, 0xa3, 0x06, 0x6b, 0x10, 0x98, 0x6d, 0x74, 0x9b, 0x89, 0x8b, 0xcb, 0x2d, 0x31, 0x3b, 0x35,
 	0x18, 0x6c, 0xb6, 0x90, 0x35, 0x17, 0x7b, 0x70, 0x69, 0x72, 0x72, 0x6a, 0x6a, 0x8a, 0x90, 0x98,
 	0x1e, 0xc4, 0x1e, 0x3d, 0x98, 0x3d, 0x7a, 0xae, 0x20, 0x7b, 0xa4, 0x70, 0x88, 0x2b, 0x31, 0x08,
 	0x39, 0x72, 0xf1, 0xc2, 0xec, 0x06, 0xdb, 0x4b, 0x86, 0x11, 0xfe, 0x5c, 0x82, 0x18, 0xce, 0x17,
-	0x52, 0xd0, 0x83, 0x86, 0x03, 0x2e, 0x9f, 0xe1, 0x36, 0xd0, 0x49, 0x35, 0x4a, 0x39, 0x3d, 0xb3,
-	0x24, 0xa3, 0x34, 0x49, 0x2f, 0x39, 0x3f, 0x57, 0xbf, 0x3c, 0x35, 0xb1, 0x2c, 0xb5, 0x3c, 0xbf,
-	0x28, 0xbb, 0x58, 0x3f, 0x39, 0x3f, 0x37, 0x37, 0x3f, 0x4f, 0x1f, 0x62, 0x72, 0x12, 0x1b, 0x58,
-	0xa3, 0x31, 0x20, 0x00, 0x00, 0xff, 0xff, 0x1c, 0xf3, 0xf1, 0x28, 0x7e, 0x01, 0x00, 0x00,
+	0x52, 0xd0, 0x83, 0x86, 0x03, 0x2e, 0x9f, 0xe1, 0x31, 0xd0, 0x92, 0x8b, 0x35, 0x38, 0x27, 0x35,
+	0xb5, 0x80, 0x2c, 0xef, 0x70, 0x07, 0x97, 0x14, 0xa5, 0x26, 0xe6, 0x92, 0x69, 0x80, 0x01, 0xa3,
+	0x93, 0x6a, 0x94, 0x72, 0x7a, 0x66, 0x49, 0x46, 0x69, 0x92, 0x5e, 0x72, 0x7e, 0xae, 0x7e, 0x79,
+	0x6a, 0x62, 0x59, 0x6a, 0x79, 0x7e, 0x51, 0x76, 0xb1, 0x7e, 0x72, 0x7e, 0x6e, 0x6e, 0x7e, 0x9e,
+	0x3e, 0xc4, 0x5f, 0x49, 0x6c, 0x60, 0xad, 0xc6, 0x80, 0x00, 0x00, 0x00, 0xff, 0xff, 0xf9, 0xcd,
+	0xa4, 0xf9, 0xfc, 0x01, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -103,6 +105,8 @@ type FakeServerClient interface {
 	Succeed(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error)
 	FailWithError(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error)
 	FailWithHTTPError(ctx context.Context, in *FailWithHTTPErrorRequest, opts ...grpc.CallOption) (*empty.Empty, error)
+	Sleep(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error)
+	StreamSleep(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (FakeServer_StreamSleepClient, error)
 }
 
 type fakeServerClient struct {
@@ -140,11 +144,54 @@ func (c *fakeServerClient) FailWithHTTPError(ctx context.Context, in *FailWithHT
 	return out, nil
 }
 
+func (c *fakeServerClient) Sleep(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/server.FakeServer/Sleep", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fakeServerClient) StreamSleep(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (FakeServer_StreamSleepClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_FakeServer_serviceDesc.Streams[0], "/server.FakeServer/StreamSleep", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fakeServerStreamSleepClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type FakeServer_StreamSleepClient interface {
+	Recv() (*empty.Empty, error)
+	grpc.ClientStream
+}
+
+type fakeServerStreamSleepClient struct {
+	grpc.ClientStream
+}
+
+func (x *fakeServerStreamSleepClient) Recv() (*empty.Empty, error) {
+	m := new(empty.Empty)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // FakeServerServer is the server API for FakeServer service.
 type FakeServerServer interface {
 	Succeed(context.Context, *empty.Empty) (*empty.Empty, error)
 	FailWithError(context.Context, *empty.Empty) (*empty.Empty, error)
 	FailWithHTTPError(context.Context, *FailWithHTTPErrorRequest) (*empty.Empty, error)
+	Sleep(context.Context, *empty.Empty) (*empty.Empty, error)
+	StreamSleep(*empty.Empty, FakeServer_StreamSleepServer) error
 }
 
 // UnimplementedFakeServerServer can be embedded to have forward compatible implementations.
@@ -159,6 +206,12 @@ func (*UnimplementedFakeServerServer) FailWithError(ctx context.Context, req *em
 }
 func (*UnimplementedFakeServerServer) FailWithHTTPError(ctx context.Context, req *FailWithHTTPErrorRequest) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FailWithHTTPError not implemented")
+}
+func (*UnimplementedFakeServerServer) Sleep(ctx context.Context, req *empty.Empty) (*empty.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Sleep not implemented")
+}
+func (*UnimplementedFakeServerServer) StreamSleep(req *empty.Empty, srv FakeServer_StreamSleepServer) error {
+	return status.Errorf(codes.Unimplemented, "method StreamSleep not implemented")
 }
 
 func RegisterFakeServerServer(s *grpc.Server, srv FakeServerServer) {
@@ -219,6 +272,45 @@ func _FakeServer_FailWithHTTPError_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FakeServer_Sleep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(empty.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FakeServerServer).Sleep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.FakeServer/Sleep",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FakeServerServer).Sleep(ctx, req.(*empty.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FakeServer_StreamSleep_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(empty.Empty)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(FakeServerServer).StreamSleep(m, &fakeServerStreamSleepServer{stream})
+}
+
+type FakeServer_StreamSleepServer interface {
+	Send(*empty.Empty) error
+	grpc.ServerStream
+}
+
+type fakeServerStreamSleepServer struct {
+	grpc.ServerStream
+}
+
+func (x *fakeServerStreamSleepServer) Send(m *empty.Empty) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 var _FakeServer_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "server.FakeServer",
 	HandlerType: (*FakeServerServer)(nil),
@@ -235,7 +327,17 @@ var _FakeServer_serviceDesc = grpc.ServiceDesc{
 			MethodName: "FailWithHTTPError",
 			Handler:    _FakeServer_FailWithHTTPError_Handler,
 		},
+		{
+			MethodName: "Sleep",
+			Handler:    _FakeServer_Sleep_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamSleep",
+			Handler:       _FakeServer_StreamSleep_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "server/fake_server.proto",
 }

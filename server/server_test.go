@@ -213,8 +213,8 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"/server.FakeServer/FailWithError":     "error",
 		"/server.FakeServer/FailWithHTTPError": "402",
-		"/server.FakeServer/Sleep":             "error",
-		"/server.FakeServer/StreamSleep":       "error",
+		"/server.FakeServer/Sleep":             "cancel",
+		"/server.FakeServer/StreamSleep":       "cancel",
 		"/server.FakeServer/Succeed":           "success",
 		"error500":                             "500",
 		"sleep10":                              "200",

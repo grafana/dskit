@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	grpcUtils "github.com/weaveworks/common/grpc"
 	"github.com/weaveworks/common/httpgrpc"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -15,6 +16,8 @@ func observe(hist *prometheus.HistogramVec, method string, err error, duration t
 	if err != nil {
 		if errResp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 			respStatus = strconv.Itoa(int(errResp.Code))
+		} else if grpcUtils.IsCanceled(err) {
+			respStatus = "cancel"
 		} else {
 			respStatus = "error"
 		}

@@ -105,6 +105,15 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	fakeServer := FakeServer{}
 	RegisterFakeServerServer(server.GRPC, fakeServer)
 
+	server.HTTP.HandleFunc("/succeed", func(w http.ResponseWriter, r *http.Request) {
+	})
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	})
+	server.HTTP.HandleFunc("/sleep10", func(w http.ResponseWriter, r *http.Request) {
+		_ = cancelableSleep(r.Context(), time.Second*10)
+	})
+
 	go server.Run()
 
 	conn, err := grpc.Dial("localhost:1234", grpc.WithInsecure())
@@ -155,6 +164,29 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	})
 	require.NoError(t, err) // canceling a streaming fn doesn't generate an error
 
+	// Now test the HTTP versions of the functions
+	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/succeed", nil)
+		require.NoError(t, err)
+		_, err = http.DefaultClient.Do(req)
+		require.NoError(t, err)
+	}
+	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/error500", nil)
+		require.NoError(t, err)
+		_, err = http.DefaultClient.Do(req)
+		require.NoError(t, err)
+	}
+	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/sleep10", nil)
+		require.NoError(t, err)
+		err = callThenCancel(func(ctx context.Context) error {
+			_, err = http.DefaultClient.Do(req.WithContext(ctx))
+			return err
+		})
+		require.Error(t, err, context.Canceled)
+	}
+
 	conn.Close()
 	server.Shutdown()
 
@@ -184,6 +216,9 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 		"/server.FakeServer/Sleep":             "error",
 		"/server.FakeServer/StreamSleep":       "error",
 		"/server.FakeServer/Succeed":           "success",
+		"error500":                             "500",
+		"sleep10":                              "200",
+		"succeed":                              "200",
 	}, statuses)
 }
 

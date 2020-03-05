@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
@@ -31,6 +32,29 @@ func (f FakeServer) FailWithHTTPError(ctx context.Context, req *FailWithHTTPErro
 
 func (f FakeServer) Succeed(ctx context.Context, req *google_protobuf.Empty) (*google_protobuf.Empty, error) {
 	return &google_protobuf.Empty{}, nil
+}
+
+func (f FakeServer) Sleep(ctx context.Context, req *google_protobuf.Empty) (*google_protobuf.Empty, error) {
+	err := cancelableSleep(ctx, 10*time.Second)
+	return &google_protobuf.Empty{}, err
+}
+
+func (f FakeServer) StreamSleep(req *google_protobuf.Empty, stream FakeServer_StreamSleepServer) error {
+	for x := 0; x < 100; x++ {
+		time.Sleep(time.Second / 100.0)
+		if err := stream.Send(&google_protobuf.Empty{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cancelableSleep(ctx context.Context, sleep time.Duration) error {
+	select {
+	case <-time.After(sleep):
+	case <-ctx.Done():
+	}
+	return ctx.Err()
 }
 
 // Ensure that http and grpc servers work with no overrides to config
@@ -81,8 +105,16 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	fakeServer := FakeServer{}
 	RegisterFakeServerServer(server.GRPC, fakeServer)
 
+	server.HTTP.HandleFunc("/succeed", func(w http.ResponseWriter, r *http.Request) {
+	})
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	})
+	server.HTTP.HandleFunc("/sleep10", func(w http.ResponseWriter, r *http.Request) {
+		_ = cancelableSleep(r.Context(), time.Second*10)
+	})
+
 	go server.Run()
-	defer server.Shutdown()
 
 	conn, err := grpc.Dial("localhost:1234", grpc.WithInsecure())
 	defer conn.Close()
@@ -109,7 +141,54 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	require.Equal(t, int32(http.StatusPaymentRequired), errResp.Code)
 	require.Equal(t, "402", string(errResp.Body))
 
+	callThenCancel := func(f func(ctx context.Context) error) error {
+		ctx, cancel := context.WithCancel(context.Background())
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- f(ctx)
+		}()
+		time.Sleep(50 * time.Millisecond) // allow the call to reach the handler
+		cancel()
+		return <-errChan
+	}
+
+	err = callThenCancel(func(ctx context.Context) error {
+		_, err = client.Sleep(ctx, &empty)
+		return err
+	})
+	require.Error(t, err, context.Canceled)
+
+	err = callThenCancel(func(ctx context.Context) error {
+		_, err = client.StreamSleep(ctx, &empty)
+		return err
+	})
+	require.NoError(t, err) // canceling a streaming fn doesn't generate an error
+
+	// Now test the HTTP versions of the functions
+	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/succeed", nil)
+		require.NoError(t, err)
+		_, err = http.DefaultClient.Do(req)
+		require.NoError(t, err)
+	}
+	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/error500", nil)
+		require.NoError(t, err)
+		_, err = http.DefaultClient.Do(req)
+		require.NoError(t, err)
+	}
+	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/sleep10", nil)
+		require.NoError(t, err)
+		err = callThenCancel(func(ctx context.Context) error {
+			_, err = http.DefaultClient.Do(req.WithContext(ctx))
+			return err
+		})
+		require.Error(t, err, context.Canceled)
+	}
+
 	conn.Close()
+	server.Shutdown()
 
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	require.NoError(t, err)
@@ -134,7 +213,12 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"/server.FakeServer/FailWithError":     "error",
 		"/server.FakeServer/FailWithHTTPError": "402",
+		"/server.FakeServer/Sleep":             "cancel",
+		"/server.FakeServer/StreamSleep":       "cancel",
 		"/server.FakeServer/Succeed":           "success",
+		"error500":                             "500",
+		"sleep10":                              "200",
+		"succeed":                              "200",
 	}, statuses)
 }
 

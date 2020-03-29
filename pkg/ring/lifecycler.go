@@ -55,6 +55,7 @@ type LifecyclerConfig struct {
 	InfNames         []string      `yaml:"interface_names"`
 	FinalSleep       time.Duration `yaml:"final_sleep"`
 	TokensFilePath   string        `yaml:"tokens_file_path"`
+	Zone             string        `yaml:"availability_zone"`
 
 	// For testing, you can override the address and ID of this ingester
 	Addr           string `yaml:"address" doc:"hidden"`
@@ -97,6 +98,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.StringVar(&cfg.Addr, prefix+"lifecycler.addr", "", "IP address to advertise in consul.")
 	f.IntVar(&cfg.Port, prefix+"lifecycler.port", 0, "port to advertise in consul (defaults to server.grpc-listen-port).")
 	f.StringVar(&cfg.ID, prefix+"lifecycler.ID", hostname, "ID to register into consul.")
+	f.StringVar(&cfg.Zone, prefix+"availability-zone", "", "The availability zone of the host, this instance is running on. Default is the lifecycler ID.")
 }
 
 // Lifecycler is responsible for managing the lifecycle of entries in the ring.
@@ -114,6 +116,7 @@ type Lifecycler struct {
 	Addr     string
 	RingName string
 	RingKey  string
+	Zone     string
 
 	// We need to remember the ingester state just in case consul goes away and comes
 	// back empty.  And it changes during lifecycle of ingester.
@@ -149,6 +152,11 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 	store, err := kv.NewClient(cfg.RingConfig.KVStore, codec)
 	if err != nil {
 		return nil, err
+	}
+
+	zone := cfg.Zone
+	if zone == "" {
+		zone = cfg.ID
 	}
 
 	// We do allow a nil FlushTransferer, but to keep the ring logic easier we assume
@@ -492,14 +500,14 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				if len(tokensFromFile) >= i.cfg.NumTokens {
 					i.setState(ACTIVE)
 				}
-				ringDesc.AddIngester(i.ID, i.Addr, tokensFromFile, i.GetState())
+				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState())
 				i.setTokens(tokensFromFile)
 				return ringDesc, true, nil
 			}
 
 			// Either we are a new ingester, or consul must have restarted
 			level.Info(util.Logger).Log("msg", "instance not found in ring, adding with no tokens", "ring", i.RingName)
-			ringDesc.AddIngester(i.ID, i.Addr, []uint32{}, i.GetState())
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState())
 			return ringDesc, true, nil
 		}
 
@@ -554,7 +562,7 @@ func (i *Lifecycler) verifyTokens(ctx context.Context) bool {
 			ringTokens = append(ringTokens, newTokens...)
 			sort.Sort(ringTokens)
 
-			ringDesc.AddIngester(i.ID, i.Addr, ringTokens, i.GetState())
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState())
 
 			i.setTokens(ringTokens)
 
@@ -616,7 +624,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState IngesterState) er
 		sort.Sort(myTokens)
 		i.setTokens(myTokens)
 
-		ringDesc.AddIngester(i.ID, i.Addr, i.getTokens(), i.GetState())
+		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState())
 
 		return ringDesc, true, nil
 	})
@@ -645,7 +653,7 @@ func (i *Lifecycler) updateConsul(ctx context.Context) error {
 		if !ok {
 			// consul must have restarted
 			level.Info(util.Logger).Log("msg", "found empty ring, inserting tokens", "ring", i.RingName)
-			ringDesc.AddIngester(i.ID, i.Addr, i.getTokens(), i.GetState())
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState())
 		} else {
 			ingesterDesc.Timestamp = time.Now().Unix()
 			ingesterDesc.State = i.GetState()

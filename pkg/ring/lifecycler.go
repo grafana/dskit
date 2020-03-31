@@ -155,6 +155,10 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 	}
 
 	zone := cfg.Zone
+	if zone != "" {
+		util.WarnExperimentalUse("Zone aware replication")
+	}
+
 	if zone == "" {
 		zone = cfg.ID
 	}

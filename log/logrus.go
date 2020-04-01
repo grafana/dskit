@@ -7,10 +7,13 @@ import (
 )
 
 // NewLogrus makes a new Interface backed by a logrus logger
-func NewLogrus(level Level) Interface {
+func NewLogrus(level Level, format string) Interface {
 	log := logrus.New()
 	log.Out = os.Stderr
 	log.Level = level.Logrus
+	if format == "json" {
+		log.Formatter = &logrus.JSONFormatter{}
+	}
 	return logrusLogger{log}
 }
 

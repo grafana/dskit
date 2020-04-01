@@ -60,8 +60,9 @@ type Config struct {
 	GRPCServerTime                  time.Duration `yaml:"grpc_server_keepalive_time"`
 	GRPCServerTimeout               time.Duration `yaml:"grpc_server_keepalive_timeout"`
 
-	LogLevel logging.Level     `yaml:"log_level"`
-	Log      logging.Interface `yaml:"-"`
+	LogFormat string            `yaml:"log_format"`
+	LogLevel  logging.Level     `yaml:"log_level"`
+	Log       logging.Interface `yaml:"-"`
 
 	PathPrefix string `yaml:"http_path_prefix"`
 }
@@ -141,7 +142,7 @@ func New(cfg Config) (*Server, error) {
 	// logrus.
 	log := cfg.Log
 	if log == nil {
-		log = logging.NewLogrus(cfg.LogLevel)
+		log = logging.NewLogrus(cfg.LogLevel, cfg.LogFormat)
 	}
 
 	log.WithField("http", httpListener.Addr()).WithField("grpc", grpcListener.Addr()).Infof("server listening on addresses")

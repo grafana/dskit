@@ -1,8 +1,12 @@
 package server
 
 import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"testing"
@@ -13,6 +17,7 @@ import (
 
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/log"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
@@ -286,4 +291,62 @@ func TestMiddlewareLogging(t *testing.T) {
 	req, err := http.NewRequest("GET", "http://127.0.0.1:9192/error500", nil)
 	require.NoError(t, err)
 	http.DefaultClient.Do(req)
+}
+
+func TestHTTPSServer(t *testing.T) {
+	var level logging.Level
+	level.Set("info")
+	cfg := Config{
+		HTTPListenAddress: "localhost",
+		HTTPListenPort:    9192,
+		HTTPCertPath:      "testdata/server.crt",
+		HTTPKeyPath:       "testdata/server.key",
+		HTTPCAPath:        "testdata/root.crt",
+	}
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!"))
+	})
+
+	go server.Run()
+	defer server.Shutdown()
+
+	clientCert, err := tls.LoadX509KeyPair("testdata/client.crt", "testdata/client.key")
+	if err != nil {
+		log.Warnf("error loading cert %s or key %s, tls disabled", "testdata/client.crt", "testdata/client.key")
+	}
+
+	var caCertPool *x509.CertPool
+	caCert, err := ioutil.ReadFile(cfg.HTTPCAPath)
+	if err != nil {
+		log.Warnf("error loading ca cert %s, tls disabled", cfg.HTTPCAPath)
+	} else {
+		caCertPool = x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+	}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{clientCert},
+			RootCAs:            caCertPool,
+		},
+	}
+
+	client := &http.Client{Transport: tr}
+	res, err := client.Get("https://localhost:9192/testhttps")
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("Response code was %v; want 200", res.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+	expected := []byte("Hello World!")
+	if bytes.Compare(expected, body) != 0 {
+		t.Errorf("Response body was '%v'; want '%v'", expected, body)
+	}
 }

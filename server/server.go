@@ -245,7 +245,7 @@ func New(cfg Config) (*Server, error) {
 		httpServer.TLSConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			ClientAuth:   tls.RequireAndVerifyClientCert,
-			RootCAs:      caCertPool,
+			ClientCAs:    caCertPool,
 		}
 	}
 

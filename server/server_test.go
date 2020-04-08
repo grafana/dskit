@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -339,14 +338,10 @@ func TestHTTPSServer(t *testing.T) {
 	require.NoError(t, err)
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Response code was %v; want 200", res.StatusCode)
-	}
+	require.Equal(t, res.StatusCode, http.StatusOK)
 
 	body, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	expected := []byte("Hello World!")
-	if bytes.Compare(expected, body) != 0 {
-		t.Errorf("Response body was '%v'; want '%v'", expected, body)
-	}
+	require.Equal(t, expected, body)
 }

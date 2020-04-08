@@ -46,6 +46,7 @@ type kv interface {
 	CAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.WriteMeta, error)
 	Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consul.QueryMeta, error)
 	List(path string, q *consul.QueryOptions) (consul.KVPairs, *consul.QueryMeta, error)
+	Delete(key string, q *consul.WriteOptions) (*consul.WriteMeta, error)
 	Put(p *consul.KVPair, q *consul.WriteOptions) (*consul.WriteMeta, error)
 }
 
@@ -250,6 +251,24 @@ func (c *Client) WatchPrefix(ctx context.Context, prefix string, f func(string, 
 			}
 		}
 	}
+}
+
+// List implements kv.List.
+func (c *Client) List(ctx context.Context, prefix string) ([]string, error) {
+	options := &consul.QueryOptions{
+		AllowStale:        !c.cfg.ConsistentReads,
+		RequireConsistent: c.cfg.ConsistentReads,
+	}
+	pairs, _, err := c.kv.List(prefix, options.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make([]string, 0, len(pairs))
+	for _, kvp := range pairs {
+		keys = append(keys, kvp.Key)
+	}
+	return keys, nil
 }
 
 // Get implements kv.Get.

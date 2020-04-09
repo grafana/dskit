@@ -297,10 +297,11 @@ func TestHTTPSServer(t *testing.T) {
 	level.Set("info")
 	cfg := Config{
 		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9192,
+		HTTPListenPort:    9193,
 		HTTPCertPath:      "testdata/server.crt",
 		HTTPKeyPath:       "testdata/server.key",
 		HTTPCAPath:        "testdata/root.crt",
+		MetricsNamespace:  "testing_https",
 	}
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -334,7 +335,7 @@ func TestHTTPSServer(t *testing.T) {
 	}
 
 	client := &http.Client{Transport: tr}
-	res, err := client.Get("https://localhost:9192/testhttps")
+	res, err := client.Get("https://localhost:9193/testhttps")
 	require.NoError(t, err)
 	defer res.Body.Close()
 

@@ -7,14 +7,18 @@ import (
 )
 
 // NewLogrus makes a new Interface backed by a logrus logger
-func NewLogrus(level Level, format string) Interface {
+// format can be "json" or defaults to logfmt
+func NewLogrusFormat(level Level, f Format) Interface {
 	log := logrus.New()
 	log.Out = os.Stderr
 	log.Level = level.Logrus
-	if format == "json" {
-		log.Formatter = &logrus.JSONFormatter{}
-	}
+	log.Formatter = f.Logrus
 	return logrusLogger{log}
+}
+
+// NewLogrus makes a new Interface backed by a logrus logger
+func NewLogrus(level Level) Interface {
+	return NewLogrusFormat(level, Format{Logrus: &logrus.TextFormatter{}})
 }
 
 // Logrus wraps an existing Logrus logger.

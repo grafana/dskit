@@ -144,18 +144,23 @@ func New(cfg Config) (*Server, error) {
 		log = logging.NewLogrus(cfg.LogLevel)
 	}
 
-	cert, err := tls.LoadX509KeyPair(cfg.HTTPCertPath, cfg.HTTPKeyPath)
-	if err != nil {
-		log.Warnf("error loading cert %s or key %s, tls disabled", cfg.HTTPCertPath, cfg.HTTPKeyPath)
+	var cert tls.Certificate
+	if cfg.HTTPCertPath != "" && cfg.HTTPKeyPath != "" {
+		cert, err = tls.LoadX509KeyPair(cfg.HTTPCertPath, cfg.HTTPKeyPath)
+		if err != nil {
+			log.Warnf("error loading cert %s or key %s, tls disabled", cfg.HTTPCertPath, cfg.HTTPKeyPath)
+		}
 	}
 
 	var caCertPool *x509.CertPool
-	caCert, err := ioutil.ReadFile(cfg.HTTPCAPath)
-	if err != nil {
-		log.Warnf("error loading ca cert %s, tls disabled", cfg.HTTPCAPath)
-	} else {
-		caCertPool = x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
+	if cfg.HTTPCAPath != "" {
+		caCert, err := ioutil.ReadFile(cfg.HTTPCAPath)
+		if err != nil {
+			log.Warnf("error loading ca cert %s, tls disabled", cfg.HTTPCAPath)
+		} else {
+			caCertPool = x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
+		}
 	}
 
 	// Prometheus histograms for requests.

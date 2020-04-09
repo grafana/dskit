@@ -21,6 +21,7 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/weaveworks/common/httpgrpc"
@@ -144,6 +145,7 @@ func New(cfg Config) (*Server, error) {
 		log = logging.NewLogrus(cfg.LogLevel)
 	}
 
+	// Setup TLS
 	var cert tls.Certificate
 	if cfg.HTTPCertPath != "" && cfg.HTTPKeyPath != "" {
 		cert, err = tls.LoadX509KeyPair(cfg.HTTPCertPath, cfg.HTTPKeyPath)
@@ -160,6 +162,15 @@ func New(cfg Config) (*Server, error) {
 		} else {
 			caCertPool = x509.NewCertPool()
 			caCertPool.AppendCertsFromPEM(caCert)
+		}
+	}
+
+	var tlsConfig *tls.Config
+	if len(cert.Certificate) > 0 && caCertPool != nil {
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:    caCertPool,
 		}
 	}
 
@@ -214,6 +225,10 @@ func New(cfg Config) (*Server, error) {
 		grpc.MaxConcurrentStreams(uint32(cfg.GPRCServerMaxConcurrentStreams)),
 	}
 	grpcOptions = append(grpcOptions, cfg.GRPCOptions...)
+	if tlsConfig != nil {
+		grpcCreds := credentials.NewTLS(tlsConfig)
+		grpcOptions = append(grpcOptions, grpc.Creds(grpcCreds))
+	}
 	grpcServer := grpc.NewServer(grpcOptions...)
 
 	// Setup HTTP server
@@ -246,12 +261,8 @@ func New(cfg Config) (*Server, error) {
 		IdleTimeout:  cfg.HTTPServerIdleTimeout,
 		Handler:      middleware.Merge(httpMiddleware...).Wrap(router),
 	}
-	if len(cert.Certificate) > 0 && caCertPool != nil {
-		httpServer.TLSConfig = &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			ClientAuth:   tls.RequireAndVerifyClientCert,
-			ClientCAs:    caCertPool,
-		}
+	if tlsConfig != nil {
+		httpServer.TLSConfig = tlsConfig
 	}
 
 	return &Server{

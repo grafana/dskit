@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
@@ -292,16 +293,18 @@ func TestMiddlewareLogging(t *testing.T) {
 	http.DefaultClient.Do(req)
 }
 
-func TestHTTPSServer(t *testing.T) {
+func TestTLSServer(t *testing.T) {
 	var level logging.Level
 	level.Set("info")
 	cfg := Config{
 		HTTPListenAddress: "localhost",
 		HTTPListenPort:    9193,
-		HTTPCertPath:      "testdata/server.crt",
-		HTTPKeyPath:       "testdata/server.key",
-		HTTPCAPath:        "testdata/root.crt",
-		MetricsNamespace:  "testing_https",
+		HTTPCertPath:      "certs/server.crt",
+		HTTPKeyPath:       "certs/server.key",
+		HTTPCAPath:        "certs/root.crt",
+		MetricsNamespace:  "testing_tls",
+		GRPCListenAddress: "localhost",
+		GRPCListenPort:    9194,
 	}
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -310,12 +313,15 @@ func TestHTTPSServer(t *testing.T) {
 		w.Write([]byte("Hello World!"))
 	})
 
+	fakeServer := FakeServer{}
+	RegisterFakeServerServer(server.GRPC, fakeServer)
+
 	go server.Run()
 	defer server.Shutdown()
 
-	clientCert, err := tls.LoadX509KeyPair("testdata/client.crt", "testdata/client.key")
+	clientCert, err := tls.LoadX509KeyPair("certs/client.crt", "certs/client.key")
 	if err != nil {
-		log.Warnf("error loading cert %s or key %s, tls disabled", "testdata/client.crt", "testdata/client.key")
+		log.Warnf("error loading cert %s or key %s, tls disabled", "certs/client.crt", "certs/client.key")
 	}
 
 	var caCertPool *x509.CertPool
@@ -326,12 +332,14 @@ func TestHTTPSServer(t *testing.T) {
 		caCertPool = x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)
 	}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{clientCert},
+		RootCAs:            caCertPool,
+	}
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-			Certificates:       []tls.Certificate{clientCert},
-			RootCAs:            caCertPool,
-		},
+		TLSClientConfig: tlsConfig,
 	}
 
 	client := &http.Client{Transport: tr}
@@ -345,4 +353,14 @@ func TestHTTPSServer(t *testing.T) {
 	require.NoError(t, err)
 	expected := []byte("Hello World!")
 	require.Equal(t, expected, body)
+
+	conn, err := grpc.Dial("localhost:9194", grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	defer conn.Close()
+	require.NoError(t, err)
+
+	empty := google_protobuf.Empty{}
+	grpcClient := NewFakeServerClient(conn)
+	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
+	require.NoError(t, err)
+	require.EqualValues(t, &empty, grpcRes)
 }

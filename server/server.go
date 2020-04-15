@@ -336,11 +336,8 @@ func (s *Server) Shutdown() {
 
 func tlsConfigFromOptions(c node_https.TLSStruct) (*tls.Config, error) {
 	cfg := &tls.Config{}
-	if len(c.TLSCertPath) == 0 {
-		return nil, fmt.Errorf("missing TLSCertPath")
-	}
-	if len(c.TLSKeyPath) == 0 {
-		return nil, fmt.Errorf("missing TLSKeyPath")
+	if c == (node_https.TLSStruct{}) {
+		return nil, nil
 	}
 	loadCert := func() (*tls.Certificate, error) {
 		cert, err := tls.LoadX509KeyPair(c.TLSCertPath, c.TLSKeyPath)

@@ -7,6 +7,7 @@ import (
 	"flag"
 	"io/ioutil"
 	"net/http"
+	"os/exec"
 	"strconv"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
+	node_https "github.com/prometheus/node_exporter/https"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
@@ -296,12 +298,26 @@ func TestMiddlewareLogging(t *testing.T) {
 func TestTLSServer(t *testing.T) {
 	var level logging.Level
 	level.Set("info")
+
+	cmd := exec.Command("bash", "certs/genCerts.sh", "certs", "1")
+	err := cmd.Run()
+	require.NoError(t, err)
+
 	cfg := Config{
 		HTTPListenAddress: "localhost",
 		HTTPListenPort:    9193,
-		HTTPCertPath:      "certs/server.crt",
-		HTTPKeyPath:       "certs/server.key",
-		HTTPCAPath:        "certs/root.crt",
+		HTTPTLSConfig: node_https.TLSStruct{
+			TLSCertPath: "certs/server.crt",
+			TLSKeyPath:  "certs/server.key",
+			ClientAuth:  "RequireAndVerifyClientCert",
+			ClientCAs:   "certs/root.crt",
+		},
+		GRPCTLSConfig: node_https.TLSStruct{
+			TLSCertPath: "certs/server.crt",
+			TLSKeyPath:  "certs/server.key",
+			ClientAuth:  "VerifyClientCertIfGiven",
+			ClientCAs:   "certs/root.crt",
+		},
 		MetricsNamespace:  "testing_tls",
 		GRPCListenAddress: "localhost",
 		GRPCListenPort:    9194,
@@ -325,9 +341,9 @@ func TestTLSServer(t *testing.T) {
 	}
 
 	var caCertPool *x509.CertPool
-	caCert, err := ioutil.ReadFile(cfg.HTTPCAPath)
+	caCert, err := ioutil.ReadFile(cfg.HTTPTLSConfig.ClientCAs)
 	if err != nil {
-		log.Warnf("error loading ca cert %s, tls disabled", cfg.HTTPCAPath)
+		log.Warnf("error loading ca cert %s, tls disabled", cfg.HTTPTLSConfig.ClientCAs)
 	} else {
 		caCertPool = x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)

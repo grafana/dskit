@@ -334,6 +334,8 @@ func (s *Server) Shutdown() {
 	s.GRPC.GracefulStop()
 }
 
+// TODO: Use upstream util function when prometheus community makes it public. This is copied from -
+// https://github.com/prometheus/node_exporter/blob/d4d2e1db98152ab6c94dc9a12a997950e0be2416/https/tls_config.go#L51
 func tlsConfigFromOptions(c node_https.TLSStruct) (*tls.Config, error) {
 	cfg := &tls.Config{}
 	if c == (node_https.TLSStruct{}) {

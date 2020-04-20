@@ -39,7 +39,12 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		var buf bytes.Buffer
 		wrapped := newBadResponseLoggingWriter(w, &buf)
 		next.ServeHTTP(wrapped, r)
-		statusCode := wrapped.statusCode
+
+		statusCode, err := wrapped.statusCode, wrapped.writeError
+		if err != nil {
+			l.logWithRequest(r).Warnf("%s %s %s, error: %s ws: %v; %s", r.Method, uri, time.Since(begin), err, IsWSHandshakeRequest(r), headers)
+			return
+		}
 		if 100 <= statusCode && statusCode < 500 || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable {
 			l.logWithRequest(r).Debugf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
 			if l.LogRequestHeaders && headers != nil {

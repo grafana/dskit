@@ -2,10 +2,8 @@ package server
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
@@ -152,13 +150,19 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Setup TLS
-	httpTLSConfig, err := tlsConfigFromOptions(cfg.HTTPTLSConfig)
-	if err != nil {
-		return nil, fmt.Errorf("error generating http tls config: %v", err)
+	var httpTLSConfig *tls.Config
+	if len(cfg.HTTPTLSConfig.TLSCertPath) > 0 && len(cfg.HTTPTLSConfig.TLSKeyPath) > 0 {
+		httpTLSConfig, err = node_https.ConfigToTLSConfig(&cfg.HTTPTLSConfig)
+		if err != nil {
+			return nil, fmt.Errorf("error generating http tls config: %v", err)
+		}
 	}
-	grpcTLSConfig, err := tlsConfigFromOptions(cfg.GRPCTLSConfig)
-	if err != nil {
-		return nil, fmt.Errorf("error generating grpc tls config: %v", err)
+	var grpcTLSConfig *tls.Config
+	if len(cfg.GRPCTLSConfig.TLSCertPath) > 0 && len(cfg.GRPCTLSConfig.TLSKeyPath) > 0 {
+		grpcTLSConfig, err = node_https.ConfigToTLSConfig(&cfg.GRPCTLSConfig)
+		if err != nil {
+			return nil, fmt.Errorf("error generating grpc tls config: %v", err)
+		}
 	}
 
 	// Prometheus histograms for requests.
@@ -332,59 +336,4 @@ func (s *Server) Shutdown() {
 
 	s.HTTPServer.Shutdown(ctx)
 	s.GRPC.GracefulStop()
-}
-
-// TODO: Use upstream util function when prometheus community makes it public. This is copied from -
-// https://github.com/prometheus/node_exporter/blob/d4d2e1db98152ab6c94dc9a12a997950e0be2416/https/tls_config.go#L51
-func tlsConfigFromOptions(c node_https.TLSStruct) (*tls.Config, error) {
-	cfg := &tls.Config{}
-	if c == (node_https.TLSStruct{}) {
-		return nil, nil
-	}
-	loadCert := func() (*tls.Certificate, error) {
-		cert, err := tls.LoadX509KeyPair(c.TLSCertPath, c.TLSKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load X509KeyPair: %v", err)
-		}
-		return &cert, nil
-	}
-	// Confirm that certificate and key paths are valid.
-	if _, err := loadCert(); err != nil {
-		return nil, err
-	}
-	cfg.GetCertificate = func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-		return loadCert()
-	}
-
-	if len(c.ClientCAs) > 0 {
-		clientCAPool := x509.NewCertPool()
-		clientCAFile, err := ioutil.ReadFile(c.ClientCAs)
-		if err != nil {
-			return nil, err
-		}
-		clientCAPool.AppendCertsFromPEM(clientCAFile)
-		cfg.ClientCAs = clientCAPool
-	}
-	if len(c.ClientAuth) > 0 {
-		switch s := (c.ClientAuth); s {
-		case "NoClientCert":
-			cfg.ClientAuth = tls.NoClientCert
-		case "RequestClientCert":
-			cfg.ClientAuth = tls.RequestClientCert
-		case "RequireClientCert":
-			cfg.ClientAuth = tls.RequireAnyClientCert
-		case "VerifyClientCertIfGiven":
-			cfg.ClientAuth = tls.VerifyClientCertIfGiven
-		case "RequireAndVerifyClientCert":
-			cfg.ClientAuth = tls.RequireAndVerifyClientCert
-		case "":
-			cfg.ClientAuth = tls.NoClientCert
-		default:
-			return nil, fmt.Errorf("Invalid ClientAuth: " + s)
-		}
-	}
-	if len(c.ClientCAs) > 0 && cfg.ClientAuth == tls.NoClientCert {
-		return nil, fmt.Errorf("Client CA's have been configured without a Client Auth Policy")
-	}
-	return cfg, nil
 }

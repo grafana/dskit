@@ -152,6 +152,7 @@ func New(cfg Config) (*Server, error) {
 	// Setup TLS
 	var httpTLSConfig *tls.Config
 	if len(cfg.HTTPTLSConfig.TLSCertPath) > 0 && len(cfg.HTTPTLSConfig.TLSKeyPath) > 0 {
+		// Note: ConfigToTLSConfig from prometheus/node_exporter is awaiting security review.
 		httpTLSConfig, err = node_https.ConfigToTLSConfig(&cfg.HTTPTLSConfig)
 		if err != nil {
 			return nil, fmt.Errorf("error generating http tls config: %v", err)
@@ -159,6 +160,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	var grpcTLSConfig *tls.Config
 	if len(cfg.GRPCTLSConfig.TLSCertPath) > 0 && len(cfg.GRPCTLSConfig.TLSKeyPath) > 0 {
+		// Note: ConfigToTLSConfig from prometheus/node_exporter is awaiting security review.
 		grpcTLSConfig, err = node_https.ConfigToTLSConfig(&cfg.GRPCTLSConfig)
 		if err != nil {
 			return nil, fmt.Errorf("error generating grpc tls config: %v", err)

@@ -18,7 +18,6 @@ import (
 
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	node_https "github.com/prometheus/node_exporter/https"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -336,18 +335,13 @@ func TestTLSServer(t *testing.T) {
 	defer server.Shutdown()
 
 	clientCert, err := tls.LoadX509KeyPair("certs/client.crt", "certs/client.key")
-	if err != nil {
-		log.Warnf("error loading cert %s or key %s, tls disabled", "certs/client.crt", "certs/client.key")
-	}
+	require.NoError(t, err)
 
-	var caCertPool *x509.CertPool
 	caCert, err := ioutil.ReadFile(cfg.HTTPTLSConfig.ClientCAs)
-	if err != nil {
-		log.Warnf("error loading ca cert %s, tls disabled", cfg.HTTPTLSConfig.ClientCAs)
-	} else {
-		caCertPool = x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-	}
+	require.NoError(t, err)
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,

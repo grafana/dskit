@@ -1,5 +1,5 @@
-# From https://github.com/joe-elliott/cert-exporter/blob/master/test/files/genCerts.sh
 #!/usr/bin/env bash
+# From https://github.com/joe-elliott/cert-exporter/blob/69d3d7230378325a1de4fa313432d3d6ced4a518/test/files/genCerts.sh
 certFolder=$1
 days=$2
 

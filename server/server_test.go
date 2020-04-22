@@ -1,18 +1,24 @@
 package server
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
+	"io/ioutil"
 	"net/http"
+	"os/exec"
 	"strconv"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/prometheus/client_golang/prometheus"
+	node_https "github.com/prometheus/node_exporter/https"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
@@ -286,4 +292,85 @@ func TestMiddlewareLogging(t *testing.T) {
 	req, err := http.NewRequest("GET", "http://127.0.0.1:9192/error500", nil)
 	require.NoError(t, err)
 	http.DefaultClient.Do(req)
+}
+
+func TestTLSServer(t *testing.T) {
+	var level logging.Level
+	level.Set("info")
+
+	cmd := exec.Command("bash", "certs/genCerts.sh", "certs", "1")
+	err := cmd.Run()
+	require.NoError(t, err)
+
+	cfg := Config{
+		HTTPListenAddress: "localhost",
+		HTTPListenPort:    9193,
+		HTTPTLSConfig: node_https.TLSStruct{
+			TLSCertPath: "certs/server.crt",
+			TLSKeyPath:  "certs/server.key",
+			ClientAuth:  "RequireAndVerifyClientCert",
+			ClientCAs:   "certs/root.crt",
+		},
+		GRPCTLSConfig: node_https.TLSStruct{
+			TLSCertPath: "certs/server.crt",
+			TLSKeyPath:  "certs/server.key",
+			ClientAuth:  "VerifyClientCertIfGiven",
+			ClientCAs:   "certs/root.crt",
+		},
+		MetricsNamespace:  "testing_tls",
+		GRPCListenAddress: "localhost",
+		GRPCListenPort:    9194,
+	}
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!"))
+	})
+
+	fakeServer := FakeServer{}
+	RegisterFakeServerServer(server.GRPC, fakeServer)
+
+	go server.Run()
+	defer server.Shutdown()
+
+	clientCert, err := tls.LoadX509KeyPair("certs/client.crt", "certs/client.key")
+	require.NoError(t, err)
+
+	caCert, err := ioutil.ReadFile(cfg.HTTPTLSConfig.ClientCAs)
+	require.NoError(t, err)
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{clientCert},
+		RootCAs:            caCertPool,
+	}
+	tr := &http.Transport{
+		TLSClientConfig: tlsConfig,
+	}
+
+	client := &http.Client{Transport: tr}
+	res, err := client.Get("https://localhost:9193/testhttps")
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	require.Equal(t, res.StatusCode, http.StatusOK)
+
+	body, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+	expected := []byte("Hello World!")
+	require.Equal(t, expected, body)
+
+	conn, err := grpc.Dial("localhost:9194", grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	defer conn.Close()
+	require.NoError(t, err)
+
+	empty := google_protobuf.Empty{}
+	grpcClient := NewFakeServerClient(conn)
+	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
+	require.NoError(t, err)
+	require.EqualValues(t, &empty, grpcRes)
 }

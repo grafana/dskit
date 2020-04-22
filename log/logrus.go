@@ -6,7 +6,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// NewLogrus makes a new Interface backed by a logrus logger
+// NewLogrusFormat makes a new Interface backed by a logrus logger
 // format can be "json" or defaults to logfmt
 func NewLogrusFormat(level Level, f Format) Interface {
 	log := logrus.New()

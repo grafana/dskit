@@ -374,3 +374,50 @@ func TestTLSServer(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, &empty, grpcRes)
 }
+
+func TestStopWithDisabledSignalHandling(t *testing.T) {
+	cfg := Config{
+		HTTPListenAddress: "localhost",
+		HTTPListenPort:    9198,
+		GRPCListenAddress: "localhost",
+		GRPCListenPort:    9199,
+	}
+
+	var test = func(t *testing.T, metricsNamespace string, handler SignalHandler) {
+		cfg.SignalHandler = handler
+		cfg.MetricsNamespace = metricsNamespace
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		srv.Stop()
+		require.Nil(t, <-errChan)
+
+		// So that addresses is freed for further tests.
+		srv.Shutdown()
+	}
+
+	t.Run("signals_enabled", func(t *testing.T) {
+		test(t, "signals_enabled", nil)
+	})
+
+	t.Run("signals_disabled", func(t *testing.T) {
+		test(t, "signals_disabled", dummyHandler{quit: make(chan struct{})})
+	})
+}
+
+type dummyHandler struct {
+	quit chan struct{}
+}
+
+func (dh dummyHandler) Loop() {
+	<-dh.quit
+}
+
+func (dh dummyHandler) Stop() {
+	close(dh.quit)
+}

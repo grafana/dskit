@@ -129,7 +129,7 @@ func TestLifecycler_HealthyInstancesCount(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = consul.NewInMemoryClient(GetCodec())
 
-	r, err := New(ringConfig, "ingester", IngesterRingKey)
+	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
@@ -237,7 +237,7 @@ func TestRingRestart(t *testing.T) {
 	c := GetCodec()
 	ringConfig.KVStore.Mock = consul.NewInMemoryClient(c)
 
-	r, err := New(ringConfig, "ingester", IngesterRingKey)
+	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
@@ -332,7 +332,7 @@ func TestCheckReady(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = &MockClient{}
 
-	r, err := New(ringConfig, "ingester", IngesterRingKey)
+	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
 	require.NoError(t, r.StartAsync(context.Background()))
 	// This is very atypical, but if we used AwaitRunning, that would fail, because of how quickly service terminates ...
@@ -365,7 +365,7 @@ func TestTokensOnDisk(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = consul.NewInMemoryClient(GetCodec())
 
-	r, err := New(ringConfig, "ingester", IngesterRingKey)
+	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
@@ -440,7 +440,7 @@ func TestJoinInLeavingState(t *testing.T) {
 	c := GetCodec()
 	ringConfig.KVStore.Mock = consul.NewInMemoryClient(c)
 
-	r, err := New(ringConfig, "ingester", IngesterRingKey)
+	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
@@ -493,7 +493,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	c := GetCodec()
 	ringConfig.KVStore.Mock = consul.NewInMemoryClient(c)
 
-	r, err := New(ringConfig, "ingester", IngesterRingKey)
+	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
@@ -520,7 +520,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", IngesterRingKey, true)
+	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", IngesterRingKey, true, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
 
@@ -549,7 +549,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	codec := GetCodec()
 	ringConfig.KVStore.Mock = consul.NewInMemoryClient(codec)
 
-	r, err := New(ringConfig, "ingester", IngesterRingKey)
+	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
@@ -575,7 +575,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", IngesterRingKey, true)
+	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", IngesterRingKey, true, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
 

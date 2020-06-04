@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
 	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
 	"github.com/cortexproject/cortex/pkg/ring/kv/etcd"
@@ -85,7 +87,7 @@ type Client interface {
 
 // NewClient creates a new Client (consul, etcd or inmemory) based on the config,
 // encodes and decodes data for storage using the codec.
-func NewClient(cfg Config, codec codec.Codec) (Client, error) {
+func NewClient(cfg Config, codec codec.Codec, reg prometheus.Registerer) (Client, error) {
 	if cfg.Mock != nil {
 		return cfg.Mock, nil
 	}
@@ -130,5 +132,10 @@ func NewClient(cfg Config, codec codec.Codec) (Client, error) {
 		client = PrefixClient(client, cfg.Prefix)
 	}
 
-	return metrics{client}, nil
+	// If no Registerer is provided return the raw client
+	if reg == nil {
+		return client, nil
+	}
+
+	return newMetricsClient(backend, client, reg), nil
 }

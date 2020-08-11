@@ -24,6 +24,12 @@ func (l Log) logWithRequest(r *http.Request) logging.Interface {
 		l.Log = l.Log.WithField("traceID", traceID)
 	}
 
+	// Add the source IPs derived from X-Forwarded-For and the request remote address
+	sourceIPs := GetSource(r)
+	if sourceIPs != "" {
+		l.Log = l.Log.WithField("sourceIPs", sourceIPs)
+	}
+
 	return user.LogWith(r.Context(), l.Log)
 }
 

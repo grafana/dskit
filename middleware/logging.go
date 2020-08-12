@@ -19,18 +19,19 @@ type Log struct {
 
 // logWithRequest information from the request and context as fields.
 func (l Log) logWithRequest(r *http.Request) logging.Interface {
+	localLog := l.Log
 	traceID, ok := ExtractTraceID(r.Context())
 	if ok {
-		l.Log = l.Log.WithField("traceID", traceID)
+		localLog = localLog.WithField("traceID", traceID)
 	}
 
 	// Add the source IPs derived from X-Forwarded-For and the request remote address
 	sourceIPs := GetSource(r)
 	if sourceIPs != "" {
-		l.Log = l.Log.WithField("sourceIPs", sourceIPs)
+		localLog = localLog.WithField("sourceIPs", sourceIPs)
 	}
 
-	return user.LogWith(r.Context(), l.Log)
+	return user.LogWith(r.Context(), localLog)
 }
 
 // Wrap implements Middleware

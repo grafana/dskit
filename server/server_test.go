@@ -300,7 +300,7 @@ func TestMuxMiddleware(t *testing.T) {
 	level.Set("info")
 	cfg := Config{
 		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9193,
+		HTTPListenPort:    9196,
 		GRPCListenAddress: "localhost",
 		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
 		MetricsNamespace:  "testing_mux",
@@ -317,7 +317,7 @@ func TestMuxMiddleware(t *testing.T) {
 	go server.Run()
 	defer server.Shutdown()
 
-	req, err := http.NewRequest("GET", "http://127.0.0.1:9192/error500", nil)
+	req, err := http.NewRequest("GET", "http://127.0.0.1:9196/error500", nil)
 	require.NoError(t, err)
 	http.DefaultClient.Do(req)
 }
@@ -332,7 +332,7 @@ func TestTLSServer(t *testing.T) {
 
 	cfg := Config{
 		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9194,
+		HTTPListenPort:    9193,
 		HTTPTLSConfig: node_https.TLSStruct{
 			TLSCertPath: "certs/server.crt",
 			TLSKeyPath:  "certs/server.key",
@@ -347,7 +347,7 @@ func TestTLSServer(t *testing.T) {
 		},
 		MetricsNamespace:  "testing_tls",
 		GRPCListenAddress: "localhost",
-		GRPCListenPort:    9195,
+		GRPCListenPort:    9194,
 	}
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -381,7 +381,7 @@ func TestTLSServer(t *testing.T) {
 	}
 
 	client := &http.Client{Transport: tr}
-	res, err := client.Get("https://localhost:9194/testhttps")
+	res, err := client.Get("https://localhost:9193/testhttps")
 	require.NoError(t, err)
 	defer res.Body.Close()
 
@@ -392,7 +392,7 @@ func TestTLSServer(t *testing.T) {
 	expected := []byte("Hello World!")
 	require.Equal(t, expected, body)
 
-	conn, err := grpc.Dial("localhost:9195", grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	conn, err := grpc.Dial("localhost:9194", grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	defer conn.Close()
 	require.NoError(t, err)
 

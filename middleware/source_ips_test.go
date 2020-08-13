@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetSource(t *testing.T) {
+func TestGetSourceIPs(t *testing.T) {
 	tests := []struct {
 		name string
 		req  *http.Request
@@ -188,7 +188,7 @@ func TestGetSource(t *testing.T) {
 	}
 }
 
-func TestGetSourceWithCustomRegex(t *testing.T) {
+func TestGetSourceIPsWithCustomRegex(t *testing.T) {
 	tests := []struct {
 		name string
 		req  *http.Request
@@ -241,7 +241,7 @@ func TestGetSourceWithCustomRegex(t *testing.T) {
 		})
 	}
 }
-func TestInvalidCustomRegex(t *testing.T) {
+func TestInvalid(t *testing.T) {
 	sourceIPs, err := NewSourceIPs("Header", "")
 	require.Empty(t, sourceIPs)
 	require.Error(t, err)

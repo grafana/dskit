@@ -99,6 +99,7 @@ func (sips SourceIPExtractor) Get(req *http.Request) string {
 func (sips SourceIPExtractor) getIP(r *http.Request) string {
 	var addr string
 
+	// Use the custom regex only if it was setup
 	if sips.header != "" {
 		hdr := r.Header.Get(sips.header)
 		if hdr == "" {

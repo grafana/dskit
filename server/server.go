@@ -76,10 +76,12 @@ type Config struct {
 	GRPCServerTime                  time.Duration `yaml:"grpc_server_keepalive_time"`
 	GRPCServerTimeout               time.Duration `yaml:"grpc_server_keepalive_timeout"`
 
-	LogFormat    logging.Format    `yaml:"log_format"`
-	LogLevel     logging.Level     `yaml:"log_level"`
-	Log          logging.Interface `yaml:"-"`
-	LogSourceIPs bool              `yaml:"log_source_ips"`
+	LogFormat          logging.Format    `yaml:"log_format"`
+	LogLevel           logging.Level     `yaml:"log_level"`
+	Log                logging.Interface `yaml:"-"`
+	LogSourceIPs       bool              `yaml:"log_source_ips"`
+	LogSourceIPsHeader string            `yaml:"log_source_ips_header"`
+	LogSourceIPsRegex  string            `yaml:"log_source_ips_regex"`
 
 	// If not set, default signal handler is used.
 	SignalHandler SignalHandler `yaml:"-"`
@@ -122,6 +124,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.LogFormat.RegisterFlags(f)
 	cfg.LogLevel.RegisterFlags(f)
 	f.BoolVar(&cfg.LogSourceIPs, "log.log-source-ips", false, "Log the source IPs")
+	f.StringVar(&cfg.LogSourceIPsHeader, "log.log-source-ips-header", "", "Header field storing the source IPs")
+	f.StringVar(&cfg.LogSourceIPsRegex, "log.log-source-ips-regex", "", "Regex for matching the source IPs")
 }
 
 // Server wraps a HTTP and gRPC server, and some common initialization.
@@ -251,14 +255,21 @@ func New(cfg Config) (*Server, error) {
 	if cfg.RegisterInstrumentation {
 		RegisterInstrumentation(router)
 	}
+	var sourceIPs *middleware.SourceIPExtractor
+	if cfg.LogSourceIPs {
+		sourceIPs, err = middleware.NewSourceIPs(cfg.LogSourceIPsHeader, cfg.LogSourceIPsRegex)
+		if err != nil {
+			return nil, fmt.Errorf("error setting up source IP extraction: %v", err)
+		}
+	}
 	httpMiddleware := []middleware.Interface{
 		middleware.Tracer{
 			RouteMatcher: router,
-			LogSourceIPs: cfg.LogSourceIPs,
+			SourceIPs:    sourceIPs,
 		},
 		middleware.Log{
-			Log:          log,
-			LogSourceIPs: cfg.LogSourceIPs,
+			Log:       log,
+			SourceIPs: sourceIPs,
 		},
 		middleware.Instrument{
 			Duration:     requestDuration,

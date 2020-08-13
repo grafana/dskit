@@ -3,6 +3,8 @@ package middleware
 import (
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetSource(t *testing.T) {
@@ -176,9 +178,79 @@ func TestGetSource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := GetSource(tt.req); got != tt.want {
+			sourceIPs, err := NewSourceIPs("", "")
+			require.NoError(t, err)
+
+			if got := sourceIPs.Get(tt.req); got != tt.want {
 				t.Errorf("GetSource() = %v, want %v", got, tt.want)
 			}
 		})
 	}
+}
+
+func TestGetSourceWithCustomRegex(t *testing.T) {
+	tests := []struct {
+		name string
+		req  *http.Request
+		want string
+	}{
+		{
+			name: "no header",
+			req:  &http.Request{RemoteAddr: "192.168.1.100:3454"},
+			want: "192.168.1.100",
+		},
+		{
+			name: "No matching entry in the header",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey("SomeHeader"): {"not matching"},
+				},
+			},
+			want: "192.168.1.100",
+		},
+		{
+			name: "one matching entry in the header",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey("SomeHeader"): {"172.16.1.1"},
+				},
+			},
+			want: "172.16.1.1, 192.168.1.100",
+		},
+		{
+			name: "multiple matching entries in the header, only first used",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey("SomeHeader"): {"172.16.1.1", "172.16.2.1"},
+				},
+			},
+			want: "172.16.1.1, 192.168.1.100",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sourceIPs, err := NewSourceIPs("SomeHeader", "((?:[0-9]{1,3}\\.){3}[0-9]{1,3})")
+			require.NoError(t, err)
+
+			if got := sourceIPs.Get(tt.req); got != tt.want {
+				t.Errorf("GetSource() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+func TestInvalidCustomRegex(t *testing.T) {
+	sourceIPs, err := NewSourceIPs("Header", "")
+	require.Empty(t, sourceIPs)
+	require.Error(t, err)
+
+	sourceIPs, err = NewSourceIPs("", "a(.*)b")
+	require.Empty(t, sourceIPs)
+	require.Error(t, err)
+
+	sourceIPs, err = NewSourceIPs("Header", "[*")
+	require.Empty(t, sourceIPs)
+	require.Error(t, err)
 }

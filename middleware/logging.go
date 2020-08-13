@@ -15,7 +15,7 @@ import (
 type Log struct {
 	Log               logging.Interface
 	LogRequestHeaders bool // LogRequestHeaders true -> dump http headers at debug log level
-	LogSourceIPs      bool
+	SourceIPs         *SourceIPExtractor
 }
 
 // logWithRequest information from the request and context as fields.
@@ -26,11 +26,10 @@ func (l Log) logWithRequest(r *http.Request) logging.Interface {
 		localLog = localLog.WithField("traceID", traceID)
 	}
 
-	if l.LogSourceIPs {
-		// Add the source IPs derived from X-Forwarded-For and the request remote address
-		sourceIPs := GetSource(r)
-		if sourceIPs != "" {
-			localLog = localLog.WithField("sourceIPs", sourceIPs)
+	if l.SourceIPs != nil {
+		ips := l.SourceIPs.Get(r)
+		if ips != "" {
+			localLog = localLog.WithField("sourceIPs", ips)
 		}
 	}
 

@@ -76,9 +76,10 @@ type Config struct {
 	GRPCServerTime                  time.Duration `yaml:"grpc_server_keepalive_time"`
 	GRPCServerTimeout               time.Duration `yaml:"grpc_server_keepalive_timeout"`
 
-	LogFormat logging.Format    `yaml:"log_format"`
-	LogLevel  logging.Level     `yaml:"log_level"`
-	Log       logging.Interface `yaml:"-"`
+	LogFormat    logging.Format    `yaml:"log_format"`
+	LogLevel     logging.Level     `yaml:"log_level"`
+	Log          logging.Interface `yaml:"-"`
+	LogSourceIPs bool              `yaml:"log_source_ips"`
 
 	// If not set, default signal handler is used.
 	SignalHandler SignalHandler `yaml:"-"`
@@ -120,6 +121,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Base path to serve all API routes from (e.g. /v1/)")
 	cfg.LogFormat.RegisterFlags(f)
 	cfg.LogLevel.RegisterFlags(f)
+	f.BoolVar(&cfg.LogSourceIPs, "log.log-source-ips", false, "Log the source IPs")
 }
 
 // Server wraps a HTTP and gRPC server, and some common initialization.
@@ -254,7 +256,8 @@ func New(cfg Config) (*Server, error) {
 			RouteMatcher: router,
 		},
 		middleware.Log{
-			Log: log,
+			Log:          log,
+			LogSourceIPs: cfg.LogSourceIPs,
 		},
 		middleware.Instrument{
 			Duration:     requestDuration,

@@ -294,32 +294,6 @@ func TestMiddlewareLogging(t *testing.T) {
 	http.DefaultClient.Do(req)
 }
 
-func TestMuxMiddleware(t *testing.T) {
-	var level logging.Level
-	level.Set("info")
-	cfg := Config{
-		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9196,
-		GRPCListenAddress: "localhost",
-		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
-		MetricsNamespace:  "testing_mux",
-		LogLevel:          level,
-	}
-	server, err := New(cfg)
-	require.NoError(t, err)
-
-	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(500)
-	})
-
-	go server.Run()
-	defer server.Shutdown()
-
-	req, err := http.NewRequest("GET", "http://127.0.0.1:9196/error500", nil)
-	require.NoError(t, err)
-	http.DefaultClient.Do(req)
-}
-
 func TestTLSServer(t *testing.T) {
 	var level logging.Level
 	level.Set("info")
@@ -399,6 +373,33 @@ func TestTLSServer(t *testing.T) {
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
 	require.EqualValues(t, &empty, grpcRes)
+}
+
+func TestLogSourceIPs(t *testing.T) {
+	var level logging.Level
+	level.Set("debug")
+	cfg := Config{
+		HTTPListenAddress: "localhost",
+		HTTPListenPort:    9195,
+		GRPCListenAddress: "localhost",
+		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
+		MetricsNamespace:  "testing_mux",
+		LogLevel:          level,
+		LogSourceIPs:      true,
+	}
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	})
+
+	go server.Run()
+	defer server.Shutdown()
+
+	req, err := http.NewRequest("GET", "http://127.0.0.1:9195/error500", nil)
+	require.NoError(t, err)
+	http.DefaultClient.Do(req)
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {

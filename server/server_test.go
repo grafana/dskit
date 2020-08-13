@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
-	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	node_https "github.com/prometheus/node_exporter/https"
 	"github.com/stretchr/testify/require"
@@ -305,7 +304,6 @@ func TestMuxMiddleware(t *testing.T) {
 		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
 		MetricsNamespace:  "testing_mux",
 		LogLevel:          level,
-		Router:            mux.NewRouter(),
 	}
 	server, err := New(cfg)
 	require.NoError(t, err)

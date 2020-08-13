@@ -62,12 +62,10 @@ type Config struct {
 	HTTPServerWriteTimeout        time.Duration `yaml:"http_server_write_timeout"`
 	HTTPServerIdleTimeout         time.Duration `yaml:"http_server_idle_timeout"`
 
-	GRPCOptions                    []grpc.ServerOption            `yaml:"-"`
-	GRPCMiddleware                 []grpc.UnaryServerInterceptor  `yaml:"-"`
-	GRPCStreamMiddleware           []grpc.StreamServerInterceptor `yaml:"-"`
-	HTTPMiddleware                 []middleware.Interface         `yaml:"-"`
-	Router                         *mux.Router                    `yaml:"-"`
-	DisableGeneratedHTTPMiddleware bool                           `yaml:"-"`
+	GRPCOptions          []grpc.ServerOption            `yaml:"-"`
+	GRPCMiddleware       []grpc.UnaryServerInterceptor  `yaml:"-"`
+	GRPCStreamMiddleware []grpc.StreamServerInterceptor `yaml:"-"`
+	HTTPMiddleware       []middleware.Interface         `yaml:"-"`
 
 	GPRCServerMaxRecvMsgSize        int           `yaml:"grpc_server_max_recv_msg_size"`
 	GRPCServerMaxSendMsgSize        int           `yaml:"grpc_server_max_send_msg_size"`

@@ -254,6 +254,7 @@ func New(cfg Config) (*Server, error) {
 	httpMiddleware := []middleware.Interface{
 		middleware.Tracer{
 			RouteMatcher: router,
+			LogSourceIPs: cfg.LogSourceIPs,
 		},
 		middleware.Log{
 			Log:          log,

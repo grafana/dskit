@@ -242,12 +242,7 @@ func New(cfg Config) (*Server, error) {
 	grpcServer := grpc.NewServer(grpcOptions...)
 
 	// Setup HTTP server
-	var router *mux.Router
-	if cfg.Router != nil {
-		router = cfg.Router
-	} else {
-		router = mux.NewRouter()
-	}
+	router := mux.NewRouter()
 	if cfg.PathPrefix != "" {
 		// Expect metrics and pprof handlers to be prefixed with server's path prefix.
 		// e.g. /loki/metrics or /loki/debug/pprof
@@ -256,20 +251,17 @@ func New(cfg Config) (*Server, error) {
 	if cfg.RegisterInstrumentation {
 		RegisterInstrumentation(router)
 	}
-	httpMiddleware := []middleware.Interface{}
-	if !cfg.DisableGeneratedHTTPMiddleware {
-		httpMiddleware = append(httpMiddleware,
-			middleware.Tracer{
-				RouteMatcher: router,
-			},
-			middleware.Log{
-				Log: log,
-			},
-			middleware.Instrument{
-				Duration:     requestDuration,
-				RouteMatcher: router,
-			},
-		)
+	httpMiddleware := []middleware.Interface{
+		middleware.Tracer{
+			RouteMatcher: router,
+		},
+		middleware.Log{
+			Log: log,
+		},
+		middleware.Instrument{
+			Duration:     requestDuration,
+			RouteMatcher: router,
+		},
 	}
 
 	httpMiddleware = append(httpMiddleware, cfg.HTTPMiddleware...)

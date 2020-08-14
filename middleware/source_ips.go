@@ -12,11 +12,8 @@ import (
 
 var (
 	// De-facto standard header keys.
-	xForwardedFor    = http.CanonicalHeaderKey("X-Forwarded-For")
-	xForwardedHost   = http.CanonicalHeaderKey("X-Forwarded-Host")
-	xForwardedProto  = http.CanonicalHeaderKey("X-Forwarded-Proto")
-	xForwardedScheme = http.CanonicalHeaderKey("X-Forwarded-Scheme")
-	xRealIP          = http.CanonicalHeaderKey("X-Real-IP")
+	xForwardedFor = http.CanonicalHeaderKey("X-Forwarded-For")
+	xRealIP       = http.CanonicalHeaderKey("X-Real-IP")
 )
 
 var (
@@ -27,9 +24,6 @@ var (
 	// Allows for a sub-match of the first value after 'for=' to the next
 	// comma, semi-colon or space. The match is case-insensitive.
 	forRegex = regexp.MustCompile(`(?i)(?:for=)([^(;|,| )]+)`)
-	// Allows for a sub-match for the first instance of scheme (http|https)
-	// prefixed by 'proto='. The match is case-insensitive.
-	protoRegex = regexp.MustCompile(`(?i)(?:proto=)(https|http)`)
 )
 
 // SourceIPExtractor extracts the source IPs from a HTTP request
@@ -106,7 +100,7 @@ func (sips SourceIPExtractor) getIP(r *http.Request) string {
 			return ""
 		}
 		allMatches := sips.regex.FindAllStringSubmatch(hdr, 1)
-		if allMatches == nil {
+		if len(allMatches) == 0 {
 			return ""
 		}
 		firstMatch := allMatches[0]
@@ -132,11 +126,11 @@ func (sips SourceIPExtractor) getIP(r *http.Request) string {
 		// X-Real-IP should only contain one IP address (the client making the
 		// request).
 		addr = fwd
-	} else if fwd := r.Header.Get(xForwardedFor); fwd != "" {
+	} else if fwd := strings.ReplaceAll(r.Header.Get(xForwardedFor), " ", ""); fwd != "" {
 		// Only grab the first (client) address. Note that '192.168.0.1,
 		// 10.1.1.1' is a valid key for X-Forwarded-For where addresses after
 		// the first may represent forwarding proxies earlier in the chain.
-		s := strings.Index(fwd, ", ")
+		s := strings.Index(fwd, ",")
 		if s == -1 {
 			s = len(fwd)
 		}

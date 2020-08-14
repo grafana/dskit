@@ -78,6 +78,16 @@ func TestGetSourceIPs(t *testing.T) {
 			want: "172.16.1.1, 192.168.1.100",
 		},
 		{
+			name: "multiple X-Forwarded-For with remote and no spaces",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey(xForwardedFor): {"172.16.1.1,10.10.13.20,10.11.16.46"},
+				},
+			},
+			want: "172.16.1.1, 192.168.1.100",
+		},
+		{
 			name: "multiple X-Forwarded-For with IPv6 remote",
 			req: &http.Request{
 				RemoteAddr: "192.168.1.100:3454",

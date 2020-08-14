@@ -123,9 +123,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Base path to serve all API routes from (e.g. /v1/)")
 	cfg.LogFormat.RegisterFlags(f)
 	cfg.LogLevel.RegisterFlags(f)
-	f.BoolVar(&cfg.LogSourceIPs, "log.log-source-ips", false, "Log the source IPs")
-	f.StringVar(&cfg.LogSourceIPsHeader, "log.log-source-ips-header", "", "Header field storing the source IPs")
-	f.StringVar(&cfg.LogSourceIPsRegex, "log.log-source-ips-regex", "", "Regex for matching the source IPs")
+	f.BoolVar(&cfg.LogSourceIPs, "server.log-source-ips", false, "Log the source IPs")
+	f.StringVar(&cfg.LogSourceIPsHeader, "server.log-source-ips-header", "", "Header field storing the source IPs")
+	f.StringVar(&cfg.LogSourceIPsRegex, "server.log-source-ips-regex", "", "Regex for matching the source IPs")
 }
 
 // Server wraps a HTTP and gRPC server, and some common initialization.

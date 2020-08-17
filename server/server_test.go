@@ -379,17 +379,17 @@ type FakeLogger struct {
 	sourceIPs string
 }
 
-func (f FakeLogger) Debugf(format string, args ...interface{}) {}
-func (f FakeLogger) Debugln(args ...interface{})               {}
+func (f *FakeLogger) Debugf(format string, args ...interface{}) {}
+func (f *FakeLogger) Debugln(args ...interface{})               {}
 
-func (f FakeLogger) Infof(format string, args ...interface{}) {}
-func (f FakeLogger) Infoln(args ...interface{})               {}
+func (f *FakeLogger) Infof(format string, args ...interface{}) {}
+func (f *FakeLogger) Infoln(args ...interface{})               {}
 
-func (f FakeLogger) Errorf(format string, args ...interface{}) {}
-func (f FakeLogger) Errorln(args ...interface{})               {}
+func (f *FakeLogger) Errorf(format string, args ...interface{}) {}
+func (f *FakeLogger) Errorln(args ...interface{})               {}
 
-func (f FakeLogger) Warnf(format string, args ...interface{}) {}
-func (f FakeLogger) Warnln(args ...interface{})               {}
+func (f *FakeLogger) Warnf(format string, args ...interface{}) {}
+func (f *FakeLogger) Warnln(args ...interface{})               {}
 
 func (f *FakeLogger) WithField(key string, value interface{}) logging.Interface {
 	if key == "sourceIPs" {

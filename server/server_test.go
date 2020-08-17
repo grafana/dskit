@@ -433,7 +433,7 @@ func TestLogSourceIPs(t *testing.T) {
 	require.NoError(t, err)
 	http.DefaultClient.Do(req)
 
-	require.NotEmpty(t, fake.sourceIPs)
+	require.Equal(t, fake.sourceIPs, "127.0.0.1")
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {

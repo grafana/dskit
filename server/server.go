@@ -191,6 +191,29 @@ func New(cfg Config) (*Server, error) {
 	}, []string{"method", "route", "status_code", "ws"})
 	prometheus.MustRegister(requestDuration)
 
+	receivedMessageSize := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: cfg.MetricsNamespace,
+		Name:      "request_message_bytes",
+		Help:      "Size (in bytes) of messages received in the request.",
+		Buckets:   middleware.BodySizeBuckets,
+	}, []string{"method", "route"})
+	prometheus.MustRegister(receivedMessageSize)
+
+	sentMessageSize := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: cfg.MetricsNamespace,
+		Name:      "response_message_bytes",
+		Help:      "Size (in bytes) of messages sent in response.",
+		Buckets:   middleware.BodySizeBuckets,
+	}, []string{"method", "route"})
+	prometheus.MustRegister(sentMessageSize)
+
+	inflightRequests := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: cfg.MetricsNamespace,
+		Name:      "inflight_requests",
+		Help:      "Current number of inflight requests.",
+	}, []string{"method", "route"})
+	prometheus.MustRegister(inflightRequests)
+
 	log.WithField("http", httpListener.Addr()).WithField("grpc", grpcListener.Addr()).Infof("server listening on addresses")
 
 	// Setup gRPC server
@@ -231,6 +254,7 @@ func New(cfg Config) (*Server, error) {
 		grpc.MaxRecvMsgSize(cfg.GPRCServerMaxRecvMsgSize),
 		grpc.MaxSendMsgSize(cfg.GRPCServerMaxSendMsgSize),
 		grpc.MaxConcurrentStreams(uint32(cfg.GPRCServerMaxConcurrentStreams)),
+		grpc.StatsHandler(middleware.NewStatsHandler(receivedMessageSize, sentMessageSize, inflightRequests)),
 	}
 	grpcOptions = append(grpcOptions, cfg.GRPCOptions...)
 	if grpcTLSConfig != nil {
@@ -257,8 +281,11 @@ func New(cfg Config) (*Server, error) {
 			Log: log,
 		},
 		middleware.Instrument{
-			Duration:     requestDuration,
-			RouteMatcher: router,
+			RouteMatcher:     router,
+			Duration:         requestDuration,
+			RequestBodySize:  receivedMessageSize,
+			ResponseBodySize: sentMessageSize,
+			InflightRequests: inflightRequests,
 		},
 	}
 

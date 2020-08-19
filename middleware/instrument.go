@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -11,6 +12,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const mb = 1024 * 1024
+
+// BodySizeBuckets defines buckets for request/response body sizes.
+var BodySizeBuckets = []float64{1 * mb, 2.5 * mb, 5 * mb, 10 * mb, 25 * mb, 50 * mb, 100 * mb, 250 * mb}
+
 // RouteMatcher matches routes
 type RouteMatcher interface {
 	Match(*http.Request, *mux.RouteMatch) bool
@@ -18,8 +24,11 @@ type RouteMatcher interface {
 
 // Instrument is a Middleware which records timings for every HTTP request
 type Instrument struct {
-	RouteMatcher RouteMatcher
-	Duration     *prometheus.HistogramVec
+	RouteMatcher     RouteMatcher
+	Duration         *prometheus.HistogramVec
+	RequestBodySize  *prometheus.HistogramVec
+	ResponseBodySize *prometheus.HistogramVec
+	InflightRequests *prometheus.GaugeVec
 }
 
 // IsWSHandshakeRequest returns true if the given request is a websocket handshake request.
@@ -39,13 +48,29 @@ func IsWSHandshakeRequest(req *http.Request) bool {
 // Wrap implements middleware.Interface
 func (i Instrument) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		route := i.getRouteName(r)
+		inflight := i.InflightRequests.WithLabelValues(r.Method, route)
+		inflight.Inc()
+		defer inflight.Dec()
+
+		origBody := r.Body
+		defer func() {
+			// No need to leak our Body wrapper beyond the scope of this handler.
+			r.Body = origBody
+		}()
+
+		rBody := &reqBody{b: origBody}
+		r.Body = rBody
+
 		isWS := strconv.FormatBool(IsWSHandshakeRequest(r))
+
 		respMetrics := httpsnoop.CaptureMetricsFn(w, func(ww http.ResponseWriter) {
 			next.ServeHTTP(ww, r)
 		})
 
-		route := i.getRouteName(r)
 		i.Duration.WithLabelValues(r.Method, route, strconv.Itoa(respMetrics.Code), isWS).Observe(respMetrics.Duration.Seconds())
+		i.RequestBodySize.WithLabelValues(r.Method, route).Observe(float64(rBody.read))
+		i.ResponseBodySize.WithLabelValues(r.Method, route).Observe(float64(respMetrics.Written))
 	})
 }
 
@@ -99,4 +124,21 @@ func MakeLabelValue(path string) string {
 		result = "root"
 	}
 	return result
+}
+
+type reqBody struct {
+	b    io.ReadCloser
+	read int64
+}
+
+func (w *reqBody) Read(p []byte) (int, error) {
+	n, err := w.b.Read(p)
+	if n > 0 {
+		w.read += int64(n)
+	}
+	return n, err
+}
+
+func (w *reqBody) Close() error {
+	return w.b.Close()
 }

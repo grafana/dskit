@@ -375,6 +375,67 @@ func TestTLSServer(t *testing.T) {
 	require.EqualValues(t, &empty, grpcRes)
 }
 
+type FakeLogger struct {
+	sourceIPs string
+}
+
+func (f *FakeLogger) Debugf(format string, args ...interface{}) {}
+func (f *FakeLogger) Debugln(args ...interface{})               {}
+
+func (f *FakeLogger) Infof(format string, args ...interface{}) {}
+func (f *FakeLogger) Infoln(args ...interface{})               {}
+
+func (f *FakeLogger) Errorf(format string, args ...interface{}) {}
+func (f *FakeLogger) Errorln(args ...interface{})               {}
+
+func (f *FakeLogger) Warnf(format string, args ...interface{}) {}
+func (f *FakeLogger) Warnln(args ...interface{})               {}
+
+func (f *FakeLogger) WithField(key string, value interface{}) logging.Interface {
+	if key == "sourceIPs" {
+		f.sourceIPs = value.(string)
+	}
+
+	return f
+}
+
+func (f *FakeLogger) WithFields(fields logging.Fields) logging.Interface {
+	return f
+}
+
+func TestLogSourceIPs(t *testing.T) {
+	var level logging.Level
+	level.Set("debug")
+	fake := FakeLogger{}
+	cfg := Config{
+		HTTPListenAddress: "localhost",
+		HTTPListenPort:    9195,
+		GRPCListenAddress: "localhost",
+		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
+		MetricsNamespace:  "testing_mux",
+		LogLevel:          level,
+		Log:               &fake,
+		LogSourceIPs:      true,
+	}
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	})
+
+	go server.Run()
+	defer server.Shutdown()
+
+	require.Empty(t, fake.sourceIPs)
+
+	req, err := http.NewRequest("GET", "http://127.0.0.1:9195/error500", nil)
+	require.NoError(t, err)
+	http.DefaultClient.Do(req)
+
+	require.Equal(t, fake.sourceIPs, "127.0.0.1")
+}
+
 func TestStopWithDisabledSignalHandling(t *testing.T) {
 	cfg := Config{
 		HTTPListenAddress: "localhost",

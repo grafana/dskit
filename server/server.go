@@ -76,9 +76,12 @@ type Config struct {
 	GRPCServerTime                  time.Duration `yaml:"grpc_server_keepalive_time"`
 	GRPCServerTimeout               time.Duration `yaml:"grpc_server_keepalive_timeout"`
 
-	LogFormat logging.Format    `yaml:"log_format"`
-	LogLevel  logging.Level     `yaml:"log_level"`
-	Log       logging.Interface `yaml:"-"`
+	LogFormat          logging.Format    `yaml:"log_format"`
+	LogLevel           logging.Level     `yaml:"log_level"`
+	Log                logging.Interface `yaml:"-"`
+	LogSourceIPs       bool              `yaml:"log_source_ips_enabled"`
+	LogSourceIPsHeader string            `yaml:"log_source_ips_header"`
+	LogSourceIPsRegex  string            `yaml:"log_source_ips_regex"`
 
 	// If not set, default signal handler is used.
 	SignalHandler SignalHandler `yaml:"-"`
@@ -120,6 +123,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Base path to serve all API routes from (e.g. /v1/)")
 	cfg.LogFormat.RegisterFlags(f)
 	cfg.LogLevel.RegisterFlags(f)
+	f.BoolVar(&cfg.LogSourceIPs, "server.log-source-ips-enabled", false, "Optionally log the source IPs.")
+	f.StringVar(&cfg.LogSourceIPsHeader, "server.log-source-ips-header", "", "Header field storing the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used")
+	f.StringVar(&cfg.LogSourceIPsRegex, "server.log-source-ips-regex", "", "Regex for matching the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used")
 }
 
 // Server wraps a HTTP and gRPC server, and some common initialization.
@@ -249,12 +255,21 @@ func New(cfg Config) (*Server, error) {
 	if cfg.RegisterInstrumentation {
 		RegisterInstrumentation(router)
 	}
+	var sourceIPs *middleware.SourceIPExtractor
+	if cfg.LogSourceIPs {
+		sourceIPs, err = middleware.NewSourceIPs(cfg.LogSourceIPsHeader, cfg.LogSourceIPsRegex)
+		if err != nil {
+			return nil, fmt.Errorf("error setting up source IP extraction: %v", err)
+		}
+	}
 	httpMiddleware := []middleware.Interface{
 		middleware.Tracer{
 			RouteMatcher: router,
+			SourceIPs:    sourceIPs,
 		},
 		middleware.Log{
-			Log: log,
+			Log:       log,
+			SourceIPs: sourceIPs,
 		},
 		middleware.Instrument{
 			Duration:     requestDuration,

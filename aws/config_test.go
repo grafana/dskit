@@ -25,6 +25,13 @@ func TestAWSConfigFromURL(t *testing.T) {
 			"http://s3.default.svc.cluster.local:4569",
 		},
 		{
+			"s3://@us-east-1/test-bucket",
+			"",
+			"",
+			"us-east-1",
+			"",
+		},
+		{
 			"dynamodb://user:pass@dynamodb.default.svc.cluster.local:8000/cortex",
 			"user",
 			"pass",
@@ -54,10 +61,10 @@ func TestAWSConfigFromURL(t *testing.T) {
 			cfg, err := ConfigFromURL(parsedURL)
 			require.NoError(t, err)
 
-			if cfg.Credentials == nil {
-				assert.Equal(t, "", tc.expectedKey)
-				assert.Equal(t, "", tc.expectedSecret)
+			if tc.expectedKey == "" && tc.expectedSecret == "" {
+				assert.Nil(t, cfg.Credentials)
 			} else {
+				require.NotNil(t, cfg.Credentials)
 				val, err := cfg.Credentials.Get()
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedKey, val.AccessKeyID)
@@ -70,6 +77,8 @@ func TestAWSConfigFromURL(t *testing.T) {
 			if tc.expectedEp != "" {
 				require.NotNil(t, cfg.Endpoint)
 				assert.Equal(t, tc.expectedEp, *cfg.Endpoint)
+			} else {
+				assert.Nil(t, cfg.Endpoint)
 			}
 		})
 	}

@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
+	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	node_https "github.com/prometheus/node_exporter/https"
 	"github.com/stretchr/testify/require"
@@ -425,12 +426,14 @@ func TestMiddlewareLogging(t *testing.T) {
 	var level logging.Level
 	level.Set("info")
 	cfg := Config{
-		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9192,
-		GRPCListenAddress: "localhost",
-		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
-		MetricsNamespace:  "testing_logging",
-		LogLevel:          level,
+		HTTPListenAddress:             "localhost",
+		HTTPListenPort:                9192,
+		GRPCListenAddress:             "localhost",
+		HTTPMiddleware:                []middleware.Interface{middleware.Logging},
+		MetricsNamespace:              "testing_logging",
+		LogLevel:                      level,
+		DoNotAddDefaultHTTPMiddleware: true,
+		Router:                        &mux.Router{},
 	}
 	server, err := New(cfg)
 	require.NoError(t, err)

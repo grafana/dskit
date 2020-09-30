@@ -301,6 +301,18 @@ func (i *Lifecycler) setTokens(tokens Tokens) {
 	}
 }
 
+func (i *Lifecycler) getRegisteredAt() time.Time {
+	i.stateMtx.RLock()
+	defer i.stateMtx.RUnlock()
+	return i.registeredAt
+}
+
+func (i *Lifecycler) setRegisteredAt(registeredAt time.Time) {
+	i.stateMtx.Lock()
+	defer i.stateMtx.Unlock()
+	i.registeredAt = registeredAt
+}
+
 // ClaimTokensFor takes all the tokens for the supplied ingester and assigns them to this ingester.
 //
 // For this method to work correctly (especially when using gossiping), source ingester (specified by
@@ -507,22 +519,31 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 
 		ingesterDesc, ok := ringDesc.Ingesters[i.ID]
 		if !ok {
+			// The instance doesn't exist in the ring, so it's safe to set the registered timestamp
+			// as of now.
+			registeredAt := time.Now()
+			i.setRegisteredAt(registeredAt)
+
 			// We use the tokens from the file only if it does not exist in the ring yet.
 			if len(tokensFromFile) > 0 {
 				level.Info(util.Logger).Log("msg", "adding tokens from file", "num_tokens", len(tokensFromFile))
 				if len(tokensFromFile) >= i.cfg.NumTokens {
 					i.setState(ACTIVE)
 				}
-				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState())
+				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), registeredAt)
 				i.setTokens(tokensFromFile)
 				return ringDesc, true, nil
 			}
 
 			// Either we are a new ingester, or consul must have restarted
 			level.Info(util.Logger).Log("msg", "instance not found in ring, adding with no tokens", "ring", i.RingName)
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState())
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState(), registeredAt)
 			return ringDesc, true, nil
 		}
+
+		// The instance already exists in the ring, so we can't change the registered timestamp (even if it's zero)
+		// but we need to update the local state accordingly.
+		i.setRegisteredAt(ingesterDesc.GetRegisteredAt())
 
 		// If the ingester is in the JOINING state this means it crashed due to
 		// a failed token transfer or some other reason during startup. We want
@@ -586,7 +607,7 @@ func (i *Lifecycler) verifyTokens(ctx context.Context) bool {
 			ringTokens = append(ringTokens, newTokens...)
 			sort.Sort(ringTokens)
 
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState())
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState(), i.getRegisteredAt())
 
 			i.setTokens(ringTokens)
 
@@ -648,7 +669,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState IngesterState) er
 		sort.Sort(myTokens)
 		i.setTokens(myTokens)
 
-		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState())
+		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt())
 
 		return ringDesc, true, nil
 	})
@@ -677,12 +698,13 @@ func (i *Lifecycler) updateConsul(ctx context.Context) error {
 		if !ok {
 			// consul must have restarted
 			level.Info(util.Logger).Log("msg", "found empty ring, inserting tokens", "ring", i.RingName)
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState())
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt())
 		} else {
 			ingesterDesc.Timestamp = time.Now().Unix()
 			ingesterDesc.State = i.GetState()
 			ingesterDesc.Addr = i.Addr
 			ingesterDesc.Zone = i.Zone
+			ingesterDesc.RegisteredTimestamp = i.getRegisteredAt().Unix()
 			ringDesc.Ingesters[i.ID] = ingesterDesc
 		}
 

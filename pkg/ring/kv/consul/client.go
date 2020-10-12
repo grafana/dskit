@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -114,10 +115,17 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 }
 
 func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	var (
-		index   = uint64(0)
+	retries := c.cfg.MaxCasRetries
+	if retries == 0 {
 		retries = 10
-	)
+	}
+
+	sleepBeforeRetry := time.Duration(0)
+	if c.cfg.CasRetryDelay > 0 {
+		sleepBeforeRetry = time.Duration(rand.Int63n(c.cfg.CasRetryDelay.Nanoseconds()))
+	}
+
+	index := uint64(0)
 	for i := 0; i < retries; i++ {
 		options := &consul.QueryOptions{
 			AllowStale:        !c.cfg.ConsistentReads,

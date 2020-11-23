@@ -47,21 +47,21 @@ type LifecyclerConfig struct {
 	RingConfig Config `yaml:"ring"`
 
 	// Config for the ingester lifecycle control
-	NumTokens        int           `yaml:"num_tokens"`
-	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period"`
-	ObservePeriod    time.Duration `yaml:"observe_period"`
-	JoinAfter        time.Duration `yaml:"join_after"`
-	MinReadyDuration time.Duration `yaml:"min_ready_duration"`
-	InfNames         []string      `yaml:"interface_names"`
-	FinalSleep       time.Duration `yaml:"final_sleep"`
-	TokensFilePath   string        `yaml:"tokens_file_path"`
-	Zone             string        `yaml:"availability_zone"`
+	NumTokens          int           `yaml:"num_tokens"`
+	HeartbeatPeriod    time.Duration `yaml:"heartbeat_period"`
+	ObservePeriod      time.Duration `yaml:"observe_period"`
+	JoinAfter          time.Duration `yaml:"join_after"`
+	MinReadyDuration   time.Duration `yaml:"min_ready_duration"`
+	InfNames           []string      `yaml:"interface_names"`
+	FinalSleep         time.Duration `yaml:"final_sleep"`
+	TokensFilePath     string        `yaml:"tokens_file_path"`
+	Zone               string        `yaml:"availability_zone"`
+	UnregisterFromRing bool          `yaml:"unregister_from_ring"`
 
 	// For testing, you can override the address and ID of this ingester
-	Addr           string `yaml:"address" doc:"hidden"`
-	Port           int    `doc:"hidden"`
-	ID             string `doc:"hidden"`
-	SkipUnregister bool   `yaml:"-"`
+	Addr string `yaml:"address" doc:"hidden"`
+	Port int    `doc:"hidden"`
+	ID   string `doc:"hidden"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
@@ -102,6 +102,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.IntVar(&cfg.Port, prefix+"lifecycler.port", 0, "port to advertise in consul (defaults to server.grpc-listen-port).")
 	f.StringVar(&cfg.ID, prefix+"lifecycler.ID", hostname, "ID to register in the ring.")
 	f.StringVar(&cfg.Zone, prefix+"availability-zone", "", "The availability zone where this instance is running.")
+	f.BoolVar(&cfg.UnregisterFromRing, prefix+"unregister-from-ring", true, "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false.")
 }
 
 // Lifecycler is responsible for managing the lifecycle of entries in the ring.
@@ -491,7 +492,7 @@ heartbeatLoop:
 		}
 	}
 
-	if !i.cfg.SkipUnregister {
+	if i.ShouldUnregisterFromRing() {
 		if err := i.unregister(context.Background()); err != nil {
 			return perrors.Wrapf(err, "failed to unregister from the KV store, ring: %s", i.RingName)
 		}
@@ -778,6 +779,16 @@ func (i *Lifecycler) FlushOnShutdown() bool {
 // Passing 'true' enables it, and 'false' disabled it.
 func (i *Lifecycler) SetFlushOnShutdown(flushOnShutdown bool) {
 	i.flushOnShutdown.Store(flushOnShutdown)
+}
+
+// ShouldUnregisterFromRing returns if unregistering should be skipped on shutdown.
+func (i *Lifecycler) ShouldUnregisterFromRing() bool {
+	return i.unregisterFromRing.Load()
+}
+
+// SetUnregisterFromRing enables/disables unregistering on shutdown.
+func (i *Lifecycler) SetUnregisterFromRing(unregisterFromRing bool) {
+	i.unregisterFromRing.Store(unregisterFromRing)
 }
 
 func (i *Lifecycler) processShutdown(ctx context.Context) {

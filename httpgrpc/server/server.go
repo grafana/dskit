@@ -46,6 +46,7 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 	toHeader(r.Headers, req.Header)
 	req = req.WithContext(ctx)
 	req.RequestURI = r.Url
+	req.ContentLength = int64(len(r.Body))
 
 	recorder := httptest.NewRecorder()
 	s.handler.ServeHTTP(recorder, req)

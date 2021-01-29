@@ -12,6 +12,7 @@ import (
 	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
 	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/cortexproject/cortex/pkg/util/flagext"
+	cortex_tls "github.com/cortexproject/cortex/pkg/util/tls"
 )
 
 // Config for a new etcd.Client.

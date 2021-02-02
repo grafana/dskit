@@ -485,7 +485,7 @@ func TestJoinInLeavingState(t *testing.T) {
 	// Set state as LEAVING
 	err = r.KVClient.CAS(context.Background(), IngesterRingKey, func(in interface{}) (interface{}, bool, error) {
 		r := &Desc{
-			Ingesters: map[string]IngesterDesc{
+			Ingesters: map[string]InstanceDesc{
 				"ing1": {
 					State:  LEAVING,
 					Tokens: []uint32{1, 4},
@@ -540,7 +540,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	// Set state as JOINING
 	err = r.KVClient.CAS(context.Background(), IngesterRingKey, func(in interface{}) (interface{}, bool, error) {
 		r := &Desc{
-			Ingesters: map[string]IngesterDesc{
+			Ingesters: map[string]InstanceDesc{
 				"ing1": {
 					State:               JOINING,
 					Tokens:              []uint32{1, 4},
@@ -598,7 +598,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	// Set ing1 to not have a zone
 	err = r.KVClient.CAS(context.Background(), IngesterRingKey, func(in interface{}) (interface{}, bool, error) {
 		r := &Desc{
-			Ingesters: map[string]IngesterDesc{
+			Ingesters: map[string]InstanceDesc{
 				"ing1": {
 					State:  ACTIVE,
 					Addr:   "0.0.0.0",

@@ -9,7 +9,7 @@ import (
 	consul "github.com/hashicorp/consul/api"
 
 	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/util"
+	util_log "github.com/cortexproject/cortex/pkg/util/log"
 )
 
 type mockKV struct {
@@ -71,7 +71,7 @@ func (m *mockKV) Put(p *consul.KVPair, q *consul.WriteOptions) (*consul.WriteMet
 }
 
 func (m *mockKV) CAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.WriteMeta, error) {
-	level.Debug(util.Logger).Log("msg", "CAS", "key", p.Key, "modify_index", p.ModifyIndex, "value", fmt.Sprintf("%.40q", p.Value))
+	level.Debug(util_log.Logger).Log("msg", "CAS", "key", p.Key, "modify_index", p.ModifyIndex, "value", fmt.Sprintf("%.40q", p.Value))
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -98,7 +98,7 @@ func (m *mockKV) CAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.Wr
 }
 
 func (m *mockKV) Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consul.QueryMeta, error) {
-	level.Debug(util.Logger).Log("msg", "Get", "key", key, "wait_index", q.WaitIndex)
+	level.Debug(util_log.Logger).Log("msg", "Get", "key", key, "wait_index", q.WaitIndex)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -115,7 +115,7 @@ func (m *mockKV) Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consu
 			m.cond.Wait()
 		}
 		if time.Now().After(deadline) {
-			level.Debug(util.Logger).Log("msg", "Get - deadline exceeded", "key", key)
+			level.Debug(util_log.Logger).Log("msg", "Get - deadline exceeded", "key", key)
 			return nil, &consul.QueryMeta{LastIndex: q.WaitIndex}, nil
 		}
 	}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
 	"github.com/cortexproject/cortex/pkg/util"
+	util_log "github.com/cortexproject/cortex/pkg/util/log"
 )
 
 const (
@@ -133,14 +134,14 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 		}
 		kvp, _, err := c.kv.Get(key, options.WithContext(ctx))
 		if err != nil {
-			level.Error(util.Logger).Log("msg", "error getting key", "key", key, "err", err)
+			level.Error(util_log.Logger).Log("msg", "error getting key", "key", key, "err", err)
 			continue
 		}
 		var intermediate interface{}
 		if kvp != nil {
 			out, err := c.codec.Decode(kvp.Value)
 			if err != nil {
-				level.Error(util.Logger).Log("msg", "error decoding key", "key", key, "err", err)
+				level.Error(util_log.Logger).Log("msg", "error decoding key", "key", key, "err", err)
 				continue
 			}
 			// If key doesn't exist, index will be 0.
@@ -167,7 +168,7 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 
 		bytes, err := c.codec.Encode(intermediate)
 		if err != nil {
-			level.Error(util.Logger).Log("msg", "error serialising value", "key", key, "err", err)
+			level.Error(util_log.Logger).Log("msg", "error serialising value", "key", key, "err", err)
 			continue
 		}
 		ok, _, err := c.kv.CAS(&consul.KVPair{
@@ -176,11 +177,11 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 			ModifyIndex: index,
 		}, writeOptions.WithContext(ctx))
 		if err != nil {
-			level.Error(util.Logger).Log("msg", "error CASing", "key", key, "err", err)
+			level.Error(util_log.Logger).Log("msg", "error CASing", "key", key, "err", err)
 			continue
 		}
 		if !ok {
-			level.Debug(util.Logger).Log("msg", "error CASing, trying again", "key", key, "index", index)
+			level.Debug(util_log.Logger).Log("msg", "error CASing, trying again", "key", key, "index", index)
 			continue
 		}
 		return nil
@@ -224,7 +225,7 @@ func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) b
 
 		out, err := c.codec.Decode(kvp.Value)
 		if err != nil {
-			level.Error(util.Logger).Log("msg", "error decoding key", "key", key, "err", err)
+			level.Error(util_log.Logger).Log("msg", "error decoding key", "key", key, "err", err)
 			continue
 		}
 		if !f(out) {
@@ -265,7 +266,7 @@ func (c *Client) WatchPrefix(ctx context.Context, prefix string, f func(string, 
 		for _, kvp := range kvps {
 			out, err := c.codec.Decode(kvp.Value)
 			if err != nil {
-				level.Error(util.Logger).Log("msg", "error decoding list of values for prefix:key", "prefix", prefix, "key", kvp.Key, "err", err)
+				level.Error(util_log.Logger).Log("msg", "error decoding list of values for prefix:key", "prefix", prefix, "key", kvp.Key, "err", err)
 				continue
 			}
 			// We should strip the prefix from the front of the key.

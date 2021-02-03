@@ -12,6 +12,7 @@ import (
 	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
 	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/cortexproject/cortex/pkg/util/flagext"
+	util_log "github.com/cortexproject/cortex/pkg/util/log"
 	cortex_tls "github.com/cortexproject/cortex/pkg/util/tls"
 )
 
@@ -62,7 +63,7 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 	for i := 0; i < c.cfg.MaxRetries; i++ {
 		resp, err := c.cli.Get(ctx, key)
 		if err != nil {
-			level.Error(util.Logger).Log("msg", "error getting key", "key", key, "err", err)
+			level.Error(util_log.Logger).Log("msg", "error getting key", "key", key, "err", err)
 			lastErr = err
 			continue
 		}
@@ -71,7 +72,7 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 		if len(resp.Kvs) > 0 {
 			intermediate, err = c.codec.Decode(resp.Kvs[0].Value)
 			if err != nil {
-				level.Error(util.Logger).Log("msg", "error decoding key", "key", key, "err", err)
+				level.Error(util_log.Logger).Log("msg", "error decoding key", "key", key, "err", err)
 				lastErr = err
 				continue
 			}
@@ -96,7 +97,7 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 
 		buf, err := c.codec.Encode(intermediate)
 		if err != nil {
-			level.Error(util.Logger).Log("msg", "error serialising value", "key", key, "err", err)
+			level.Error(util_log.Logger).Log("msg", "error serialising value", "key", key, "err", err)
 			lastErr = err
 			continue
 		}
@@ -106,7 +107,7 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 			Then(clientv3.OpPut(key, string(buf))).
 			Commit()
 		if err != nil {
-			level.Error(util.Logger).Log("msg", "error CASing", "key", key, "err", err)
+			level.Error(util_log.Logger).Log("msg", "error CASing", "key", key, "err", err)
 			lastErr = err
 			continue
 		}
@@ -142,7 +143,7 @@ func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) b
 			for _, event := range resp.Events {
 				out, err := c.codec.Decode(event.Kv.Value)
 				if err != nil {
-					level.Error(util.Logger).Log("msg", "error decoding key", "key", key, "err", err)
+					level.Error(util_log.Logger).Log("msg", "error decoding key", "key", key, "err", err)
 					continue
 				}
 
@@ -172,7 +173,7 @@ func (c *Client) WatchPrefix(ctx context.Context, key string, f func(string, int
 			for _, event := range resp.Events {
 				out, err := c.codec.Decode(event.Kv.Value)
 				if err != nil {
-					level.Error(util.Logger).Log("msg", "error decoding key", "key", key, "err", err)
+					level.Error(util_log.Logger).Log("msg", "error decoding key", "key", key, "err", err)
 					continue
 				}
 

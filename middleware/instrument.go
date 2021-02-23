@@ -105,11 +105,15 @@ func (i Instrument) getRouteName(r *http.Request) string {
 func getRouteName(routeMatcher RouteMatcher, r *http.Request) string {
 	var routeMatch mux.RouteMatch
 	if routeMatcher != nil && routeMatcher.Match(r, &routeMatch) {
-		if name := routeMatch.Route.GetName(); name != "" {
-			return name
-		}
-		if tmpl, err := routeMatch.Route.GetPathTemplate(); err == nil {
-			return MakeLabelValue(tmpl)
+		if routeMatch.Route != nil {
+			if name := routeMatch.Route.GetName(); name != "" {
+				return name
+			}
+			if tmpl, err := routeMatch.Route.GetPathTemplate(); err == nil {
+				return MakeLabelValue(tmpl)
+			}
+		} else if routeMatch.MatchErr == mux.ErrNotFound {
+			return "notfound"
 		}
 	}
 

@@ -123,6 +123,9 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	server.HTTP.HandleFunc("/sleep10", func(w http.ResponseWriter, r *http.Request) {
 		_ = cancelableSleep(r.Context(), time.Second*10)
 	})
+	server.HTTP.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
 
 	go server.Run()
 
@@ -188,6 +191,12 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 		require.NoError(t, err)
 	}
 	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/notfound", nil)
+		require.NoError(t, err)
+		_, err = http.DefaultClient.Do(req)
+		require.NoError(t, err)
+	}
+	{
 		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/sleep10", nil)
 		require.NoError(t, err)
 		err = callThenCancel(func(ctx context.Context) error {
@@ -229,6 +238,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 		"error500":                             "500",
 		"sleep10":                              "200",
 		"succeed":                              "200",
+		"notfound":                             "404",
 	}, statuses)
 }
 

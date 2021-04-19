@@ -389,7 +389,12 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 		response_message_bytes_bucket{method="GET",route="succeed",le="+Inf"} 1
 		response_message_bytes_sum{method="GET",route="succeed"} 2
 		response_message_bytes_count{method="GET",route="succeed"} 1
-	`), "request_message_bytes", "response_message_bytes", "inflight_requests"))
+
+		# HELP tcp_connections Current number of accepted TCP connections.
+		# TYPE tcp_connections gauge
+		tcp_connections{protocol="http"} 0
+		tcp_connections{protocol="grpc"} 0
+	`), "request_message_bytes", "response_message_bytes", "inflight_requests", "tcp_connections"))
 }
 
 func TestRunReturnsError(t *testing.T) {

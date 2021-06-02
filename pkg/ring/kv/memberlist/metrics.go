@@ -74,6 +74,13 @@ func (m *KV) createAndRegisterMetrics() {
 		Help:      "Total size of messages waiting in the broadcast queue",
 	})
 
+	m.numberOfBroadcastMessagesDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: m.cfg.MetricsNamespace,
+		Subsystem: subsystem,
+		Name:      "messages_to_broadcast_dropped_total",
+		Help:      "Number of broadcast messages intended to be sent but were dropped due to encoding errors or for being too big",
+	})
+
 	m.casAttempts = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
@@ -105,6 +112,20 @@ func (m *KV) createAndRegisterMetrics() {
 		prometheus.BuildFQName(m.cfg.MetricsNamespace, subsystem, "kv_store_value_size"),
 		"Sizes of values in KV Store in bytes",
 		[]string{"key"}, nil)
+
+	m.storeTombstones = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: m.cfg.MetricsNamespace,
+		Subsystem: subsystem,
+		Name:      "kv_store_value_tombstones",
+		Help:      "Number of tombstones currently present in KV store values",
+	}, []string{"key"})
+
+	m.storeRemovedTombstones = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: m.cfg.MetricsNamespace,
+		Subsystem: subsystem,
+		Name:      "kv_store_value_tombstones_removed_total",
+		Help:      "Total number of tombstones which have been removed from KV store values",
+	}, []string{"key"})
 
 	m.memberlistMembersCount = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
@@ -150,10 +171,13 @@ func (m *KV) createAndRegisterMetrics() {
 		m.totalSizeOfPushes,
 		m.totalSizeOfPulls,
 		m.totalSizeOfBroadcastMessagesInQueue,
+		m.numberOfBroadcastMessagesDropped,
 		m.casAttempts,
 		m.casFailures,
 		m.casSuccesses,
 		m.watchPrefixDroppedNotifications,
+		m.storeTombstones,
+		m.storeRemovedTombstones,
 		m.memberlistMembersCount,
 		m.memberlistHealthScore,
 	}

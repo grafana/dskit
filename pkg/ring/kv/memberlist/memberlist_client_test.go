@@ -77,8 +77,9 @@ func (d *data) MergeContent() []string {
 	return out
 }
 
-func (d *data) RemoveTombstones(limit time.Time) {
+func (d *data) RemoveTombstones(limit time.Time) (_, _ int) {
 	// nothing to do
+	return
 }
 
 func (d *data) getAllTokens() []uint32 {
@@ -535,8 +536,9 @@ func (dc distributedCounter) MergeContent() []string {
 	return out
 }
 
-func (dc distributedCounter) RemoveTombstones(limit time.Time) {
+func (dc distributedCounter) RemoveTombstones(limit time.Time) (_, _ int) {
 	// nothing to do
+	return
 }
 
 type distributedCounterCodec struct{}

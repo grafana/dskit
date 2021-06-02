@@ -155,13 +155,16 @@ type KV struct {
 	totalSizeOfPushes                   prometheus.Counter
 	numberOfBroadcastMessagesInQueue    prometheus.GaugeFunc
 	totalSizeOfBroadcastMessagesInQueue prometheus.Gauge
+	numberOfBroadcastMessagesDropped    prometheus.Counter
 	casAttempts                         prometheus.Counter
 	casFailures                         prometheus.Counter
 	casSuccesses                        prometheus.Counter
 	watchPrefixDroppedNotifications     *prometheus.CounterVec
 
-	storeValuesDesc *prometheus.Desc
-	storeSizesDesc  *prometheus.Desc
+	storeValuesDesc        *prometheus.Desc
+	storeSizesDesc         *prometheus.Desc
+	storeTombstones        *prometheus.GaugeVec
+	storeRemovedTombstones *prometheus.CounterVec
 
 	memberlistMembersCount    prometheus.GaugeFunc
 	memberlistHealthScore     prometheus.GaugeFunc
@@ -350,7 +353,7 @@ func (m *KV) get(key string, codec codec.Codec) (out interface{}, version uint, 
 		if mr, ok := out.(Mergeable); ok {
 			// remove ALL tombstones before returning to client.
 			// No need for clients to see them.
-			mr.RemoveTombstones(time.Time{})
+			_, _ = mr.RemoveTombstones(time.Time{})
 		}
 	}
 
@@ -824,7 +827,9 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 
 	if m.cfg.LeftIngestersTimeout > 0 {
 		limit := time.Now().Add(-m.cfg.LeftIngestersTimeout)
-		result.RemoveTombstones(limit)
+		total, removed := result.RemoveTombstones(limit)
+		m.storeTombstones.WithLabelValues(key).Set(float64(total))
+		m.storeRemovedTombstones.WithLabelValues(key).Add(float64(removed))
 	}
 
 	encoded, err := codec.Encode(result)

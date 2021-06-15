@@ -67,6 +67,47 @@ func cancelableSleep(ctx context.Context, sleep time.Duration) error {
 	return ctx.Err()
 }
 
+func TestTCPv4Network(t *testing.T) {
+	cfg := Config{
+		HTTPListenNetwork: NetworkTCPV4,
+		HTTPListenAddress: "localhost",
+		HTTPListenPort:    9290,
+		GRPCListenNetwork: NetworkTCPV4,
+		GRPCListenAddress: "localhost",
+		GRPCListenPort:    9291,
+	}
+	t.Run("http", func(t *testing.T) {
+		cfg.MetricsNamespace = "testing_http_tcp4"
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		require.NoError(t, srv.httpListener.Close())
+		require.NotNil(t, <-errChan)
+
+		// So that address is freed for further tests.
+		srv.GRPC.Stop()
+	})
+
+	t.Run("grpc", func(t *testing.T) {
+		cfg.MetricsNamespace = "testing_grpc_tcp4"
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		require.NoError(t, srv.grpcListener.Close())
+		require.NotNil(t, <-errChan)
+	})
+}
+
 // Ensure that http and grpc servers work with no overrides to config
 // (except http port because an ordinary user can't bind to default port 80)
 func TestDefaultAddresses(t *testing.T) {
@@ -399,8 +440,10 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 
 func TestRunReturnsError(t *testing.T) {
 	cfg := Config{
+		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9190,
+		HTTPListenPort:    9090,
+		GRPCListenNetwork: DefaultNetwork,
 		GRPCListenAddress: "localhost",
 		GRPCListenPort:    9191,
 	}
@@ -441,8 +484,10 @@ func TestMiddlewareLogging(t *testing.T) {
 	var level logging.Level
 	level.Set("info")
 	cfg := Config{
+		HTTPListenNetwork:             DefaultNetwork,
 		HTTPListenAddress:             "localhost",
 		HTTPListenPort:                9192,
+		GRPCListenNetwork:             DefaultNetwork,
 		GRPCListenAddress:             "localhost",
 		HTTPMiddleware:                []middleware.Interface{middleware.Logging},
 		MetricsNamespace:              "testing_logging",
@@ -474,6 +519,7 @@ func TestTLSServer(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := Config{
+		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
 		HTTPListenPort:    9193,
 		HTTPTLSConfig: node_https.TLSStruct{
@@ -489,6 +535,7 @@ func TestTLSServer(t *testing.T) {
 			ClientCAs:   "certs/root.crt",
 		},
 		MetricsNamespace:  "testing_tls",
+		GRPCListenNetwork: DefaultNetwork,
 		GRPCListenAddress: "localhost",
 		GRPCListenPort:    9194,
 	}
@@ -579,8 +626,10 @@ func TestLogSourceIPs(t *testing.T) {
 	level.Set("debug")
 	fake := FakeLogger{}
 	cfg := Config{
+		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
 		HTTPListenPort:    9195,
+		GRPCListenNetwork: DefaultNetwork,
 		GRPCListenAddress: "localhost",
 		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
 		MetricsNamespace:  "testing_mux",
@@ -609,8 +658,10 @@ func TestLogSourceIPs(t *testing.T) {
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {
 	cfg := Config{
+		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
 		HTTPListenPort:    9198,
+		GRPCListenNetwork: DefaultNetwork,
 		GRPCListenAddress: "localhost",
 		GRPCListenPort:    9199,
 	}

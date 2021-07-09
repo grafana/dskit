@@ -202,8 +202,4 @@ func (m *KV) Collect(ch chan<- prometheus.Metric) {
 	defer m.storeMu.Unlock()
 
 	ch <- prometheus.MustNewConstMetric(m.storeValuesDesc, prometheus.GaugeValue, float64(len(m.store)))
-
-	for k, v := range m.store {
-		ch <- prometheus.MustNewConstMetric(m.storeSizesDesc, prometheus.GaugeValue, float64(len(v.value)), k)
-	}
 }

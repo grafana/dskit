@@ -162,7 +162,6 @@ type KV struct {
 	watchPrefixDroppedNotifications     *prometheus.CounterVec
 
 	storeValuesDesc        *prometheus.Desc
-	storeSizesDesc         *prometheus.Desc
 	storeTombstones        *prometheus.GaugeVec
 	storeRemovedTombstones *prometheus.CounterVec
 
@@ -172,9 +171,11 @@ type KV struct {
 }
 
 type valueDesc struct {
-	// We store bytes here. Reason is that clients calling CAS function will modify the object in place,
-	// but unless CAS succeeds, we don't want those modifications to be visible.
-	value []byte
+	// We store the decoded value here to prevent decoding the entire state for every
+	// update we receive. Whilst the updates are small and fast to decode,
+	// the total state can be quite large.
+	// The CAS function is passed a deep copy because it modifies in-place.
+	value Mergeable
 
 	// version (local only) is used to keep track of what we're gossiping about, and invalidate old messages
 	version uint
@@ -340,24 +341,16 @@ func (m *KV) Get(key string, codec codec.Codec) (interface{}, error) {
 // Returns current value with removed tombstones.
 func (m *KV) get(key string, codec codec.Codec) (out interface{}, version uint, err error) {
 	m.storeMu.Lock()
-	v := m.store[key]
+	v := m.store[key].Clone()
 	m.storeMu.Unlock()
 
-	out = nil
 	if v.value != nil {
-		out, err = codec.Decode(v.value)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		if mr, ok := out.(Mergeable); ok {
-			// remove ALL tombstones before returning to client.
-			// No need for clients to see them.
-			_, _ = mr.RemoveTombstones(time.Time{})
-		}
+		// remove ALL tombstones before returning to client.
+		// No need for clients to see them.
+		_, _ = v.value.RemoveTombstones(time.Time{})
 	}
 
-	return out, v.version, nil
+	return v.value, v.version, nil
 }
 
 // WatchKey watches for value changes for given key. When value changes, 'f' function is called with the
@@ -703,9 +696,21 @@ func (m *KV) LocalState(join bool) []byte {
 			continue
 		}
 
+		codec := m.GetCodec(val.codecID)
+		if codec == nil {
+			level.Error(m.logger).Log("msg", "failed to encode remote state: unknown codec for key", "codec", val.codecID, "key", key)
+			continue
+		}
+
+		encoded, err := codec.Encode(val.value)
+		if err != nil {
+			level.Error(m.logger).Log("msg", "failed to encode remote state", "err", err)
+			continue
+		}
+
 		kvPair.Reset()
 		kvPair.Key = key
-		kvPair.Value = val.value
+		kvPair.Value = encoded
 		kvPair.Codec = val.codecID
 
 		ser, err := kvPair.Marshal()
@@ -815,7 +820,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 	if casVersion > 0 && curr.version != casVersion {
 		return nil, 0, errVersionMismatch
 	}
-	result, change, err := computeNewValue(incomingValue, curr.value, codec, casVersion > 0)
+	result, change, err := computeNewValue(incomingValue, curr.value, casVersion > 0)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -832,14 +837,9 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 		m.storeRemovedTombstones.WithLabelValues(key).Add(float64(removed))
 	}
 
-	encoded, err := codec.Encode(result)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to encode merged result: %v", err)
-	}
-
 	newVersion := curr.version + 1
 	m.store[key] = valueDesc{
-		value:   encoded,
+		value:   result,
 		version: newVersion,
 		codecID: codec.CodecID(),
 	}
@@ -848,25 +848,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 }
 
 // returns [result, change, error]
-func computeNewValue(incoming Mergeable, stored []byte, c codec.Codec, cas bool) (Mergeable, Mergeable, error) {
-	if len(stored) == 0 {
-		return incoming, incoming, nil
-	}
-
-	old, err := c.Decode(stored)
-	if err != nil {
-		return incoming, incoming, fmt.Errorf("failed to decode stored value: %v", err)
-	}
-
-	if old == nil {
-		return incoming, incoming, nil
-	}
-
-	oldVal, ok := old.(Mergeable)
-	if !ok {
-		return incoming, incoming, fmt.Errorf("stored value is not Mergeable, got %T", old)
-	}
-
+func computeNewValue(incoming Mergeable, oldVal Mergeable, cas bool) (Mergeable, Mergeable, error) {
 	if oldVal == nil {
 		return incoming, incoming, nil
 	}

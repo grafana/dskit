@@ -15,8 +15,8 @@ type Config struct {
 	MaxRetries int           `yaml:"max_retries"` // give up after this many; zero means infinite retries
 }
 
-// RegisterFlags for Config.
-func (cfg *Config) RegisterFlags(prefix string, f *flag.FlagSet) {
+// RegisterFlagsWithPrefix for Config.
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.MinBackoff, prefix+".backoff-min-period", 100*time.Millisecond, "Minimum delay when backing off.")
 	f.DurationVar(&cfg.MaxBackoff, prefix+".backoff-max-period", 10*time.Second, "Maximum delay when backing off.")
 	f.IntVar(&cfg.MaxRetries, prefix+".backoff-retries", 10, "Number of times to backoff and retry before failing.")

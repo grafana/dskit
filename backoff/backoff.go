@@ -15,7 +15,7 @@ type Config struct {
 	MaxRetries int           `yaml:"max_retries"` // give up after this many; zero means infinite retries
 }
 
-// RegisterFlags for BackoffConfig.
+// RegisterFlags for Config.
 func (cfg *Config) RegisterFlags(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.MinBackoff, prefix+".backoff-min-period", 100*time.Millisecond, "Minimum delay when backing off.")
 	f.DurationVar(&cfg.MaxBackoff, prefix+".backoff-max-period", 10*time.Second, "Maximum delay when backing off.")
@@ -31,8 +31,8 @@ type Backoff struct {
 	nextDelayMax time.Duration
 }
 
-// NewBackoff creates a Backoff object. Pass a Context that can also terminate the operation.
-func NewBackoff(ctx context.Context, cfg Config) *Backoff {
+// New creates a Backoff object. Pass a Context that can also terminate the operation.
+func New(ctx context.Context, cfg Config) *Backoff {
 	return &Backoff{
 		cfg:          cfg,
 		ctx:          ctx,

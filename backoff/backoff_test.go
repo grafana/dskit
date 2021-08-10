@@ -85,7 +85,7 @@ func TestBackoff_NextDelay(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			b := NewBackoff(context.Background(), Config{
+			b := New(context.Background(), Config{
 				MinBackoff: testData.minBackoff,
 				MaxBackoff: testData.maxBackoff,
 				MaxRetries: len(testData.expectedRanges),

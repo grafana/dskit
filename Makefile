@@ -43,7 +43,12 @@ mod-check:
 .tools/bin/golangci-lint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.41.1
 
+drone: .drone/drone.yml
+
 .drone/drone.yml: .drone/drone.jsonnet
 	# Drones jsonnet formatting causes issues where arrays disappear
-	drone jsonnet --source $< --target $@ --stream --format=false
-	drone lint --trusted $@
+	drone jsonnet --source $< --target $@.tmp --stream --format=false
+	drone sign --save grafana/dskit $@.tmp
+	drone lint --trusted $@.tmp
+	# When all passes move to correct destination
+	mv $@.tmp $@

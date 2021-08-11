@@ -1,0 +1,28 @@
+---
+{
+   "kind": "pipeline",
+   "name": "validate-pr",
+   "steps": [
+      {
+         "commands": [
+            "make mod-check"
+         ],
+         "image": "golang:1.16.7",
+         "name": "make-mod-check"
+      },
+      {
+         "commands": [
+            "make lint"
+         ],
+         "image": "golang:1.16.7",
+         "name": "make-lint"
+      },
+      {
+         "commands": [
+            "make test"
+         ],
+         "image": "golang:1.16.7",
+         "name": "make-test"
+      }
+   ]
+}

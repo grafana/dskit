@@ -42,3 +42,8 @@ mod-check:
 
 .tools/bin/golangci-lint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.41.1
+
+.drone/drone.yml: .drone/drone.jsonnet .drone/backend-enterprise.libsonnet
+	# Drones jsonnet formatting causes issues where arrays disappear
+	drone jsonnet --source $< --target $@ --stream --format=false
+	drone lint --trusted $@

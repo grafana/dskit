@@ -4,17 +4,12 @@ import (
 	"context"
 	"io/ioutil"
 	"math"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/prompb"
 )
 
 func RunCommandAndGetOutput(name string, args ...string) ([]byte, error) {
@@ -102,41 +97,6 @@ func TimeToMilliseconds(t time.Time) int64 {
 
 	// Convert to millis.
 	return (int64(s) * 1e3) + (int64(ns * 1e3))
-}
-
-func GenerateSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector) {
-	tsMillis := TimeToMilliseconds(ts)
-	value := rand.Float64()
-
-	lbls := append(
-		[]prompb.Label{
-			{Name: labels.MetricName, Value: name},
-		},
-		additionalLabels...,
-	)
-
-	// Generate the series
-	series = append(series, prompb.TimeSeries{
-		Labels: lbls,
-		Samples: []prompb.Sample{
-			{Value: value, Timestamp: tsMillis},
-		},
-	})
-
-	// Generate the expected vector when querying it
-	metric := model.Metric{}
-	metric[labels.MetricName] = model.LabelValue(name)
-	for _, lbl := range additionalLabels {
-		metric[model.LabelName(lbl.Name)] = model.LabelValue(lbl.Value)
-	}
-
-	vector = append(vector, &model.Sample{
-		Metric:    metric,
-		Value:     model.SampleValue(value),
-		Timestamp: model.Time(tsMillis),
-	})
-
-	return
 }
 
 // GetTempDirectory creates a temporary directory for shared integration

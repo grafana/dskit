@@ -20,6 +20,7 @@ const (
 	Terminated              // Service has stopped successfully. Terminal state.
 	Failed                  // Service has failed in Starting, Running or Stopping state. Terminal state.
 )
+
 func (s State) String() string {
 	switch s {
 	case New:

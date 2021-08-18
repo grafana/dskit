@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/cortexproject/cortex/pkg/util/flagext"
 )
 

@@ -20,11 +20,10 @@ import (
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	"github.com/thanos-io/thanos/pkg/extprom"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/services"
 )
 
 const (
@@ -174,7 +173,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.RandomizeNodeName, prefix+"memberlist.randomize-node-name", true, "Add random suffix to the node name.")
 	f.DurationVar(&cfg.StreamTimeout, prefix+"memberlist.stream-timeout", mlDefaults.TCPTimeout, "The timeout for establishing a connection with a remote node, and for read/write operations.")
 	f.IntVar(&cfg.RetransmitMult, prefix+"memberlist.retransmit-factor", mlDefaults.RetransmitMult, "Multiplication factor used when sending out messages (factor * log(N+1)).")
-	f.Var(&cfg.JoinMembers, prefix+"memberlist.join", "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format (see https://cortexmetrics.io/docs/configuration/arguments/#dns-service-discovery for more details).")
+	f.Var(&cfg.JoinMembers, prefix+"memberlist.join", "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.")
 	f.DurationVar(&cfg.MinJoinBackoff, prefix+"memberlist.min-join-backoff", 1*time.Second, "Min backoff duration to join other cluster members.")
 	f.DurationVar(&cfg.MaxJoinBackoff, prefix+"memberlist.max-join-backoff", 1*time.Minute, "Max backoff duration to join other cluster members.")
 	f.IntVar(&cfg.MaxJoinRetries, prefix+"memberlist.max-join-retries", 10, "Max number of retries to join other cluster members.")
@@ -197,11 +196,11 @@ func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix(f, "")
 }
 
-func generateRandomSuffix() string {
+func generateRandomSuffix(logger log.Logger) string {
 	suffix := make([]byte, 4)
 	_, err := rand.Read(suffix)
 	if err != nil {
-		level.Error(util_log.Logger).Log("msg", "failed to generate random suffix", "err", err)
+		level.Error(logger).Log("msg", "failed to generate random suffix", "err", err)
 		return "error"
 	}
 	return fmt.Sprintf("%2x", suffix)
@@ -333,11 +332,9 @@ func NewKV(cfg KVConfig, logger log.Logger) *KV {
 	cfg.TCPTransport.MetricsRegisterer = cfg.MetricsRegisterer
 	cfg.TCPTransport.MetricsNamespace = cfg.MetricsNamespace
 
-	mr := extprom.WrapRegistererWithPrefix("cortex_",
-		extprom.WrapRegistererWith(
-			prometheus.Labels{"name": "memberlist"},
-			cfg.MetricsRegisterer,
-		),
+	mr := extprom.WrapRegistererWith(
+		prometheus.Labels{"name": "memberlist"},
+		cfg.MetricsRegisterer,
 	)
 
 	mlkv := &KV{
@@ -388,7 +385,7 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 		mlCfg.Name = m.cfg.NodeName
 	}
 	if m.cfg.RandomizeNodeName {
-		mlCfg.Name = mlCfg.Name + "-" + generateRandomSuffix()
+		mlCfg.Name = mlCfg.Name + "-" + generateRandomSuffix(m.logger)
 		level.Info(m.logger).Log("msg", "Using memberlist cluster node name", "name", mlCfg.Name)
 	}
 
@@ -512,13 +509,13 @@ func (m *KV) joinMembersOnStartup(ctx context.Context, members []string) error {
 	level.Debug(m.logger).Log("msg", "attempt to join memberlist cluster failed", "retries", 0, "err", err)
 	lastErr := err
 
-	cfg := util.BackoffConfig{
+	cfg := backoff.Config{
 		MinBackoff: m.cfg.MinJoinBackoff,
 		MaxBackoff: m.cfg.MaxJoinBackoff,
 		MaxRetries: m.cfg.MaxJoinRetries,
 	}
 
-	backoff := util.NewBackoff(ctx, cfg)
+	backoff := backoff.New(ctx, cfg)
 
 	for backoff.Ongoing() {
 		backoff.Wait()
@@ -996,6 +993,7 @@ func (m *KV) queueBroadcast(key string, content []string, version uint, message 
 		finished: func(b ringBroadcast) {
 			m.totalSizeOfBroadcastMessagesInQueue.Sub(float64(l))
 		},
+		logger: m.logger,
 	}
 
 	m.totalSizeOfBroadcastMessagesInQueue.Add(float64(l))

@@ -8,12 +8,11 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3client"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv/codec"
 )
 
 const etcdStartTimeout = 30 * time.Second

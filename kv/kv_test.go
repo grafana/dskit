@@ -12,18 +12,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
-	"github.com/cortexproject/cortex/pkg/ring/kv/etcd"
+	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/kv/etcd"
 )
 
 func withFixtures(t *testing.T, f func(*testing.T, Client)) {
+	t.Helper()
+
 	for _, fixture := range []struct {
 		name    string
 		factory func() (Client, io.Closer, error)
 	}{
 		{"consul", func() (Client, io.Closer, error) {
-			return consul.NewInMemoryClient(codec.String{}), etcd.NopCloser, nil
+			return consul.NewInMemoryClient(codec.String{}, testLogger{}), etcd.NopCloser, nil
 		}},
 		{"etcd", func() (Client, io.Closer, error) {
 			return etcd.Mock(codec.String{})

@@ -1,4 +1,4 @@
-package tls
+package kvtls
 
 import (
 	"fmt"
@@ -70,7 +70,6 @@ type x509Paths struct {
 }
 
 func newTestX509Files(t *testing.T, cert, key, ca []byte) x509Paths {
-
 	// create empty file
 	certsPath, err := ioutil.TempDir("", "*-x509")
 	require.NoError(t, err)

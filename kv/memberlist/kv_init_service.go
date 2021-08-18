@@ -16,8 +16,7 @@ import (
 	"github.com/hashicorp/memberlist"
 	"go.uber.org/atomic"
 
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 // This service initialized memberlist.KV on first call to GetMemberlistKV, and starts it. On stop,
@@ -92,7 +91,9 @@ func (kvs *KVInitService) stopping(_ error) error {
 func (kvs *KVInitService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	kv := kvs.getKV()
 	if kv == nil {
-		util.WriteTextResponse(w, "This Cortex instance doesn't use memberlist.")
+		w.Header().Set("Content-Type", "text/plain")
+		// Ignore inactionable errors.
+		_, _ = w.Write([]byte("This instance doesn't use memberlist."))
 		return
 	}
 
@@ -151,14 +152,36 @@ func (kvs *KVInitService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	sent, received := kv.getSentAndReceivedMessages()
 
-	util.RenderHTTPResponse(w, pageData{
+	v := pageData{
 		Now:              time.Now(),
 		Memberlist:       kv.memberlist,
 		SortedMembers:    members,
 		Store:            kv.storeCopy(),
 		SentMessages:     sent,
 		ReceivedMessages: received,
-	}, pageTemplate, req)
+	}
+
+	accept := req.Header.Get("Accept")
+	if strings.Contains(accept, "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+
+		data, err := json.Marshal(v)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// We ignore errors here, because we cannot do anything about them.
+		// Write will trigger sending Status code, so we cannot send a different status code afterwards.
+		// Also this isn't internal error, but error communicating with client.
+		_, _ = w.Write(data)
+		return
+	}
+
+	err := pageTemplate.Execute(w, v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func getFormat(req *http.Request) string {
@@ -266,10 +289,10 @@ const pageContent = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Cortex Memberlist Status</title>
+		<title>Memberlist Status</title>
 	</head>
 	<body>
-		<h1>Cortex Memberlist Status</h1>
+		<h1>Memberlist Status</h1>
 		<p>Current time: {{ .Now }}</p>
 
 		<ul>

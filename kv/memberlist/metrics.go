@@ -8,8 +8,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 func (m *KV) createAndRegisterMetrics() {
@@ -210,7 +209,7 @@ func (m *KV) createAndRegisterMetrics() {
 	}
 
 	if err != nil {
-		level.Error(util_log.Logger).Log("msg", "failed to register prometheus metrics for memberlist", "err", err)
+		level.Error(m.logger).Log("msg", "failed to register prometheus metrics for memberlist", "err", err)
 	}
 }
 

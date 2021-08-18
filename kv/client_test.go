@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
+	"github.com/grafana/dskit/kv/codec"
 )
 
 func TestParseConfig(t *testing.T) {
@@ -39,7 +39,7 @@ multi:
 func Test_createClient_multiBackend_withSingleRing(t *testing.T) {
 	storeCfg, testCodec := newConfigsForTest()
 	require.NotPanics(t, func() {
-		_, err := createClient("multi", "/collector", storeCfg, testCodec, Primary, prometheus.NewRegistry())
+		_, err := createClient("multi", "/collector", storeCfg, testCodec, Primary, prometheus.NewRegistry(), testLogger{})
 		require.NoError(t, err)
 	})
 }
@@ -50,11 +50,11 @@ func Test_createClient_multiBackend_withMultiRing(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
 	require.NotPanics(t, func() {
-		_, err := createClient("multi", "/test", storeCfg1, testCodec, Primary, reg)
+		_, err := createClient("multi", "/test", storeCfg1, testCodec, Primary, reg, testLogger{})
 		require.NoError(t, err)
 	}, "First client for KV store must not panic")
 	require.NotPanics(t, func() {
-		_, err := createClient("mock", "/test", storeCfg2, testCodec, Primary, reg)
+		_, err := createClient("mock", "/test", storeCfg2, testCodec, Primary, reg, testLogger{})
 		require.NoError(t, err)
 	}, "Second client for KV store must not panic")
 }
@@ -62,7 +62,7 @@ func Test_createClient_multiBackend_withMultiRing(t *testing.T) {
 func Test_createClient_singleBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 	storeCfg, testCodec := newConfigsForTest()
 	reg := prometheus.NewRegistry()
-	client, err := createClient("mock", "/test1", storeCfg, testCodec, Primary, reg)
+	client, err := createClient("mock", "/test1", storeCfg, testCodec, Primary, reg, testLogger{})
 	require.NoError(t, err)
 	require.NoError(t, client.CAS(context.Background(), "/test", func(_ interface{}) (out interface{}, retry bool, err error) {
 		out = &mockMessage{id: "inCAS"}
@@ -80,7 +80,7 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 	storeCfg.Multi.MirrorEnabled = true
 	storeCfg.Multi.MirrorTimeout = 10 * time.Second
 	reg := prometheus.NewRegistry()
-	client, err := createClient("multi", "/test1", storeCfg, testCodec, Primary, reg)
+	client, err := createClient("multi", "/test1", storeCfg, testCodec, Primary, reg, testLogger{})
 	require.NoError(t, err)
 	require.NoError(t, client.CAS(context.Background(), "/test", func(_ interface{}) (out interface{}, retry bool, err error) {
 		out = &mockMessage{id: "inCAS"}

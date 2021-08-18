@@ -7,31 +7,33 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gogo/status"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 
-	"github.com/cortexproject/cortex/integration/ca"
-	"github.com/cortexproject/cortex/pkg/util/grpcclient"
-	"github.com/cortexproject/cortex/pkg/util/tls"
+	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/kv/kvtls"
 )
 
 type tcIntegrationClientServer struct {
 	name            string
 	tlsGrpcEnabled  bool
-	tlsConfig       tls.ClientConfig
+	tlsConfig       kvtls.ClientConfig
 	httpExpectError func(*testing.T, error)
 	grpcExpectError func(*testing.T, error)
 }
@@ -127,22 +129,21 @@ func newIntegrationClientServer(
 				assert.NoError(t, err, tc.name)
 				return
 			}
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			assert.NoError(t, err, tc.name)
 
 			assert.Equal(t, []byte("OK"), body, tc.name)
-
 		})
 
 		// GRPC
 		t.Run("GRPC/"+tc.name, func(t *testing.T) {
-			clientConfig := grpcclient.Config{}
+			clientConfig := grpcConfig{}
 			clientConfig.RegisterFlags(flag.NewFlagSet("fake", flag.ContinueOnError))
 
 			clientConfig.TLSEnabled = tc.tlsGrpcEnabled
 			clientConfig.TLS = tc.tlsConfig
 
-			dialOptions, err := clientConfig.DialOption(nil, nil)
+			dialOptions, err := clientConfig.DialOption()
 			assert.NoError(t, err, tc.name)
 			dialOptions = append([]grpc.DialOption{grpc.WithDefaultCallOptions(clientConfig.CallOptions()...)}, dialOptions...)
 
@@ -182,14 +183,14 @@ func TestServerWithoutTlsEnabled(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       kvtls.ClientConfig{},
 				httpExpectError: errorContainsString("http: server gave HTTP response to HTTPS client"),
 				grpcExpectError: nil,
 			},
 			{
 				name:            "tls-enable",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       kvtls.ClientConfig{},
 				httpExpectError: errorContainsString("http: server gave HTTP response to HTTPS client"),
 				grpcExpectError: errorContainsString("transport: authentication handshake failed: tls: first record does not look like a TLS handshake"),
 			},
@@ -217,7 +218,7 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       kvtls.ClientConfig{},
 				httpExpectError: errorContainsString("x509: certificate signed by unknown authority"),
 				// For GRPC we expect this error as we try to connect without TLS to a TLS enabled server
 				grpcExpectError: unavailableDescErr,
@@ -225,21 +226,21 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:            "grpc-tls-enabled",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       kvtls.ClientConfig{},
 				httpExpectError: errorContainsString("x509: certificate signed by unknown authority"),
 				grpcExpectError: errorContainsString("x509: certificate signed by unknown authority"),
 			},
 			{
 				name:           "tls-skip-verify",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					InsecureSkipVerify: true,
 				},
 			},
 			{
 				name:           "tls-skip-verify-no-grpc-tls-enabled",
 				tlsGrpcEnabled: false,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					InsecureSkipVerify: true,
 				},
 				grpcExpectError: unavailableDescErr,
@@ -247,14 +248,14 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:           "ca-path-set",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath: certs.caCertFile,
 				},
 			},
 			{
 				name:           "ca-path-no-grpc-tls-enabled",
 				tlsGrpcEnabled: false,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath: certs.caCertFile,
 				},
 				grpcExpectError: unavailableDescErr,
@@ -282,7 +283,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       kvtls.ClientConfig{},
 				httpExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
 				// For GRPC we expect this error as we try to connect without TLS to a TLS enabled server
 				grpcExpectError: unavailableDescErr,
@@ -290,14 +291,14 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:            "grpc-tls-enabled",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       kvtls.ClientConfig{},
 				httpExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
 				grpcExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
 			},
 			{
 				name:           "ca-path",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath: certs.caCertFile,
 				},
 				httpExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
@@ -306,7 +307,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:           "server-name",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath:     certs.caCertFile,
 					ServerName: "my-other-name",
 				},
@@ -314,7 +315,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:           "tls-skip-verify",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					InsecureSkipVerify: true,
 				},
 			},
@@ -351,7 +352,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "tls-skip-verify",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					InsecureSkipVerify: true,
 				},
 				httpExpectError: badCertErr,
@@ -360,7 +361,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-path",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath: certs.caCertFile,
 				},
 				httpExpectError: badCertErr,
@@ -369,7 +370,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-path-and-client-cert-ca1",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client1CertFile,
 					KeyPath:  certs.client1KeyFile,
@@ -378,7 +379,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "tls-skip-verify-and-client-cert-ca1",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					InsecureSkipVerify: true,
 					CertPath:           certs.client1CertFile,
 					KeyPath:            certs.client1KeyFile,
@@ -387,7 +388,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-cert-and-client-cert-ca2",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client2CertFile,
 					KeyPath:  certs.client2KeyFile,
@@ -422,7 +423,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-cert-and-client-cert-ca1",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client1CertFile,
 					KeyPath:  certs.client1KeyFile,
@@ -431,7 +432,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-cert-and-client-cert-ca2",
 				tlsGrpcEnabled: true,
-				tlsConfig: tls.ClientConfig{
+				tlsConfig: kvtls.ClientConfig{
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client2CertFile,
 					KeyPath:  certs.client2KeyFile,
@@ -442,7 +443,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 }
 
 func setupCertificates(t *testing.T) keyMaterial {
-	testCADir, err := ioutil.TempDir("", "cortex-ca")
+	testCADir, err := os.MkdirTemp("", "ca")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(testCADir))
@@ -450,7 +451,7 @@ func setupCertificates(t *testing.T) keyMaterial {
 
 	// create server side CA
 
-	testCA := ca.New("Cortex Test")
+	testCA := newCA("Test")
 	caCertFile := filepath.Join(testCADir, "ca.crt")
 	require.NoError(t, testCA.WriteCACertificate(caCertFile))
 
@@ -479,8 +480,8 @@ func setupCertificates(t *testing.T) keyMaterial {
 	))
 
 	// create client CAs
-	testClientCA1 := ca.New("Cortex Test Client CA 1")
-	testClientCA2 := ca.New("Cortex Test Client CA 2")
+	testClientCA1 := newCA("Test Client CA 1")
+	testClientCA2 := newCA("Test Client CA 2")
 
 	clientCA1CertFile := filepath.Join(testCADir, "ca-client-1.crt")
 	require.NoError(t, testClientCA1.WriteCACertificate(clientCA1CertFile))
@@ -563,5 +564,111 @@ func errorContainsString(str string) func(*testing.T, error) {
 	return func(t *testing.T, err error) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), str)
+	}
+}
+
+type grpcConfig struct {
+	MaxRecvMsgSize  int     `yaml:"max_recv_msg_size"`
+	MaxSendMsgSize  int     `yaml:"max_send_msg_size"`
+	GRPCCompression string  `yaml:"grpc_compression"`
+	RateLimit       float64 `yaml:"rate_limit"`
+	RateLimitBurst  int     `yaml:"rate_limit_burst"`
+
+	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits"`
+	BackoffConfig       backoff.Config `yaml:"backoff_config"`
+
+	TLSEnabled bool               `yaml:"tls_enabled"`
+	TLS        kvtls.ClientConfig `yaml:",inline"`
+}
+
+// RegisterFlags registers flags.
+func (cfg *grpcConfig) RegisterFlags(f *flag.FlagSet) {
+	f.IntVar(&cfg.MaxRecvMsgSize, ".grpc-max-recv-msg-size", 100<<20, "gRPC client max receive message size (bytes).")
+	f.IntVar(&cfg.MaxSendMsgSize, ".grpc-max-send-msg-size", 16<<20, "gRPC client max send message size (bytes).")
+	f.StringVar(&cfg.GRPCCompression, ".grpc-compression", "", "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)")
+	f.Float64Var(&cfg.RateLimit, ".grpc-client-rate-limit", 0., "Rate limit for gRPC client; 0 means disabled.")
+	f.IntVar(&cfg.RateLimitBurst, ".grpc-client-rate-limit-burst", 0, "Rate limit burst for gRPC client.")
+	f.BoolVar(&cfg.BackoffOnRatelimits, ".backoff-on-ratelimits", false, "Enable backoff and retry when we hit ratelimits.")
+	f.BoolVar(&cfg.TLSEnabled, ".tls-enabled", cfg.TLSEnabled, "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.")
+
+	cfg.BackoffConfig.RegisterFlagsWithPrefix("", f)
+
+	cfg.TLS.RegisterFlagsWithPrefix("", f)
+}
+
+// CallOptions returns the config in terms of grpc.CallOptions.
+func (cfg *grpcConfig) CallOptions() []grpc.CallOption {
+	var opts []grpc.CallOption
+	opts = append(opts, grpc.MaxCallRecvMsgSize(cfg.MaxRecvMsgSize))
+	opts = append(opts, grpc.MaxCallSendMsgSize(cfg.MaxSendMsgSize))
+	if cfg.GRPCCompression != "" {
+		opts = append(opts, grpc.UseCompressor(cfg.GRPCCompression))
+	}
+	return opts
+}
+
+// DialOption returns the config as a grpc.DialOptions.
+func (cfg *grpcConfig) DialOption() ([]grpc.DialOption, error) {
+	var opts []grpc.DialOption
+	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
+	if err != nil {
+		return nil, err
+	}
+	opts = append(opts, tlsOpts...)
+
+	var unaryClientInterceptors []grpc.UnaryClientInterceptor
+	if cfg.BackoffOnRatelimits {
+		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{newBackoffRetry(cfg.BackoffConfig)}, unaryClientInterceptors...)
+	}
+
+	if cfg.RateLimit > 0 {
+		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{newRateLimiter(cfg)}, unaryClientInterceptors...)
+	}
+
+	return append(
+		opts,
+		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
+		grpc.WithUnaryInterceptor(grpc_middleware.ChainUnaryClient(unaryClientInterceptors...)),
+		grpc.WithStreamInterceptor(grpc_middleware.ChainStreamClient()),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                time.Second * 20,
+			Timeout:             time.Second * 10,
+			PermitWithoutStream: true,
+		}),
+	), nil
+}
+
+func newBackoffRetry(cfg backoff.Config) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		backoff := backoff.New(ctx, cfg)
+		for backoff.Ongoing() {
+			err := invoker(ctx, method, req, reply, cc, opts...)
+			if err == nil {
+				return nil
+			}
+
+			if status.Code(err) != codes.ResourceExhausted {
+				return err
+			}
+
+			backoff.Wait()
+		}
+		return backoff.Err()
+	}
+}
+
+// newRateLimiter creates a UnaryClientInterceptor for client side rate limiting.
+func newRateLimiter(cfg *grpcConfig) grpc.UnaryClientInterceptor {
+	burst := cfg.RateLimitBurst
+	if burst == 0 {
+		burst = int(cfg.RateLimit)
+	}
+	limiter := rate.NewLimiter(rate.Limit(cfg.RateLimit), burst)
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		err := limiter.Wait(ctx)
+		if err != nil {
+			return status.Error(codes.ResourceExhausted, err.Error())
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }

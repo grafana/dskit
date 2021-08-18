@@ -1,4 +1,4 @@
-package ca
+package test
 
 import (
 	"crypto/ecdsa"
@@ -14,19 +14,19 @@ import (
 	"github.com/thanos-io/thanos/pkg/runutil"
 )
 
-type CA struct {
+type ca struct {
 	key    *ecdsa.PrivateKey
 	cert   *x509.Certificate
 	serial *big.Int
 }
 
-func New(name string) *CA {
+func newCA(name string) *ca {
 	key, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	if err != nil {
 		panic(err)
 	}
 
-	return &CA{
+	return &ca{
 		key: key,
 		cert: &x509.Certificate{
 			SerialNumber: big.NewInt(1),
@@ -59,7 +59,7 @@ func writeExclusivePEMFile(path, marker string, mode os.FileMode, data []byte) (
 	return nil
 }
 
-func (ca *CA) WriteCACertificate(path string) error {
+func (ca *ca) WriteCACertificate(path string) error {
 	derBytes, err := x509.CreateCertificate(rand.Reader, ca.cert, ca.cert, ca.key.Public(), ca.key)
 	if err != nil {
 		return err
@@ -68,7 +68,7 @@ func (ca *CA) WriteCACertificate(path string) error {
 	return writeExclusivePEMFile(path, "CERTIFICATE", 0644, derBytes)
 }
 
-func (ca *CA) WriteCertificate(template *x509.Certificate, certPath string, keyPath string) error {
+func (ca *ca) WriteCertificate(template *x509.Certificate, certPath string, keyPath string) error {
 	key, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	if err != nil {
 		return err

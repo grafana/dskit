@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/dskit/kv/codec"
 )
 
 type mockKV struct {
@@ -18,20 +18,22 @@ type mockKV struct {
 	cond    *sync.Cond
 	kvps    map[string]*consul.KVPair
 	current uint64 // the current 'index in the log'
+	logger  log.Logger
 }
 
 // NewInMemoryClient makes a new mock consul client.
-func NewInMemoryClient(codec codec.Codec) *Client {
-	return NewInMemoryClientWithConfig(codec, Config{})
+func NewInMemoryClient(codec codec.Codec, logger log.Logger) *Client {
+	return NewInMemoryClientWithConfig(codec, Config{}, logger)
 }
 
 // NewInMemoryClientWithConfig makes a new mock consul client with supplied Config.
-func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config) *Client {
+func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config, logger log.Logger) *Client {
 	m := mockKV{
 		kvps: map[string]*consul.KVPair{},
 		// Always start from 1, we NEVER want to report back index 0 in the responses.
 		// This is in line with Consul, and our new checks for index return value in client.go.
 		current: 1,
+		logger:  logger,
 	}
 	m.cond = sync.NewCond(&m.mtx)
 	go m.loop()
@@ -78,12 +80,12 @@ func (m *mockKV) Put(p *consul.KVPair, q *consul.WriteOptions) (*consul.WriteMet
 
 	m.cond.Broadcast()
 
-	level.Debug(util_log.Logger).Log("msg", "Put", "key", p.Key, "value", fmt.Sprintf("%.40q", p.Value), "modify_index", m.current)
+	level.Debug(m.logger).Log("msg", "Put", "key", p.Key, "value", fmt.Sprintf("%.40q", p.Value), "modify_index", m.current)
 	return nil, nil
 }
 
 func (m *mockKV) CAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.WriteMeta, error) {
-	level.Debug(util_log.Logger).Log("msg", "CAS", "key", p.Key, "modify_index", p.ModifyIndex, "value", fmt.Sprintf("%.40q", p.Value))
+	level.Debug(m.logger).Log("msg", "CAS", "key", p.Key, "modify_index", p.ModifyIndex, "value", fmt.Sprintf("%.40q", p.Value))
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -110,14 +112,14 @@ func (m *mockKV) CAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.Wr
 }
 
 func (m *mockKV) Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consul.QueryMeta, error) {
-	level.Debug(util_log.Logger).Log("msg", "Get", "key", key, "wait_index", q.WaitIndex)
+	level.Debug(m.logger).Log("msg", "Get", "key", key, "wait_index", q.WaitIndex)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
 	value := m.kvps[key]
 	if value == nil && q.WaitIndex == 0 {
-		level.Debug(util_log.Logger).Log("msg", "Get - not found", "key", key)
+		level.Debug(m.logger).Log("msg", "Get - not found", "key", key)
 		return nil, &consul.QueryMeta{LastIndex: m.current}, nil
 	}
 
@@ -146,17 +148,17 @@ func (m *mockKV) Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consu
 			}
 		}
 		if time.Now().After(deadline) {
-			level.Debug(util_log.Logger).Log("msg", "Get - deadline exceeded", "key", key)
+			level.Debug(m.logger).Log("msg", "Get - deadline exceeded", "key", key)
 			return nil, &consul.QueryMeta{LastIndex: q.WaitIndex}, nil
 		}
 	}
 
 	if value == nil {
-		level.Debug(util_log.Logger).Log("msg", "Get - not found", "key", key)
+		level.Debug(m.logger).Log("msg", "Get - not found", "key", key)
 		return nil, &consul.QueryMeta{LastIndex: m.current}, nil
 	}
 
-	level.Debug(util_log.Logger).Log("msg", "Get", "key", key, "modify_index", value.ModifyIndex, "value", fmt.Sprintf("%.40q", value.Value))
+	level.Debug(m.logger).Log("msg", "Get", "key", key, "modify_index", value.ModifyIndex, "value", fmt.Sprintf("%.40q", value.Value))
 	return copyKVPair(value), &consul.QueryMeta{LastIndex: value.ModifyIndex}, nil
 }
 
@@ -203,7 +205,7 @@ func (m *mockKV) ResetIndex() {
 	m.current = 0
 	m.cond.Broadcast()
 
-	level.Debug(util_log.Logger).Log("msg", "Reset")
+	level.Debug(m.logger).Log("msg", "Reset")
 }
 
 func (m *mockKV) ResetIndexForKey(key string) {
@@ -215,7 +217,7 @@ func (m *mockKV) ResetIndexForKey(key string) {
 	}
 
 	m.cond.Broadcast()
-	level.Debug(util_log.Logger).Log("msg", "ResetIndexForKey", "key", key)
+	level.Debug(m.logger).Log("msg", "ResetIndexForKey", "key", key)
 }
 
 // mockedMaxWaitTime returns the minimum duration between the input duration

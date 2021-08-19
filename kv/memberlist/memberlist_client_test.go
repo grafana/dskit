@@ -1288,10 +1288,3 @@ func poll(t testing.TB, d time.Duration, want interface{}, have func() interface
 		t.Fatalf("expected %v, got %v", want, h)
 	}
 }
-
-type testLogger struct {
-}
-
-func (l testLogger) Log(keyvals ...interface{}) error {
-	return nil
-}

@@ -7,7 +7,7 @@ test:
 
 .PHONY: lint
 lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint
-	misspell -error README.md LICENSE
+	misspell -error README.md CONTRIBUTING.md LICENSE
 
 	# Configured via .golangci.yml.
 	golangci-lint run

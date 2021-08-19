@@ -10,7 +10,7 @@ lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint
 	misspell -error README.md LICENSE
 
 	# Configured via .golangci.yml.
-	golangci-lint run ./...
+	golangci-lint run
 
 	# Ensure no blocklisted package is imported.
 	faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\

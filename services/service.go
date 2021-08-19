@@ -8,19 +8,13 @@ import (
 // State of the service. See Service interface for full state diagram.
 type State int
 
-// New: Service is New and not running yet. Initial state.
-// Starting: Service is starting. If starting succeeds, service enters Running state.
-// Running: Service is fully running now. When service stops running, it enters Stopping state.
-// Stopping: Service is shutting down
-// Terminated: Service has stopped successfully. Terminal state.
-// Failed: Service has failed in Starting, Running or Stopping state. Terminal state.
 const (
-	New State = iota
-	Starting
-	Running
-	Stopping
-	Terminated
-	Failed
+	New        State = iota // Service is new, not running yet. Initial state.
+	Starting                // Service is starting. If starting succeeds, service enters Running state.
+	Running                 // Service is fully running now. When service stops running, it enters Stopping state.
+	Stopping                // Service is shutting down
+	Terminated              // Service has stopped successfully. Terminal state.
+	Failed                  // Service has failed in Starting, Running or Stopping state. Terminal state.
 )
 
 func (s State) String() string {

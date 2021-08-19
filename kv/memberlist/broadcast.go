@@ -60,5 +60,6 @@ func (r ringBroadcast) Finished() {
 	if r.finished != nil {
 		r.finished(r)
 	}
-	r.msg = nil
+	// TODO: Figure out whether the receiver needs to be made a pointer, so this mutation is valid
+	// r.msg = nil
 }

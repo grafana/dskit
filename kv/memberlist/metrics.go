@@ -189,7 +189,7 @@ func (m *KV) createAndRegisterMetrics() {
 	}
 
 	for _, c := range all {
-		m.cfg.MetricsRegisterer.MustRegister(c.(prometheus.Collector))
+		m.cfg.MetricsRegisterer.MustRegister(c)
 	}
 
 	m.cfg.MetricsRegisterer.MustRegister(m)

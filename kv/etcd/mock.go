@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3client"
 
@@ -19,7 +20,7 @@ const etcdStartTimeout = 30 * time.Second
 
 // Mock returns a Mock Etcd client.
 // Inspired by https://github.com/ligato/cn-infra/blob/master/db/keyval/etcd/mocks/embeded_etcd.go.
-func Mock(codec codec.Codec) (*Client, io.Closer, error) {
+func Mock(codec codec.Codec, logger log.Logger) (*Client, io.Closer, error) {
 	dir, err := ioutil.TempDir("", "etcd")
 	if err != nil {
 		return nil, nil, err
@@ -54,9 +55,10 @@ func Mock(codec codec.Codec) (*Client, io.Closer, error) {
 	flagext.DefaultValues(&config)
 
 	client := &Client{
-		cfg:   config,
-		codec: codec,
-		cli:   v3client.New(etcd.Server),
+		cfg:    config,
+		codec:  codec,
+		cli:    v3client.New(etcd.Server),
+		logger: logger,
 	}
 
 	return client, closer, nil

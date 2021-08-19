@@ -447,7 +447,7 @@ func (m *KV) running(ctx context.Context) error {
 		}
 	}
 
-	var tickerChan <-chan time.Time = nil
+	var tickerChan <-chan time.Time
 	if m.cfg.RejoinInterval > 0 && len(m.cfg.JoinMembers) > 0 {
 		t := time.NewTicker(m.cfg.RejoinInterval)
 		defer t.Stop()
@@ -784,7 +784,7 @@ func (m *KV) notifyWatchers(key string) {
 // detect removals. If Merge doesn't result in any change (returns nil), then operation fails and is retried again.
 // After too many failed retries, this method returns error.
 func (m *KV) CAS(ctx context.Context, key string, codec codec.Codec, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	var lastError error = nil
+	var lastError error
 
 outer:
 	for retries := m.maxCasRetries; retries > 0; retries-- {

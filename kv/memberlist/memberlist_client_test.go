@@ -164,7 +164,7 @@ func updateFn(name string) func(*data) (*data, bool, error) {
 	return func(in *data) (out *data, retry bool, err error) {
 		// Modify value that was passed as a parameter.
 		// Client takes care of concurrent modifications.
-		var r *data = in
+		r := in
 		if r == nil {
 			r = &data{Members: map[string]member{}}
 		}
@@ -219,7 +219,7 @@ func cas(t *testing.T, kv *Client, key string, updateFn func(*data) (*data, bool
 func casWithErr(ctx context.Context, t *testing.T, kv *Client, key string, updateFn func(*data) (*data, bool, error)) error {
 	t.Helper()
 	fn := func(in interface{}) (out interface{}, retry bool, err error) {
-		var r *data = nil
+		var r *data
 		if in != nil {
 			r = in.(*data)
 		}
@@ -957,7 +957,7 @@ func TestMultipleCodecs(t *testing.T) {
 	require.NoError(t, err)
 
 	err = kv1.CAS(context.Background(), "data", func(in interface{}) (out interface{}, retry bool, err error) {
-		var d *data = nil
+		var d *data
 		if in != nil {
 			d = in.(*data)
 		}
@@ -976,7 +976,7 @@ func TestMultipleCodecs(t *testing.T) {
 	require.NoError(t, err)
 
 	err = kv2.CAS(context.Background(), "counter", func(in interface{}) (out interface{}, retry bool, err error) {
-		var dc distributedCounter = nil
+		var dc distributedCounter
 		if in != nil {
 			dc = in.(distributedCounter)
 		}

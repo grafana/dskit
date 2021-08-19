@@ -38,9 +38,10 @@ func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config, logger log.Logge
 	m.cond = sync.NewCond(&m.mtx)
 	go m.loop()
 	return &Client{
-		kv:    &m,
-		codec: codec,
-		cfg:   cfg,
+		kv:     &m,
+		codec:  codec,
+		cfg:    cfg,
+		logger: logger,
 	}
 }
 

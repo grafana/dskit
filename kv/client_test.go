@@ -147,3 +147,10 @@ func (m *mockMessage) String() string {
 func (m *mockMessage) ProtoMessage() {
 	panic("do not use")
 }
+
+type testLogger struct {
+}
+
+func (l testLogger) Log(keyvals ...interface{}) error {
+	return nil
+}

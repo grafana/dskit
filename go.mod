@@ -39,3 +39,5 @@ require (
 	google.golang.org/grpc v1.39.0
 	gopkg.in/yaml.v2 v2.4.0
 )
+
+replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.21.4

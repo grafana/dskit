@@ -5,6 +5,10 @@ PATH := $(CURDIR)/.tools/bin:$(PATH)
 test:
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
+.PHONY: test-e2e
+test-e2e:
+	go test -tags netgo,requires_docker -timeout 30m -v -count=1 ./test/integration/e2e
+
 .PHONY: lint
 lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint
 	misspell -error README.md LICENSE

@@ -1,0 +1,33 @@
+name: integration-e2e
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # integration-e2e is run as a GitHub Action, as to run those test we require
+  # a docker socket to be available so containers can be run.
+  integration-e2e:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Upgrade golang
+        run: |
+          sudo rm -rf /usr/local/go
+          curl -L https://dl.google.com/go/go1.16.7.linux-amd64.tar.gz | sudo tar -C /usr/local -xz
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+      - name: Install Docker Client
+        run: |
+          sudo ./.github/workflows/scripts/install-docker.sh
+      - name: Preload Images
+        # We download docker images used by integration tests so that all images are available
+        # locally and the download time doesn't account in the test execution time, which is subject
+        # to a timeout.
+        run: |
+          docker pull minio/minio:RELEASE.2019-12-30T05-45-39Z
+      - name: Integration Tests
+        run: |
+          make test-e2e

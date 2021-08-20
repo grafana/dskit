@@ -44,7 +44,7 @@ make test
 
 ### Dependency management
 
-We use [go modules] to manage dependencies on external packages. This requires
+We use [Go modules] to manage dependencies on external packages. This requires
 a working Go environment with version 1.16 or greater and git installed.
 
 [Go modules]: https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more
@@ -92,7 +92,7 @@ between imports in the groups. We try to avoid extra newlines like that.
     brew install git-filter-repo
     ```
 
-### Import a particular files
+### Import particular files
 
 In this case we would like add two particular files from Cortex, while
 preserving their commit history.

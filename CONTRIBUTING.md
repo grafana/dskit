@@ -44,11 +44,10 @@ make test
 
 ### Dependency management
 
-We use [go modules] to manage dependencies on external packages.  This requires
-a working Go environment with version 1.16 or greater, git and [bzr] installed.
+We use [go modules] to manage dependencies on external packages. This requires
+a working Go environment with version 1.16 or greater and git installed.
 
 [Go modules]: https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more
-[bzr]: http://wiki.bazaar.canonical.com/Download
 
 To add or update a new dependency, use the `go get` command:
 
@@ -76,7 +75,7 @@ install) to format the Go files, and sort imports. We use goimports with
 `-local github.com/grafana/dskit` parameter, to put Dskit internal imports into
 a separate group. We try to keep imports sorted into three groups:
 imports from standard library, imports of 3rd party packages and internal
-Cortex imports. Goimports will fix the order, but will keep existing newlines
+imports. Goimports will fix the order, but will keep existing newlines
 between imports in the groups. We try to avoid extra newlines like that.
 
 ## How to add a package from another repository preserving history

@@ -21,7 +21,7 @@ require (
 	github.com/miekg/dns v1.1.42 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
-	github.com/prometheus/common v0.26.0
+	github.com/prometheus/common v0.30.0
 	github.com/stretchr/testify v1.7.0
 	github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
 	github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624

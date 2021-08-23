@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// NewIdleService Initializes basic service as an "idle" service -- it doesn't do anything in its Running state,
+// Initializes basic service as an "idle" service -- it doesn't do anything in its Running state,
 // but still supports all state transitions.
 func NewIdleService(up StartingFn, down StoppingFn) *BasicService {
 	run := func(ctx context.Context) error {
@@ -17,11 +17,11 @@ func NewIdleService(up StartingFn, down StoppingFn) *BasicService {
 	return NewBasicService(up, run, down)
 }
 
-// OneIteration One iteration of the timer service. Called repeatedly until service is stopped, or this function returns error
+// One iteration of the timer service. Called repeatedly until service is stopped, or this function returns error
 // in which case, service will fail.
 type OneIteration func(ctx context.Context) error
 
-// NewTimerService Runs iteration function on every interval tick. When iteration returns error, service fails.
+// Runs iteration function on every interval tick. When iteration returns error, service fails.
 func NewTimerService(interval time.Duration, start StartingFn, iter OneIteration, stop StoppingFn) *BasicService {
 	run := func(ctx context.Context) error {
 		t := time.NewTicker(interval)

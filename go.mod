@@ -24,7 +24,7 @@ require (
 	github.com/prometheus/common v0.26.0
 	github.com/stretchr/testify v1.7.0
 	github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
-	github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a
+	github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624
 	go.etcd.io/etcd v3.3.25+incompatible
 	go.etcd.io/etcd/client/v3 v3.5.0
 	go.etcd.io/etcd/server/v3 v3.5.0

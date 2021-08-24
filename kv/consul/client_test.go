@@ -8,6 +8,7 @@ import (
 	"time"
 
 	consul "github.com/hashicorp/consul/api"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/kv/codec"
@@ -29,10 +30,13 @@ func writeValuesToKV(t *testing.T, client *Client, key string, start, end int, s
 }
 
 func TestWatchKeyWithRateLimit(t *testing.T) {
-	c := NewInMemoryClientWithConfig(codec.String{}, Config{
+	c, closer := NewInMemoryClientWithConfig(codec.String{}, Config{
 		WatchKeyRateLimit: 5.0,
 		WatchKeyBurstSize: 1,
 	}, testLogger{})
+	t.Cleanup(func() {
+		assert.NoError(t, closer.Close())
+	})
 
 	const key = "test"
 	const max = 100
@@ -61,9 +65,12 @@ func TestWatchKeyWithRateLimit(t *testing.T) {
 }
 
 func TestWatchKeyNoRateLimit(t *testing.T) {
-	c := NewInMemoryClientWithConfig(codec.String{}, Config{
+	c, closer := NewInMemoryClientWithConfig(codec.String{}, Config{
 		WatchKeyRateLimit: 0,
 	}, testLogger{})
+	t.Cleanup(func() {
+		assert.NoError(t, closer.Close())
+	})
 
 	const key = "test"
 	const max = 100
@@ -82,7 +89,10 @@ func TestWatchKeyNoRateLimit(t *testing.T) {
 }
 
 func TestReset(t *testing.T) {
-	c := NewInMemoryClient(codec.String{}, testLogger{})
+	c, closer := NewInMemoryClient(codec.String{}, testLogger{})
+	t.Cleanup(func() {
+		assert.NoError(t, closer.Close())
+	})
 
 	const key = "test"
 	const max = 5
@@ -138,7 +148,10 @@ func observeValueForSomeTime(t *testing.T, client *Client, key string, timeout t
 }
 
 func TestWatchKeyWithNoStartValue(t *testing.T) {
-	c := NewInMemoryClient(codec.String{}, testLogger{})
+	c, closer := NewInMemoryClient(codec.String{}, testLogger{})
+	t.Cleanup(func() {
+		assert.NoError(t, closer.Close())
+	})
 
 	const key = "test"
 

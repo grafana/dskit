@@ -111,7 +111,7 @@ type Listener interface {
 	// Running is called when the service transitions from STARTING to RUNNING.
 	Running()
 
-	// Stopping ic called when the service transitions to the STOPPING state.
+	// Stopping is called when the service transitions to the STOPPING state.
 	Stopping(from State)
 
 	// Terminated is called when the service transitions to the TERMINATED state.

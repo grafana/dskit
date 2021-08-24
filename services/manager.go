@@ -17,7 +17,7 @@ const (
 
 // ManagerListener listens for events from Manager.
 type ManagerListener interface {
-	// Healthy is alled when Manager reaches Healthy state (all services Running)
+	// Healthy is called when Manager reaches Healthy state (all services Running)
 	Healthy()
 
 	// Stopped is called when Manager reaches Stopped state (all services are either Terminated or Failed)

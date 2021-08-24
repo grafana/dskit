@@ -11,7 +11,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/runutil"
+	"github.com/pkg/errors"
+
+	"github.com/grafana/dskit/multierror"
 )
 
 type ca struct {
@@ -43,7 +45,6 @@ func newCA(name string) *ca {
 		},
 		serial: big.NewInt(2),
 	}
-
 }
 
 func writeExclusivePEMFile(path, marker string, mode os.FileMode, data []byte) (err error) {
@@ -51,7 +52,10 @@ func writeExclusivePEMFile(path, marker string, mode os.FileMode, data []byte) (
 	if err != nil {
 		return err
 	}
-	defer runutil.CloseWithErrCapture(&err, f, "write pem file")
+	defer func() {
+		merr := multierror.New(err, errors.Wrap(f.Close(), "write pem file"))
+		err = merr.Err()
+	}()
 
 	return pem.Encode(f, &pem.Block{Type: marker, Bytes: data})
 }

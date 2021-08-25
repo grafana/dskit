@@ -56,6 +56,6 @@ func TestPage(t *testing.T) {
 func TestStop(t *testing.T) {
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
-	kvinit := NewKVInitService(&cfg, nil)
+	kvinit := NewKVInitService(&cfg, nil, &dnsProviderMock{})
 	require.NoError(t, kvinit.stopping(nil))
 }

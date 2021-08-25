@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/runutil"
+	"github.com/grafana/dskit/runutil"
 )
 
 type ca struct {
@@ -43,7 +43,6 @@ func newCA(name string) *ca {
 		},
 		serial: big.NewInt(2),
 	}
-
 }
 
 func writeExclusivePEMFile(path, marker string, mode os.FileMode, data []byte) (err error) {

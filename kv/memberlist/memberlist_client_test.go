@@ -246,7 +246,7 @@ func TestBasicGetAndCas(t *testing.T) {
 	}
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger())
+	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
 
@@ -302,7 +302,7 @@ func withFixtures(t *testing.T, testFN func(t *testing.T, kv *Client)) {
 	cfg.TCPTransport = TCPTransportConfig{}
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger())
+	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
 
@@ -446,7 +446,7 @@ func TestMultipleCAS(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger())
+	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 	mkv.maxCasRetries = 20
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
@@ -548,7 +548,7 @@ func TestMultipleClients(t *testing.T) {
 
 		cfg.Codecs = []codec.Codec{c}
 
-		mkv := NewKV(cfg, log.NewNopLogger())
+		mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 
 		kv, err := NewClient(mkv, c)
@@ -701,7 +701,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 			time.Sleep(1 * time.Second)
 		}
 
-		mkv := NewKV(cfg, log.NewNopLogger()) // Not started yet.
+		mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}) // Not started yet.
 		watcher.WatchService(mkv)
 
 		kv, err := NewClient(mkv, c)
@@ -724,7 +724,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 		}
 	}
 
-	t.Log("Waiting all members to join memberlist cluster")
+	t.Log("Waiting for all members to join memberlist cluster")
 	close(start)
 	time.Sleep(2 * time.Second)
 
@@ -775,7 +775,7 @@ func TestMemberlistFailsToJoin(t *testing.T) {
 
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger())
+	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -946,7 +946,7 @@ func TestMultipleCodecs(t *testing.T) {
 		distributedCounterCodec{},
 	}
 
-	mkv1 := NewKV(cfg, log.NewNopLogger())
+	mkv1 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
@@ -989,7 +989,7 @@ func TestMultipleCodecs(t *testing.T) {
 	require.NoError(t, err)
 
 	// We will read values from second KV, which will join the first one
-	mkv2 := NewKV(cfg, log.NewNopLogger())
+	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
@@ -1041,11 +1041,11 @@ func TestRejoin(t *testing.T) {
 	cfg2.JoinMembers = []string{fmt.Sprintf("localhost:%d", ports[0])}
 	cfg2.RejoinInterval = 1 * time.Second
 
-	mkv1 := NewKV(cfg1, log.NewNopLogger())
+	mkv1 := NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
-	mkv2 := NewKV(cfg2, log.NewNopLogger())
+	mkv2 := NewKV(cfg2, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
@@ -1062,7 +1062,7 @@ func TestRejoin(t *testing.T) {
 	poll(t, 5*time.Second, 1, membersFunc)
 
 	// Let's start first KV again. It is not configured to join the cluster, but KV2 is rejoining.
-	mkv1 = NewKV(cfg1, log.NewNopLogger())
+	mkv1 = NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
@@ -1094,7 +1094,7 @@ func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
 
-	kv := NewKV(cfg, log.NewNopLogger())
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
 	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
 
@@ -1157,7 +1157,7 @@ func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 	cfg.LeftIngestersTimeout = 5 * time.Minute
 	cfg.Codecs = append(cfg.Codecs, codec)
 
-	kv := NewKV(cfg, log.NewNopLogger())
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{})
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
 	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
 
@@ -1294,4 +1294,17 @@ type testLogger struct {
 
 func (l testLogger) Log(keyvals ...interface{}) error {
 	return nil
+}
+
+type dnsProviderMock struct {
+	resolved []string
+}
+
+func (p *dnsProviderMock) Resolve(ctx context.Context, addrs []string) error {
+	p.resolved = addrs
+	return nil
+}
+
+func (p dnsProviderMock) Addresses() []string {
+	return p.resolved
 }

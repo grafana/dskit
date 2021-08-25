@@ -70,7 +70,7 @@ func Test_createClient_singleBackend_mustContainRoleAndTypeLabels(t *testing.T) 
 		return
 	}))
 
-	actual := typeToRoleMap(t, reg)
+	actual := typeToRoleMapHistogramLabels(t, reg)
 	require.Len(t, actual, 1)
 	require.Equal(t, "primary", actual["mock"])
 }
@@ -88,7 +88,7 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 		return
 	}))
 
-	actual := typeToRoleMap(t, reg)
+	actual := typeToRoleMapHistogramLabels(t, reg)
 	// expected multi-primary, inmemory-primary and mock-secondary
 	require.Len(t, actual, 3)
 	require.Equal(t, "primary", actual["multi"])
@@ -97,24 +97,26 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 
 }
 
-func typeToRoleMap(t *testing.T, reg prometheus.Gatherer) map[string]string {
+func typeToRoleMapHistogramLabels(t *testing.T, reg prometheus.Gatherer) map[string]string {
 	mfs, err := reg.Gather()
 	require.NoError(t, err)
 	result := map[string]string{}
 	for _, mf := range mfs {
 		for _, m := range mf.GetMetric() {
-			backendType := ""
-			role := ""
-			for _, l := range m.GetLabel() {
-				if l.GetName() == "role" {
-					role = l.GetValue()
-				} else if l.GetName() == "type" {
-					backendType = l.GetValue()
+			if m.GetHistogram() != nil {
+				backendType := ""
+				role := ""
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "role" {
+						role = l.GetValue()
+					} else if l.GetName() == "type" {
+						backendType = l.GetValue()
+					}
 				}
+				require.NotEmpty(t, backendType)
+				require.NotEmpty(t, role)
+				result[backendType] = role
 			}
-			require.NotEmpty(t, backendType)
-			require.NotEmpty(t, role)
-			result[backendType] = role
 		}
 	}
 	return result

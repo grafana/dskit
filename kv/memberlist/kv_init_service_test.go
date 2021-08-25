@@ -57,6 +57,6 @@ func TestPage(t *testing.T) {
 func TestStop(t *testing.T) {
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
-	kvinit := NewKVInitService(&cfg, nil, prometheus.NewRegistry())
+	kvinit := NewKVInitService(&cfg, nil, prometheus.NewRegistry(), &dnsProviderMock{})
 	require.NoError(t, kvinit.stopping(nil))
 }

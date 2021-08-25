@@ -11,9 +11,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/pkg/errors"
-
-	"github.com/grafana/dskit/multierror"
+	"github.com/grafana/dskit/runutil"
 )
 
 type ca struct {
@@ -52,10 +50,7 @@ func writeExclusivePEMFile(path, marker string, mode os.FileMode, data []byte) (
 	if err != nil {
 		return err
 	}
-	defer func() {
-		merr := multierror.New(err, errors.Wrap(f.Close(), "write pem file"))
-		err = merr.Err()
-	}()
+	defer runutil.CloseWithErrCapture(&err, f, "write pem file")
 
 	return pem.Encode(f, &pem.Block{Type: marker, Bytes: data})
 }

@@ -70,7 +70,7 @@ func Test_createClient_singleBackend_mustContainRoleAndTypeLabels(t *testing.T) 
 		return
 	}))
 
-	actual := typeToRoleMapHistogramLabels(t, reg)
+	actual := typeToRoleMapHistogramLabels(t, reg, "kv_request_duration_seconds")
 	require.Len(t, actual, 1)
 	require.Equal(t, "primary", actual["mock"])
 }
@@ -88,7 +88,7 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 		return
 	}))
 
-	actual := typeToRoleMapHistogramLabels(t, reg)
+	actual := typeToRoleMapHistogramLabels(t, reg, "kv_request_duration_seconds")
 	// expected multi-primary, inmemory-primary and mock-secondary
 	require.Len(t, actual, 3)
 	require.Equal(t, "primary", actual["multi"])
@@ -97,13 +97,13 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 
 }
 
-func typeToRoleMapHistogramLabels(t *testing.T, reg prometheus.Gatherer) map[string]string {
+func typeToRoleMapHistogramLabels(t *testing.T, reg prometheus.Gatherer, histogramWithRoleLabels string) map[string]string {
 	mfs, err := reg.Gather()
 	require.NoError(t, err)
 	result := map[string]string{}
 	for _, mf := range mfs {
-		for _, m := range mf.GetMetric() {
-			if m.GetHistogram() != nil {
+		if mf.GetName() == histogramWithRoleLabels {
+			for _, m := range mf.GetMetric() {
 				backendType := ""
 				role := ""
 				for _, l := range m.GetLabel() {

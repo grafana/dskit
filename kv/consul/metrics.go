@@ -4,29 +4,18 @@ import (
 	"context"
 
 	consul "github.com/hashicorp/consul/api"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/weaveworks/common/instrument"
 )
 
-// Needs a with call
-var consulRequestDuration = instrument.NewHistogramCollector(prometheus.NewHistogramVec(prometheus.HistogramOpts{
-	Name:    "consul_request_duration_seconds",
-	Help:    "Time spent on consul requests.",
-	Buckets: prometheus.DefBuckets,
-}, []string{"operation", "status_code"}))
-
-func init() {
-	consulRequestDuration.Register()
-}
-
 type consulMetrics struct {
 	kv
+	consulRequestDuration *instrument.HistogramCollector
 }
 
 func (c consulMetrics) CAS(p *consul.KVPair, options *consul.WriteOptions) (bool, *consul.WriteMeta, error) {
 	var ok bool
 	var result *consul.WriteMeta
-	err := instrument.CollectedRequest(options.Context(), "CAS", consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
+	err := instrument.CollectedRequest(options.Context(), "CAS", c.consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		options = options.WithContext(ctx)
 		var err error
 		ok, result, err = c.kv.CAS(p, options)
@@ -38,7 +27,7 @@ func (c consulMetrics) CAS(p *consul.KVPair, options *consul.WriteOptions) (bool
 func (c consulMetrics) Get(key string, options *consul.QueryOptions) (*consul.KVPair, *consul.QueryMeta, error) {
 	var kvp *consul.KVPair
 	var meta *consul.QueryMeta
-	err := instrument.CollectedRequest(options.Context(), "Get", consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
+	err := instrument.CollectedRequest(options.Context(), "Get", c.consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		options = options.WithContext(ctx)
 		var err error
 		kvp, meta, err = c.kv.Get(key, options)
@@ -50,7 +39,7 @@ func (c consulMetrics) Get(key string, options *consul.QueryOptions) (*consul.KV
 func (c consulMetrics) List(path string, options *consul.QueryOptions) (consul.KVPairs, *consul.QueryMeta, error) {
 	var kvps consul.KVPairs
 	var meta *consul.QueryMeta
-	err := instrument.CollectedRequest(options.Context(), "List", consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
+	err := instrument.CollectedRequest(options.Context(), "List", c.consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		options = options.WithContext(ctx)
 		var err error
 		kvps, meta, err = c.kv.List(path, options)
@@ -61,7 +50,7 @@ func (c consulMetrics) List(path string, options *consul.QueryOptions) (consul.K
 
 func (c consulMetrics) Delete(key string, options *consul.WriteOptions) (*consul.WriteMeta, error) {
 	var meta *consul.WriteMeta
-	err := instrument.CollectedRequest(options.Context(), "Delete", consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
+	err := instrument.CollectedRequest(options.Context(), "Delete", c.consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		options = options.WithContext(ctx)
 		var err error
 		meta, err = c.kv.Delete(key, options)
@@ -72,7 +61,7 @@ func (c consulMetrics) Delete(key string, options *consul.WriteOptions) (*consul
 
 func (c consulMetrics) Put(p *consul.KVPair, options *consul.WriteOptions) (*consul.WriteMeta, error) {
 	var result *consul.WriteMeta
-	err := instrument.CollectedRequest(options.Context(), "Put", consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
+	err := instrument.CollectedRequest(options.Context(), "Put", c.consulRequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		options = options.WithContext(ctx)
 		var err error
 		result, err = c.kv.Put(p, options)

@@ -205,5 +205,5 @@ func buildMultiClient(cfg StoreConfig, codec codec.Codec, reg prometheus.Registe
 		{client: secondary, name: cfg.Multi.Secondary},
 	}
 
-	return NewMultiClient(cfg.Multi, clients, logger), nil
+	return NewMultiClient(cfg.Multi, clients, logger, reg), nil
 }

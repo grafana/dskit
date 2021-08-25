@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/hashicorp/memberlist"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/services"
@@ -27,6 +28,7 @@ type KVInitService struct {
 	// config used for initialization
 	cfg    *KVConfig
 	logger log.Logger
+	registerer prometheus.Registerer
 
 	// init function, to avoid multiple initializations.
 	init sync.Once
@@ -37,11 +39,13 @@ type KVInitService struct {
 	watcher *services.FailureWatcher
 }
 
-func NewKVInitService(cfg *KVConfig, logger log.Logger) *KVInitService {
+func NewKVInitService(cfg *KVConfig, logger log.Logger, registerer prometheus.Registerer) *KVInitService {
 	kvinit := &KVInitService{
 		cfg:     cfg,
 		watcher: services.NewFailureWatcher(),
 		logger:  logger,
+		registerer: registerer,
+
 	}
 	kvinit.Service = services.NewBasicService(nil, kvinit.running, kvinit.stopping).WithName("memberlist KV service")
 	return kvinit
@@ -50,7 +54,7 @@ func NewKVInitService(cfg *KVConfig, logger log.Logger) *KVInitService {
 // This method will initialize Memberlist.KV on first call, and add it to service failure watcher.
 func (kvs *KVInitService) GetMemberlistKV() (*KV, error) {
 	kvs.init.Do(func() {
-		kv := NewKV(*kvs.cfg, kvs.logger)
+		kv := NewKV(*kvs.cfg, kvs.logger, kvs.registerer)
 		kvs.watcher.WatchService(kv)
 		kvs.err = kv.StartAsync(context.Background())
 

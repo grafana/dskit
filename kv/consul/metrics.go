@@ -8,6 +8,7 @@ import (
 	"github.com/weaveworks/common/instrument"
 )
 
+// Needs a with call
 var consulRequestDuration = instrument.NewHistogramCollector(prometheus.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "consul_request_duration_seconds",
 	Help:    "Time spent on consul requests.",

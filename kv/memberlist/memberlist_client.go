@@ -214,8 +214,9 @@ func generateRandomSuffix(logger log.Logger) string {
 type KV struct {
 	services.Service
 
-	cfg    KVConfig
-	logger log.Logger
+	cfg        KVConfig
+	logger     log.Logger
+	registerer prometheus.Registerer
 
 	// dns discovery provider
 	provider *dns.Provider
@@ -328,7 +329,7 @@ var (
 // gossiping part. Only after service is in Running state, it is really gossiping. Starting the service will also
 // trigger connecting to the existing memberlist cluster. If that fails and AbortIfJoinFails is true, error is returned
 // and service enters Failed state.
-func NewKV(cfg KVConfig, logger log.Logger) *KV {
+func NewKV(cfg KVConfig, logger log.Logger, registerer prometheus.Registerer) *KV {
 	cfg.TCPTransport.MetricsRegisterer = cfg.MetricsRegisterer
 	cfg.TCPTransport.MetricsNamespace = cfg.MetricsNamespace
 
@@ -340,6 +341,7 @@ func NewKV(cfg KVConfig, logger log.Logger) *KV {
 	mlkv := &KV{
 		cfg:            cfg,
 		logger:         logger,
+		registerer:     registerer,
 		provider:       dns.NewProvider(logger, mr, dns.GolangResolverType),
 		store:          make(map[string]valueDesc),
 		codecs:         make(map[string]codec.Codec),
@@ -349,7 +351,7 @@ func NewKV(cfg KVConfig, logger log.Logger) *KV {
 		maxCasRetries:  maxCasRetries,
 	}
 
-	mlkv.createAndRegisterMetrics()
+	mlkv.createAndRegisterMetrics(mlkv.registerer)
 
 	for _, c := range cfg.Codecs {
 		mlkv.codecs[c.CodecID()] = c
@@ -364,7 +366,7 @@ func defaultMemberlistConfig() *memberlist.Config {
 }
 
 func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
-	tr, err := NewTCPTransport(m.cfg.TCPTransport, m.logger)
+	tr, err := NewTCPTransport(m.cfg.TCPTransport, m.logger, m.registerer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transport: %v", err)
 	}

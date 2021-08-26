@@ -42,7 +42,6 @@ type KVInitService struct {
 
 func NewKVInitService(cfg *KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer prometheus.Registerer) *KVInitService {
 	kvinit := &KVInitService{
-
 		cfg:         cfg,
 		watcher:     services.NewFailureWatcher(),
 		logger:      logger,

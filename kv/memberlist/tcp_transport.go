@@ -107,7 +107,7 @@ type TCPTransport struct {
 
 // NewTCPTransport returns a new tcp-based transport with the given configuration. On
 // success all the network listeners will be created and listening.
-func NewTCPTransport(config TCPTransportConfig, logger log.Logger, registerer prometheus.Registerer) (*TCPTransport, error) {
+func NewTCPTransport(config TCPTransportConfig, logger log.Logger) (*TCPTransport, error) {
 	if len(config.BindAddrs) == 0 {
 		config.BindAddrs = []string{zeroZeroZeroZero}
 	}
@@ -129,7 +129,7 @@ func NewTCPTransport(config TCPTransportConfig, logger log.Logger, registerer pr
 		}
 	}
 
-	t.registerMetrics(registerer)
+	t.registerMetrics(config.MetricsRegisterer)
 
 	// Clean up listeners if there's an error.
 	defer func() {
@@ -621,23 +621,5 @@ func (t *TCPTransport) registerMetrics(registerer prometheus.Registerer) {
 
 	if t.cfg.MetricsRegisterer == nil {
 		return
-	}
-
-	all := []prometheus.Metric{
-		t.incomingStreams,
-		t.outgoingStreams,
-		t.outgoingStreamErrors,
-		t.receivedPackets,
-		t.receivedPacketsBytes,
-		t.receivedPacketsErrors,
-		t.sentPackets,
-		t.sentPacketsBytes,
-		t.sentPacketsErrors,
-		t.unknownConnections,
-	}
-
-	// if registration fails, that's too bad, but don't panic
-	for _, c := range all {
-		t.cfg.MetricsRegisterer.MustRegister(c.(prometheus.Collector))
 	}
 }

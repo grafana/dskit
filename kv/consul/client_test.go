@@ -34,7 +34,7 @@ func TestWatchKeyWithRateLimit(t *testing.T) {
 	c, closer := NewInMemoryClientWithConfig(codec.String{}, Config{
 		WatchKeyRateLimit: 5.0,
 		WatchKeyBurstSize: 1,
-	}, testLogger{}, prometheus.NewRegistry())
+	}, testLogger{}, prometheus.NewPedanticRegistry())
 	t.Cleanup(func() {
 		assert.NoError(t, closer.Close())
 	})
@@ -68,7 +68,7 @@ func TestWatchKeyWithRateLimit(t *testing.T) {
 func TestWatchKeyNoRateLimit(t *testing.T) {
 	c, closer := NewInMemoryClientWithConfig(codec.String{}, Config{
 		WatchKeyRateLimit: 0,
-	}, testLogger{}, prometheus.NewRegistry())
+	}, testLogger{}, prometheus.NewPedanticRegistry())
 	t.Cleanup(func() {
 		assert.NoError(t, closer.Close())
 	})
@@ -90,7 +90,7 @@ func TestWatchKeyNoRateLimit(t *testing.T) {
 }
 
 func TestReset(t *testing.T) {
-	c, closer := NewInMemoryClient(codec.String{}, testLogger{}, prometheus.NewRegistry())
+	c, closer := NewInMemoryClient(codec.String{}, testLogger{}, prometheus.NewPedanticRegistry())
 	t.Cleanup(func() {
 		assert.NoError(t, closer.Close())
 	})
@@ -149,7 +149,7 @@ func observeValueForSomeTime(t *testing.T, client *Client, key string, timeout t
 }
 
 func TestWatchKeyWithNoStartValue(t *testing.T) {
-	c, closer := NewInMemoryClient(codec.String{}, testLogger{}, prometheus.NewRegistry())
+	c, closer := NewInMemoryClient(codec.String{}, testLogger{}, prometheus.NewPedanticRegistry())
 	t.Cleanup(func() {
 		assert.NoError(t, closer.Close())
 	})

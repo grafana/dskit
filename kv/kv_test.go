@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/kv/codec"
@@ -18,7 +17,7 @@ import (
 	"github.com/grafana/dskit/kv/etcd"
 )
 
-func withFixtures(t *testing.T, f func(*testing.T, Client), registerer prometheus.Registerer) {
+func withFixtures(t *testing.T, f func(*testing.T, Client)) {
 	t.Helper()
 
 	for _, fixture := range []struct {
@@ -26,7 +25,7 @@ func withFixtures(t *testing.T, f func(*testing.T, Client), registerer prometheu
 		factory func() (Client, io.Closer, error)
 	}{
 		{"consul", func() (Client, io.Closer, error) {
-			client, closer := consul.NewInMemoryClient(codec.String{}, testLogger{}, registerer)
+			client, closer := consul.NewInMemoryClient(codec.String{}, testLogger{}, nil)
 			return client, closer, nil
 		}},
 		{"etcd", func() (Client, io.Closer, error) {
@@ -70,7 +69,7 @@ func TestCAS(t *testing.T) {
 		value, err := client.Get(ctx, key)
 		require.NoError(t, err)
 		require.EqualValues(t, "10", value)
-	}, prometheus.NewRegistry())
+	})
 }
 
 // TestNilCAS ensures we can return nil from the CAS callback when we don't
@@ -94,7 +93,7 @@ func TestNilCAS(t *testing.T) {
 		value, err := client.Get(ctx, key)
 		require.NoError(t, err)
 		require.EqualValues(t, "0", value)
-	}, prometheus.NewRegistry())
+	})
 }
 
 func TestWatchKey(t *testing.T) {
@@ -166,7 +165,7 @@ func TestWatchKey(t *testing.T) {
 		if observedCount < expectedFactor*max {
 			t.Errorf("expected at least %.0f%% observed values, got %.0f%% (observed count: %d)", 100*expectedFactor, 100*float64(observedCount)/max, observedCount)
 		}
-	}, prometheus.NewRegistry())
+	})
 }
 
 func TestWatchPrefix(t *testing.T) {
@@ -259,7 +258,7 @@ func TestWatchPrefix(t *testing.T) {
 		if len(observedKeys) > 0 {
 			t.Errorf("unexpected keys reported: %v", observedKeys)
 		}
-	}, prometheus.NewRegistry())
+	})
 }
 
 // TestList makes sure stored keys are listed back.
@@ -279,5 +278,5 @@ func TestList(t *testing.T) {
 		sort.Strings(storedKeys)
 
 		require.Equal(t, keysToCreate, storedKeys)
-	}, prometheus.NewRegistry())
+	})
 }

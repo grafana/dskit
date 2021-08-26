@@ -12,59 +12,59 @@ import (
 	"github.com/grafana/dskit/services"
 )
 
-func (m *KV) createAndRegisterMetrics(registerer prometheus.Registerer) {
+func (m *KV) createAndRegisterMetrics() {
 	const subsystem = "memberlist_client"
 
-	m.numberOfReceivedMessages = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.numberOfReceivedMessages = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "received_broadcasts_total",
 		Help:      "Number of received broadcast user messages",
 	})
 
-	m.totalSizeOfReceivedMessages = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.totalSizeOfReceivedMessages = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "received_broadcasts_bytes_total",
 		Help:      "Total size of received broadcast user messages",
 	})
 
-	m.numberOfInvalidReceivedMessages = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.numberOfInvalidReceivedMessages = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "received_broadcasts_invalid_total",
 		Help:      "Number of received broadcast user messages that were invalid. Hopefully 0.",
 	})
 
-	m.numberOfPushes = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.numberOfPushes = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "state_pushes_total",
 		Help:      "How many times did this node push its full state to another node",
 	})
 
-	m.totalSizeOfPushes = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.totalSizeOfPushes = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "state_pushes_bytes_total",
 		Help:      "Total size of pushed state",
 	})
 
-	m.numberOfPulls = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.numberOfPulls = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "state_pulls_total",
 		Help:      "How many times did this node pull full state from another node",
 	})
 
-	m.totalSizeOfPulls = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.totalSizeOfPulls = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "state_pulls_bytes_total",
 		Help:      "Total size of pulled state",
 	})
 
-	m.numberOfBroadcastMessagesInQueue = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+	m.numberOfBroadcastMessagesInQueue = promauto.With(m.registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "messages_in_broadcast_queue",
@@ -77,35 +77,35 @@ func (m *KV) createAndRegisterMetrics(registerer prometheus.Registerer) {
 		return 0
 	})
 
-	m.totalSizeOfBroadcastMessagesInQueue = promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+	m.totalSizeOfBroadcastMessagesInQueue = promauto.With(m.registerer).NewGauge(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "messages_in_broadcast_queue_bytes",
 		Help:      "Total size of messages waiting in the broadcast queue",
 	})
 
-	m.numberOfBroadcastMessagesDropped = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.numberOfBroadcastMessagesDropped = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "messages_to_broadcast_dropped_total",
 		Help:      "Number of broadcast messages intended to be sent but were dropped due to encoding errors or for being too big",
 	})
 
-	m.casAttempts = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.casAttempts = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "cas_attempt_total",
 		Help:      "Attempted CAS operations",
 	})
 
-	m.casSuccesses = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.casSuccesses = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "cas_success_total",
 		Help:      "Successful CAS operations",
 	})
 
-	m.casFailures = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	m.casFailures = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "cas_failure_total",
@@ -117,21 +117,21 @@ func (m *KV) createAndRegisterMetrics(registerer prometheus.Registerer) {
 		"Number of values in KV Store",
 		nil, nil)
 
-	m.storeTombstones = promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+	m.storeTombstones = promauto.With(m.registerer).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "kv_store_value_tombstones",
 		Help:      "Number of tombstones currently present in KV store values",
 	}, []string{"key"})
 
-	m.storeRemovedTombstones = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+	m.storeRemovedTombstones = promauto.With(m.registerer).NewCounterVec(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "kv_store_value_tombstones_removed_total",
 		Help:      "Total number of tombstones which have been removed from KV store values",
 	}, []string{"key"})
 
-	m.memberlistMembersCount = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+	m.memberlistMembersCount = promauto.With(m.registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "cluster_members_count",
@@ -144,7 +144,7 @@ func (m *KV) createAndRegisterMetrics(registerer prometheus.Registerer) {
 		return 0
 	})
 
-	m.memberlistHealthScore = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+	m.memberlistHealthScore = promauto.With(m.registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "cluster_node_health_score",
@@ -157,7 +157,7 @@ func (m *KV) createAndRegisterMetrics(registerer prometheus.Registerer) {
 		return 0
 	})
 
-	m.watchPrefixDroppedNotifications = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+	m.watchPrefixDroppedNotifications = promauto.With(m.registerer).NewCounterVec(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
 		Subsystem: subsystem,
 		Name:      "watch_prefix_dropped_notifications",
@@ -167,33 +167,6 @@ func (m *KV) createAndRegisterMetrics(registerer prometheus.Registerer) {
 	if m.cfg.MetricsRegisterer == nil {
 		return
 	}
-
-	all := []prometheus.Collector{
-		m.numberOfReceivedMessages,
-		m.totalSizeOfReceivedMessages,
-		m.numberOfInvalidReceivedMessages,
-		m.numberOfBroadcastMessagesInQueue,
-		m.numberOfPushes,
-		m.numberOfPulls,
-		m.totalSizeOfPushes,
-		m.totalSizeOfPulls,
-		m.totalSizeOfBroadcastMessagesInQueue,
-		m.numberOfBroadcastMessagesDropped,
-		m.casAttempts,
-		m.casFailures,
-		m.casSuccesses,
-		m.watchPrefixDroppedNotifications,
-		m.storeTombstones,
-		m.storeRemovedTombstones,
-		m.memberlistMembersCount,
-		m.memberlistHealthScore,
-	}
-
-	for _, c := range all {
-		m.cfg.MetricsRegisterer.MustRegister(c)
-	}
-
-	m.cfg.MetricsRegisterer.MustRegister(m)
 
 	// memberlist uses armonmetrics package for internal usage
 	// here we configure armonmetrics to use prometheus

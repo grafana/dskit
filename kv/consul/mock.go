@@ -11,8 +11,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/instrument"
 
 	"github.com/grafana/dskit/closer"
 	"github.com/grafana/dskit/kv/codec"
@@ -37,11 +35,6 @@ func NewInMemoryClient(codec codec.Codec, logger log.Logger, registerer promethe
 
 // NewInMemoryClientWithConfig makes a new mock consul client with supplied Config.
 func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config, logger log.Logger, registerer prometheus.Registerer) (*Client, io.Closer) {
-	consulRequestDurationCollector := instrument.NewHistogramCollector(promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "consul_request_duration_seconds",
-		Help:    "Time spent on consul requests.",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"operation", "status_code"}))
 
 	m := mockKV{
 		kvps: map[string]*consul.KVPair{},
@@ -67,11 +60,11 @@ func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config, logger log.Logge
 	go m.loop()
 
 	return &Client{
-		kv:                    &m,
-		codec:                 codec,
-		cfg:                   cfg,
-		logger:                logger,
-		consulRequestDuration: consulRequestDurationCollector,
+		kv:            &m,
+		codec:         codec,
+		cfg:           cfg,
+		logger:        logger,
+		consulMetrics: newConsulMetrics(registerer),
 	}, closer
 }
 

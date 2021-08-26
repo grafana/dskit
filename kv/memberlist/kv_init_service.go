@@ -40,7 +40,7 @@ type KVInitService struct {
 	watcher *services.FailureWatcher
 }
 
-func NewKVInitService(cfg *KVConfig, logger log.Logger, registerer prometheus.Registerer, dnsProvider DNSProvider) *KVInitService {
+func NewKVInitService(cfg *KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer prometheus.Registerer) *KVInitService {
 	kvinit := &KVInitService{
 
 		cfg:         cfg,
@@ -56,7 +56,7 @@ func NewKVInitService(cfg *KVConfig, logger log.Logger, registerer prometheus.Re
 // GetMemberlistKV will initialize Memberlist.KV on first call, and add it to service failure watcher.
 func (kvs *KVInitService) GetMemberlistKV() (*KV, error) {
 	kvs.init.Do(func() {
-		kv := NewKV(*kvs.cfg, kvs.logger, kvs.registerer, kvs.dnsProvider)
+		kv := NewKV(*kvs.cfg, kvs.logger, kvs.dnsProvider, kvs.registerer)
 		kvs.watcher.WatchService(kv)
 		kvs.err = kv.StartAsync(context.Background())
 

@@ -10,7 +10,6 @@ import (
 	"go.etcd.io/etcd/clientv3"
 
 	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
 	util_log "github.com/cortexproject/cortex/pkg/util/log"
 	cortex_tls "github.com/cortexproject/cortex/pkg/util/tls"
 )

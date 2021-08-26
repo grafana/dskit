@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/client_golang/prometheus"

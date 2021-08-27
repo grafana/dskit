@@ -102,21 +102,22 @@ func typeToRoleMapHistogramLabels(t *testing.T, reg prometheus.Gatherer, histogr
 	require.NoError(t, err)
 	result := map[string]string{}
 	for _, mf := range mfs {
-		if mf.GetName() == histogramWithRoleLabels {
-			for _, m := range mf.GetMetric() {
-				backendType := ""
-				role := ""
-				for _, l := range m.GetLabel() {
-					if l.GetName() == "role" {
-						role = l.GetValue()
-					} else if l.GetName() == "type" {
-						backendType = l.GetValue()
-					}
+		if mf.GetName() != histogramWithRoleLabels {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			backendType := ""
+			role := ""
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "role" {
+					role = l.GetValue()
+				} else if l.GetName() == "type" {
+					backendType = l.GetValue()
 				}
-				require.NotEmpty(t, backendType)
-				require.NotEmpty(t, role)
-				result[backendType] = role
 			}
+			require.NotEmpty(t, backendType)
+			require.NotEmpty(t, role)
+			result[backendType] = role
 		}
 	}
 	return result

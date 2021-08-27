@@ -618,8 +618,4 @@ func (t *TCPTransport) registerMetrics(registerer prometheus.Registerer) {
 		Name:      "unknown_connections_total",
 		Help:      "Number of unknown TCP connections (not a packet or stream)",
 	})
-
-	if t.cfg.MetricsRegisterer == nil {
-		return
-	}
 }

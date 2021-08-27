@@ -35,7 +35,6 @@ func NewInMemoryClient(codec codec.Codec, logger log.Logger, registerer promethe
 
 // NewInMemoryClientWithConfig makes a new mock consul client with supplied Config.
 func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config, logger log.Logger, registerer prometheus.Registerer) (*Client, io.Closer) {
-
 	m := mockKV{
 		kvps: map[string]*consul.KVPair{},
 		// Always start from 1, we NEVER want to report back index 0 in the responses.

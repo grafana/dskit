@@ -25,7 +25,7 @@ func withFixtures(t *testing.T, f func(*testing.T, Client)) {
 		factory func() (Client, io.Closer, error)
 	}{
 		{"consul", func() (Client, io.Closer, error) {
-			client, closer := consul.NewInMemoryClient(codec.String{}, testLogger{})
+			client, closer := consul.NewInMemoryClient(codec.String{}, testLogger{}, nil)
 			return client, closer, nil
 		}},
 		{"etcd", func() (Client, io.Closer, error) {

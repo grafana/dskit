@@ -8,6 +8,7 @@ import (
 	"time"
 
 	consul "github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -33,7 +34,7 @@ func TestWatchKeyWithRateLimit(t *testing.T) {
 	c, closer := NewInMemoryClientWithConfig(codec.String{}, Config{
 		WatchKeyRateLimit: 5.0,
 		WatchKeyBurstSize: 1,
-	}, testLogger{})
+	}, testLogger{}, prometheus.NewPedanticRegistry())
 	t.Cleanup(func() {
 		assert.NoError(t, closer.Close())
 	})
@@ -67,7 +68,7 @@ func TestWatchKeyWithRateLimit(t *testing.T) {
 func TestWatchKeyNoRateLimit(t *testing.T) {
 	c, closer := NewInMemoryClientWithConfig(codec.String{}, Config{
 		WatchKeyRateLimit: 0,
-	}, testLogger{})
+	}, testLogger{}, prometheus.NewPedanticRegistry())
 	t.Cleanup(func() {
 		assert.NoError(t, closer.Close())
 	})
@@ -89,7 +90,7 @@ func TestWatchKeyNoRateLimit(t *testing.T) {
 }
 
 func TestReset(t *testing.T) {
-	c, closer := NewInMemoryClient(codec.String{}, testLogger{})
+	c, closer := NewInMemoryClient(codec.String{}, testLogger{}, prometheus.NewPedanticRegistry())
 	t.Cleanup(func() {
 		assert.NoError(t, closer.Close())
 	})
@@ -148,7 +149,7 @@ func observeValueForSomeTime(t *testing.T, client *Client, key string, timeout t
 }
 
 func TestWatchKeyWithNoStartValue(t *testing.T) {
-	c, closer := NewInMemoryClient(codec.String{}, testLogger{})
+	c, closer := NewInMemoryClient(codec.String{}, testLogger{}, prometheus.NewPedanticRegistry())
 	t.Cleanup(func() {
 		assert.NoError(t, closer.Close())
 	})

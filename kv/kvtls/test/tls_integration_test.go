@@ -78,7 +78,7 @@ func newIntegrationClientServer(
 ) {
 	// server registers some metrics to default registry
 	savedRegistry := prometheus.DefaultRegisterer
-	prometheus.DefaultRegisterer = prometheus.NewRegistry()
+	prometheus.DefaultRegisterer = prometheus.NewPedanticRegistry()
 	defer func() {
 		prometheus.DefaultRegisterer = savedRegistry
 	}()

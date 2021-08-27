@@ -39,7 +39,7 @@ multi:
 func Test_createClient_multiBackend_withSingleRing(t *testing.T) {
 	storeCfg, testCodec := newConfigsForTest()
 	require.NotPanics(t, func() {
-		_, err := createClient("multi", "/collector", storeCfg, testCodec, Primary, prometheus.NewRegistry(), testLogger{})
+		_, err := createClient("multi", "/collector", storeCfg, testCodec, Primary, prometheus.NewPedanticRegistry(), testLogger{})
 		require.NoError(t, err)
 	})
 }
@@ -47,7 +47,7 @@ func Test_createClient_multiBackend_withSingleRing(t *testing.T) {
 func Test_createClient_multiBackend_withMultiRing(t *testing.T) {
 	storeCfg1, testCodec := newConfigsForTest()
 	storeCfg2 := StoreConfig{}
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 
 	require.NotPanics(t, func() {
 		_, err := createClient("multi", "/test", storeCfg1, testCodec, Primary, reg, testLogger{})
@@ -61,7 +61,7 @@ func Test_createClient_multiBackend_withMultiRing(t *testing.T) {
 
 func Test_createClient_singleBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 	storeCfg, testCodec := newConfigsForTest()
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 	client, err := createClient("mock", "/test1", storeCfg, testCodec, Primary, reg, testLogger{})
 	require.NoError(t, err)
 	require.NoError(t, client.CAS(context.Background(), "/test", func(_ interface{}) (out interface{}, retry bool, err error) {
@@ -70,7 +70,7 @@ func Test_createClient_singleBackend_mustContainRoleAndTypeLabels(t *testing.T) 
 		return
 	}))
 
-	actual := typeToRoleMap(t, reg)
+	actual := typeToRoleMapHistogramLabels(t, reg, "kv_request_duration_seconds")
 	require.Len(t, actual, 1)
 	require.Equal(t, "primary", actual["mock"])
 }
@@ -79,7 +79,7 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 	storeCfg, testCodec := newConfigsForTest()
 	storeCfg.Multi.MirrorEnabled = true
 	storeCfg.Multi.MirrorTimeout = 10 * time.Second
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 	client, err := createClient("multi", "/test1", storeCfg, testCodec, Primary, reg, testLogger{})
 	require.NoError(t, err)
 	require.NoError(t, client.CAS(context.Background(), "/test", func(_ interface{}) (out interface{}, retry bool, err error) {
@@ -88,7 +88,7 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 		return
 	}))
 
-	actual := typeToRoleMap(t, reg)
+	actual := typeToRoleMapHistogramLabels(t, reg, "kv_request_duration_seconds")
 	// expected multi-primary, inmemory-primary and mock-secondary
 	require.Len(t, actual, 3)
 	require.Equal(t, "primary", actual["multi"])
@@ -97,11 +97,14 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 
 }
 
-func typeToRoleMap(t *testing.T, reg prometheus.Gatherer) map[string]string {
+func typeToRoleMapHistogramLabels(t *testing.T, reg prometheus.Gatherer, histogramWithRoleLabels string) map[string]string {
 	mfs, err := reg.Gather()
 	require.NoError(t, err)
 	result := map[string]string{}
 	for _, mf := range mfs {
+		if mf.GetName() != histogramWithRoleLabels {
+			continue
+		}
 		for _, m := range mf.GetMetric() {
 			backendType := ""
 			role := ""

@@ -14,19 +14,22 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/hashicorp/memberlist"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/services"
 )
 
-// This service initialized memberlist.KV on first call to GetMemberlistKV, and starts it. On stop,
+// KVInitService initializes a memberlist.KV on first call to GetMemberlistKV, and starts it. On stop,
 // KV is stopped too. If KV fails, error is reported from the service.
 type KVInitService struct {
 	services.Service
 
 	// config used for initialization
-	cfg    *KVConfig
-	logger log.Logger
+	cfg         *KVConfig
+	logger      log.Logger
+	dnsProvider DNSProvider
+	registerer  prometheus.Registerer
 
 	// init function, to avoid multiple initializations.
 	init sync.Once
@@ -37,20 +40,22 @@ type KVInitService struct {
 	watcher *services.FailureWatcher
 }
 
-func NewKVInitService(cfg *KVConfig, logger log.Logger) *KVInitService {
+func NewKVInitService(cfg *KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer prometheus.Registerer) *KVInitService {
 	kvinit := &KVInitService{
-		cfg:     cfg,
-		watcher: services.NewFailureWatcher(),
-		logger:  logger,
+		cfg:         cfg,
+		watcher:     services.NewFailureWatcher(),
+		logger:      logger,
+		registerer:  registerer,
+		dnsProvider: dnsProvider,
 	}
 	kvinit.Service = services.NewBasicService(nil, kvinit.running, kvinit.stopping).WithName("memberlist KV service")
 	return kvinit
 }
 
-// This method will initialize Memberlist.KV on first call, and add it to service failure watcher.
+// GetMemberlistKV will initialize Memberlist.KV on first call, and add it to service failure watcher.
 func (kvs *KVInitService) GetMemberlistKV() (*KV, error) {
 	kvs.init.Do(func() {
-		kv := NewKV(*kvs.cfg, kvs.logger)
+		kv := NewKV(*kvs.cfg, kvs.logger, kvs.dnsProvider, kvs.registerer)
 		kvs.watcher.WatchService(kv)
 		kvs.err = kv.StartAsync(context.Background())
 
@@ -327,7 +332,7 @@ const pageContent = `
 			</tbody>
 		</table>
 
-		<p>Note that value "version" is node-specific. It starts with 0 (on restart), and increases on each received update. Size is in bytes.</p> 
+		<p>Note that value "version" is node-specific. It starts with 0 (on restart), and increases on each received update. Size is in bytes.</p>
 
 		<h2>Memberlist Cluster Members</h2>
 
@@ -378,7 +383,7 @@ const pageContent = `
 					<td>{{ .Pair.Key }}</td>
 					<td>size: {{ .Pair.Value | len }}, codec: {{ .Pair.Codec }}</td>
 					<td>{{ .Version }}</td>
-					<td>{{ StringsJoin .Changes ", " }}</td> 
+					<td>{{ StringsJoin .Changes ", " }}</td>
 					<td>
 						<a href="?viewMsg={{ .ID }}&format=json">json</a>
 						| <a href="?viewMsg={{ .ID }}&format=json-pretty">json-pretty</a>
@@ -414,7 +419,7 @@ const pageContent = `
 					<td>{{ .Pair.Key }}</td>
 					<td>size: {{ .Pair.Value | len }}, codec: {{ .Pair.Codec }}</td>
 					<td>{{ .Version }}</td>
-					<td>{{ StringsJoin .Changes ", " }}</td> 
+					<td>{{ StringsJoin .Changes ", " }}</td>
 					<td>
 						<a href="?viewMsg={{ .ID }}&format=json">json</a>
 						| <a href="?viewMsg={{ .ID }}&format=json-pretty">json-pretty</a>

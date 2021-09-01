@@ -183,7 +183,7 @@ func (l *BasicLifecycler) starting(ctx context.Context) error {
 }
 
 func (l *BasicLifecycler) running(ctx context.Context) error {
-	heartbeatTickerStop, heartbeatTickerChan := util.NewDisableableTicker(l.cfg.HeartbeatPeriod)
+	heartbeatTickerStop, heartbeatTickerChan := util.(l.cfg.HeartbeatPeriod)
 	defer heartbeatTickerStop()
 
 	for {

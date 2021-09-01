@@ -34,12 +34,12 @@ func (c *spyCollector) Register() {
 }
 
 // Before collects for the upcoming request.
-func (c *spyCollector) Before(method string, start time.Time) {
+func (c *spyCollector) Before(ctx context.Context, method string, start time.Time) {
 	c.before = true
 }
 
 // After collects when the request is done.
-func (c *spyCollector) After(method, statusCode string, start time.Time) {
+func (c *spyCollector) After(ctx context.Context, method, statusCode string, start time.Time) {
 	c.after = true
 	c.afterCode = statusCode
 }

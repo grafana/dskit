@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	tsdbErrors "github.com/prometheus/prometheus/tsdb/errors"
 	"golang.org/x/sync/errgroup"
 
-	util_math "github.com/cortexproject/cortex/pkg/util/math"
+	dskitMath "github.com/grafana/dskit/math"
 )
 
 // ForEachUser runs the provided userFunc for each userIDs up to concurrency concurrent workers.
@@ -26,11 +26,11 @@ func ForEachUser(ctx context.Context, userIDs []string, concurrency int, userFun
 	close(ch)
 
 	// Keep track of all errors occurred.
-	errs := tsdb_errors.NewMulti()
+	errs := tsdbErrors.NewMulti()
 	errsMx := sync.Mutex{}
 
 	wg := sync.WaitGroup{}
-	for ix := 0; ix < util_math.Min(concurrency, len(userIDs)); ix++ {
+	for ix := 0; ix < dskitMath.Min(concurrency, len(userIDs)); ix++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -78,7 +78,7 @@ func ForEach(ctx context.Context, jobs []interface{}, concurrency int, jobFunc f
 
 	// Start workers to process jobs.
 	g, ctx := errgroup.WithContext(ctx)
-	for ix := 0; ix < util_math.Min(concurrency, len(jobs)); ix++ {
+	for ix := 0; ix < dskitMath.Min(concurrency, len(jobs)); ix++ {
 		g.Go(func() error {
 			for job := range ch {
 				if err := ctx.Err(); err != nil {

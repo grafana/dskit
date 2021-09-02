@@ -1,4 +1,4 @@
-package util
+package time
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ func TestTimeFromMillis(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			res := TimeFromMillis(c.input)
+			res := FromMillis(c.input)
 			require.Equal(t, c.expected, res)
 		})
 	}
@@ -100,7 +100,7 @@ func TestParseTime(t *testing.T) {
 		}
 
 		require.NoError(t, err)
-		assert.Equal(t, TimeToMillis(test.result), ts)
+		assert.Equal(t, ToMillis(test.result), ts)
 	}
 }
 

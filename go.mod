@@ -20,7 +20,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/common v0.29.0
-	github.com/prometheus/prometheus v1.8.2-0.20210720123808-b1ed4a0a663d
 	github.com/sercand/kuberesolver v2.4.0+incompatible // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a

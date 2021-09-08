@@ -19,7 +19,7 @@ require (
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
-	github.com/prometheus/common v0.29.0
+	github.com/prometheus/common v0.26.0
 	github.com/sercand/kuberesolver v2.4.0+incompatible // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a

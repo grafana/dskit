@@ -1,4 +1,4 @@
-package util
+package http
 
 import (
 	"bytes"
@@ -77,7 +77,7 @@ func WriteYAMLResponse(w http.ResponseWriter, v interface{}) {
 	_, _ = w.Write(data)
 }
 
-// Sends message as text/plain response with 200 status code.
+// WriteTextResponse sends a message as text/plain response with 200 status code.
 func WriteTextResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "text/plain")
 
@@ -85,7 +85,7 @@ func WriteTextResponse(w http.ResponseWriter, message string) {
 	_, _ = w.Write([]byte(message))
 }
 
-// Sends message as text/html response with 200 status code.
+// WriteHTMLResponse sends a message as text/html response with 200 status code.
 func WriteHTMLResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "text/html")
 
@@ -260,7 +260,6 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	case RawSnappy:
 		data = snappy.Encode(nil, data)
 	}
-
 	if _, err := w.Write(data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return fmt.Errorf("error sending proto response: %v", err)

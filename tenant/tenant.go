@@ -96,10 +96,7 @@ func isSupported(c rune) bool {
 		c == ')'
 }
 
-// TenantIDsFromOrgID extracts different tenants from an orgID string value
-//
-// ignore stutter warning
-//nolint:golint
-func TenantIDsFromOrgID(orgID string) ([]string, error) {
-	return TenantIDs(user.InjectOrgID(context.TODO(), orgID))
+// IDsFromOrgID extracts different tenants from an orgID string value
+func IDsFromOrgID(orgID string) ([]string, error) {
+	return IDs(user.InjectOrgID(context.TODO(), orgID))
 }

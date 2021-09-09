@@ -16,24 +16,18 @@ func WithDefaultResolver(r Resolver) {
 	defaultResolver = r
 }
 
-// TenantID returns exactly a single tenant ID from the context. It should be
+// ID returns exactly a single tenant ID from the context. It should be
 // used when a certain endpoint should only support exactly a single
 // tenant ID. It returns an error user.ErrNoOrgID if there is no tenant ID
 // supplied or user.ErrTooManyOrgIDs if there are multiple tenant IDs present.
-//
-// ignore stutter warning
-//nolint:golint
-func TenantID(ctx context.Context) (string, error) {
+func ID(ctx context.Context) (string, error) {
 	return defaultResolver.TenantID(ctx)
 }
 
-// TenantIDs returns all tenant IDs from the context. It should return
+// IDs returns all tenant IDs from the context. It should return
 // normalized list of ordered and distinct tenant IDs (as produced by
 // NormalizeTenantIDs).
-//
-// ignore stutter warning
-//nolint:golint
-func TenantIDs(ctx context.Context) ([]string, error) {
+func IDs(ctx context.Context) ([]string, error) {
 	return defaultResolver.TenantIDs(ctx)
 }
 

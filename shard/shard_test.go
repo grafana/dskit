@@ -1,4 +1,4 @@
-package util
+package shard
 
 import (
 	"testing"

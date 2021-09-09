@@ -1,4 +1,4 @@
-package util
+package yolo
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 )
 
 func TestYoloBuf(t *testing.T) {
-	s := YoloBuf("hello world")
+	s := Buf("hello world")
 
 	require.Equal(t, []byte("hello world"), s)
 }

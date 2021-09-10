@@ -3,8 +3,8 @@ module github.com/grafana/dskit
 go 1.16
 
 require (
-	cloud.google.com/go v0.87.0 // indirect
 	github.com/armon/go-metrics v0.3.6
+	github.com/coreos/etcd v3.3.25+incompatible // indirect
 	github.com/go-kit/kit v0.11.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.0
@@ -24,8 +24,8 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a
 	go.etcd.io/etcd v3.3.25+incompatible
+	go.etcd.io/etcd/api/v3 v3.5.0
 	go.etcd.io/etcd/client/v3 v3.5.0
-	go.etcd.io/etcd/server/v3 v3.5.0
 	go.uber.org/atomic v1.9.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/time v0.0.0-20210611083556-38a9dc6acbc6

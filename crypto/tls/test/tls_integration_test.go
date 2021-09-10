@@ -27,13 +27,13 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/kv/kvtls"
+	"github.com/grafana/dskit/crypto/tls"
 )
 
 type tcIntegrationClientServer struct {
 	name            string
 	tlsGrpcEnabled  bool
-	tlsConfig       kvtls.ClientConfig
+	tlsConfig       tls.ClientConfig
 	httpExpectError func(*testing.T, error)
 	grpcExpectError func(*testing.T, error)
 }
@@ -183,14 +183,14 @@ func TestServerWithoutTlsEnabled(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       kvtls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{},
 				httpExpectError: errorContainsString("http: server gave HTTP response to HTTPS client"),
 				grpcExpectError: nil,
 			},
 			{
 				name:            "tls-enable",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       kvtls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{},
 				httpExpectError: errorContainsString("http: server gave HTTP response to HTTPS client"),
 				grpcExpectError: errorContainsString("transport: authentication handshake failed: tls: first record does not look like a TLS handshake"),
 			},
@@ -218,7 +218,7 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       kvtls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{},
 				httpExpectError: errorContainsString("x509: certificate signed by unknown authority"),
 				// For GRPC we expect this error as we try to connect without TLS to a TLS enabled server
 				grpcExpectError: unavailableDescErr,
@@ -226,21 +226,21 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:            "grpc-tls-enabled",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       kvtls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{},
 				httpExpectError: errorContainsString("x509: certificate signed by unknown authority"),
 				grpcExpectError: errorContainsString("x509: certificate signed by unknown authority"),
 			},
 			{
 				name:           "tls-skip-verify",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
 				},
 			},
 			{
 				name:           "tls-skip-verify-no-grpc-tls-enabled",
 				tlsGrpcEnabled: false,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
 				},
 				grpcExpectError: unavailableDescErr,
@@ -248,14 +248,14 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:           "ca-path-set",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath: certs.caCertFile,
 				},
 			},
 			{
 				name:           "ca-path-no-grpc-tls-enabled",
 				tlsGrpcEnabled: false,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath: certs.caCertFile,
 				},
 				grpcExpectError: unavailableDescErr,
@@ -283,7 +283,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       kvtls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{},
 				httpExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
 				// For GRPC we expect this error as we try to connect without TLS to a TLS enabled server
 				grpcExpectError: unavailableDescErr,
@@ -291,14 +291,14 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:            "grpc-tls-enabled",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       kvtls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{},
 				httpExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
 				grpcExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
 			},
 			{
 				name:           "ca-path",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath: certs.caCertFile,
 				},
 				httpExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
@@ -307,7 +307,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:           "server-name",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath:     certs.caCertFile,
 					ServerName: "my-other-name",
 				},
@@ -315,7 +315,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:           "tls-skip-verify",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
 				},
 			},
@@ -352,7 +352,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "tls-skip-verify",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
 				},
 				httpExpectError: badCertErr,
@@ -361,7 +361,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-path",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath: certs.caCertFile,
 				},
 				httpExpectError: badCertErr,
@@ -370,7 +370,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-path-and-client-cert-ca1",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client1CertFile,
 					KeyPath:  certs.client1KeyFile,
@@ -379,7 +379,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "tls-skip-verify-and-client-cert-ca1",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
 					CertPath:           certs.client1CertFile,
 					KeyPath:            certs.client1KeyFile,
@@ -388,7 +388,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-cert-and-client-cert-ca2",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client2CertFile,
 					KeyPath:  certs.client2KeyFile,
@@ -423,7 +423,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-cert-and-client-cert-ca1",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client1CertFile,
 					KeyPath:  certs.client1KeyFile,
@@ -432,7 +432,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 			{
 				name:           "ca-cert-and-client-cert-ca2",
 				tlsGrpcEnabled: true,
-				tlsConfig: kvtls.ClientConfig{
+				tlsConfig: tls.ClientConfig{
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client2CertFile,
 					KeyPath:  certs.client2KeyFile,
@@ -577,8 +577,8 @@ type grpcConfig struct {
 	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits"`
 	BackoffConfig       backoff.Config `yaml:"backoff_config"`
 
-	TLSEnabled bool               `yaml:"tls_enabled"`
-	TLS        kvtls.ClientConfig `yaml:",inline"`
+	TLSEnabled bool             `yaml:"tls_enabled"`
+	TLS        tls.ClientConfig `yaml:",inline"`
 }
 
 // RegisterFlags registers flags.

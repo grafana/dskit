@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
-	dskitHttp "github.com/grafana/dskit/http"
+	dskithttp "github.com/grafana/dskit/http"
 	"github.com/grafana/dskit/kv/memberlist"
 )
 
@@ -70,7 +70,7 @@ func TestRenderHTTPResponse(t *testing.T) {
 				request.Header.Add(k, v)
 			}
 
-			dskitHttp.RenderHTTPResponse(writer, tt.value, tmpl, request)
+			dskithttp.RenderHTTPResponse(writer, tt.value, tmpl, request)
 
 			assert.Equal(t, tt.expectedContentType, writer.Header().Get("Content-Type"))
 			assert.Equal(t, 200, writer.Code)
@@ -82,7 +82,7 @@ func TestRenderHTTPResponse(t *testing.T) {
 func TestWriteTextResponse(t *testing.T) {
 	w := httptest.NewRecorder()
 
-	dskitHttp.WriteTextResponse(w, "hello world")
+	dskithttp.WriteTextResponse(w, "hello world")
 
 	assert.Equal(t, 200, w.Code)
 	assert.Equal(t, "hello world", w.Body.String())
@@ -125,7 +125,7 @@ func TestStreamWriteYAMLResponse(t *testing.T) {
 	done := make(chan struct{})
 	iter := make(chan interface{})
 	go func() {
-		dskitHttp.StreamWriteYAMLResponse(w, iter, log.NewNopLogger())
+		dskithttp.StreamWriteYAMLResponse(w, iter, log.NewNopLogger())
 		close(done)
 	}()
 	for k, v := range tt.value {
@@ -148,27 +148,27 @@ func TestParseProtoReader(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		name           string
-		compression    dskitHttp.CompressionType
-		maxSize        int
+		name        string
+		compression dskithttp.CompressionType
+		maxSize     int
 		expectErr      bool
 		useBytesBuffer bool
 	}{
-		{"rawSnappy", dskitHttp.RawSnappy, 23, false, false},
-		{"noCompression", dskitHttp.NoCompression, 23, false, false},
-		{"too big rawSnappy", dskitHttp.RawSnappy, 20, true, false},
-		{"too big decoded rawSnappy", dskitHttp.RawSnappy, 10, true, false},
-		{"too big noCompression", dskitHttp.NoCompression, 10, true, false},
+		{"rawSnappy", dskithttp.RawSnappy, 23, false, false},
+		{"noCompression", dskithttp.NoCompression, 23, false, false},
+		{"too big rawSnappy", dskithttp.RawSnappy, 20, true, false},
+		{"too big decoded rawSnappy", dskithttp.RawSnappy, 10, true, false},
+		{"too big noCompression", dskithttp.NoCompression, 10, true, false},
 
-		{"bytesbuffer rawSnappy", dskitHttp.RawSnappy, 23, false, true},
-		{"bytesbuffer noCompression", dskitHttp.NoCompression, 23, false, true},
-		{"bytesbuffer too big rawSnappy", dskitHttp.RawSnappy, 20, true, true},
-		{"bytesbuffer too big decoded rawSnappy", dskitHttp.RawSnappy, 10, true, true},
-		{"bytesbuffer too big noCompression", dskitHttp.NoCompression, 10, true, true},
+		{"bytesbuffer rawSnappy", dskithttp.RawSnappy, 23, false, true},
+		{"bytesbuffer noCompression", dskithttp.NoCompression, 23, false, true},
+		{"bytesbuffer too big rawSnappy", dskithttp.RawSnappy, 20, true, true},
+		{"bytesbuffer too big decoded rawSnappy", dskithttp.RawSnappy, 10, true, true},
+		{"bytesbuffer too big noCompression", dskithttp.NoCompression, 10, true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			assert.Nil(t, dskitHttp.SerializeProtoResponse(w, req, tt.compression))
+			assert.Nil(t, dskithttp.SerializeProtoResponse(w, req, tt.compression))
 			var fromWire memberlist.KeyValuePair
 
 			reader := w.Result().Body
@@ -179,7 +179,7 @@ func TestParseProtoReader(t *testing.T) {
 				reader = bytesBuffered{Buffer: &buf}
 			}
 
-			err := dskitHttp.ParseProtoReader(context.Background(), reader, 0, tt.maxSize, &fromWire, tt.compression)
+			err := dskithttp.ParseProtoReader(context.Background(), reader, 0, tt.maxSize, &fromWire, tt.compression)
 			if tt.expectErr {
 				assert.NotNil(t, err)
 				return
@@ -204,5 +204,5 @@ func (b bytesBuffered) BytesBuffer() *bytes.Buffer {
 
 func TestIsRequestBodyTooLargeRegression(t *testing.T) {
 	_, err := ioutil.ReadAll(http.MaxBytesReader(httptest.NewRecorder(), ioutil.NopCloser(bytes.NewReader([]byte{1, 2, 3, 4})), 1))
-	assert.True(t, dskitHttp.IsRequestBodyTooLarge(err))
+	assert.True(t, dskithttp.IsRequestBodyTooLarge(err))
 }

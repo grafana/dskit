@@ -12,8 +12,8 @@ import (
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/cortexproject/cortex/pkg/util/grpc/encoding/snappy"
 	"github.com/cortexproject/cortex/pkg/util/tls"
+	"github.com/grafana/dskit/grpcencoding/snappy"
 )
 
 // Config for a gRPC client.

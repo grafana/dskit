@@ -148,9 +148,9 @@ func TestParseProtoReader(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		name        string
-		compression dskithttp.CompressionType
-		maxSize     int
+		name           string
+		compression    dskithttp.CompressionType
+		maxSize        int
 		expectErr      bool
 		useBytesBuffer bool
 	}{

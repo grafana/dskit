@@ -18,9 +18,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
-
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/log"
 )
 
 var (
@@ -242,7 +239,7 @@ func (i *Lifecycler) checkRingHealthForReadiness(ctx context.Context) error {
 	// otherwise we just check this instance.
 	desc, err := i.KVStore.Get(ctx, i.RingKey)
 	if err != nil {
-		level.Error(log.Logger).Log("msg", "error talking to the KV store", "ring", i.RingName, "err", err)
+		level.Error(i.logger).Log("msg", "error talking to the KV store", "ring", i.RingName, "err", err)
 		return fmt.Errorf("error talking to the KV store: %s", err)
 	}
 
@@ -253,7 +250,7 @@ func (i *Lifecycler) checkRingHealthForReadiness(ctx context.Context) error {
 
 	if i.cfg.ReadinessCheckRingHealth {
 		if err := ringDesc.IsReady(time.Now(), i.cfg.RingConfig.HeartbeatTimeout); err != nil {
-			level.Warn(log.Logger).Log("msg", "found an existing instance(s) with a problem in the ring, "+
+			level.Warn(i.logger).Log("msg", "found an existing instance(s) with a problem in the ring, "+
 				"this instance cannot become ready until this problem is resolved. "+
 				"The /ring http endpoint on the distributor (or single binary) provides visibility into the ring.",
 				"ring", i.RingName, "err", err)
@@ -328,7 +325,7 @@ func (i *Lifecycler) setTokens(tokens Tokens) {
 	i.tokens = tokens
 	if i.cfg.TokensFilePath != "" {
 		if err := i.tokens.StoreToFile(i.cfg.TokensFilePath); err != nil {
-			level.Error(log.Logger).Log("msg", "error storing tokens to disk", "path", i.cfg.TokensFilePath, "err", err)
+			level.Error(i.logger).Log("msg", "error storing tokens to disk", "path", i.cfg.TokensFilePath, "err", err)
 		}
 	}
 }
@@ -378,7 +375,7 @@ func (i *Lifecycler) ClaimTokensFor(ctx context.Context, ingesterID string) erro
 		}
 
 		if err := i.KVStore.CAS(ctx, i.RingKey, claimTokens); err != nil {
-			level.Error(log.Logger).Log("msg", "Failed to write to the KV store", "ring", i.RingName, "err", err)
+			level.Error(i.logger).Log("msg", "Failed to write to the KV store", "ring", i.RingName, "err", err)
 		}
 
 		i.setTokens(tokens)

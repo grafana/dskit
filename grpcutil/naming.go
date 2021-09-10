@@ -1,9 +1,8 @@
-package naming
+package grpcutil
 
 // Copied from https://github.com/grpc/grpc-go/tree/v1.29.x/naming.
 
 // Operation defines the corresponding operations for a name resolution change.
-//
 type Operation uint8
 
 const (
@@ -26,7 +25,6 @@ type Update struct {
 }
 
 // Resolver creates a Watcher for a target to track its resolution changes.
-//
 type Resolver interface {
 	// Resolve creates a Watcher for target.
 	Resolve(target string) (Watcher, error)

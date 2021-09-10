@@ -1,4 +1,4 @@
-package healthcheck
+package grpcutil
 
 import (
 	"context"
@@ -16,8 +16,8 @@ type HealthCheck struct {
 	sm *services.Manager
 }
 
-// New returns a new HealthCheck for the provided service manager.
-func New(sm *services.Manager) *HealthCheck {
+// NewHealthCheck returns a new HealthCheck for the provided service manager.
+func NewHealthCheck(sm *services.Manager) *HealthCheck {
 	return &HealthCheck{
 		sm: sm,
 	}

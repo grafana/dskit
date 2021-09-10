@@ -5,14 +5,13 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/dskit/backoff"
-
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcencoding/snappy"
 )
@@ -93,8 +92,8 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	return append(
 		opts,
 		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
-		grpc.WithUnaryInterceptor(grpc_middleware.ChainUnaryClient(unaryClientInterceptors...)),
-		grpc.WithStreamInterceptor(grpc_middleware.ChainStreamClient(streamClientInterceptors...)),
+		grpc.WithUnaryInterceptor(middleware.ChainUnaryClient(unaryClientInterceptors...)),
+		grpc.WithStreamInterceptor(middleware.ChainStreamClient(streamClientInterceptors...)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                time.Second * 20,
 			Timeout:             time.Second * 10,

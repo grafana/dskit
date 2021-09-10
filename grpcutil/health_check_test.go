@@ -1,4 +1,4 @@
-package healthcheck
+package grpcutil
 
 import (
 	"context"
@@ -73,7 +73,7 @@ func TestHealthCheck_isHealthy(t *testing.T) {
 				s.(*mockService).switchState(testData.states[i])
 			}
 
-			h := New(sm)
+			h := NewHealthCheck(sm)
 			assert.Equal(t, testData.expected, h.isHealthy())
 		})
 	}

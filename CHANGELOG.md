@@ -8,3 +8,4 @@
 * [CHANGE] Remove `cortex_` prefix for metrics registered in the ring. #46
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add limiter package. #41
+* [ENHANCEMENT] Add grpcclient, grpcencoding and grpcutil packages. #39

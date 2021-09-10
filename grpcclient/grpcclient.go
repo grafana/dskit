@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/cortexproject/cortex/pkg/util/tls"
+	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcencoding/snappy"
 )
 

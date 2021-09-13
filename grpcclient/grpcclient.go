@@ -23,6 +23,15 @@ type Config struct {
 	GRPCCompression string  `yaml:"grpc_compression" category:"advanced"`
 	RateLimit       float64 `yaml:"rate_limit" category:"advanced"`
 	RateLimitBurst  int     `yaml:"rate_limit_burst" category:"advanced"`
+	// KeepaliveTime is the number of seconds after which the client will ping the server in case of inactivity.
+	//
+	// See `google.golang.org/grpc/keepalive.ClientParameters.Time` for reference.
+	KeepaliveTime int64 `yaml:"ping_time"`
+	// KeepaliveTimeOut is the number of seconds the client waits after pinging the server, and if no activity is seen
+	// after that, the connection is closed.
+	//
+	// See `google.golang.org/grpc/keepalive.ClientParameters.Timeout` for reference.
+	KeepaliveTimeout int64 `yaml:"ping_timeout"`
 
 	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits" category:"advanced"`
 	BackoffConfig       backoff.Config `yaml:"backoff_config"`
@@ -83,12 +92,10 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 
 // DialOption returns the config as a grpc.DialOptions.
 func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor) ([]grpc.DialOption, error) {
-	var opts []grpc.DialOption
-	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
+	opts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, tlsOpts...)
 
 	if cfg.BackoffOnRatelimits {
 		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{NewBackoffRetry(cfg.BackoffConfig)}, unaryClientInterceptors...)
@@ -120,13 +127,29 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 
 	return append(
 		opts,
-		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
-		grpc.WithChainUnaryInterceptor(unaryClientInterceptors...),
-		grpc.WithChainStreamInterceptor(streamClientInterceptors...),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                time.Second * 20,
-			Timeout:             time.Second * 10,
+		withDefaultCallOptions(cfg.CallOptions()...),
+		withUnaryInterceptor(middleware.ChainUnaryClient(unaryClientInterceptors...)),
+		withStreamInterceptor(middleware.ChainStreamClient(streamClientInterceptors...)),
+		withKeepaliveParams(keepalive.ClientParameters{
+			Time:                time.Duration(cfg.KeepaliveTime) * time.Second,
+			Timeout:             time.Duration(cfg.KeepaliveTimeout) * time.Second,
 			PermitWithoutStream: true,
 		}),
 	), nil
+}
+
+var withDefaultCallOptions = func(cos ...grpc.CallOption) grpc.DialOption {
+	return grpc.WithDefaultCallOptions(cos...)
+}
+
+var withUnaryInterceptor = func(f grpc.UnaryClientInterceptor) grpc.DialOption {
+	return grpc.WithUnaryInterceptor(f)
+}
+
+var withStreamInterceptor = func(f grpc.StreamClientInterceptor) grpc.DialOption {
+	return grpc.WithStreamInterceptor(f)
+}
+
+var withKeepaliveParams = func(kp keepalive.ClientParameters) grpc.DialOption {
+	return grpc.WithKeepaliveParams(kp)
 }

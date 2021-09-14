@@ -7,4 +7,4 @@
 * [CHANGE] Added CHANGELOG.md and Pull Request template to reference the changelog
 * [CHANGE] Remove `cortex_` prefix for metrics registered in the ring. #46
 * [ENHANCEMENT] Add middleware package. #38
-* [ENHANCEMENT] Add the ring package #45
+* [ENHANCEMENT] Add limiter package. #41

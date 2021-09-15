@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -79,7 +80,7 @@ var commonResolverTestCases = []resolverTestCase{
 }
 
 func TestSingleResolver(t *testing.T) {
-	r := NewSingleResolver()
+	r := &singleResolver{}
 	for _, tc := range append(commonResolverTestCases, []resolverTestCase{
 		{
 			name:        "multi-tenant",
@@ -104,46 +105,36 @@ func TestSingleResolver(t *testing.T) {
 	}
 }
 
-func TestMultiResolver(t *testing.T) {
-	r := NewMultiResolver()
-	for _, tc := range append(commonResolverTestCases, []resolverTestCase{
+func TestValidTenantID(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  *string
+	}{
 		{
-			name:        "multi-tenant",
-			headerValue: strptr("tenant-a|tenant-b"),
-			errTenantID: user.ErrTooManyOrgIDs,
-			tenantIDs:   []string{"tenant-a", "tenant-b"},
+			name: "tenant-a",
 		},
 		{
-			name:        "multi-tenant-wrong-order",
-			headerValue: strptr("tenant-b|tenant-a"),
-			errTenantID: user.ErrTooManyOrgIDs,
-			tenantIDs:   []string{"tenant-a", "tenant-b"},
+			name: "ABCDEFGHIJKLMNOPQRSTUVWXYZ-abcdefghijklmnopqrstuvwxyz_0987654321!.*'()",
 		},
 		{
-			name:        "multi-tenant-duplicate-order",
-			headerValue: strptr("tenant-b|tenant-b|tenant-a"),
-			errTenantID: user.ErrTooManyOrgIDs,
-			tenantIDs:   []string{"tenant-a", "tenant-b"},
+			name: "invalid|",
+			err:  strptr("tenant ID 'invalid|' contains unsupported character '|'"),
 		},
 		{
-			name:         "multi-tenant-with-relative-path",
-			headerValue:  strptr("tenant-a|tenant-b|.."),
-			errTenantID:  errInvalidTenantID,
-			errTenantIDs: errInvalidTenantID,
+			name: strings.Repeat("a", 150),
 		},
 		{
-			name:         "containing-forward-slash",
-			headerValue:  strptr("forward/slash"),
-			errTenantID:  &errTenantIDUnsupportedCharacter{pos: 7, tenantID: "forward/slash"},
-			errTenantIDs: &errTenantIDUnsupportedCharacter{pos: 7, tenantID: "forward/slash"},
+			name: strings.Repeat("a", 151),
+			err:  strptr("tenant ID is too long: max 150 characters"),
 		},
-		{
-			name:         "containing-backward-slash",
-			headerValue:  strptr(`backward\slash`),
-			errTenantID:  &errTenantIDUnsupportedCharacter{pos: 8, tenantID: "backward\\slash"},
-			errTenantIDs: &errTenantIDUnsupportedCharacter{pos: 8, tenantID: "backward\\slash"},
-		},
-	}...) {
-		t.Run(tc.name, tc.test(r))
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validTenantID(tc.name)
+			if tc.err == nil {
+				assert.Nil(t, err)
+			} else {
+				assert.EqualError(t, err, *tc.err)
+			}
+		})
 	}
 }

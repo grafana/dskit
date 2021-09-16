@@ -45,43 +45,55 @@ func TestMockKv_Get(t *testing.T) {
 	})
 
 	t.Run("prefix match", func(t *testing.T) {
-		pair1 := mvccpb.KeyValue{
+		fooPair := mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
-		pair2 := mvccpb.KeyValue{
+		bazPair := mvccpb.KeyValue{
 			Key:   []byte("/baz"),
 			Value: []byte("2"),
 		}
-		pair3 := mvccpb.KeyValue{
+		firstPair := mvccpb.KeyValue{
 			Key:   []byte("/first"),
 			Value: []byte("3"),
 		}
 
 		kv := newMockKV()
 		kv.values = map[string]mvccpb.KeyValue{
-			string(pair1.Key): pair1,
-			string(pair2.Key): pair2,
-			string(pair3.Key): pair3,
+			string(fooPair.Key):   fooPair,
+			string(bazPair.Key):   bazPair,
+			string(firstPair.Key): firstPair,
 		}
 		res, err := kv.Get(context.Background(), "/f", clientv3.WithPrefix())
 
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []*mvccpb.KeyValue{&pair1, &pair3}, res.Kvs)
+		assert.ElementsMatch(t, []*mvccpb.KeyValue{&fooPair, &firstPair}, res.Kvs)
 	})
 
 	t.Run("empty prefix", func(t *testing.T) {
-		pair1 := mvccpb.KeyValue{
+		fooPair := mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
+		bazPair := mvccpb.KeyValue{
+			Key:   []byte("/baz"),
+			Value: []byte("2"),
+		}
+		firstPair := mvccpb.KeyValue{
+			Key:   []byte("/first"),
+			Value: []byte("3"),
+		}
 
 		kv := newMockKV()
-		kv.values = map[string]mvccpb.KeyValue{string(pair1.Key): pair1}
+		kv.values = map[string]mvccpb.KeyValue{
+			string(fooPair.Key):   fooPair,
+			string(bazPair.Key):   bazPair,
+			string(firstPair.Key): firstPair,
+		}
 		res, err := kv.Get(context.Background(), "", clientv3.WithPrefix())
 
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []*mvccpb.KeyValue{&pair1}, res.Kvs)
+		assert.ElementsMatch(t, []*mvccpb.KeyValue{&fooPair, &bazPair, &firstPair}, res.Kvs)
 	})
 }
 
@@ -129,24 +141,18 @@ func TestMockKV_Delete(t *testing.T) {
 	})
 
 	t.Run("prefix match", func(t *testing.T) {
-		pair1 := mvccpb.KeyValue{
+		kv := newMockKV()
+		kv.values["/foo"] = mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
-		pair2 := mvccpb.KeyValue{
+		kv.values["/baz"] = mvccpb.KeyValue{
 			Key:   []byte("/baz"),
 			Value: []byte("2"),
 		}
-		pair3 := mvccpb.KeyValue{
+		kv.values["/first"] = mvccpb.KeyValue{
 			Key:   []byte("/first"),
 			Value: []byte("3"),
-		}
-
-		kv := newMockKV()
-		kv.values = map[string]mvccpb.KeyValue{
-			string(pair1.Key): pair1,
-			string(pair2.Key): pair2,
-			string(pair3.Key): pair3,
 		}
 
 		res, err := kv.Delete(context.Background(), "/f", clientv3.WithPrefix())
@@ -158,24 +164,18 @@ func TestMockKV_Delete(t *testing.T) {
 	})
 
 	t.Run("empty prefix", func(t *testing.T) {
-		pair1 := mvccpb.KeyValue{
+		kv := newMockKV()
+		kv.values["/foo"] = mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
-		pair2 := mvccpb.KeyValue{
+		kv.values["/baz"] = mvccpb.KeyValue{
 			Key:   []byte("/baz"),
 			Value: []byte("2"),
 		}
-		pair3 := mvccpb.KeyValue{
+		kv.values["/first"] = mvccpb.KeyValue{
 			Key:   []byte("/first"),
 			Value: []byte("3"),
-		}
-
-		kv := newMockKV()
-		kv.values = map[string]mvccpb.KeyValue{
-			string(pair1.Key): pair1,
-			string(pair2.Key): pair2,
-			string(pair3.Key): pair3,
 		}
 
 		res, err := kv.Delete(context.Background(), "", clientv3.WithPrefix())

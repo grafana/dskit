@@ -55,7 +55,7 @@ func newMockKV() *mockKV {
 // mockKV is an in-memory implementation of an Etcd client.
 //
 // This implementation has many limitations compared to the real client since it
-// only exist to be used by the Etcd kv.Client implementation during unit tests. As
+// only exists to be used by the Etcd kv.Client implementation during unit tests. As
 // such some behavior may be missing or incorrect compared to the real client. This
 // is determined to be an acceptable tradeoff to avoid needing to depend on an entire
 // Etcd server for unit tests.

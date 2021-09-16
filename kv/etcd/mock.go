@@ -16,6 +16,10 @@ import (
 	"github.com/grafana/dskit/kv/codec"
 )
 
+// channelBufferSize is the size of the channels used to send events from Put, Delete,
+// and transactions as well as the channel used to send filtered events to watchers.
+const channelBufferSize = 10
+
 // NewInMemoryClient creates an Etcd Client implementation that uses an in-memory
 // version of the underlying Etcd client.
 func NewInMemoryClient(codec codec.Codec, logger log.Logger) (*Client, io.Closer) {
@@ -38,11 +42,11 @@ func NewInMemoryClient(codec codec.Codec, logger log.Logger) (*Client, io.Closer
 // newMockKV creates an in-memory implementation of an etcd client
 func newMockKV() *mockKV {
 	kv := &mockKV{
-		values:       make(map[string]mvccpb.KeyValue),
-		valuesMtx:    sync.Mutex{},
-		close:        make(chan struct{}),
-		consumers:    make(map[chan clientv3.Event]struct{}),
-		consumersMtx: sync.Mutex{},
+		values:    make(map[string]mvccpb.KeyValue),
+		valuesMtx: sync.Mutex{},
+		close:     make(chan struct{}),
+		events:    make(map[chan clientv3.Event]struct{}),
+		eventsMtx: sync.Mutex{},
 	}
 
 	return kv
@@ -75,23 +79,29 @@ type mockKV struct {
 	// Channels that should receive events in response to Put or Delete
 	// calls. These channels are in turn read by goroutines that apply
 	// filtering before sending watch responses to their callers.
-	consumers    map[chan clientv3.Event]struct{}
-	consumersMtx sync.Mutex
+	events    map[chan clientv3.Event]struct{}
+	eventsMtx sync.Mutex
 }
 
 // Watch implements the Clientv3Facade interface
 func (m *mockKV) Watch(ctx context.Context, key string, opts ...clientv3.OpOption) clientv3.WatchChan {
-	out := make(chan clientv3.WatchResponse)
-	consumer := m.createConsumer()
+	watcher := make(chan clientv3.WatchResponse, channelBufferSize)
+	consumer := m.createEventConsumer(channelBufferSize)
 
 	go func() {
 		defer func() {
 			// When this goroutine ends, remove and close the channel written to by the
 			// Put and Delete methods as well as closing the channel read by the caller
 			// of the Watch method
-			m.destroyConsumer(consumer)
-			out <- clientv3.WatchResponse{Canceled: true}
-			close(out)
+			m.destroyEventConsumer(consumer)
+
+			// non-blocking send
+			select {
+			case watcher <- clientv3.WatchResponse{Canceled: true}:
+			default:
+			}
+
+			close(watcher)
 		}()
 
 		for {
@@ -107,43 +117,51 @@ func (m *mockKV) Watch(ctx context.Context, key string, opts ...clientv3.OpOptio
 				match := m.isMatch(op, *e.Kv)
 
 				if match {
-					out <- clientv3.WatchResponse{Events: []*clientv3.Event{&e}}
+					// non-blocking send
+					select {
+					case watcher <- clientv3.WatchResponse{Events: []*clientv3.Event{&e}}:
+					default:
+					}
 				}
 			}
 		}
 	}()
 
-	return out
+	return watcher
 }
 
-// createConsumer creates and returns a new channel that is registered to receive
+// createEventConsumer creates and returns a new channel that is registered to receive
 // events for Puts and Deletes.
-func (m *mockKV) createConsumer() chan clientv3.Event {
-	ch := make(chan clientv3.Event)
-	m.consumersMtx.Lock()
-	m.consumers[ch] = struct{}{}
-	m.consumersMtx.Unlock()
+func (m *mockKV) createEventConsumer(bufSz int) chan clientv3.Event {
+	ch := make(chan clientv3.Event, bufSz)
+	m.eventsMtx.Lock()
+	m.events[ch] = struct{}{}
+	m.eventsMtx.Unlock()
 	return ch
 }
 
-// destroyConsumer removes the given channel from the list of channels that events
+// destroyEventConsumer removes the given channel from the list of channels that events
 // should be sent to and closes it.
-func (m *mockKV) destroyConsumer(ch chan clientv3.Event) {
-	m.consumersMtx.Lock()
-	delete(m.consumers, ch)
-	m.consumersMtx.Unlock()
+func (m *mockKV) destroyEventConsumer(ch chan clientv3.Event) {
+	m.eventsMtx.Lock()
+	delete(m.events, ch)
+	m.eventsMtx.Unlock()
 	close(ch)
 }
 
-// sendEvent writes an event to all currently registered consumers. The consumer
+// sendEvent writes an event to all currently registered events. The consumer
 // channels are each read by a goroutine that filters the event and sends it to
 // the caller of the Watch method.
 func (m *mockKV) sendEvent(e clientv3.Event) {
-	m.consumersMtx.Lock()
-	for ch := range m.consumers {
-		ch <- e
+	m.eventsMtx.Lock()
+	for ch := range m.events {
+		// non-blocking send
+		select {
+		case ch <- e:
+		default:
+		}
 	}
-	m.consumersMtx.Unlock()
+	m.eventsMtx.Unlock()
 }
 
 // RequestProgress implements the Clientv3Facade interface

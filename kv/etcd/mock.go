@@ -246,8 +246,8 @@ func (m *mockKV) doInternal(op clientv3.Op) (clientv3.OpResponse, error) {
 }
 
 func (m *mockKV) doGet(op clientv3.Op) (clientv3.OpResponse, error) {
-	kvs := make([]*mvccpb.KeyValue, 0)
 	matching := m.matchingKeys(op, m.values)
+	kvs := make([]*mvccpb.KeyValue, 0, len(matching))
 
 	for _, k := range matching {
 		kv := m.values[k]
@@ -325,13 +325,14 @@ func (m *mockKV) doTxn(op clientv3.Op) (clientv3.OpResponse, error) {
 		toRun = elses
 	}
 
-	responses := make([]*etcdserverpb.ResponseOp, len(toRun))
+	responses := make([]*etcdserverpb.ResponseOp, 0, len(toRun))
 	for _, o := range toRun {
 		_, err := m.doInternal(o)
-		responses = append(responses, &etcdserverpb.ResponseOp{Response: nil})
 		if err != nil {
 			panic(fmt.Sprintf("unexpected error running transaction: %s", err))
 		}
+
+		responses = append(responses, &etcdserverpb.ResponseOp{Response: nil})
 	}
 
 	res := clientv3.TxnResponse{

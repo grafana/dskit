@@ -29,7 +29,8 @@ func withFixtures(t *testing.T, f func(*testing.T, Client)) {
 			return client, closer, nil
 		}},
 		{"etcd", func() (Client, io.Closer, error) {
-			return etcd.Mock(codec.String{}, testLogger{})
+			client, closer := etcd.NewInMemoryClient(codec.String{}, testLogger{})
+			return client, closer, nil
 		}},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {

@@ -4,14 +4,6 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"math"
-
-	"github.com/grafana/dskit/yolo"
-)
-
-// Sharding Strategies.
-const (
-	ShardingStrategyDefault = "default"
-	ShardingStrategyShuffle = "shuffle-sharding"
 )
 
 var (
@@ -22,10 +14,10 @@ var (
 func ShuffleShardSeed(identifier, zone string) int64 {
 	// Use the identifier to compute a hash we'll use to seed the random.
 	hasher := md5.New()
-	hasher.Write(yolo.Buf(identifier)) // nolint:errcheck
+	hasher.Write(yoloBuf(identifier)) // nolint:errcheck
 	if zone != "" {
-		hasher.Write(seedSeparator)  // nolint:errcheck
-		hasher.Write(yolo.Buf(zone)) // nolint:errcheck
+		hasher.Write(seedSeparator) // nolint:errcheck
+		hasher.Write(yoloBuf(zone))     // nolint:errcheck
 	}
 	checksum := hasher.Sum(nil)
 

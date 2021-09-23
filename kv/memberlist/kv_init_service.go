@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/grafana/dskit/services"
 	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"

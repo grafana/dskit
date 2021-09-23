@@ -1,4 +1,4 @@
- package ring
+package ring
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
-	log "github.com/sirupsen/logrus"
 )
 
 const pageContent = `
@@ -106,7 +105,7 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		ingesterID := req.FormValue("forget")
 		if err := r.forget(req.Context(), ingesterID); err != nil {
-			level.Error(log.WithContext(req.Context(), r.logger)).Log("msg", "error forgetting instance", "err", err)
+			level.Error(r.logger).Log("msg", "error forgetting instance", "err", err)
 		}
 
 		// Implement PRG pattern to prevent double-POST and work with CSRF middleware.

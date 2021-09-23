@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/ring/shard"
 	"github.com/grafana/dskit/ring/util"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -686,7 +687,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	var actualZones []string
 
 	if r.cfg.ZoneAwarenessEnabled {
-		numInstancesPerZone = util.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
+		numInstancesPerZone = shard.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
 		actualZones = r.ringZones
 	} else {
 		numInstancesPerZone = size
@@ -711,7 +712,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		// Since we consider each zone like an independent ring, we have to use dedicated
 		// pseudo-random generator for each zone, in order to guarantee the "consistency"
 		// property when the shard size changes or a new zone is added.
-		random := rand.New(rand.NewSource(util.ShuffleShardSeed(identifier, zone)))
+		random := rand.New(rand.NewSource(shard.ShuffleShardSeed(identifier, zone)))
 
 		// To select one more instance while guaranteeing the "consistency" property,
 		// we do pick a random value from the generator and resolve uniqueness collisions

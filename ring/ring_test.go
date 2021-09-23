@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring/shard"
 	"github.com/grafana/dskit/ring/util"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -2053,7 +2054,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 		ZoneAwarenessEnabled: true,
 	}
 
-	ring, err := New(cfg, "test", "test", nil)
+	ring, err := New(cfg, "test", "test", nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ring))
 	t.Cleanup(func() {
@@ -2146,7 +2147,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 
 // User shuffle shard token.
 func userToken(user, zone string, skip int) uint32 {
-	r := rand.New(rand.NewSource(util.ShuffleShardSeed(user, zone)))
+	r := rand.New(rand.NewSource(shard.ShuffleShardSeed(user, zone)))
 
 	for ; skip > 0; skip-- {
 		_ = r.Uint32()

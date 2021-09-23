@@ -93,7 +93,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		level.Error(log.Logger).Log("msg", "failed to get hostname", "err", err)
+		//level.Error(log.Logger).Log("msg", "failed to get hostname", "err", err)
 		os.Exit(1)
 	}
 
@@ -149,8 +149,8 @@ type Lifecycler struct {
 }
 
 // NewLifecycler creates new Lifecycler. It must be started via StartAsync.
-func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringName, ringKey string, flushOnShutdown bool, reg prometheus.Registerer, logger log.Logger) (*Lifecycler, error) {
-	addr, err := GetInstanceAddr(cfg.Addr, cfg.InfNames)
+func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringName, ringKey string, flushOnShutdown bool, logger log.Logger, reg prometheus.Registerer) (*Lifecycler, error) {
+	addr, err := GetInstanceAddr(cfg.Addr, cfg.InfNames, logger)
 	if err != nil {
 		return nil, err
 	}

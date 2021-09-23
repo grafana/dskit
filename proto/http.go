@@ -1,129 +1,17 @@
-package http
+package proto
 
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"flag"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
-	"strings"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
-	"gopkg.in/yaml.v2"
 )
-
-const messageSizeLargerErrFmt = "received message larger than max (%d vs %d)"
-
-// IsRequestBodyTooLarge returns true if the error is "http: request body too large".
-func IsRequestBodyTooLarge(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "http: request body too large")
-}
-
-// BasicAuth configures basic authentication for HTTP clients.
-type BasicAuth struct {
-	Username string `yaml:"basic_auth_username"`
-	Password string `yaml:"basic_auth_password"`
-}
-
-func (b *BasicAuth) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&b.Username, prefix+"basic-auth-username", "", "HTTP Basic authentication username. It overrides the username set in the URL (if any).")
-	f.StringVar(&b.Password, prefix+"basic-auth-password", "", "HTTP Basic authentication password. It overrides the password set in the URL (if any).")
-}
-
-// IsEnabled returns false if basic authentication isn't enabled.
-func (b BasicAuth) IsEnabled() bool {
-	return b.Username != "" || b.Password != ""
-}
-
-// WriteJSONResponse writes some JSON as a HTTP response.
-func WriteJSONResponse(w http.ResponseWriter, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-
-	data, err := json.Marshal(v)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// We ignore errors here, because we cannot do anything about them.
-	// Write will trigger sending Status code, so we cannot send a different status code afterwards.
-	// Also this isn't internal error, but error communicating with client.
-	_, _ = w.Write(data)
-}
-
-// WriteYAMLResponse writes some YAML as a HTTP response.
-func WriteYAMLResponse(w http.ResponseWriter, v interface{}) {
-	// There is not standardised content-type for YAML, text/plain ensures the
-	// YAML is displayed in the browser instead of offered as a download
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-
-	data, err := yaml.Marshal(v)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// We ignore errors here, because we cannot do anything about them.
-	// Write will trigger sending Status code, so we cannot send a different status code afterwards.
-	// Also this isn't internal error, but error communicating with client.
-	_, _ = w.Write(data)
-}
-
-// WriteTextResponse sends a message as text/plain response with 200 status code.
-func WriteTextResponse(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "text/plain")
-
-	// Ignore inactionable errors.
-	_, _ = w.Write([]byte(message))
-}
-
-// WriteHTMLResponse sends a message as text/html response with 200 status code.
-func WriteHTMLResponse(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "text/html")
-
-	// Ignore inactionable errors.
-	_, _ = w.Write([]byte(message))
-}
-
-// RenderHTTPResponse either responds with json or a rendered html page using the passed in template
-// by checking the Accepts header
-func RenderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Template, r *http.Request) {
-	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "application/json") {
-		WriteJSONResponse(w, v)
-		return
-	}
-
-	err := t.Execute(w, v)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-// StreamWriteYAMLResponse stream writes data as http response
-func StreamWriteYAMLResponse(w http.ResponseWriter, iter chan interface{}, logger log.Logger) {
-	w.Header().Set("Content-Type", "application/yaml")
-	for v := range iter {
-		data, err := yaml.Marshal(v)
-		if err != nil {
-			level.Error(logger).Log("msg", "yaml marshal failed", "err", err)
-			continue
-		}
-		_, err = w.Write(data)
-		if err != nil {
-			level.Error(logger).Log("msg", "write http response failed", "err", err)
-			return
-		}
-	}
-}
 
 // CompressionType for encoding and decoding requests and responses.
 type CompressionType int
@@ -133,6 +21,8 @@ const (
 	NoCompression CompressionType = iota
 	RawSnappy
 )
+
+const messageSizeLargerErrFmt = "received message larger than max (%d vs %d)"
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
 func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, req proto.Message, compression CompressionType) error {

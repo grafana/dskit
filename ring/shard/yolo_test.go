@@ -7,7 +7,7 @@ import (
 )
 
 func TestYoloBuf(t *testing.T) {
-	s := Buf("hello world")
+	s := yoloBuf("hello world")
 
 	require.Equal(t, []byte("hello world"), s)
 }

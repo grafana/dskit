@@ -1958,7 +1958,7 @@ func TestRingUpdates(t *testing.T) {
 				ExcludedZones:     flagext.StringSliceCSV(testData.excludedZones),
 			}
 
-			ring, err := New(cfg, "test", "test", nil)
+			ring, err := New(cfg, "test", "test", log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ring))
 			t.Cleanup(func() {
@@ -2021,7 +2021,7 @@ func startLifecycler(t *testing.T, cfg Config, heartbeat time.Duration, lifecycl
 		UnregisterOnShutdown: true,
 	}
 
-	lc, err := NewLifecycler(lcCfg, &noopFlushTransferer{}, "test", "test", false, nil)
+	lc, err := NewLifecycler(lcCfg, &noopFlushTransferer{}, "test", "test", false, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	lc.AddListener(services.NewListener(nil, nil, nil, nil, func(from services.State, failure error) {
@@ -2054,7 +2054,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 		ZoneAwarenessEnabled: true,
 	}
 
-	ring, err := New(cfg, "test", "test", nil, nil)
+	ring, err := New(cfg, "test", "test", log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ring))
 	t.Cleanup(func() {

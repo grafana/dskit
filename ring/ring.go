@@ -14,7 +14,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/ring/shard"
+	shardUtil "github.com/grafana/dskit/ring/shard"
 	"github.com/grafana/dskit/ring/util"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -206,7 +206,7 @@ type subringCacheKey struct {
 }
 
 // New creates a new Ring. Being a service, Ring needs to be started to do anything.
-func New(cfg Config, name, key string, reg prometheus.Registerer, logger log.Logger) (*Ring, error) {
+func New(cfg Config, name, key string, logger log.Logger, reg prometheus.Registerer) (*Ring, error) {
 	codec := GetCodec()
 	// Suffix all client names with "-ring" to denote this kv client is used by the ring
 	store, err := kv.NewClient(
@@ -687,7 +687,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	var actualZones []string
 
 	if r.cfg.ZoneAwarenessEnabled {
-		numInstancesPerZone = shard.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
+		numInstancesPerZone = shardUtil.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
 		actualZones = r.ringZones
 	} else {
 		numInstancesPerZone = size
@@ -712,7 +712,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		// Since we consider each zone like an independent ring, we have to use dedicated
 		// pseudo-random generator for each zone, in order to guarantee the "consistency"
 		// property when the shard size changes or a new zone is added.
-		random := rand.New(rand.NewSource(shard.ShuffleShardSeed(identifier, zone)))
+		random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(identifier, zone)))
 
 		// To select one more instance while guaranteeing the "consistency" property,
 		// we do pick a random value from the generator and resolve uniqueness collisions

@@ -3,6 +3,7 @@ package testutils
 import (
 	"context"
 
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
@@ -16,7 +17,7 @@ func NumTokens(c kv.Client, name, ringKey string) int {
 	// The ringDesc may be null if the lifecycler hasn't stored the ring
 	// to the KVStore yet.
 	if ringDesc == nil || err != nil {
-		level.Error(logg).Log("msg", "error reading consul", "err", err)
+		level.Error(log.NewNopLogger()).Log("msg", "error reading consul", "err", err)
 		return 0
 	}
 	rd := ringDesc.(*ring.Desc)

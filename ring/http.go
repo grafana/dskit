@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/ring/util"
 )
 
 const pageContent = `

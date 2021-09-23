@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/grafana/dskit/ring"
 )
 
 func TestNewRingServiceDiscovery(t *testing.T) {

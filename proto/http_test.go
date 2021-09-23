@@ -6,8 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/dskit/kv/memberlist"
 )
 
 func TestParseProtoReader(t *testing.T) {

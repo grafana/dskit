@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+
 	"github.com/grafana/dskit/backoff"
 )
 
@@ -207,4 +208,15 @@ func filterIPs(addrs []net.Addr) string {
 		}
 	}
 	return ipAddr
+}
+
+// StringsContain returns true if the search value is within the list of input values.
+func StringsContain(values []string, search string) bool {
+	for _, v := range values {
+		if search == v {
+			return true
+		}
+	}
+
+	return false
 }

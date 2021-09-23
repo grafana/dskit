@@ -11,15 +11,16 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/services"
-	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
 	perrors "github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 )
 
 var (
@@ -93,7 +94,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		//level.Error(log.Logger).Log("msg", "failed to get hostname", "err", err)
+		level.Error(log.NewNopLogger()).Log("msg", "failed to get hostname", "err", err)
 		os.Exit(1)
 	}
 
@@ -420,7 +421,7 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 
 	// We do various period tasks
 	autoJoinAfter := time.After(i.cfg.JoinAfter)
-	var observeChan <-chan time.Time = nil
+	var observeChan <-chan time.Time
 
 	heartbeatTickerStop, heartbeatTickerChan := dstime.NewDisableableTicker(i.cfg.HeartbeatPeriod)
 	defer heartbeatTickerStop()

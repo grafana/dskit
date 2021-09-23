@@ -12,16 +12,15 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring/shard"
-	"github.com/grafana/dskit/ring/util"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 )
 
 const (
@@ -1109,7 +1108,7 @@ func TestRing_ShuffleShard_Shuffling(t *testing.T) {
 
 			numMatching := 0
 			for _, c := range currShard {
-				if util.StringsContain(otherShard, c) {
+				if StringsContain(otherShard, c) {
 					numMatching++
 				}
 			}
@@ -1991,7 +1990,7 @@ func TestRingUpdates(t *testing.T) {
 
 				// Ensure there's no instance in an excluded zone.
 				if len(testData.excludedZones) > 0 {
-					assert.False(t, util.StringsContain(testData.excludedZones, ing.Zone))
+					assert.False(t, StringsContain(testData.excludedZones, ing.Zone))
 				}
 			}
 

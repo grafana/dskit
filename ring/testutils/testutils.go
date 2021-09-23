@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 )

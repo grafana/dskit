@@ -17,7 +17,7 @@ func ShuffleShardSeed(identifier, zone string) int64 {
 	hasher.Write(yoloBuf(identifier)) // nolint:errcheck
 	if zone != "" {
 		hasher.Write(seedSeparator) // nolint:errcheck
-		hasher.Write(yoloBuf(zone))     // nolint:errcheck
+		hasher.Write(yoloBuf(zone)) // nolint:errcheck
 	}
 	checksum := hasher.Sum(nil)
 

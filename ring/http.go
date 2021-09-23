@@ -2,15 +2,16 @@ package ring
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log/level"
-	"github.com/grafana/dskit/ring/util"
 )
 
 const pageContent = `
@@ -172,7 +173,7 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	tokensParam := req.URL.Query().Get("tokens")
 
-	util.RenderHTTPResponse(w, struct {
+	renderHTTPResponse(w, struct {
 		Ingesters  []interface{} `json:"shards"`
 		Now        time.Time     `json:"now"`
 		ShowTokens bool          `json:"-"`
@@ -181,4 +182,35 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		Now:        now,
 		ShowTokens: tokensParam == "true",
 	}, pageTemplate, req)
+}
+
+// RenderHTTPResponse either responds with json or a rendered html page using the passed in template
+// by checking the Accepts header
+func renderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Template, r *http.Request) {
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "application/json") {
+		WriteJSONResponse(w, v)
+		return
+	}
+
+	err := t.Execute(w, v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// WriteJSONResponse writes some JSON as a HTTP response.
+func WriteJSONResponse(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+
+	data, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// We ignore errors here, because we cannot do anything about them.
+	// Write will trigger sending Status code, so we cannot send a different status code afterwards.
+	// Also this isn't internal error, but error communicating with client.
+	_, _ = w.Write(data)
 }

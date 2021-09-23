@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/backoff"
-
-	"github.com/cortexproject/cortex/pkg/util"
 )
 
 // GenerateTokens make numTokens unique random tokens, none of which clash

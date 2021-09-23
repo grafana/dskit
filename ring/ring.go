@@ -1,4 +1,3 @@
-
 package ring
 
 // Based on https://raw.githubusercontent.com/stathat/consistent/master/consistent.go
@@ -12,17 +11,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/ring/util"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/dskit/flagext"
-
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/log"
-	util_math "github.com/cortexproject/cortex/pkg/util/math"
+	dsmath "github.com/grafana/dskit/math"
 )
 
 const (
@@ -197,6 +195,8 @@ type Ring struct {
 	totalTokensDesc     *prometheus.Desc
 	numTokensDesc       *prometheus.Desc
 	oldestTimestampDesc *prometheus.Desc
+
+	logger log.Logger
 }
 
 type subringCacheKey struct {
@@ -205,23 +205,23 @@ type subringCacheKey struct {
 }
 
 // New creates a new Ring. Being a service, Ring needs to be started to do anything.
-func New(cfg Config, name, key string, reg prometheus.Registerer) (*Ring, error) {
+func New(cfg Config, name, key string, reg prometheus.Registerer, logger log.Logger) (*Ring, error) {
 	codec := GetCodec()
 	// Suffix all client names with "-ring" to denote this kv client is used by the ring
 	store, err := kv.NewClient(
 		cfg.KVStore,
 		codec,
 		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), name+"-ring"),
-		log.Logger,
+		logger,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewWithStoreClientAndStrategy(cfg, name, key, store, NewDefaultReplicationStrategy())
+	return NewWithStoreClientAndStrategy(cfg, name, key, store, NewDefaultReplicationStrategy(), logger)
 }
 
-func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client, strategy ReplicationStrategy) (*Ring, error) {
+func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client, strategy ReplicationStrategy, logger log.Logger) (*Ring, error) {
 	if cfg.ReplicationFactor <= 0 {
 		return nil, fmt.Errorf("ReplicationFactor must be greater than zero: %d", cfg.ReplicationFactor)
 	}
@@ -263,6 +263,7 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 			[]string{"state"},
 			map[string]string{"name": name},
 		),
+		logger: logger,
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.loop, nil).WithName(fmt.Sprintf("%s ring client", name))
@@ -278,7 +279,7 @@ func (r *Ring) starting(ctx context.Context) error {
 		return errors.Wrap(err, "unable to initialise ring state")
 	}
 	if value == nil {
-		level.Info(log.Logger).Log("msg", "ring doesn't exist in KV store yet")
+		level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 		return nil
 	}
 
@@ -289,7 +290,7 @@ func (r *Ring) starting(ctx context.Context) error {
 func (r *Ring) loop(ctx context.Context) error {
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {
 		if value == nil {
-			level.Info(log.Logger).Log("msg", "ring doesn't exist in KV store yet")
+			level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 			return true
 		}
 
@@ -468,7 +469,7 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 		// Given data is replicated to RF different zones, we can tolerate a number of
 		// RF/2 failing zones. However, we need to protect from the case the ring currently
 		// contains instances in a number of zones < RF.
-		numReplicatedZones := util_math.Min(len(r.ringZones), r.cfg.ReplicationFactor)
+		numReplicatedZones := dsmath.Min(len(r.ringZones), r.cfg.ReplicationFactor)
 		minSuccessZones := (numReplicatedZones / 2) + 1
 		maxUnavailableZones = minSuccessZones - 1
 

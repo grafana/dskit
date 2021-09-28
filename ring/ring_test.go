@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring/shard"
+	"github.com/grafana/dskit/ring/util"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 )
@@ -1108,7 +1109,7 @@ func TestRing_ShuffleShard_Shuffling(t *testing.T) {
 
 			numMatching := 0
 			for _, c := range currShard {
-				if StringsContain(otherShard, c) {
+				if util.StringsContain(otherShard, c) {
 					numMatching++
 				}
 			}
@@ -1990,7 +1991,7 @@ func TestRingUpdates(t *testing.T) {
 
 				// Ensure there's no instance in an excluded zone.
 				if len(testData.excludedZones) > 0 {
-					assert.False(t, StringsContain(testData.excludedZones, ing.Zone))
+					assert.False(t, util.StringsContain(testData.excludedZones, ing.Zone))
 				}
 			}
 

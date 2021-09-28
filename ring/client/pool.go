@@ -13,7 +13,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/ring/util"
 	"github.com/grafana/dskit/services"
 )
 
@@ -165,7 +165,7 @@ func (p *Pool) removeStaleClients() {
 	}
 
 	for _, addr := range p.RegisteredAddresses() {
-		if ring.StringsContain(serviceAddrs, addr) {
+		if util.StringsContain(serviceAddrs, addr) {
 			continue
 		}
 		level.Info(p.logger).Log("msg", "removing stale client", "addr", addr)

@@ -94,8 +94,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		level.Error(log.NewNopLogger()).Log("msg", "failed to get hostname", "err", err)
-		os.Exit(1)
+		panic(fmt.Errorf("failed to get hostname %s", err))
 	}
 
 	cfg.InfNames = []string{"eth0", "en0"}

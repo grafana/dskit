@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestShuffleShardExpectedInstancesPerZone(t *testing.T) {
@@ -80,4 +81,10 @@ func TestShuffleShardExpectedInstances(t *testing.T) {
 	for _, test := range tests {
 		assert.Equal(t, test.expected, ShuffleShardExpectedInstances(test.shardSize, test.numZones))
 	}
+}
+
+func TestYoloBuf(t *testing.T) {
+	s := yoloBuf("hello world")
+
+	require.Equal(t, []byte("hello world"), s)
 }

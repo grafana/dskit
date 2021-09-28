@@ -19,10 +19,10 @@ const pageContent = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Cortex Ring Status</title>
+		<title>Ring Status</title>
 	</head>
 	<body>
-		<h1>Cortex Ring Status</h1>
+		<h1>Ring Status</h1>
 		<p>Current time: {{ .Now }}</p>
 		<form action="" method="POST">
 			<input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">
@@ -189,7 +189,7 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func renderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Template, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "application/json") {
-		WriteJSONResponse(w, v)
+		writeJSONResponse(w, v)
 		return
 	}
 
@@ -200,7 +200,7 @@ func renderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Templa
 }
 
 // WriteJSONResponse writes some JSON as a HTTP response.
-func WriteJSONResponse(w http.ResponseWriter, v interface{}) {
+func writeJSONResponse(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 
 	data, err := json.Marshal(v)

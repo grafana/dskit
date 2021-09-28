@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"math"
+	"unsafe"
 )
 
 var (
@@ -36,4 +37,9 @@ func ShuffleShardExpectedInstancesPerZone(shardSize, numZones int) int {
 // tenant. If zone-aware replication is disabled, the input numZones should be 1.
 func ShuffleShardExpectedInstances(shardSize, numZones int) int {
 	return ShuffleShardExpectedInstancesPerZone(shardSize, numZones) * numZones
+}
+
+// yoloBuf will return an unsafe pointer to a string, as the name yolo.yoloBuf implies use at your own risk.
+func yoloBuf(s string) []byte {
+	return *((*[]byte)(unsafe.Pointer(&s)))
 }

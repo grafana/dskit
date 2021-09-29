@@ -4,3 +4,4 @@
   be used to register all relevant KV class metrics. #22
 * [CHANGE] Added CHANGELOG.md and Pull Request template to reference the changelog
 * [ENHANCEMENT] Add middleware package. #38
+* [ENHANCEMENT] Add the ring package #45

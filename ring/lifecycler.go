@@ -25,19 +25,19 @@ import (
 
 var (
 	consulHeartbeats = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_member_consul_heartbeats_total",
+		Name: "member_consul_heartbeats_total",
 		Help: "The total number of heartbeats sent to consul.",
 	}, []string{"name"})
 	tokensOwned = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "cortex_member_ring_tokens_owned",
+		Name: "member_ring_tokens_owned",
 		Help: "The number of tokens owned in the ring.",
 	}, []string{"name"})
 	tokensToOwn = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "cortex_member_ring_tokens_to_own",
+		Name: "member_ring_tokens_to_own",
 		Help: "The number of tokens to own in the ring.",
 	}, []string{"name"})
 	shutdownDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "cortex_shutdown_duration_seconds",
+		Name:    "shutdown_duration_seconds",
 		Help:    "Duration (in seconds) of shutdown procedure (ie transfer or flush).",
 		Buckets: prometheus.ExponentialBuckets(10, 2, 8), // Biggest bucket is 10*2^(9-1) = 2560, or 42 mins.
 	}, []string{"op", "status", "name"})
@@ -160,7 +160,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 	store, err := kv.NewClient(
 		cfg.RingConfig.KVStore,
 		codec,
-		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), ringName+"-lifecycler"),
+		kv.RegistererWithKVName(reg, ringName+"-lifecycler"),
 		logger,
 	)
 	if err != nil {

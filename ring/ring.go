@@ -214,7 +214,7 @@ func New(cfg Config, name, key string, logger log.Logger, reg prometheus.Registe
 	store, err := kv.NewClient(
 		cfg.KVStore,
 		codec,
-		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), name+"-ring"),
+		kv.RegistererWithKVName(reg, name+"-ring"),
 		logger,
 	)
 	if err != nil {
@@ -237,31 +237,31 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		ringDesc:             &Desc{},
 		shuffledSubringCache: map[subringCacheKey]*Ring{},
 		memberOwnershipDesc: prometheus.NewDesc(
-			"cortex_ring_member_ownership_percent",
+			"ring_member_ownership_percent",
 			"The percent ownership of the ring by member",
 			[]string{"member"},
 			map[string]string{"name": name},
 		),
 		numMembersDesc: prometheus.NewDesc(
-			"cortex_ring_members",
+			"ring_members",
 			"Number of members in the ring",
 			[]string{"state"},
 			map[string]string{"name": name},
 		),
 		totalTokensDesc: prometheus.NewDesc(
-			"cortex_ring_tokens_total",
+			"ring_tokens_total",
 			"Number of tokens in the ring",
 			nil,
 			map[string]string{"name": name},
 		),
 		numTokensDesc: prometheus.NewDesc(
-			"cortex_ring_tokens_owned",
+			"ring_tokens_owned",
 			"The number of tokens in the ring owned by the member",
 			[]string{"member"},
 			map[string]string{"name": name},
 		),
 		oldestTimestampDesc: prometheus.NewDesc(
-			"cortex_ring_oldest_member_timestamp",
+			"ring_oldest_member_timestamp",
 			"Timestamp of the oldest member in the ring.",
 			[]string{"state"},
 			map[string]string{"name": name},

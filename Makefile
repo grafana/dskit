@@ -1,5 +1,11 @@
 # put tools at the root of the folder
 PATH := $(CURDIR)/.tools/bin:$(PATH)
+# We don't want find to scan inside a bunch of directories, to accelerate the
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .tools -prune -o
+# Generating proto code is automated.
+PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
+PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
+
 
 .PHONY: test
 test:
@@ -33,6 +39,17 @@ mod-check:
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
 	@git diff --exit-code -- go.sum go.mod
+
+clean-protos:
+	rm -rf $(PROTO_GOS)
+
+protos: $(PROTO_GOS)
+
+%.pb.go:
+	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+
+check-protos: clean-protos protos
+	@git diff --exit-code -- $(PROTO_GOS)
 
 .tools:
 	mkdir -p .tools/

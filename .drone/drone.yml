@@ -23,7 +23,16 @@
          ],
          "image": "golang:1.16.7",
          "name": "make-test"
-      }
+      },
+     {
+       "commands": [
+          "apt-get update && apt-get -y install protobuf-compiler",
+          "go get github.com/gogo/protobuf/protoc-gen-gogoslick",
+          "make check-protos"
+       ],
+       "image": "golang:1.16.7",
+       "name": "check-protos"
+     }
    ]
 }
 ---

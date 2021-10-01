@@ -5,7 +5,14 @@ DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o 
 # Generating proto code is automated.
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
-
+UNAME_S := $(shell uname -s)
+PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v3.12.4/
+ifeq ($(UNAME_S), Linux)
+	PROTO_ZIP=protoc-3.12.4-linux-x86_64.zip
+endif
+ifeq ($(UNAME_S), Darwin)
+	PROTO_ZIP=protoc-3.12.4-osx-x86_64.zip
+endif
 
 .PHONY: test
 test:
@@ -46,7 +53,7 @@ clean-protos:
 protos: $(PROTO_GOS)
 
 %.pb.go:
-	protoc -I $(GOPATH):./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+	.tools/protoc/bin/protoc -I $(GOPATH):./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
 check-protos: clean-protos protos
 	@git diff --exit-code -- $(PROTO_GOS)
@@ -62,6 +69,11 @@ check-protos: clean-protos protos
 
 .tools/bin/golangci-lint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.41.1
+
+.tools/bin/protoc: .tools
+	mkdir -p .tools/protoc
+	cd .tools/protoc && curl -LO $(PROTO_PATH)$(PROTO_ZIP)
+	unzip -n .tools/protoc/$(PROTO_ZIP) -d .tools/protoc/
 
 drone: .drone/drone.yml
 

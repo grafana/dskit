@@ -76,9 +76,11 @@ check-protos: clean-protos protos
 	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.41.1
 
 .tools/bin/protoc: .tools
+ifeq ("$(wildcard .tools/protoc/bin/protoc)","")
 	mkdir -p .tools/protoc
 	cd .tools/protoc && curl -LO $(PROTO_PATH)$(PROTO_ZIP)
 	unzip -n .tools/protoc/$(PROTO_ZIP) -d .tools/protoc/
+endif
 
 .tools/bin/protoc-gen-gogoslick: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0

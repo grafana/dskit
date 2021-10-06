@@ -1,30 +1,39 @@
 ---
 {
-   "kind": "pipeline",
-   "name": "validate-pr",
-   "steps": [
-      {
-         "commands": [
-            "make mod-check"
-         ],
-         "image": "golang:1.16.7",
-         "name": "make-mod-check"
-      },
-      {
-         "commands": [
-            "make lint"
-         ],
-         "image": "golang:1.16.7",
-         "name": "make-lint"
-      },
-      {
-         "commands": [
-            "make test"
-         ],
-         "image": "golang:1.16.7",
-         "name": "make-test"
-      }
-   ]
+  "kind": "pipeline",
+  "name": "validate-pr",
+  "steps": [
+    {
+      "commands": [
+          "make mod-check"
+      ],
+      "image": "golang:1.16.7",
+      "name": "make-mod-check"
+    },
+    {
+      "commands": [
+          "make lint"
+      ],
+      "image": "golang:1.16.7",
+      "name": "make-lint"
+    },
+    {
+      "commands": [
+          "make test"
+      ],
+      "image": "golang:1.16.7",
+      "name": "make-test"
+    },
+    {
+      "commands": [
+          "apt-get update && apt-get -y install unzip",
+          "go mod vendor",
+          "make check-protos"
+      ],
+      "image": "golang:1.16.7",
+      "name": "check-protos"
+    }
+  ]
 }
 ---
 kind: signature

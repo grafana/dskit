@@ -8,3 +8,4 @@
 * [CHANGE] Remove `cortex_` prefix for metrics registered in the ring. #46
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
+* [ENHANCEMENT] Replace go-kit/kit/log with go-kit/log. #52

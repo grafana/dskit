@@ -832,17 +832,17 @@ func (i *Lifecycler) processShutdown(ctx context.Context) {
 			level.Info(i.logger).Log("msg", "transfers are disabled")
 		} else {
 			level.Error(i.logger).Log("msg", "failed to transfer chunks to another instance", "ring", i.RingName, "err", err)
-			i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "fail", i.RingName).Observe(time.Since(transferStart).Seconds())
+			i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "fail").Observe(time.Since(transferStart).Seconds())
 		}
 	} else {
 		flushRequired = false
-		i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "success", i.RingName).Observe(time.Since(transferStart).Seconds())
+		i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "success").Observe(time.Since(transferStart).Seconds())
 	}
 
 	if flushRequired {
 		flushStart := time.Now()
 		i.flushTransferer.Flush()
-		i.lifecyclerMetrics.shutdownDuration.WithLabelValues("flush", "success", i.RingName).Observe(time.Since(flushStart).Seconds())
+		i.lifecyclerMetrics.shutdownDuration.WithLabelValues("flush", "success").Observe(time.Since(flushStart).Seconds())
 	}
 
 	// Sleep so the shutdownDuration metric can be collected.

@@ -193,12 +193,12 @@ type Ring struct {
 	// If set to nil, no caching is done (used by tests, and subrings).
 	shuffledSubringCache map[subringCacheKey]*Ring
 
-	memberOwnershipDesc *prometheus.GaugeVec
-	numMembersDesc      *prometheus.GaugeVec
-	totalTokensDesc     prometheus.Gauge
-	numTokensDesc       *prometheus.GaugeVec
-	oldestTimestampDesc *prometheus.GaugeVec
-	metricsUpdateTicker *time.Ticker
+	memberOwnershipGaugeVec *prometheus.GaugeVec
+	numMembersGaugeVec      *prometheus.GaugeVec
+	totalTokensGauge        prometheus.Gauge
+	numTokensGaugeVec       *prometheus.GaugeVec
+	oldestTimestampGaugeVec *prometheus.GaugeVec
+	metricsUpdateTicker     *time.Ticker
 
 	logger log.Logger
 }
@@ -237,26 +237,26 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		strategy:             strategy,
 		ringDesc:             &Desc{},
 		shuffledSubringCache: map[subringCacheKey]*Ring{},
-		memberOwnershipDesc: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		memberOwnershipGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_member_ownership_percent",
 			Help:        "The percent ownership of the ring by member",
 			ConstLabels: map[string]string{"name": name}},
 			[]string{"member"}),
-		numMembersDesc: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
 			ConstLabels: map[string]string{"name": name}},
 			[]string{"state"}),
-		totalTokensDesc: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		totalTokensGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name:        "ring_tokens_total",
 			Help:        "Number of tokens in the ring",
 			ConstLabels: map[string]string{"name": name}}),
-		numTokensDesc: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		numTokensGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_tokens_owned",
 			Help:        "The number of tokens in the ring owned by the member",
 			ConstLabels: map[string]string{"name": name}},
 			[]string{"member"}),
-		oldestTimestampDesc: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		oldestTimestampGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_oldest_member_timestamp",
 			Help:        "Timestamp of the oldest member in the ring.",
 			ConstLabels: map[string]string{"name": name}},
@@ -565,15 +565,15 @@ func (r *Ring) countTokens() (map[string]uint32, map[string]uint32) {
 	return numTokens, owned
 }
 
-// UpdateMetrics updates ring metrics, called by a Ticker in the ring at a set 10 second interval.
+// updateRingMetrics updates ring metrics.
 func (r *Ring) updateRingMetrics() {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
 	numTokens, ownedRange := r.countTokens()
 	for id, totalOwned := range ownedRange {
-		r.memberOwnershipDesc.WithLabelValues(id).Set(float64(totalOwned) / float64(math.MaxUint32))
-		r.numMembersDesc.WithLabelValues(id).Set(float64(numTokens[id]))
+		r.memberOwnershipGaugeVec.WithLabelValues(id).Set(float64(totalOwned) / float64(math.MaxUint32))
+		r.numMembersGaugeVec.WithLabelValues(id).Set(float64(numTokens[id]))
 	}
 
 	numByState := map[string]int{}
@@ -597,12 +597,12 @@ func (r *Ring) updateRingMetrics() {
 	}
 
 	for state, count := range numByState {
-		r.numMembersDesc.WithLabelValues(state).Set(float64(count))
+		r.numMembersGaugeVec.WithLabelValues(state).Set(float64(count))
 	}
 	for state, timestamp := range oldestTimestampByState {
-		r.oldestTimestampDesc.WithLabelValues(state).Set(float64(timestamp))
+		r.oldestTimestampGaugeVec.WithLabelValues(state).Set(float64(timestamp))
 	}
-	r.totalTokensDesc.Set(float64(len(r.ringTokens)))
+	r.totalTokensGauge.Set(float64(len(r.ringTokens)))
 }
 
 // ShuffleShard returns a subring for the provided identifier (eg. a tenant ID)

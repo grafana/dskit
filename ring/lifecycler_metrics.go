@@ -34,7 +34,7 @@ func NewLifecyclerMetrics(ringName string, reg prometheus.Registerer) *Lifecycle
 			Help:        "Duration (in seconds) of shutdown procedure (ie transfer or flush).",
 			Buckets:     prometheus.ExponentialBuckets(10, 2, 8), // Biggest bucket is 10*2^(9-1) = 2560, or 42 mins.
 			ConstLabels: prometheus.Labels{"name": ringName},
-		}, []string{"op", "status", "name"}),
+		}, []string{"op", "status"}),
 	}
 
 }

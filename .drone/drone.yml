@@ -27,11 +27,7 @@
     {
       "commands": [
           "apt-get update && apt-get -y install unzip",
-          "make .tools/bin/protoc",
           "go mod vendor",
-          "go get github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0",
-          "go get github.com/golang/protobuf/protoc-gen-go@v1.3.1",
-          "go get github.com/gogo/protobuf/gogoproto@v1.3.0",
           "make check-protos"
       ],
       "image": "golang:1.16.7",

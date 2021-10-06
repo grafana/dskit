@@ -1,11 +1,12 @@
 # put tools at the root of the folder
 PATH := $(CURDIR)/.tools/bin:$(PATH)
-# We don't want find to scan inside a bunch of directories, to accelerate the
+# We don't want find to scan inside a bunch of directories
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .tools -prune -o
 # Generating proto code is automated.
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
-# Download the proper protoc version for Darwin (osx) and Linux. If you need windows for some reason it's at
+# Download the proper protoc version for Darwin (osx) and Linux.
+# If you need windows for some reason it's at https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/protoc-3.6.1-win32.zip
 UNAME_S := $(shell uname -s)
 PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/
 ifeq ($(UNAME_S), Linux)
@@ -48,14 +49,17 @@ mod-check:
 	GO111MODULE=on go mod tidy
 	@git diff --exit-code -- go.sum go.mod
 
+.PHONY: clean-protos
 clean-protos:
 	rm -rf $(PROTO_GOS)
 
-protos: $(PROTO_GOS)
+.PHONY: protos
+protos: .tools/bin/protoc .tools/bin/protoc-gen-gogoslick .tools/bin/protoc-gen-go $(PROTO_GOS)
 
 %.pb.go:
 	.tools/protoc/bin/protoc -I $(GOPATH):./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
+.PHONY: check-protos
 check-protos: clean-protos protos
 	@git diff --exit-code -- $(PROTO_GOS)
 
@@ -75,6 +79,12 @@ check-protos: clean-protos protos
 	mkdir -p .tools/protoc
 	cd .tools/protoc && curl -LO $(PROTO_PATH)$(PROTO_ZIP)
 	unzip -n .tools/protoc/$(PROTO_ZIP) -d .tools/protoc/
+
+.tools/bin/protoc-gen-gogoslick: .tools
+	GOPATH=$(CURDIR)/.tools go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0
+
+.tools/bin/protoc-gen-go: .tools
+	GOPATH=$(CURDIR)/.tools go install github.com/golang/protobuf/protoc-gen-go@v1.3.1
 
 drone: .drone/drone.yml
 

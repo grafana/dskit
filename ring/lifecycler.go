@@ -14,33 +14,12 @@ import (
 	"github.com/pkg/errors"
 	perrors "github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	dstime "github.com/grafana/dskit/time"
-)
-
-var (
-	consulHeartbeats = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "member_consul_heartbeats_total",
-		Help: "The total number of heartbeats sent to consul.",
-	}, []string{"name"})
-	tokensOwned = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "member_ring_tokens_owned",
-		Help: "The number of tokens owned in the ring.",
-	}, []string{"name"})
-	tokensToOwn = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "member_ring_tokens_to_own",
-		Help: "The number of tokens to own in the ring.",
-	}, []string{"name"})
-	shutdownDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "shutdown_duration_seconds",
-		Help:    "Duration (in seconds) of shutdown procedure (ie transfer or flush).",
-		Buckets: prometheus.ExponentialBuckets(10, 2, 8), // Biggest bucket is 10*2^(9-1) = 2560, or 42 mins.
-	}, []string{"op", "status", "name"})
 )
 
 // LifecyclerConfig is the config to build a Lifecycler.
@@ -145,7 +124,8 @@ type Lifecycler struct {
 	healthyInstancesCount int
 	zonesCount            int
 
-	logger log.Logger
+	lifecyclerMetrics *LifecyclerMetrics
+	logger            log.Logger
 }
 
 // NewLifecycler creates new Lifecycler. It must be started via StartAsync.
@@ -191,10 +171,11 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		Zone:                 zone,
 		actorChan:            make(chan func()),
 		state:                PENDING,
+		lifecyclerMetrics:    NewLifecyclerMetrics(ringName, reg),
 		logger:               logger,
 	}
 
-	tokensToOwn.WithLabelValues(l.RingName).Set(float64(cfg.NumTokens))
+	l.lifecyclerMetrics.tokensToOwn.Set(float64(cfg.NumTokens))
 
 	l.BasicService = services.
 		NewBasicService(nil, l.loop, l.stopping).
@@ -322,7 +303,7 @@ func (i *Lifecycler) getTokens() Tokens {
 }
 
 func (i *Lifecycler) setTokens(tokens Tokens) {
-	tokensOwned.WithLabelValues(i.RingName).Set(float64(len(tokens)))
+	i.lifecyclerMetrics.tokensOwned.Set(float64(len(tokens)))
 
 	i.stateMtx.Lock()
 	defer i.stateMtx.Unlock()
@@ -473,7 +454,7 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 			}
 
 		case <-heartbeatTickerChan:
-			consulHeartbeats.WithLabelValues(i.RingName).Inc()
+			i.lifecyclerMetrics.consulHeartbeats.Inc()
 			if err := i.updateConsul(context.Background()); err != nil {
 				level.Error(i.logger).Log("msg", "failed to write to the KV store, sleeping", "ring", i.RingName, "err", err)
 			}
@@ -520,7 +501,7 @@ heartbeatLoop:
 	for {
 		select {
 		case <-heartbeatTickerChan:
-			consulHeartbeats.WithLabelValues(i.RingName).Inc()
+			i.lifecyclerMetrics.consulHeartbeats.Inc()
 			if err := i.updateConsul(context.Background()); err != nil {
 				level.Error(i.logger).Log("msg", "failed to write to the KV store, sleeping", "ring", i.RingName, "err", err)
 			}
@@ -851,17 +832,17 @@ func (i *Lifecycler) processShutdown(ctx context.Context) {
 			level.Info(i.logger).Log("msg", "transfers are disabled")
 		} else {
 			level.Error(i.logger).Log("msg", "failed to transfer chunks to another instance", "ring", i.RingName, "err", err)
-			shutdownDuration.WithLabelValues("transfer", "fail", i.RingName).Observe(time.Since(transferStart).Seconds())
+			i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "fail").Observe(time.Since(transferStart).Seconds())
 		}
 	} else {
 		flushRequired = false
-		shutdownDuration.WithLabelValues("transfer", "success", i.RingName).Observe(time.Since(transferStart).Seconds())
+		i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "success").Observe(time.Since(transferStart).Seconds())
 	}
 
 	if flushRequired {
 		flushStart := time.Now()
 		i.flushTransferer.Flush()
-		shutdownDuration.WithLabelValues("flush", "success", i.RingName).Observe(time.Since(flushStart).Seconds())
+		i.lifecyclerMetrics.shutdownDuration.WithLabelValues("flush", "success").Observe(time.Since(flushStart).Seconds())
 	}
 
 	// Sleep so the shutdownDuration metric can be collected.

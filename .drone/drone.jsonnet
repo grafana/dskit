@@ -8,10 +8,10 @@ local pipeline = {
 };
 
 local step = {
-  make(target):: {
+  make(target, commands=[]):: {
     name: 'make-%s' % target,
     image: image,
-    commands: ['make %s' % target],
+    commands: commands + ['make %s' % target],
   },
 };
 
@@ -21,6 +21,10 @@ local step = {
       step.make('mod-check'),
       step.make('lint'),
       step.make('test'),
+      step.make('check-protos', commands=[
+        'apt-get update && apt-get -y install unzip',
+        'go mod vendor',
+      ]),
     ],
   },
 ]

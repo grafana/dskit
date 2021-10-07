@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/armon/go-metrics v0.3.0
 	github.com/coreos/etcd v3.3.25+incompatible // indirect
+	github.com/go-kit/kit v0.10.0
 	github.com/go-kit/log v0.1.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.0

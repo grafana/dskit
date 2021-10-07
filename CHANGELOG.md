@@ -8,5 +8,6 @@
 * [CHANGE] Remove `cortex_` prefix for metrics registered in the ring. #46
 * [CHANGE] Rename `kv/kvtls` to `crypto/tls`. #39
 * [ENHANCEMENT] Add middleware package. #38
+* [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41
 * [ENHANCEMENT] Add grpcclient, grpcencoding and grpcutil packages. #39

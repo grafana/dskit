@@ -573,7 +573,7 @@ func (r *Ring) updateRingMetrics() {
 	numTokens, ownedRange := r.countTokens()
 	for id, totalOwned := range ownedRange {
 		r.memberOwnershipGaugeVec.WithLabelValues(id).Set(float64(totalOwned) / float64(math.MaxUint32))
-		r.numMembersGaugeVec.WithLabelValues(id).Set(float64(numTokens[id]))
+		r.numTokensGaugeVec.WithLabelValues(id).Set(float64(numTokens[id]))
 	}
 
 	numByState := map[string]int{}

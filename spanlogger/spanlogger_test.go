@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/pkg/errors"
@@ -13,12 +13,13 @@ import (
 )
 
 func TestSpanLogger_Log(t *testing.T) {
-	span, ctx := New(context.Background(), "test", "bar")
+	logger := log.NewNopLogger()
+	span, ctx := New(context.Background(), logger, "test", "bar")
 	_ = span.Log("foo")
-	newSpan := FromContext(ctx)
+	newSpan := FromContext(ctx, logger)
 	require.Equal(t, span.Span, newSpan.Span)
 	_ = newSpan.Log("bar")
-	noSpan := FromContext(context.Background())
+	noSpan := FromContext(context.Background(), logger)
 	_ = noSpan.Log("foo")
 	require.Error(t, noSpan.Error(errors.New("err")))
 	require.NoError(t, noSpan.Error(nil))
@@ -30,13 +31,13 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 		logged = append(logged, keyvals)
 		return nil
 	}
-	span, ctx := NewWithLogger(context.Background(), logger, "test")
+	span, ctx := New(context.Background(), logger, "test")
 	_ = span.Log("msg", "original spanlogger")
 
-	span = FromContextWithFallback(ctx, log.NewNopLogger())
+	span = FromContext(ctx, log.NewNopLogger())
 	_ = span.Log("msg", "restored spanlogger")
 
-	span = FromContextWithFallback(context.Background(), logger)
+	span = FromContext(context.Background(), logger)
 	_ = span.Log("msg", "fallback spanlogger")
 
 	expect := [][]interface{}{
@@ -50,13 +51,13 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 func TestSpanCreatedWithTenantTag(t *testing.T) {
 	mockSpan := createSpan(user.InjectOrgID(context.Background(), "team-a"))
 
-	require.Equal(t, []string{"team-a"}, mockSpan.Tag(TenantIDTagName))
+	require.Equal(t, []string{"team-a"}, mockSpan.Tag(TenantIDsTagName))
 }
 
 func TestSpanCreatedWithoutTenantTag(t *testing.T) {
 	mockSpan := createSpan(context.Background())
 
-	_, exist := mockSpan.Tags()[TenantIDTagName]
+	_, exist := mockSpan.Tags()[TenantIDsTagName]
 	require.False(t, exist)
 }
 
@@ -64,7 +65,7 @@ func createSpan(ctx context.Context) *mocktracer.MockSpan {
 	mockTracer := mocktracer.New()
 	opentracing.SetGlobalTracer(mockTracer)
 
-	logger, _ := New(ctx, "name")
+	logger, _ := New(ctx, log.NewNopLogger(), "name")
 	return logger.Span.(*mocktracer.MockSpan)
 }
 

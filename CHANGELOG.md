@@ -12,3 +12,4 @@
 * [ENHANCEMENT] Add limiter package. #41
 * [ENHANCEMENT] Add grpcclient, grpcencoding and grpcutil packages. #39
 * [ENHANCEMENT] Replace go-kit/kit/log with go-kit/log. #52
+* [ENHANCEMENT] Add spanlogger package. #42

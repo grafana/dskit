@@ -1,42 +1,42 @@
 ---
 {
-  "kind": "pipeline",
-  "name": "validate-pr",
-  "steps": [
-    {
-      "commands": [
-          "make mod-check"
-      ],
-      "image": "golang:1.16.7",
-      "name": "make-mod-check"
-    },
-    {
-      "commands": [
-          "make lint"
-      ],
-      "image": "golang:1.16.7",
-      "name": "make-lint"
-    },
-    {
-      "commands": [
-          "make test"
-      ],
-      "image": "golang:1.16.7",
-      "name": "make-test"
-    },
-    {
-      "commands": [
-          "apt-get update && apt-get -y install unzip",
-          "go mod vendor",
-          "make check-protos"
-      ],
-      "image": "golang:1.16.7",
-      "name": "check-protos"
-    }
-  ]
+   "kind": "pipeline",
+   "name": "validate-pr",
+   "steps": [
+      {
+         "commands": [
+            "make mod-check"
+         ],
+         "image": "golang:1.16.7",
+         "name": "make-mod-check"
+      },
+      {
+         "commands": [
+            "make lint"
+         ],
+         "image": "golang:1.16.7",
+         "name": "make-lint"
+      },
+      {
+         "commands": [
+            "make test"
+         ],
+         "image": "golang:1.16.7",
+         "name": "make-test"
+      },
+      {
+         "commands": [
+            "apt-get update && apt-get -y install unzip",
+            "go mod vendor",
+            "make check-protos"
+         ],
+         "image": "golang:1.16.7",
+         "name": "make-check-protos"
+      }
+   ]
 }
 ---
 kind: signature
-hmac: 893175120deb8b657ff638a1e3175b3f9e15b328788d0a83702d5bb4d03bdb17
+hmac: 3b4342022f2635d86f61ee26f7c1dfa66399233b91ea7b2d730a97b8d0a469e6
 
 ...

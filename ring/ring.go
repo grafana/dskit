@@ -565,6 +565,80 @@ func (r *Ring) countTokens() (map[string]uint32, map[string]uint32) {
 	return numTokens, owned
 }
 
+// Describe implements prometheus.Collector.
+func (r *Ring) Describe(ch chan<- *prometheus.Desc) {
+	ch <- r.memberOwnershipDesc
+	ch <- r.numMembersDesc
+	ch <- r.totalTokensDesc
+	ch <- r.oldestTimestampDesc
+	ch <- r.numTokensDesc
+}
+
+// Collect implements prometheus.Collector.
+func (r *Ring) Collect(ch chan<- prometheus.Metric) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	numTokens, ownedRange := r.countTokens()
+	for id, totalOwned := range ownedRange {
+		ch <- prometheus.MustNewConstMetric(
+			r.memberOwnershipDesc,
+			prometheus.GaugeValue,
+			float64(totalOwned)/float64(math.MaxUint32),
+			id,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			r.numTokensDesc,
+			prometheus.GaugeValue,
+			float64(numTokens[id]),
+			id,
+		)
+	}
+
+	numByState := map[string]int{}
+	oldestTimestampByState := map[string]int64{}
+
+	// Initialised to zero so we emit zero-metrics (instead of not emitting anything)
+	for _, s := range []string{unhealthy, ACTIVE.String(), LEAVING.String(), PENDING.String(), JOINING.String()} {
+		numByState[s] = 0
+		oldestTimestampByState[s] = 0
+	}
+
+	for _, instance := range r.ringDesc.Ingesters {
+		s := instance.State.String()
+		if !r.IsHealthy(&instance, Reporting, time.Now()) {
+			s = unhealthy
+		}
+		numByState[s]++
+		if oldestTimestampByState[s] == 0 || instance.Timestamp < oldestTimestampByState[s] {
+			oldestTimestampByState[s] = instance.Timestamp
+		}
+	}
+
+	for state, count := range numByState {
+		ch <- prometheus.MustNewConstMetric(
+			r.numMembersDesc,
+			prometheus.GaugeValue,
+			float64(count),
+			state,
+		)
+	}
+	for state, timestamp := range oldestTimestampByState {
+		ch <- prometheus.MustNewConstMetric(
+			r.oldestTimestampDesc,
+			prometheus.GaugeValue,
+			float64(timestamp),
+			state,
+		)
+	}
+
+	ch <- prometheus.MustNewConstMetric(
+		r.totalTokensDesc,
+		prometheus.GaugeValue,
+		float64(len(r.ringTokens)),
+	)
+}
+
 // updateRingMetrics updates ring metrics.
 func (r *Ring) updateRingMetrics() {
 	r.mtx.RLock()

@@ -23,11 +23,20 @@
          ],
          "image": "golang:1.16.7",
          "name": "make-test"
+      },
+      {
+         "commands": [
+            "apt-get update && apt-get -y install unzip",
+            "go mod vendor",
+            "make check-protos"
+         ],
+         "image": "golang:1.16.7",
+         "name": "make-check-protos"
       }
    ]
 }
 ---
 kind: signature
-hmac: 15993ec505ce889199b31c48337b1e44085e00d424f331c2f7b75f65eb9a695e
+hmac: 3b4342022f2635d86f61ee26f7c1dfa66399233b91ea7b2d730a97b8d0a469e6
 
 ...

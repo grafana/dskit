@@ -15,3 +15,4 @@
 * [ENHANCEMENT] Replace go-kit/kit/log with go-kit/log. #52
 * [ENHANCEMENT] Add spanlogger package. #42
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
+* [ENHANCEMENT] Add runutil.CloseWithLogOnErr function. #58

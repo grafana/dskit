@@ -2,6 +2,7 @@ package spanlogger
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -14,12 +15,13 @@ import (
 
 func TestSpanLogger_Log(t *testing.T) {
 	logger := log.NewNopLogger()
-	span, ctx := New(context.Background(), logger, "test", "bar")
+	resolver := fakeResolver{}
+	span, ctx := New(context.Background(), logger, "test", resolver, "bar")
 	_ = span.Log("foo")
-	newSpan := FromContext(ctx, logger)
+	newSpan := FromContext(ctx, logger, resolver)
 	require.Equal(t, span.Span, newSpan.Span)
 	_ = newSpan.Log("bar")
-	noSpan := FromContext(context.Background(), logger)
+	noSpan := FromContext(context.Background(), logger, resolver)
 	_ = noSpan.Log("foo")
 	require.Error(t, noSpan.Error(errors.New("err")))
 	require.NoError(t, noSpan.Error(nil))
@@ -31,13 +33,14 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 		logged = append(logged, keyvals)
 		return nil
 	}
-	span, ctx := New(context.Background(), logger, "test")
+	resolver := fakeResolver{}
+	span, ctx := New(context.Background(), logger, "test", resolver)
 	_ = span.Log("msg", "original spanlogger")
 
-	span = FromContext(ctx, log.NewNopLogger())
+	span = FromContext(ctx, log.NewNopLogger(), resolver)
 	_ = span.Log("msg", "restored spanlogger")
 
-	span = FromContext(context.Background(), logger)
+	span = FromContext(context.Background(), logger, resolver)
 	_ = span.Log("msg", "fallback spanlogger")
 
 	expect := [][]interface{}{
@@ -57,15 +60,15 @@ func TestSpanCreatedWithTenantTag(t *testing.T) {
 func TestSpanCreatedWithoutTenantTag(t *testing.T) {
 	mockSpan := createSpan(context.Background())
 
-	_, exist := mockSpan.Tags()[TenantIDsTagName]
-	require.False(t, exist)
+	_, exists := mockSpan.Tags()[TenantIDsTagName]
+	require.False(t, exists)
 }
 
 func createSpan(ctx context.Context) *mocktracer.MockSpan {
 	mockTracer := mocktracer.New()
 	opentracing.SetGlobalTracer(mockTracer)
 
-	logger, _ := New(ctx, log.NewNopLogger(), "name")
+	logger, _ := New(ctx, log.NewNopLogger(), "name", fakeResolver{})
 	return logger.Span.(*mocktracer.MockSpan)
 }
 
@@ -73,4 +76,33 @@ type funcLogger func(keyvals ...interface{}) error
 
 func (f funcLogger) Log(keyvals ...interface{}) error {
 	return f(keyvals...)
+}
+
+type fakeResolver struct {
+}
+
+func (fakeResolver) TenantID(ctx context.Context) (string, error) {
+	id, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// handle the relative reference to current and parent path.
+	if id == "." || id == ".." || strings.ContainsAny(id, `\/`) {
+		return "", nil
+	}
+
+	return id, nil
+}
+
+func (r fakeResolver) TenantIDs(ctx context.Context) ([]string, error) {
+	id, err := r.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if id == "" {
+		return nil, nil
+	}
+
+	return []string{id}, nil
 }

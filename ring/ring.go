@@ -198,7 +198,6 @@ type Ring struct {
 	totalTokensGauge        prometheus.Gauge
 	numTokensGaugeVec       *prometheus.GaugeVec
 	oldestTimestampGaugeVec *prometheus.GaugeVec
-	metricsUpdateTicker     *time.Ticker
 	metricsUpdateCloser     chan struct{}
 
 	logger log.Logger
@@ -285,14 +284,16 @@ func (r *Ring) starting(ctx context.Context) error {
 	r.updateRingState(value.(*Desc))
 	r.updateRingMetrics()
 
-	// Start metrics update ticker, and give it a function to update the ring metrics.
-	r.metricsUpdateTicker = time.NewTicker(10 * time.Second)
 	// Use this channel to close the go routine to prevent leaks.
 	r.metricsUpdateCloser = make(chan struct{})
 	go func() {
+		// Start metrics update ticker to update the ring metrics.
+		ticker := time.NewTimer(10 * time.Second)
+		defer ticker.Stop()
+
 		for {
 			select {
-			case <-r.metricsUpdateTicker.C:
+			case <-ticker.C:
 				r.updateRingMetrics()
 			case <-r.metricsUpdateCloser:
 				return
@@ -317,8 +318,7 @@ func (r *Ring) loop(ctx context.Context) error {
 
 func (r *Ring) stopping(_ error) error {
 	// Stop Metrics ticker.
-	if r.metricsUpdateTicker != nil {
-		r.metricsUpdateTicker.Stop()
+	if r.metricsUpdateCloser != nil {
 		close(r.metricsUpdateCloser)
 	}
 	return nil

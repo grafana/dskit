@@ -287,7 +287,7 @@ func (r *Ring) starting(ctx context.Context) error {
 
 	// Start metrics update ticker, and give it a function to update the ring metrics.
 	r.metricsUpdateTicker = time.NewTicker(10 * time.Second)
-	// Use this channel to close the go routine to prevent leaks
+	// Use this channel to close the go routine to prevent leaks.
 	r.metricsUpdateCloser = make(chan struct{})
 	go func() {
 		for {

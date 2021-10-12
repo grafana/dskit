@@ -282,6 +282,7 @@ func (r *Ring) starting(ctx context.Context) error {
 	}
 
 	r.updateRingState(value.(*Desc))
+	r.updateRingMetrics()
 
 	// Start metrics update ticker, and give it a function to update the ring metrics.
 	r.metricsUpdateTicker = time.NewTicker(10 * time.Second)

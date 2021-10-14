@@ -269,21 +269,8 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 }
 
 func (r *Ring) starting(ctx context.Context) error {
-	// Get the initial ring state so that, as soon as the service will be running, the in-memory
-	// ring would be already populated and there's no race condition between when the service is
-	// running and the WatchKey() callback is called for the first time.
-	value, err := r.KVClient.Get(ctx, r.key)
-	if err != nil {
-		return errors.Wrap(err, "unable to initialise ring state")
-	}
-	if value == nil {
-		level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
-		return nil
-	}
-
-	r.updateRingState(value.(*Desc))
+	// Update the ring metrics at start.
 	r.updateRingMetrics()
-
 	// Use this channel to close the go routine to prevent leaks.
 	r.metricsUpdateCloser = make(chan struct{})
 	go func() {
@@ -300,6 +287,20 @@ func (r *Ring) starting(ctx context.Context) error {
 			}
 		}
 	}()
+
+	// Get the initial ring state so that, as soon as the service will be running, the in-memory
+	// ring would be already populated and there's no race condition between when the service is
+	// running and the WatchKey() callback is called for the first time.
+	value, err := r.KVClient.Get(ctx, r.key)
+	if err != nil {
+		return errors.Wrap(err, "unable to initialise ring state")
+	}
+	if value == nil {
+		level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
+		return nil
+	}
+
+	r.updateRingState(value.(*Desc))
 	return nil
 }
 

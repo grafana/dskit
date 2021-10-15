@@ -10,7 +10,7 @@ import (
 )
 
 func TestTimeFromMillis(t *testing.T) {
-	var testExpr = []struct {
+	testExpr := []struct {
 		input    int64
 		expected time.Time
 	}{
@@ -40,6 +40,10 @@ func TestDurationWithJitter_ZeroInputDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), DurationWithJitter(time.Duration(0), 0.5))
 }
 
+func TestDurationWithJitter_VeryLowDuration(t *testing.T) {
+	assert.Equal(t, 4*time.Nanosecond, DurationWithJitter(4*time.Nanosecond, 0.2))
+}
+
 func TestDurationWithPositiveJitter(t *testing.T) {
 	const numRuns = 1000
 
@@ -54,8 +58,12 @@ func TestDurationWithPositiveJitter_ZeroInputDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), DurationWithPositiveJitter(time.Duration(0), 0.5))
 }
 
+func TestDurationWithPositiveJitter_VeryLowDuration(t *testing.T) {
+	assert.Equal(t, time.Nanosecond, DurationWithPositiveJitter(time.Nanosecond, 0.5))
+}
+
 func TestParseTime(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		input  string
 		fail   bool
 		result time.Time

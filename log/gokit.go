@@ -17,6 +17,11 @@ func NewGoKitFormat(l Level, f Format) Interface {
 	} else {
 		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	}
+	return addStandardFields(logger, l)
+}
+
+// stand-alone for test purposes
+func addStandardFields(logger log.Logger, l Level) Interface {
 	logger = level.NewFilter(logger, l.Gokit)
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	return gokit{logger}

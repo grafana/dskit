@@ -41,32 +41,52 @@ type gokit struct {
 	log.Logger
 }
 
+// Helper to defer sprintf until it is needed.
+type sprintf struct {
+	format string
+	args   []interface{}
+}
+
+func (s *sprintf) String() string {
+	return fmt.Sprintf(s.format, s.args...)
+}
+
+// Helper to defer sprint until it is needed.
+// Note we don't use Sprintln because the output is passed to go-kit as one value among many on a line
+type sprint struct {
+	args []interface{}
+}
+
+func (s *sprint) String() string {
+	return fmt.Sprint(s.args...)
+}
+
 func (g gokit) Debugf(format string, args ...interface{}) {
-	level.Debug(g.Logger).Log("msg", fmt.Sprintf(format, args...))
+	level.Debug(g.Logger).Log("msg", &sprintf{format: format, args: args})
 }
 func (g gokit) Debugln(args ...interface{}) {
-	level.Debug(g.Logger).Log("msg", fmt.Sprintln(args...))
+	level.Debug(g.Logger).Log("msg", &sprint{args: args})
 }
 
 func (g gokit) Infof(format string, args ...interface{}) {
-	level.Info(g.Logger).Log("msg", fmt.Sprintf(format, args...))
+	level.Info(g.Logger).Log("msg", &sprintf{format: format, args: args})
 }
 func (g gokit) Infoln(args ...interface{}) {
-	level.Info(g.Logger).Log("msg", fmt.Sprintln(args...))
+	level.Info(g.Logger).Log("msg", &sprint{args: args})
 }
 
 func (g gokit) Warnf(format string, args ...interface{}) {
-	level.Warn(g.Logger).Log("msg", fmt.Sprintf(format, args...))
+	level.Warn(g.Logger).Log("msg", &sprintf{format: format, args: args})
 }
 func (g gokit) Warnln(args ...interface{}) {
-	level.Warn(g.Logger).Log("msg", fmt.Sprintln(args...))
+	level.Warn(g.Logger).Log("msg", &sprint{args: args})
 }
 
 func (g gokit) Errorf(format string, args ...interface{}) {
-	level.Error(g.Logger).Log("msg", fmt.Sprintf(format, args...))
+	level.Error(g.Logger).Log("msg", &sprintf{format: format, args: args})
 }
 func (g gokit) Errorln(args ...interface{}) {
-	level.Error(g.Logger).Log("msg", fmt.Sprintln(args...))
+	level.Error(g.Logger).Log("msg", &sprint{args: args})
 }
 
 func (g gokit) WithField(key string, value interface{}) Interface {

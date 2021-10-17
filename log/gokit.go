@@ -22,8 +22,8 @@ func NewGoKitFormat(l Level, f Format) Interface {
 
 // stand-alone for test purposes
 func addStandardFields(logger log.Logger, l Level) Interface {
+	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
 	logger = level.NewFilter(logger, l.Gokit)
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	return gokit{logger}
 }
 

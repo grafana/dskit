@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -89,7 +90,7 @@ func TestRingReplicationStrategy(t *testing.T) {
 		}
 
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			strategy := NewDefaultReplicationStrategy()
+			strategy := NewDefaultReplicationStrategy(log.NewNopLogger())
 			liveIngesters, maxFailure, err := strategy.Filter(ingesters, Read, tc.replicationFactor, 100*time.Second, false)
 			if tc.expectedError == "" {
 				assert.NoError(t, err)
@@ -151,7 +152,7 @@ func TestIgnoreUnhealthyInstancesReplicationStrategy(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
-			strategy := NewIgnoreUnhealthyInstancesReplicationStrategy()
+			strategy := NewIgnoreUnhealthyInstancesReplicationStrategy(log.NewNopLogger())
 			liveIngesters, maxFailure, err := strategy.Filter(ingesters, Read, 3, 100*time.Second, false)
 			if tc.expectedError == "" {
 				assert.NoError(t, err)

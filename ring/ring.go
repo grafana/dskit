@@ -221,7 +221,7 @@ func New(cfg Config, name, key string, logger log.Logger, reg prometheus.Registe
 		return nil, err
 	}
 
-	return NewWithStoreClientAndStrategy(cfg, name, key, store, NewDefaultReplicationStrategy(), reg, logger)
+	return NewWithStoreClientAndStrategy(cfg, name, key, store, NewDefaultReplicationStrategy(logger), reg, logger)
 }
 
 func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client, strategy ReplicationStrategy, reg prometheus.Registerer, logger log.Logger) (*Ring, error) {

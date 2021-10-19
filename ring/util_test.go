@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -120,7 +121,7 @@ func TestWaitRingStabilityShouldReturnAsSoonAsMinStabilityIsReachedOnNoChanges(t
 		ringTokensByZone:    ringDesc.getTokensByZone(),
 		ringInstanceByToken: ringDesc.getTokensInfo(),
 		ringZones:           getZones(ringDesc.getTokensByZone()),
-		strategy:            NewDefaultReplicationStrategy(),
+		strategy:            NewDefaultReplicationStrategy(log.NewNopLogger()),
 	}
 
 	startTime := time.Now()
@@ -155,7 +156,7 @@ func TestWaitRingStabilityShouldReturnOnceMinStabilityHasBeenReached(t *testing.
 		ringTokensByZone:    ringDesc.getTokensByZone(),
 		ringInstanceByToken: ringDesc.getTokensInfo(),
 		ringZones:           getZones(ringDesc.getTokensByZone()),
-		strategy:            NewDefaultReplicationStrategy(),
+		strategy:            NewDefaultReplicationStrategy(log.NewNopLogger()),
 	}
 
 	// Add 1 new instance after some time.
@@ -206,7 +207,7 @@ func TestWaitRingStabilityShouldReturnErrorIfMaxWaitingIsReached(t *testing.T) {
 		ringTokensByZone:    ringDesc.getTokensByZone(),
 		ringInstanceByToken: ringDesc.getTokensInfo(),
 		ringZones:           getZones(ringDesc.getTokensByZone()),
-		strategy:            NewDefaultReplicationStrategy(),
+		strategy:            NewDefaultReplicationStrategy(log.NewNopLogger()),
 	}
 
 	// Keep changing the ring.

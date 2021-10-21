@@ -263,7 +263,7 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		logger: logger,
 	}
 
-	r.Service = services.NewBasicService(r.starting, r.loop, r.stopping).WithName(fmt.Sprintf("%s ring client", name))
+	r.Service = services.NewBasicService(r.starting, r.loop, nil).WithName(fmt.Sprintf("%s ring client", name))
 	return r, nil
 }
 
@@ -310,10 +310,6 @@ func (r *Ring) loop(ctx context.Context) error {
 		r.updateRingState(value.(*Desc))
 		return true
 	})
-	return nil
-}
-
-func (r *Ring) stopping(_ error) error {
 	return nil
 }
 

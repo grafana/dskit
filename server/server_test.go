@@ -22,7 +22,7 @@ import (
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
-	node_https "github.com/prometheus/node_exporter/https"
+	"github.com/prometheus/exporter-toolkit/web"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
@@ -349,93 +349,93 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 	server.Shutdown()
 
 	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, bytes.NewBufferString(`
-		# HELP inflight_requests Current number of inflight requests.
-		# TYPE inflight_requests gauge
-		inflight_requests{method="POST",route="sleep10"} 0
-		inflight_requests{method="GET",route="succeed"} 0
-       	inflight_requests{method="GET",route="error500"} 0
+    # HELP inflight_requests Current number of inflight requests.
+    # TYPE inflight_requests gauge
+    inflight_requests{method="POST",route="sleep10"} 0
+    inflight_requests{method="GET",route="succeed"} 0
+        inflight_requests{method="GET",route="error500"} 0
 
-		# HELP request_message_bytes Size (in bytes) of messages received in the request.
-		# TYPE request_message_bytes histogram
-		request_message_bytes_bucket{method="GET",route="error500",le="1.048576e+06"} 1
-		request_message_bytes_bucket{method="GET",route="error500",le="2.62144e+06"} 1
-		request_message_bytes_bucket{method="GET",route="error500",le="5.24288e+06"} 1
-		request_message_bytes_bucket{method="GET",route="error500",le="1.048576e+07"} 1
-		request_message_bytes_bucket{method="GET",route="error500",le="2.62144e+07"} 1
-		request_message_bytes_bucket{method="GET",route="error500",le="5.24288e+07"} 1
-		request_message_bytes_bucket{method="GET",route="error500",le="1.048576e+08"} 1
-		request_message_bytes_bucket{method="GET",route="error500",le="2.62144e+08"} 1
-		request_message_bytes_bucket{method="GET",route="error500",le="+Inf"} 1
-		request_message_bytes_sum{method="GET",route="error500"} 0
-		request_message_bytes_count{method="GET",route="error500"} 1
+    # HELP request_message_bytes Size (in bytes) of messages received in the request.
+    # TYPE request_message_bytes histogram
+    request_message_bytes_bucket{method="GET",route="error500",le="1.048576e+06"} 1
+    request_message_bytes_bucket{method="GET",route="error500",le="2.62144e+06"} 1
+    request_message_bytes_bucket{method="GET",route="error500",le="5.24288e+06"} 1
+    request_message_bytes_bucket{method="GET",route="error500",le="1.048576e+07"} 1
+    request_message_bytes_bucket{method="GET",route="error500",le="2.62144e+07"} 1
+    request_message_bytes_bucket{method="GET",route="error500",le="5.24288e+07"} 1
+    request_message_bytes_bucket{method="GET",route="error500",le="1.048576e+08"} 1
+    request_message_bytes_bucket{method="GET",route="error500",le="2.62144e+08"} 1
+    request_message_bytes_bucket{method="GET",route="error500",le="+Inf"} 1
+    request_message_bytes_sum{method="GET",route="error500"} 0
+    request_message_bytes_count{method="GET",route="error500"} 1
 
-		request_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+06"} 1
-		request_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+06"} 1
-		request_message_bytes_bucket{method="POST",route="sleep10",le="5.24288e+06"} 1
-		request_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+07"} 1
-		request_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+07"} 1
-		request_message_bytes_bucket{method="POST",route="sleep10",le="5.24288e+07"} 1
-		request_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+08"} 1
-		request_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+08"} 1
-		request_message_bytes_bucket{method="POST",route="sleep10",le="+Inf"} 1
-		request_message_bytes_sum{method="POST",route="sleep10"} 4
-		request_message_bytes_count{method="POST",route="sleep10"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+06"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+06"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="5.24288e+06"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+07"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+07"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="5.24288e+07"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+08"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+08"} 1
+    request_message_bytes_bucket{method="POST",route="sleep10",le="+Inf"} 1
+    request_message_bytes_sum{method="POST",route="sleep10"} 4
+    request_message_bytes_count{method="POST",route="sleep10"} 1
 
-		request_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+06"} 1
-		request_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+06"} 1
-		request_message_bytes_bucket{method="GET",route="succeed",le="5.24288e+06"} 1
-		request_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+07"} 1
-		request_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+07"} 1
-		request_message_bytes_bucket{method="GET",route="succeed",le="5.24288e+07"} 1
-		request_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+08"} 1
-		request_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+08"} 1
-		request_message_bytes_bucket{method="GET",route="succeed",le="+Inf"} 1
-		request_message_bytes_sum{method="GET",route="succeed"} 0
-		request_message_bytes_count{method="GET",route="succeed"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+06"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+06"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="5.24288e+06"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+07"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+07"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="5.24288e+07"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+08"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+08"} 1
+    request_message_bytes_bucket{method="GET",route="succeed",le="+Inf"} 1
+    request_message_bytes_sum{method="GET",route="succeed"} 0
+    request_message_bytes_count{method="GET",route="succeed"} 1
 
-		# HELP response_message_bytes Size (in bytes) of messages sent in response.
-		# TYPE response_message_bytes histogram
-		response_message_bytes_bucket{method="GET",route="error500",le="1.048576e+06"} 1
-		response_message_bytes_bucket{method="GET",route="error500",le="2.62144e+06"} 1
-		response_message_bytes_bucket{method="GET",route="error500",le="5.24288e+06"} 1
-		response_message_bytes_bucket{method="GET",route="error500",le="1.048576e+07"} 1
-		response_message_bytes_bucket{method="GET",route="error500",le="2.62144e+07"} 1
-		response_message_bytes_bucket{method="GET",route="error500",le="5.24288e+07"} 1
-		response_message_bytes_bucket{method="GET",route="error500",le="1.048576e+08"} 1
-		response_message_bytes_bucket{method="GET",route="error500",le="2.62144e+08"} 1
-		response_message_bytes_bucket{method="GET",route="error500",le="+Inf"} 1
-		response_message_bytes_sum{method="GET",route="error500"} 0
-		response_message_bytes_count{method="GET",route="error500"} 1
+    # HELP response_message_bytes Size (in bytes) of messages sent in response.
+    # TYPE response_message_bytes histogram
+    response_message_bytes_bucket{method="GET",route="error500",le="1.048576e+06"} 1
+    response_message_bytes_bucket{method="GET",route="error500",le="2.62144e+06"} 1
+    response_message_bytes_bucket{method="GET",route="error500",le="5.24288e+06"} 1
+    response_message_bytes_bucket{method="GET",route="error500",le="1.048576e+07"} 1
+    response_message_bytes_bucket{method="GET",route="error500",le="2.62144e+07"} 1
+    response_message_bytes_bucket{method="GET",route="error500",le="5.24288e+07"} 1
+    response_message_bytes_bucket{method="GET",route="error500",le="1.048576e+08"} 1
+    response_message_bytes_bucket{method="GET",route="error500",le="2.62144e+08"} 1
+    response_message_bytes_bucket{method="GET",route="error500",le="+Inf"} 1
+    response_message_bytes_sum{method="GET",route="error500"} 0
+    response_message_bytes_count{method="GET",route="error500"} 1
 
-		response_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+06"} 1
-		response_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+06"} 1
-		response_message_bytes_bucket{method="POST",route="sleep10",le="5.24288e+06"} 1
-		response_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+07"} 1
-		response_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+07"} 1
-		response_message_bytes_bucket{method="POST",route="sleep10",le="5.24288e+07"} 1
-		response_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+08"} 1
-		response_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+08"} 1
-		response_message_bytes_bucket{method="POST",route="sleep10",le="+Inf"} 1
-		response_message_bytes_sum{method="POST",route="sleep10"} 0
-		response_message_bytes_count{method="POST",route="sleep10"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+06"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+06"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="5.24288e+06"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+07"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+07"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="5.24288e+07"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="1.048576e+08"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="2.62144e+08"} 1
+    response_message_bytes_bucket{method="POST",route="sleep10",le="+Inf"} 1
+    response_message_bytes_sum{method="POST",route="sleep10"} 0
+    response_message_bytes_count{method="POST",route="sleep10"} 1
 
-		response_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+06"} 1
-		response_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+06"} 1
-		response_message_bytes_bucket{method="GET",route="succeed",le="5.24288e+06"} 1
-		response_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+07"} 1
-		response_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+07"} 1
-		response_message_bytes_bucket{method="GET",route="succeed",le="5.24288e+07"} 1
-		response_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+08"} 1
-		response_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+08"} 1
-		response_message_bytes_bucket{method="GET",route="succeed",le="+Inf"} 1
-		response_message_bytes_sum{method="GET",route="succeed"} 2
-		response_message_bytes_count{method="GET",route="succeed"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+06"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+06"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="5.24288e+06"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+07"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+07"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="5.24288e+07"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="1.048576e+08"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="2.62144e+08"} 1
+    response_message_bytes_bucket{method="GET",route="succeed",le="+Inf"} 1
+    response_message_bytes_sum{method="GET",route="succeed"} 2
+    response_message_bytes_count{method="GET",route="succeed"} 1
 
-		# HELP tcp_connections Current number of accepted TCP connections.
-		# TYPE tcp_connections gauge
-		tcp_connections{protocol="http"} 0
-		tcp_connections{protocol="grpc"} 0
-	`), "request_message_bytes", "response_message_bytes", "inflight_requests", "tcp_connections"))
+    # HELP tcp_connections Current number of accepted TCP connections.
+    # TYPE tcp_connections gauge
+    tcp_connections{protocol="http"} 0
+    tcp_connections{protocol="grpc"} 0
+  `), "request_message_bytes", "response_message_bytes", "inflight_requests", "tcp_connections"))
 }
 
 func TestRunReturnsError(t *testing.T) {
@@ -522,13 +522,13 @@ func TestTLSServer(t *testing.T) {
 		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
 		HTTPListenPort:    9193,
-		HTTPTLSConfig: node_https.TLSStruct{
+		HTTPTLSConfig: web.TLSStruct{
 			TLSCertPath: "certs/server.crt",
 			TLSKeyPath:  "certs/server.key",
 			ClientAuth:  "RequireAndVerifyClientCert",
 			ClientCAs:   "certs/root.crt",
 		},
-		GRPCTLSConfig: node_https.TLSStruct{
+		GRPCTLSConfig: web.TLSStruct{
 			TLSCertPath: "certs/server.crt",
 			TLSKeyPath:  "certs/server.key",
 			ClientAuth:  "VerifyClientCertIfGiven",

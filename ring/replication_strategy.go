@@ -2,11 +2,8 @@ package ring
 
 import (
 	"fmt"
+	"strings"
 	"time"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 )
 
 type ReplicationStrategy interface {
@@ -16,12 +13,10 @@ type ReplicationStrategy interface {
 	Filter(instances []InstanceDesc, op Operation, replicationFactor int, heartbeatTimeout time.Duration, zoneAwarenessEnabled bool) (healthy []InstanceDesc, maxFailures int, err error)
 }
 
-type defaultReplicationStrategy struct {
-	logger log.Logger
-}
+type defaultReplicationStrategy struct{}
 
-func NewDefaultReplicationStrategy(logger log.Logger) ReplicationStrategy {
-	return &defaultReplicationStrategy{logger: logger}
+func NewDefaultReplicationStrategy() ReplicationStrategy {
+	return &defaultReplicationStrategy{}
 }
 
 // Filter decides, given the set of instances eligible for a key,
@@ -44,12 +39,12 @@ func (s *defaultReplicationStrategy) Filter(instances []InstanceDesc, op Operati
 	// Skip those that have not heartbeated in a while. NB these are still
 	// included in the calculation of minSuccess, so if too many failed instances
 	// will cause the whole write to fail.
-	var skipped []string
+	var unhealthy []string
 	for i := 0; i < len(instances); {
 		if instances[i].IsHealthy(op, heartbeatTimeout, now) {
 			i++
 		} else {
-			skipped = append(skipped, instances[i].Addr)
+			unhealthy = append(unhealthy, instances[i].Addr)
 			instances = append(instances[:i], instances[i+1:]...)
 		}
 	}
@@ -58,17 +53,15 @@ func (s *defaultReplicationStrategy) Filter(instances []InstanceDesc, op Operati
 	// after filtering out dead ones, don't even bother trying.
 	if len(instances) < minSuccess {
 		var err error
+		var unhealthyStr string
+		if len(unhealthy) > 0 {
+			unhealthyStr = fmt.Sprintf(" - unhealthy instances: %s", strings.Join(unhealthy, ","))
+		}
 
 		if zoneAwarenessEnabled {
-			level.Error(s.logger).Log("msg",
-				fmt.Sprintf("at least %d live replicas required across different availability zones, could only find %d",
-					minSuccess, len(instances)), "unhealthy", skipped)
-			err = fmt.Errorf("at least %d live replicas required across different availability zones, could only find %d", minSuccess, len(instances))
+			err = fmt.Errorf("at least %d live replicas required across different availability zones, could only find %d%s", minSuccess, len(instances), unhealthyStr)
 		} else {
-			level.Error(s.logger).Log("msg",
-				fmt.Sprintf("at least %d live replicas required, could only find %d",
-					minSuccess, len(instances)), "unhealthy", skipped)
-			err = fmt.Errorf("at least %d live replicas required, could only find %d", minSuccess, len(instances))
+			err = fmt.Errorf("at least %d live replicas required, could only find %d%s", minSuccess, len(instances), unhealthyStr)
 		}
 
 		return nil, 0, err
@@ -77,31 +70,32 @@ func (s *defaultReplicationStrategy) Filter(instances []InstanceDesc, op Operati
 	return instances, len(instances) - minSuccess, nil
 }
 
-type ignoreUnhealthyInstancesReplicationStrategy struct {
-	logger log.Logger
-}
+type ignoreUnhealthyInstancesReplicationStrategy struct{}
 
-func NewIgnoreUnhealthyInstancesReplicationStrategy(logger log.Logger) ReplicationStrategy {
-	return &ignoreUnhealthyInstancesReplicationStrategy{logger: logger}
+func NewIgnoreUnhealthyInstancesReplicationStrategy() ReplicationStrategy {
+	return &ignoreUnhealthyInstancesReplicationStrategy{}
 }
 
 func (r *ignoreUnhealthyInstancesReplicationStrategy) Filter(instances []InstanceDesc, op Operation, _ int, heartbeatTimeout time.Duration, _ bool) (healthy []InstanceDesc, maxFailures int, err error) {
 	now := time.Now()
 	// Filter out unhealthy instances.
-	var skipped []string
+	var unhealthy []string
 	for i := 0; i < len(instances); {
 		if instances[i].IsHealthy(op, heartbeatTimeout, now) {
 			i++
 		} else {
-			skipped = append(skipped, instances[i].Addr)
+			unhealthy = append(unhealthy, instances[i].Addr)
 			instances = append(instances[:i], instances[i+1:]...)
 		}
 	}
 
 	// We need at least 1 healthy instance no matter what is the replication factor set to.
 	if len(instances) == 0 {
-		level.Error(r.logger).Log("msg", "failed to find any healthy ring replicas", "unhealthy", skipped)
-		return nil, 0, errors.New("at least 1 healthy replica required, could only find 0")
+		var unhealthyStr string
+		if len(unhealthy) > 0 {
+			unhealthyStr = fmt.Sprintf(" - unhealthy instances: %s", strings.Join(unhealthy, ","))
+		}
+		return nil, 0, fmt.Errorf("at least 1 healthy replica required, could only find 0%s", unhealthyStr)
 	}
 
 	return instances, len(instances) - 1, nil

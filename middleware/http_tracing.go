@@ -29,7 +29,15 @@ func (t Tracer) Wrap(next http.Handler) http.Handler {
 
 			return fmt.Sprintf("HTTP %s - %s", r.Method, op)
 		}),
+		// add a tag with the clients user agent to the span
+		nethttp.MWSpanObserver(func(sp opentracing.Span, r *http.Request) {
+			userAgent := r.Header.Get("User-Agent")
+			if userAgent != "" {
+				sp.SetTag("http.user_agent", userAgent)
+			}
+		}),
 	}
+
 	if t.SourceIPs != nil {
 		options = append(options, nethttp.MWSpanObserver(func(sp opentracing.Span, r *http.Request) {
 			sp.SetTag("sourceIPs", t.SourceIPs.Get(r))

@@ -137,12 +137,18 @@ func main() {
 		time.Sleep(*heartbeatPeriod / time.Duration(*numClients))
 	}
 
+	// Wait a bit to let all lifecyclers to join the ring.
+	time.Sleep(10*time.Second)
+
 	level.Info(logger).Log("msg", fmt.Sprintf("started %d lifecyclers (%d of which heartbeating the ring) and %d clients", *numLifecyclers, *numLifecyclersHeartbeating, *numClients))
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Keep track of all ops and print stats on shutdown.
+	// Get the CAS statistics to reset the counter.
+	consul.GetCASStats()
+
+	// From now on, keep track of all ops and print stats on shutdown.
 	var allOps []consul.CasStats
 
 	// Periodically run a health check and print statistics.
@@ -171,8 +177,10 @@ func main() {
 	}
 
 	// Print summary stats.
-	level.Info(logger).Log("msg", "summary")
-	printCASStatistics(allOps, logger)
+	if len(allOps) > 0 {
+		level.Info(logger).Log("msg", "summary")
+		printCASStatistics(allOps, logger)
+	}
 }
 
 func printCASStatistics(ops[]consul.CasStats, logger log.Logger) {

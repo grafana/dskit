@@ -34,6 +34,7 @@ func main() {
 	numTokens := flag.Int("test.num-tokens", 512, "Number of tokens each lifecycler registers.")
 	heartbeatPeriod := flag.Duration("test.heartbeat-period", 5*time.Second, "How frequently each lifecycler heartbeats the ring.")
 	deleteRingAtStartup := flag.Bool("test.delete-ring-at-startup", false, "True to delete the ring key on Consul at startup.")
+	testDuration := flag.Duration("test.duration", time.Minute, "How long the test should run.")
 
 	flag.Parse()
 
@@ -145,7 +146,8 @@ func main() {
 	var allOps []consul.CasStats
 
 	// Periodically run a health check and print statistics.
-	for ctx.Err() == nil {
+	startTime := time.Now()
+	for ctx.Err() == nil && time.Since(startTime) < *testDuration {
 		// Ensure all lifecyclers and clients are up and running.
 		if err := checkServicesHealth(lifecyclers); err != nil {
 			level.Error(logger).Log("msg", "found an unhealthy lifecycler", "err", err)

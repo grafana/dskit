@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-kit/log"
@@ -136,8 +138,14 @@ func main() {
 
 	level.Info(logger).Log("msg", fmt.Sprintf("started %d lifecyclers (%d of which heartbeating the ring) and %d clients", *numLifecyclers, *numLifecyclersHeartbeating, *numClients))
 
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	// Keep track of all ops and print stats on shutdown.
+	var allOps []consul.CasStats
+
 	// Periodically run a health check and print statistics.
-	for {
+	for ctx.Err() == nil {
 		// Ensure all lifecyclers and clients are up and running.
 		if err := checkServicesHealth(lifecyclers); err != nil {
 			level.Error(logger).Log("msg", "found an unhealthy lifecycler", "err", err)
@@ -146,18 +154,26 @@ func main() {
 			level.Error(logger).Log("msg", "found an unhealthy client", "err", err)
 		}
 
-		printCASStatistics(logger)
+		ops := consul.GetCASStats()
+		if len(ops) >= 0 {
+			printCASStatistics(ops, logger)
+		}
 
-		time.Sleep(*heartbeatPeriod)
+		// Keep track of all ops.
+		allOps = append(allOps, ops...)
+
+		select {
+			case <-time.After(*heartbeatPeriod):
+			case <-ctx.Done():
+		}
 	}
+
+	// Print summary stats.
+	level.Info(logger).Log("msg", "summary")
+	printCASStatistics(allOps, logger)
 }
 
-func printCASStatistics(logger log.Logger) {
-	ops := consul.GetCASStats()
-	if len(ops) == 0 {
-		return
-	}
-
+func printCASStatistics(ops[]consul.CasStats, logger log.Logger) {
 	minConsulGetDuration := time.Duration(math.MaxInt64)
 	maxConsulGetDuration := time.Duration(math.MinInt64)
 	sumConsulGetDuration := time.Duration(0)

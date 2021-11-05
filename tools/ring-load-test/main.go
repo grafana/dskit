@@ -195,6 +195,7 @@ func printCASStatistics(ops[]consul.CasStats, logger log.Logger) {
 	sumClientDuration := time.Duration(0)
 	maxDataSize := 0
 	numRetries := 0
+	numConflicts := 0
 
 	for _, op := range ops {
 		sumConsulGetDuration += op.ConsulGetDuration
@@ -229,12 +230,16 @@ func printCASStatistics(ops[]consul.CasStats, logger log.Logger) {
 		if op.Retry > 0 {
 			numRetries++
 		}
+
+		if op.Conflict {
+			numConflicts++
+		}
 	}
 
 	level.Info(logger).Log("msg", "operations", "CAS()", len(ops), "data size (bytes)", maxDataSize)
 	level.Info(logger).Log("msg", "consul.Get()", "avg", sumConsulGetDuration/ time.Duration(len(ops)), "min", minConsulGetDuration, "max", maxConsulGetDuration)
 	level.Info(logger).Log("msg", "consul.CAS()", "avg", sumConsulCasDuration/ time.Duration(len(ops)), "min", minConsulCasDuration, "max", maxConsulCasDuration)
-	level.Info(logger).Log("msg", "client.CAS()", "avg", sumClientDuration / time.Duration(len(ops)), "min", minClientDuration, "max", maxClientDuration, "retries", numRetries)
+	level.Info(logger).Log("msg", "client.CAS()", "avg", sumClientDuration / time.Duration(len(ops)), "min", minClientDuration, "max", maxClientDuration, "retries", numRetries, "conflicts", numConflicts)
 }
 
 func checkServicesHealth(list []services.Service) error {

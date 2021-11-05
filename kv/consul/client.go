@@ -201,6 +201,7 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 			ClientCASDuration: time.Since(startTime),
 			Retry:             i,
 			DataSize:          len(bytes),
+			Conflict: !ok,
 		})
 		statsMx.Unlock()
 
@@ -228,6 +229,7 @@ type CasStats struct {
 	ConsulCASDuration time.Duration
 	ClientCASDuration time.Duration
 	Retry int
+	Conflict bool
 	DataSize int
 }
 

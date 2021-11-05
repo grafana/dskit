@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -149,6 +150,7 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 
 		// Get with default options - don't want stale data to compare with
 		options := &consul.QueryOptions{}
+		startTime := time.Now()
 		kvp, _, err := c.kv.Get(key, options.WithContext(ctx))
 		if err != nil {
 			level.Error(c.logger).Log("msg", "error getting key", "key", key, "err", err)
@@ -185,22 +187,55 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 			level.Error(c.logger).Log("msg", "error serialising value", "key", key, "err", err)
 			continue
 		}
-		ok, _, err := c.kv.CAS(&consul.KVPair{
+		ok, stats, err := c.kv.CAS(&consul.KVPair{
 			Key:         key,
 			Value:       bytes,
 			ModifyIndex: index,
 		}, writeOptions.WithContext(ctx))
+
+		// Track statistics.
+		statsMx.Lock()
+		statsCas = append(statsCas, CasStats{
+			ClientCASDuration: time.Since(startTime),
+			ConsulCASDuration: stats.RequestTime,
+			Retry:             i,
+			DataSize: len(bytes),
+		})
+		statsMx.Unlock()
+
 		if err != nil {
 			level.Error(c.logger).Log("msg", "error CASing", "key", key, "err", err)
 			continue
 		}
 		if !ok {
-			level.Debug(c.logger).Log("msg", "error CASing, trying again", "key", key, "index", index)
+			level.Debug(c.logger).Log("msg", "error CASing, trying again", "key", key, "index", index, "value bytes", len(bytes))
 			continue
 		}
 		return nil
 	}
 	return fmt.Errorf("failed to CAS %s", key)
+}
+
+// Hack to directly expose some statistics to our load testing tool.
+var (
+	statsMx = sync.Mutex{}
+	statsCas []CasStats
+)
+
+type CasStats struct {
+	ClientCASDuration time.Duration
+	ConsulCASDuration time.Duration
+	Retry int
+	DataSize int
+}
+
+func GetCASStats() []CasStats {
+	statsMx.Lock()
+	defer statsMx.Unlock()
+
+	out := statsCas
+	statsCas = nil
+	return out
 }
 
 // WatchKey will watch a given key in consul for changes. When the value

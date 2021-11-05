@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	ringKey = "ring-load-test"
+	ringKey  = "ring-load-test"
+	noPrefix = ""
 )
 
 func main() {
@@ -77,6 +78,7 @@ func main() {
 		cfg.FinalSleep = 0
 		cfg.NumTokens = *numTokens
 		cfg.RingConfig.KVStore.Consul.Host = *consulAddr
+		cfg.RingConfig.KVStore.Prefix = noPrefix
 
 		if i < *numLifecyclersHeartbeating {
 			cfg.HeartbeatPeriod = *heartbeatPeriod
@@ -112,6 +114,8 @@ func main() {
 	for i := 0; i < *numClients; i++ {
 		cfg := ring.Config{}
 		flagext.DefaultValues(&cfg)
+		cfg.KVStore.Consul.Host = *consulAddr
+		cfg.KVStore.Prefix = noPrefix
 
 		client, err := ring.New(cfg, ringKey, ringKey, log.With(logger, "client", i), nil)
 		if err != nil {
@@ -154,17 +158,36 @@ func printCASStatistics(logger log.Logger) {
 		return
 	}
 
+	minConsulGetDuration := time.Duration(math.MaxInt64)
+	maxConsulGetDuration := time.Duration(math.MinInt64)
+	sumConsulGetDuration := time.Duration(0)
+	minConsulCasDuration := time.Duration(math.MaxInt64)
+	maxConsulCasDuration := time.Duration(math.MinInt64)
+	sumConsulCasDuration := time.Duration(0)
 	minClientDuration := time.Duration(math.MaxInt64)
 	maxClientDuration := time.Duration(math.MinInt64)
 	sumClientDuration := time.Duration(0)
-	minConsulDuration := time.Duration(math.MaxInt64)
-	maxConsulDuration := time.Duration(math.MinInt64)
-	sumConsulDuration := time.Duration(0)
 	maxDataSize := 0
+	numRetries := 0
 
 	for _, op := range ops {
+		sumConsulGetDuration += op.ConsulGetDuration
+		sumConsulCasDuration += op.ConsulCASDuration
 		sumClientDuration += op.ClientCASDuration
-		sumConsulDuration += op.ConsulCASDuration
+
+		if op.ConsulCASDuration < minConsulCasDuration {
+			minConsulCasDuration = op.ConsulCASDuration
+		}
+		if op.ConsulCASDuration > maxConsulCasDuration {
+			maxConsulCasDuration = op.ConsulCASDuration
+		}
+
+		if op.ConsulGetDuration < minConsulGetDuration {
+			minConsulGetDuration = op.ConsulGetDuration
+		}
+		if op.ConsulGetDuration > maxConsulGetDuration {
+			maxConsulGetDuration = op.ConsulGetDuration
+		}
 
 		if op.ClientCASDuration < minClientDuration {
 			minClientDuration = op.ClientCASDuration
@@ -172,20 +195,20 @@ func printCASStatistics(logger log.Logger) {
 		if op.ClientCASDuration > maxClientDuration {
 			maxClientDuration = op.ClientCASDuration
 		}
-		if op.ConsulCASDuration < minConsulDuration {
-			minConsulDuration = op.ConsulCASDuration
-		}
-		if op.ConsulCASDuration > maxConsulDuration {
-			maxConsulDuration = op.ConsulCASDuration
-		}
+
 		if op.DataSize > maxDataSize {
 			maxDataSize = op.DataSize
+		}
+
+		if op.Retry > 0 {
+			numRetries++
 		}
 	}
 
 	level.Info(logger).Log("msg", "operations", "CAS()", len(ops), "data size (bytes)", maxDataSize)
-	level.Info(logger).Log("msg", "consul.CAS()", "avg", sumConsulDuration / time.Duration(len(ops)), "min", minConsulDuration, "max", maxConsulDuration)
-	level.Info(logger).Log("msg", "client.CAS()", "avg", sumClientDuration / time.Duration(len(ops)), "min", minClientDuration, "max", maxClientDuration)
+	level.Info(logger).Log("msg", "consul.Get()", "avg", sumConsulGetDuration/ time.Duration(len(ops)), "min", minConsulGetDuration, "max", maxConsulGetDuration)
+	level.Info(logger).Log("msg", "consul.CAS()", "avg", sumConsulCasDuration/ time.Duration(len(ops)), "min", minConsulCasDuration, "max", maxConsulCasDuration)
+	level.Info(logger).Log("msg", "client.CAS()", "avg", sumClientDuration / time.Duration(len(ops)), "min", minClientDuration, "max", maxClientDuration, "retries", numRetries)
 }
 
 func checkServicesHealth(list []services.Service) error {

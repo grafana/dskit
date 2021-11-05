@@ -151,7 +151,7 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 		// Get with default options - don't want stale data to compare with
 		options := &consul.QueryOptions{}
 		startTime := time.Now()
-		kvp, _, err := c.kv.Get(key, options.WithContext(ctx))
+		kvp, getStats, err := c.kv.Get(key, options.WithContext(ctx))
 		if err != nil {
 			level.Error(c.logger).Log("msg", "error getting key", "key", key, "err", err)
 			continue
@@ -187,7 +187,7 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 			level.Error(c.logger).Log("msg", "error serialising value", "key", key, "err", err)
 			continue
 		}
-		ok, stats, err := c.kv.CAS(&consul.KVPair{
+		ok, casStats, err := c.kv.CAS(&consul.KVPair{
 			Key:         key,
 			Value:       bytes,
 			ModifyIndex: index,
@@ -196,10 +196,11 @@ func (c *Client) cas(ctx context.Context, key string, f func(in interface{}) (ou
 		// Track statistics.
 		statsMx.Lock()
 		statsCas = append(statsCas, CasStats{
+			ConsulGetDuration: getStats.RequestTime,
+			ConsulCASDuration: casStats.RequestTime,
 			ClientCASDuration: time.Since(startTime),
-			ConsulCASDuration: stats.RequestTime,
 			Retry:             i,
-			DataSize: len(bytes),
+			DataSize:          len(bytes),
 		})
 		statsMx.Unlock()
 
@@ -223,8 +224,9 @@ var (
 )
 
 type CasStats struct {
-	ClientCASDuration time.Duration
+	ConsulGetDuration time.Duration
 	ConsulCASDuration time.Duration
+	ClientCASDuration time.Duration
 	Retry int
 	DataSize int
 }

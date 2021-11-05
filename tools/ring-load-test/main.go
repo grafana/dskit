@@ -157,7 +157,7 @@ func main() {
 		}
 
 		ops := consul.GetCASStats()
-		if len(ops) >= 0 {
+		if len(ops) > 0 {
 			printCASStatistics(ops, logger)
 		}
 

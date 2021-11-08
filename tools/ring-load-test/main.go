@@ -89,9 +89,9 @@ func main() {
 			cfg.HeartbeatPeriod = 0
 		}
 
-		// TODO can't be configured via CLI.
-		cfg.RingConfig.KVStore.Consul.CasRetryDelay = time.Second
-		cfg.RingConfig.KVStore.Consul.MaxCasRetries = 100
+		// Not customized to act like the real ring lifecycler.
+		//cfg.RingConfig.KVStore.Consul.CasRetryDelay = 10 *time.Millisecond
+		//cfg.RingConfig.KVStore.Consul.MaxCasRetries = 100
 
 		lifecycler, err := ring.NewLifecycler(cfg, nil, ringKey, ringKey, false, log.With(logger, "lifecycler", i), nil)
 		if err != nil {
@@ -112,7 +112,8 @@ func main() {
 
 	// Run clients.
 	level.Info(logger).Log("msg", "starting clients")
-	var clients []services.Service
+	var clients []*ring.Ring
+	var clientServices []services.Service
 
 	for i := 0; i < *numClients; i++ {
 		cfg := ring.Config{}
@@ -132,9 +133,7 @@ func main() {
 		}
 
 		clients = append(clients, client)
-
-		// Slow down the startup.
-		time.Sleep(*heartbeatPeriod / time.Duration(*numClients))
+		clientServices = append(clientServices, client)
 	}
 
 	// Wait a bit to let all lifecyclers to join the ring.
@@ -158,13 +157,17 @@ func main() {
 		if err := checkServicesHealth(lifecyclers); err != nil {
 			level.Error(logger).Log("msg", "found an unhealthy lifecycler", "err", err)
 		}
-		if err := checkServicesHealth(clients); err != nil {
+		if err := checkServicesHealth(clientServices); err != nil {
 			level.Error(logger).Log("msg", "found an unhealthy client", "err", err)
 		}
 
 		ops := consul.GetCASStats()
 		if len(ops) > 0 {
 			printCASStatistics(ops, logger)
+		}
+
+		if len(clients) > 0 {
+			printClientStatistics(clients, logger)
 		}
 
 		// Keep track of all ops.
@@ -181,6 +184,16 @@ func main() {
 		level.Info(logger).Log("msg", "summary")
 		printCASStatistics(allOps, logger)
 	}
+}
+
+func printClientStatistics(clients []*ring.Ring, logger log.Logger) {
+	sumInstances := 0
+
+	for _, client := range clients {
+		sumInstances += client.InstancesCount()
+	}
+
+	level.Info(logger).Log("msg", "clients stats", "avg number of instances seen by clients", float64(sumInstances)/float64(len(clients)))
 }
 
 func printCASStatistics(ops[]consul.CasStats, logger log.Logger) {

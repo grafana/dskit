@@ -286,6 +286,7 @@ func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) b
 		skip := false
 		index, skip = checkLastIndex(index, meta.LastIndex)
 		if skip {
+			level.Info(c.logger).Log("msg", "skipped returned value from watching")
 			continue
 		}
 
@@ -302,6 +303,9 @@ func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) b
 		if !f(out) {
 			return
 		}
+
+		// TODO HACK
+		//time.Sleep(dstime.DurationWithJitter(2*time.Second, 1))
 	}
 }
 

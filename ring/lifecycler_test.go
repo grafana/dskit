@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -251,6 +252,64 @@ func TestLifecycler_ShouldHandleInstanceAbruptlyRestarted(t *testing.T) {
 		return checkNormalised(d, "ing1") &&
 			expectedTokens.Equals(l2.getTokens()) &&
 			expectedRegisteredAt.Unix() == l2.getRegisteredAt().Unix()
+	})
+}
+
+// Test Lifecycler when increasing tokens and instance is already in the ring in leaving state.
+func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
+	ctx := context.Background()
+
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+	r, err := New(ringConfig, "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+	})
+
+	tokenDir := t.TempDir()
+	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
+	// Make sure changes are applied instantly
+	lifecyclerConfig.HeartbeatPeriod = 0
+	lifecyclerConfig.NumTokens = 128
+	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
+
+	// Simulate ingester with 64 tokens left the ring in LEAVING state
+	err = r.KVClient.CAS(ctx, IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc := NewDesc()
+		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil)
+		if err != nil {
+			return nil, false, err
+		}
+
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, GenerateTokens(64, nil), LEAVING, time.Now())
+		return ringDesc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Start ingester with increased number of tokens
+	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", IngesterRingKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, l))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, l))
+	})
+
+	// Verify ingester joined, is active, and has 128 tokens
+	test.Poll(t, time.Second, true, func() interface{} {
+		d, err := r.KVClient.Get(ctx, IngesterRingKey)
+		require.NoError(t, err)
+
+		desc, ok := d.(*Desc)
+		require.True(t, ok)
+		ingDesc := desc.Ingesters["ing1"]
+		t.Log("Polling for new ingester to have become active with 128 tokens", "state", ingDesc.State, "tokens", len(ingDesc.Tokens))
+		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == 128
 	})
 }
 
@@ -560,7 +619,7 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 	// Simulate ingester2 crash on startup and left the ring with JOINING state
 	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc, ok := in.(*Desc)
-		require.Equal(t, true, ok)
+		require.True(t, ok)
 		ingester2Desc := desc.Ingesters["ing2"]
 		ingester2Desc.State = JOINING
 		desc.Ingesters["ing2"] = ingester2Desc
@@ -574,7 +633,7 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 	// Simulate ingester2 crash on startup and left the ring with PENDING state
 	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc, ok := in.(*Desc)
-		require.Equal(t, true, ok)
+		require.True(t, ok)
 		ingester2Desc := desc.Ingesters["ing2"]
 		ingester2Desc.State = PENDING
 		desc.Ingesters["ing2"] = ingester2Desc
@@ -610,7 +669,7 @@ func TestTokensOnDisk(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
 
-	// Check this ingester joined, is active, and has 512 token.
+	// Check this ingester joined, is active, and has 512 tokens.
 	var expTokens []uint32
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
 		d, err := r.KVClient.Get(context.Background(), ringKey)
@@ -635,7 +694,7 @@ func TestTokensOnDisk(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l2))
 	defer services.StopAndAwaitTerminated(context.Background(), l2) //nolint:errcheck
 
-	// Check this ingester joined, is active, and has 512 token.
+	// Check this ingester joined, is active, and has 512 tokens.
 	var actTokens []uint32
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
 		d, err := r.KVClient.Get(context.Background(), ringKey)

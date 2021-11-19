@@ -2,7 +2,6 @@ package ring
 
 import (
 	"math/rand"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -59,11 +58,7 @@ func TestTokens_Equals(t *testing.T) {
 }
 
 func TestLoadTokensFromFile_ShouldGuaranteeSortedTokens(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test-tokens")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		os.RemoveAll(tmpDir)
-	})
+	tmpDir := t.TempDir()
 
 	// Store tokens to file.
 	orig := Tokens{1, 5, 3}

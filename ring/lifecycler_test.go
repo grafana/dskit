@@ -3,8 +3,6 @@ package ring
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -596,11 +594,7 @@ func TestTokensOnDisk(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
-	tokenDir, err := ioutil.TempDir(os.TempDir(), "tokens_on_disk")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tokenDir))
-	}()
+	tokenDir := t.TempDir()
 
 	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
 	lifecyclerConfig.NumTokens = 512

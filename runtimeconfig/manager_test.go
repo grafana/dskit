@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -58,7 +57,7 @@ func newTestOverridesManagerConfig(t *testing.T, i int32) (*atomic.Int32, Config
 	var config = atomic.NewInt32(i)
 
 	// create empty file
-	tempFile, err := ioutil.TempFile("", "test-validation")
+	tempFile, err := os.CreateTemp("", "test-validation")
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -78,7 +77,7 @@ func newTestOverridesManagerConfig(t *testing.T, i int32) (*atomic.Int32, Config
 }
 
 func TestNewOverridesManager(t *testing.T) {
-	tempFile, err := ioutil.TempFile("", "test-validation")
+	tempFile, err := os.CreateTemp("", "test-validation")
 	require.NoError(t, err)
 
 	defer func() {
@@ -113,7 +112,7 @@ func TestNewOverridesManager(t *testing.T) {
 }
 
 func TestManager_ListenerWithDefaultLimits(t *testing.T) {
-	tempFile, err := ioutil.TempFile("", "test-validation")
+	tempFile, err := os.CreateTemp("", "test-validation")
 	require.NoError(t, err)
 	require.NoError(t, tempFile.Close())
 
@@ -125,7 +124,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	config := []byte(`overrides:
   user1:
     limit2: 150`)
-	err = ioutil.WriteFile(tempFile.Name(), config, 0600)
+	err = os.WriteFile(tempFile.Name(), config, 0600)
 	require.NoError(t, err)
 
 	defaultTestLimits = &TestLimits{Limit1: 100}
@@ -160,7 +159,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	config = []byte(`overrides:
   user2:
     limit2: 200`)
-	err = ioutil.WriteFile(tempFile.Name(), config, 0600)
+	err = os.WriteFile(tempFile.Name(), config, 0600)
 	require.NoError(t, err)
 
 	// reload
@@ -258,7 +257,7 @@ func TestManager_StopClosesListenerChannels(t *testing.T) {
 
 func TestManager_ShouldFastFailOnInvalidConfigAtStartup(t *testing.T) {
 	// Create an invalid runtime config file.
-	tempFile, err := ioutil.TempFile("", "invalid-config")
+	tempFile, err := os.CreateTemp("", "invalid-config")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, os.Remove(tempFile.Name()))

@@ -3,7 +3,6 @@ package snappy
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"strings"
 	"testing"
 
@@ -37,7 +36,7 @@ func TestSnappy(t *testing.T) {
 			// Decompress
 			r, err := c.Decompress(&buf)
 			require.NoError(t, err)
-			out, err := ioutil.ReadAll(r)
+			out, err := io.ReadAll(r)
 			require.NoError(t, err)
 			assert.Equal(t, test.input, string(out))
 		})
@@ -49,7 +48,7 @@ func BenchmarkSnappyCompress(b *testing.B) {
 	c := newCompressor()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		w, _ := c.Compress(ioutil.Discard)
+		w, _ := c.Compress(io.Discard)
 		_, _ = w.Write(data)
 		_ = w.Close()
 	}
@@ -65,7 +64,7 @@ func BenchmarkSnappyDecompress(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		r, _ := c.Decompress(reader)
-		_, _ = ioutil.ReadAll(r)
+		_, _ = io.ReadAll(r)
 		_, _ = reader.Seek(0, io.SeekStart)
 	}
 }

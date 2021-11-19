@@ -1,7 +1,6 @@
 package ring
 
 import (
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -60,7 +59,7 @@ func TestTokens_Equals(t *testing.T) {
 }
 
 func TestLoadTokensFromFile_ShouldGuaranteeSortedTokens(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test-tokens")
+	tmpDir, err := os.MkdirTemp("", "test-tokens")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		os.RemoveAll(tmpDir)

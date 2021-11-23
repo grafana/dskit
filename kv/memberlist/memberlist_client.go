@@ -1227,6 +1227,10 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 		codecID: codec.CodecID(),
 	}
 
+	// The "changes" returned by Merge() can contain references to the "result"
+	// state. Therefore, make sure we clone it before releasing the lock.
+	change = change.Clone()
+
 	return change, newVersion, nil
 }
 

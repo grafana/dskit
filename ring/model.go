@@ -192,7 +192,8 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 		return nil, nil
 	}
 
-	thisIngesterMap := buildNormalizedIngestersMap(d)
+	normalizeIngestersMap(d)
+	thisIngesterMap := d.Ingesters
 	otherIngesterMap := buildNormalizedIngestersMap(other)
 
 	var updated []string
@@ -301,6 +302,41 @@ func buildNormalizedIngestersMap(inputRing *Desc) map[string]InstanceDesc {
 	}
 
 	return out
+}
+
+// normalizeIngestersMap will do the following:
+// - sorts tokens and removes duplicates (only within single ingester)
+// - modifies the input ring
+func normalizeIngestersMap(inputRing *Desc) {
+	for n, ing := range inputRing.Ingesters {
+		// Make sure LEFT ingesters have no tokens
+		if ing.State == LEFT {
+			ing.Tokens = nil
+		}
+
+		// Sort tokens, and remove duplicates
+		if len(ing.Tokens) == 0 {
+			inputRing.Ingesters[n] = ing
+			continue
+		}
+
+		if !sort.IsSorted(Tokens(ing.Tokens)) {
+			sort.Sort(Tokens(ing.Tokens))
+		}
+
+		// tokens are sorted now, we can easily remove duplicates.
+		prev := ing.Tokens[0]
+		for ix := 1; ix < len(ing.Tokens); {
+			if ing.Tokens[ix] == prev {
+				ing.Tokens = append(ing.Tokens[:ix], ing.Tokens[ix+1:]...)
+			} else {
+				prev = ing.Tokens[ix]
+				ix++
+			}
+		}
+
+		inputRing.Ingesters[n] = ing
+	}
 }
 
 func conflictingTokensExist(normalizedIngesters map[string]InstanceDesc) bool {

@@ -19,3 +19,4 @@
 * [ENHANCEMENT] Add spanlogger package. #42
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [ENHANCEMENT] Add runutil.CloseWithLogOnErr function. #58
+* [ENHANCEMENT] Optimise memberlist receive path when used as a backing store for rings with a large number of members. #

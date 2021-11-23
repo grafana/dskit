@@ -65,7 +65,7 @@ func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 	require.NoError(b, err)
 
 	// Build the initial ring state:
-	// - The ring isn't actually in use, so the fields such as addres/zone are not important.
+	// - The ring isn't actually in use, so the fields such as address/zone are not important.
 	// - The number of keys in the store has no impact for this test, so simulate a single ring.
 	// - The number of instances in the ring does have a big impact.
 	const numInstances = 600

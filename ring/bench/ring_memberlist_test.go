@@ -46,7 +46,7 @@ func encodeMessage(b *testing.B, key string, d *ring.Desc) []byte {
 	return ser
 }
 
-// Benchmark the memberlist receive path when it us being used as the ring backing store.
+// Benchmark the memberlist receive path when it is being used as the ring backing store.
 func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 	c := ring.GetCodec()
 
@@ -60,9 +60,6 @@ func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 	mkv := memberlist.NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(b, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
-
-	_, err := memberlist.NewClient(mkv, c)
-	require.NoError(b, err)
 
 	// Build the initial ring state:
 	// - The ring isn't actually in use, so the fields such as address/zone are not important.

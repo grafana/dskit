@@ -18,5 +18,5 @@
 * [ENHANCEMENT] Replace go-kit/kit/log with go-kit/log. #52
 * [ENHANCEMENT] Add spanlogger package. #42
 * [ENHANCEMENT] Add runutil.CloseWithLogOnErr function. #58
-* [ENHANCEMENT] Optimise memberlist receive path when used as a backing store for rings with a large number of members. #
+* [ENHANCEMENT] Optimise memberlist receive path when used as a backing store for rings with a large number of members. #76
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59

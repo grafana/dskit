@@ -69,10 +69,15 @@ func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 	// - The number of keys in the store has no impact for this test, so simulate a single ring.
 	// - The number of instances in the ring does have a big impact.
 	const numInstances = 600
+	const numTokens = 128
 	{
+		var tokensUsed []uint32
+
 		initialDesc := ring.NewDesc()
 		for i := 0; i < numInstances; i++ {
-			initialDesc.AddIngester(fmt.Sprintf("instance-%d", i), "127.0.0.1", "zone", nil, ring.ACTIVE, time.Now())
+			tokens := ring.GenerateTokens(numTokens, tokensUsed)
+			initialDesc.AddIngester(fmt.Sprintf("instance-%d", i), "127.0.0.1", "zone", tokens, ring.ACTIVE, time.Now())
+
 		}
 		// Send a single update to populate the store.
 		msg := encodeMessage(b, "ring", initialDesc)

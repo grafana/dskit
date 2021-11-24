@@ -46,6 +46,18 @@ func encodeMessage(b *testing.B, key string, d *ring.Desc) []byte {
 	return ser
 }
 
+func generateUniqueTokens(ingester, numTokens int) []uint32 {
+	// Generate unique tokens without using ring.GenerateTokens in order to not
+	// rely on random number generation. Also, because generating unique tokens
+	// with GenerateTokens can be quite expensive, it pollutes the CPU profile
+	// to the point of being useless.
+	tokens := make([]uint32, numTokens)
+	for i := range tokens {
+		tokens[i] = uint32((ingester * 100000) + (i * 10))
+	}
+	return tokens
+}
+
 // Benchmark the memberlist receive path when it is being used as the ring backing store.
 func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 	c := ring.GetCodec()
@@ -68,11 +80,9 @@ func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 	const numInstances = 600
 	const numTokens = 128
 	{
-		var tokensUsed []uint32
-
 		initialDesc := ring.NewDesc()
 		for i := 0; i < numInstances; i++ {
-			tokens := ring.GenerateTokens(numTokens, tokensUsed)
+			tokens := generateUniqueTokens(i, numTokens)
 			initialDesc.AddIngester(fmt.Sprintf("instance-%d", i), "127.0.0.1", "zone", tokens, ring.ACTIVE, time.Now())
 		}
 		// Send a single update to populate the store.

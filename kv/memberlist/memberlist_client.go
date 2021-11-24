@@ -1184,7 +1184,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 	m.storeMu.Lock()
 	defer m.storeMu.Unlock()
 
-	// Note that we do not take a copy of the store value here, it is modified in-place.
+	// Note that we do not take a deep copy of curr.value here, it is modified in-place.
 	// This is safe because the entire function runs under the store lock; we do not return
 	// the full state anywhere as is done elsewhere (i.e. Get/WatchKey/CAS).
 	curr := m.store[key]

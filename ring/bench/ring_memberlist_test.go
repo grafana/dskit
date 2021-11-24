@@ -77,7 +77,6 @@ func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 		for i := 0; i < numInstances; i++ {
 			tokens := ring.GenerateTokens(numTokens, tokensUsed)
 			initialDesc.AddIngester(fmt.Sprintf("instance-%d", i), "127.0.0.1", "zone", tokens, ring.ACTIVE, time.Now())
-
 		}
 		// Send a single update to populate the store.
 		msg := encodeMessage(b, "ring", initialDesc)

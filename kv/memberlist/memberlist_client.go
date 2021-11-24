@@ -1209,7 +1209,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 		m.storeRemovedTombstones.WithLabelValues(key).Add(float64(removed))
 
 		// Remove tombstones from change too. If change turns out to be empty after this,
-		// we don't need to change local value either!
+		// we don't need to gossip the change. However, the local value will be always be updated.
 		//
 		// Note that "result" and "change" may actually be the same Mergeable. That is why we
 		// call RemoveTombstones on "result" first, so that we get the correct metrics. Calling

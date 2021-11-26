@@ -13,6 +13,9 @@ type Mergeable interface {
 	// result of the merge in the following text, we don't mean the return value ("change"), but the
 	// end-state of receiver. That means Result of A.Merge(B) is end-state of A.
 	//
+	// Memberlist-based KV store will keep the result even if Merge returned no change. Implementations should
+	// be careful about not changing logical value when returning empty change.
+	//
 	// Idempotency:
 	// 		Result of applying the same state "B" to state "A" (A.Merge(B)) multiple times has the same effect as
 	// 		applying it only once. Only first Merge will return non-empty change.

@@ -9,12 +9,12 @@ type Mergeable interface {
 	// If merge doesn't result in any change, returns nil.
 	// Error can be returned if merging with given 'other' value is not possible.
 	//
-	// Implementations may modify the internal state even if a change is not returned,
-	// so long as the logical value does not change, i.e. the properties below are maintained.
-	//
 	// In order for state merging to work correctly, Merge function must have some properties. When talking about the
 	// result of the merge in the following text, we don't mean the return value ("change"), but the
 	// end-state of receiver. That means Result of A.Merge(B) is end-state of A.
+	//
+	// Memberlist-based KV store will keep the result even if Merge returned no change. Implementations should
+	// be careful about not changing logical value when returning emtpy change.
 	//
 	// Idempotency:
 	// 		Result of applying the same state "B" to state "A" (A.Merge(B)) multiple times has the same effect as

@@ -42,3 +42,4 @@
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
 * [BUGFIX] Allow in-memory kv-client to support multiple codec #132
 * [BUGFIX] Modules: fix a module waiting for other modules depending on it before stopping. #141
+* [BUGFIX] ring.Lifecycler: Handle when previous ring state is leaving and the number of tokens has changed. #79

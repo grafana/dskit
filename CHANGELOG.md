@@ -133,3 +133,4 @@
 * [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #282
 * [BUGFIX] Ring: prevent iterating the whole ring when using `ExcludedZones`. #285
 * [BUGFIX] grpcclient: fix missing `.` in flag name for initial connection window size flag. #314
+* [BUGFIX] ring.Lifecycler: Handle when previous ring state is leaving and the number of tokens has changed. #79

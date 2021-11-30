@@ -37,3 +37,5 @@ require (
 )
 
 replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.21.4
+
+replace github.com/hashicorp/memberlist v0.2.3 => github.com/grafana/memberlist v0.2.3

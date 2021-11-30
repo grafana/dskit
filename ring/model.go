@@ -303,7 +303,7 @@ func normalizeIngestersMap(inputRing *Desc) {
 	}
 }
 
-var tokenMapPool = sync.Pool{New: func() interface{}{return make(map[uint32]bool)}}
+var tokenMapPool = sync.Pool{New: func() interface{} { return make(map[uint32]bool) }}
 
 func conflictingTokensExist(normalizedIngesters map[string]InstanceDesc) bool {
 	count := 0
@@ -312,6 +312,9 @@ func conflictingTokensExist(normalizedIngesters map[string]InstanceDesc) bool {
 	}
 	tokensMap := tokenMapPool.Get().(map[uint32]bool)
 	defer func() {
+		for k := range tokensMap {
+			delete(tokensMap, k)
+		}
 		tokenMapPool.Put(tokensMap)
 	}()
 	for _, ing := range normalizedIngesters {

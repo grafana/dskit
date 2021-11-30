@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -302,13 +303,17 @@ func normalizeIngestersMap(inputRing *Desc) {
 	}
 }
 
+var tokenMapPool = sync.Pool{New: func() interface{}{return make(map[uint32]bool)}}
+
 func conflictingTokensExist(normalizedIngesters map[string]InstanceDesc) bool {
 	count := 0
 	for _, ing := range normalizedIngesters {
 		count += len(ing.Tokens)
 	}
-
-	tokensMap := make(map[uint32]bool, count)
+	tokensMap := tokenMapPool.Get().(map[uint32]bool)
+	defer func() {
+		tokenMapPool.Put(tokensMap)
+	}()
 	for _, ing := range normalizedIngesters {
 		for _, t := range ing.Tokens {
 			if tokensMap[t] {

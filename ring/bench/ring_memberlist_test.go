@@ -79,8 +79,8 @@ func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 	// - The number of instances in the ring does have a big impact.
 	const numInstances = 600
 	const numTokens = 128
+	initialDesc := ring.NewDesc()
 	{
-		initialDesc := ring.NewDesc()
 		for i := 0; i < numInstances; i++ {
 			tokens := generateUniqueTokens(i, numTokens)
 			initialDesc.AddIngester(fmt.Sprintf("instance-%d", i), "127.0.0.1", "zone", tokens, ring.ACTIVE, time.Now())
@@ -90,18 +90,20 @@ func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 		mkv.NotifyMsg(msg)
 	}
 
-	// Pre-encode some payloads. It's not significant what the payloads actually
-	// update in the ring, though it may be important for future optimisations.
-	testMsgs := make([][]byte, 100)
+	// Ensure that each received message updates the ring.
+	testMsgs := make([][]byte, b.N)
 	for i := range testMsgs {
+		instance := initialDesc.Ingesters["instance-0"]
+		instance.Timestamp = initialDesc.Ingesters["instance-0"].RegisteredTimestamp + int64(i)
+
 		testDesc := ring.NewDesc()
-		testDesc.AddIngester(fmt.Sprintf("instance-%d", i), "127.0.0.1", "zone", nil, ring.ACTIVE, time.Now())
+		testDesc.Ingesters["instance-0"] = instance
 		testMsgs[i] = encodeMessage(b, "ring", testDesc)
 	}
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		mkv.NotifyMsg(testMsgs[i%len(testMsgs)])
+		mkv.NotifyMsg(testMsgs[i])
 	}
 }

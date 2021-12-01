@@ -18,7 +18,7 @@
 * [ENHANCEMENT] Replace go-kit/kit/log with go-kit/log. #52
 * [ENHANCEMENT] Add spanlogger package. #42
 * [ENHANCEMENT] Add runutil.CloseWithLogOnErr function. #58
-* [ENHANCEMENT] Optimise memberlist receive path when used as a backing store for rings with a large number of members. #76 #77
+* [ENHANCEMENT] Optimise memberlist receive path when used as a backing store for rings with a large number of members. #76 #77 #84
 * [ENHANCEMENT] Memberlist: prepare the data to send on the write before starting counting the elapsed time for `-memberlist.packet-write-timeout`, in order to reduce chances we hit the timeout when sending a packet to other node. #89
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85

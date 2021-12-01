@@ -66,7 +66,7 @@ func (cfg *TCPTransportConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
 	f.Var(&cfg.BindAddrs, prefix+"memberlist.bind-addr", "IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0")
 	f.IntVar(&cfg.BindPort, prefix+"memberlist.bind-port", 7946, "Port to listen on for gossip messages.")
 	f.DurationVar(&cfg.PacketDialTimeout, prefix+"memberlist.packet-dial-timeout", 5*time.Second, "Timeout used when connecting to other nodes to send packet.")
-	f.DurationVar(&cfg.PacketWriteTimeout, prefix+"memberlist.packet-write-timeout", 5*time.Second, "Timeout for writing 'packet' data.")
+	f.DurationVar(&cfg.PacketWriteTimeout, prefix+"memberlist.packet-write-timeout", 5*time.Second, "Idle timeout when writing 'packet' data to other nodes.")
 	f.BoolVar(&cfg.TransportDebug, prefix+"memberlist.transport-debug", false, "Log debug transport messages. Note: global log.level must be at debug level as well.")
 
 	f.BoolVar(&cfg.TLSEnabled, prefix+"memberlist.tls-enabled", false, "Enable TLS on the memberlist transport layer.")
@@ -440,11 +440,7 @@ func (t *TCPTransport) writeTo(b []byte, addr string) error {
 	}()
 
 	if t.cfg.PacketWriteTimeout > 0 {
-		deadline := time.Now().Add(t.cfg.PacketWriteTimeout)
-		err := c.SetDeadline(deadline)
-		if err != nil {
-			return fmt.Errorf("setting deadline: %v", err)
-		}
+		c = newConnectionWithTimeout(c, t.cfg.PacketWriteTimeout)
 	}
 
 	buf := bytes.Buffer{}

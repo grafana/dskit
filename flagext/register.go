@@ -11,8 +11,8 @@ type Registerer interface {
 	RegisterFlags(*flag.FlagSet)
 }
 
-// Registerer2 is a thing that can RegisterFlags with a Logger
-type Registerer2 interface {
+// RegistererWithLogger is a thing that can RegisterFlags with a Logger
+type RegistererWithLogger interface {
 	RegisterFlags(*flag.FlagSet, log.Logger)
 }
 
@@ -29,10 +29,10 @@ func RegisterFlagsWithLogger(logger log.Logger, rs ...interface{}) {
 		switch r := v.(type) {
 		case Registerer:
 			r.RegisterFlags(flag.CommandLine)
-		case Registerer2:
+		case RegistererWithLogger:
 			r.RegisterFlags(flag.CommandLine, logger)
 		default:
-			panic("RegisterFlagsWithLogger must be passed a Registerer")
+			panic("RegisterFlagsWithLogger must be passed a Registerer or RegistererWithLogger")
 		}
 	}
 }
@@ -45,7 +45,7 @@ func DefaultValues(rs ...interface{}) {
 		switch r := v.(type) {
 		case Registerer:
 			r.RegisterFlags(fs)
-		case Registerer2:
+		case RegistererWithLogger:
 			r.RegisterFlags(fs, logger)
 		default:
 			panic("RegisterFlagsWithLogger must be passed a Registerer")

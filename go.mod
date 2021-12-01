@@ -38,4 +38,6 @@ require (
 
 replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.21.4
 
-replace github.com/hashicorp/memberlist v0.2.3 => github.com/grafana/memberlist v0.2.3
+// Replace memberlist with our fork which includes some fixes that haven't been
+// merged upstream yet.
+replace github.com/hashicorp/memberlist v0.2.3 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b

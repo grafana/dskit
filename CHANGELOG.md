@@ -20,3 +20,4 @@
 * [ENHANCEMENT] Add runutil.CloseWithLogOnErr function. #58
 * [ENHANCEMENT] Optimise memberlist receive path when used as a backing store for rings with a large number of members. #76 #77
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
+* [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85

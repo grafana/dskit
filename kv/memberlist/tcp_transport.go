@@ -421,7 +421,7 @@ func (t *TCPTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 
 		logLevel := level.Warn(t.logger)
 		if strings.Contains(err.Error(), "connection refused") {
-			// The connection refused is a common error that could happend during normal operations when a node
+			// The connection refused is a common error that could happen during normal operations when a node
 			// shutdown (or crash). It shouldn't be considered a warning condition on the sender side.
 			logLevel = t.debugLog()
 		}

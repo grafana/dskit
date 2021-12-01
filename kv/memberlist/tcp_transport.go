@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,8 +61,12 @@ type TCPTransportConfig struct {
 	TLS        dstls.ClientConfig `yaml:",inline"`
 }
 
-// RegisterFlags registers flags.
-func (cfg *TCPTransportConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
+func (cfg *TCPTransportConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix(f, "")
+}
+
+// RegisterFlagsWithPrefix registers flags with prefix.
+func (cfg *TCPTransportConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	// "Defaults to hostname" -- memberlist sets it to hostname by default.
 	f.Var(&cfg.BindAddrs, prefix+"memberlist.bind-addr", "IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0")
 	f.IntVar(&cfg.BindPort, prefix+"memberlist.bind-port", 7946, "Port to listen on for gossip messages.")
@@ -414,7 +419,13 @@ func (t *TCPTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 	if err != nil {
 		t.sentPacketsErrors.Inc()
 
-		level.Warn(t.logger).Log("msg", "WriteTo failed", "addr", addr, "err", err)
+		logLevel := level.Warn(t.logger)
+		if strings.Contains(err.Error(), "connection refused") {
+			// The connection refused is a common error that could happen during normal operations when a node
+			// shutdown (or crash). It shouldn't be considered a warning condition on the sender side.
+			logLevel = t.debugLog()
+		}
+		logLevel.Log("msg", "WriteTo failed", "addr", addr, "err", err)
 
 		// WriteTo is used to send "UDP" packets. Since we use TCP, we can detect more errors,
 		// but memberlist library doesn't seem to cope with that very well. That is why we return nil instead.

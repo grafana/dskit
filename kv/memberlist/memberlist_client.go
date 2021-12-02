@@ -352,7 +352,6 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 	}
 
 	mlkv.createAndRegisterMetrics()
-
 	for _, c := range cfg.Codecs {
 		mlkv.codecs[c.CodecID()] = c
 	}

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -15,6 +17,12 @@ import (
 
 // ByAddr is a sortable list of InstanceDesc.
 type ByAddr []InstanceDesc
+// GLOBAL METRIC BAD but is here for testing
+var memberlistNormalizeOperations = promauto.With(prometheus.DefaultRegisterer).NewCounterVec(prometheus.CounterOpts{
+	Name:      "cortex_memberlist_merge_normalize_operations",
+	Help:      "Number of operations performed during a memberlist_merge normalize",
+	}, []string{"operation"})
+
 
 func (ts ByAddr) Len() int           { return len(ts) }
 func (ts ByAddr) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
@@ -288,6 +296,8 @@ func normalizeIngestersMap(inputRing *Desc) {
 		}
 
 		if !sort.IsSorted(Tokens(ing.Tokens)) {
+			// Sorted ingester list but should be done before call by merge
+			memberlistNormalizeOperations.WithLabelValues("sort").Inc()
 			sort.Sort(Tokens(ing.Tokens))
 		}
 
@@ -296,6 +306,8 @@ func normalizeIngestersMap(inputRing *Desc) {
 		for ix := 1; ix < len(ing.Tokens); {
 			if ing.Tokens[ix] == prev {
 				ing.Tokens = append(ing.Tokens[:ix], ing.Tokens[ix+1:]...)
+				// removed duplicate
+				memberlistNormalizeOperations.WithLabelValues("dedupe").Inc()
 			} else {
 				prev = ing.Tokens[ix]
 				ix++

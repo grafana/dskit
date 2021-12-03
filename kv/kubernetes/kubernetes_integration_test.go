@@ -82,6 +82,13 @@ func Test_Integration(t *testing.T) {
 		return
 	}))
 
+	require.NoError(t, c.CAS(context.Background(), "/test", func(old interface{}) (out interface{}, retry bool, err error) {
+		assert.Equal(t, "test", old)
+		out = nil
+		retry = false
+		return
+	}))
+
 	keys, err = c.List(context.TODO(), "/test")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"/test"}, keys)

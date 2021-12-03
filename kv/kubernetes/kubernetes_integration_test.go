@@ -88,5 +88,5 @@ func Test_Integration(t *testing.T) {
 
 	value, err = c.Get(context.TODO(), "/test")
 	require.NoError(t, err)
-	assert.NotNil(t, value)
+	assert.Equal(t, "test", value)
 }

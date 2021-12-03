@@ -34,10 +34,11 @@ require (
 	golang.org/x/time v0.0.0-20210611083556-38a9dc6acbc6
 	google.golang.org/grpc v1.38.0
 	gopkg.in/yaml.v2 v2.4.0
+	k8s.io/api v0.21.7
+	k8s.io/apimachinery v0.21.7
+	k8s.io/client-go v0.21.7
 )
 
-replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.21.4
+replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.21.7
 
-// Replace memberlist with our fork which includes some fixes that haven't been
-// merged upstream yet.
 replace github.com/hashicorp/memberlist v0.2.3 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b

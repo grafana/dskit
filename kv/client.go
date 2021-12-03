@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/kv/etcd"
+	"github.com/grafana/dskit/kv/kubernetes"
 	"github.com/grafana/dskit/kv/memberlist"
 )
 
@@ -141,6 +142,9 @@ func createClient(backend string, prefix string, cfg StoreConfig, codec codec.Co
 			inmemoryStore, _ = consul.NewInMemoryClient(codec, logger, reg)
 		})
 		client = inmemoryStore
+
+	case "kubernetes":
+		client, err = kubernetes.NewClient(&kubernetes.Config{}, codec, logger, reg)
 
 	case "memberlist":
 		kv, err := cfg.MemberlistKV()

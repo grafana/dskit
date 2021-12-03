@@ -100,7 +100,7 @@ func (c *Client) process() bool {
 	} else {
 		// Note that you also have to check the uid if you have a local controlled resource, which
 		// is dependent on the actual instance, to detect that a Pod was recreated with the same name
-		fmt.Printf("Sync/Add/Update for configMap %s\n", obj.(*v1.Pod).GetName())
+		fmt.Printf("Sync/Add/Update for configMap %s\n", obj.(*v1.ConfigMap).GetName())
 	}
 	return true
 

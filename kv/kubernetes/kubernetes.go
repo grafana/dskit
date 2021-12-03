@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -106,6 +108,8 @@ func NewClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prome
 		ObjectMeta: metav1.ObjectMeta{
 			Name: client.name,
 		},
+		// We want non-empty .data and .binaryData; otherwise CAS will fail because it cannot find the parent key
+		BinaryData: map[string][]byte{convertKeyToStore("_"): []byte("_")},
 	}
 	client.configMap, err = clientset.CoreV1().ConfigMaps(client.namespace).Create(context.Background(), client.configMap, metav1.CreateOptions{})
 	if err != nil {
@@ -123,6 +127,10 @@ func NewClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prome
 
 func convertKeyToStore(in string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(in))
+}
+
+func convertKeyToStoreHash(in string) string {
+	return "__hash_" + base64.RawURLEncoding.EncodeToString([]byte(in))
 }
 
 func convertKeyFromStore(in string) (string, error) {
@@ -148,6 +156,9 @@ func (c *Client) List(ctx context.Context, prefix string) ([]string, error) {
 			c.logger.Log(fmt.Sprintf("unable to decode key '%s'", keyStore))
 			continue
 		}
+		if key == "_" {
+			continue
+		}
 		if strings.HasPrefix(key, prefix) {
 			keys = append(keys, key)
 		}
@@ -163,17 +174,46 @@ func (c *Client) Get(ctx context.Context, key string) (interface{}, error) {
 	cm := c.configMap
 	c.configMapMtx.RUnlock()
 
+	if key == "_" {
+		return nil, nil
+	}
+
 	value, ok := cm.BinaryData[convertKeyToStore(key)]
 	if !ok {
 		return nil, nil
 	}
-	return value, nil
+
+	return c.codec.Decode(value)
 }
 
 // Delete a specific key. Deletions are best-effort and no error will
 // be returned if the key does not exist.
 func (c *Client) Delete(ctx context.Context, key string) error {
-	return fmt.Errorf("unimplemented")
+	c.configMapMtx.RLock()
+	cm := c.configMap
+	c.configMapMtx.RUnlock()
+
+	_, ok := cm.BinaryData[convertKeyToStore(key)]
+	if !ok {
+		// Object is already deleted or never existed
+		return nil
+	}
+
+	patch, err := prepareDeletePatch(key)
+	if err != nil {
+		return err
+	}
+
+	updatedCM, err := c.client.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
+	if err != nil {
+		return err
+	}
+
+	c.configMapMtx.Lock()
+	c.configMap = updatedCM
+	c.configMapMtx.Unlock()
+
+	return nil
 }
 
 // CAS stands for Compare-And-Swap.  Will call provided callback f with the
@@ -217,13 +257,15 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 		return err
 	}
 
-	newCM := cm.DeepCopy()
-	if newCM.BinaryData == nil {
-		newCM.BinaryData = make(map[string][]byte)
-	}
-	newCM.BinaryData[convertKeyToStore(key)] = encoded
+	oldEncodedHash := cm.BinaryData[convertKeyToStoreHash(key)]
+	newHash := hash(encoded)
 
-	updatedCM, err := c.client.CoreV1().ConfigMaps(c.namespace).Update(ctx, newCM, metav1.UpdateOptions{})
+	patch, err := preparePatch(key, oldEncodedHash, encoded, newHash)
+	if err != nil {
+		return err
+	}
+
+	updatedCM, err := c.client.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return err
 	}
@@ -233,6 +275,15 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 	c.configMapMtx.Unlock()
 
 	return nil
+}
+
+func hash(b []byte) []byte {
+	hasher := sha1.New()
+	_, err := hasher.Write(b)
+	if err != nil {
+		panic(err)
+	}
+	return hasher.Sum(nil)
 }
 
 // WatchKey calls f whenever the value stored under key changes.

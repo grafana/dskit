@@ -33,7 +33,7 @@ type Client struct {
 	logger    log.Logger
 	name      string // config map name
 	namespace string
-	client    *kubernetes.Clientset
+	clientset kubernetes.Interface
 	codec     codec.Codec
 
 	indexer  cache.Indexer
@@ -45,22 +45,11 @@ type Client struct {
 	configMap    *v1.ConfigMap
 }
 
-func NewClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer) (*Client, error) {
-	var config *rest.Config
-	var err error
-
-	client := &Client{
-		logger: logger,
-		codec:  cod,
-		name:   "dskit-ring",
-		stopCh: make(chan struct{}),
-	}
-
-	if cfg != nil {
-		if cfg.Name != "" {
-			client.name = cfg.Name
-		}
-	}
+func realClientGenerator(c *Client) error {
+	var (
+		config *rest.Config
+		err    error
+	)
 
 	// if environment variable is set use local kubeconfig otherwise fall back to in-cluster client
 	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
@@ -70,30 +59,59 @@ func NewClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prome
 		)
 		config, err = kubeconfigCfg.ClientConfig()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		client.namespace, _, err = kubeconfigCfg.Namespace()
+		c.namespace, _, err = kubeconfigCfg.Namespace()
 		if err != nil {
-			return nil, err
+			return err
 		}
 	} else {
 		config, err = rest.InClusterConfig()
 		if err != nil {
-			return nil, err
+			return err
 		}
+		// TODO: detect namespace
 	}
 
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
+		return err
+	}
+	c.clientset = clientset
+	return nil
+}
+
+func NewClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer) (*Client, error) {
+	return newClient(cfg, cod, logger, registerer, realClientGenerator)
+}
+
+func newClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer, clientGenerator func(*Client) error) (*Client, error) {
+	var err error
+
+	client := &Client{
+		logger: logger,
+		codec:  cod,
+		name:   "dskit-ring",
+		stopCh: make(chan struct{}),
+	}
+
+	// configure configuration options on the client struct
+	if cfg != nil {
+		if cfg.Name != "" {
+			client.name = cfg.Name
+		}
+	}
+
+	// creates the clientset
+	if err := clientGenerator(client); err != nil {
 		return nil, err
 	}
-	client.client = clientset
 
 	// check if config already exits
 	client.configMapMtx.Lock()
 	defer client.configMapMtx.Unlock()
-	client.configMap, err = clientset.CoreV1().ConfigMaps(client.namespace).Get(context.Background(), client.name, metav1.GetOptions{})
+	client.configMap, err = client.clientset.CoreV1().ConfigMaps(client.namespace).Get(context.Background(), client.name, metav1.GetOptions{})
 	if err == nil {
 		if err := client.startController(); err != nil {
 			return nil, err
@@ -111,7 +129,7 @@ func NewClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prome
 		// We want non-empty .data and .binaryData; otherwise CAS will fail because it cannot find the parent key
 		BinaryData: map[string][]byte{convertKeyToStore("_"): []byte("_")},
 	}
-	client.configMap, err = clientset.CoreV1().ConfigMaps(client.namespace).Create(context.Background(), client.configMap, metav1.CreateOptions{})
+	client.configMap, err = client.clientset.CoreV1().ConfigMaps(client.namespace).Create(context.Background(), client.configMap, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +222,7 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 		return err
 	}
 
-	updatedCM, err := c.client.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
+	updatedCM, err := c.clientset.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return err
 	}
@@ -265,7 +283,7 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 		return err
 	}
 
-	updatedCM, err := c.client.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
+	updatedCM, err := c.clientset.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return err
 	}

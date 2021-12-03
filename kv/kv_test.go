@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/kv/etcd"
+	"github.com/grafana/dskit/kv/kubernetes"
 )
 
 func withFixtures(t *testing.T, f func(*testing.T, Client)) {
@@ -30,6 +31,10 @@ func withFixtures(t *testing.T, f func(*testing.T, Client)) {
 		}},
 		{"etcd", func() (Client, io.Closer, error) {
 			client, closer := etcd.NewInMemoryClient(codec.String{}, testLogger{})
+			return client, closer, nil
+		}},
+		{"kubernetes", func() (Client, io.Closer, error) {
+			client, closer := kubernetes.NewInMemoryClient(codec.String{}, testLogger{})
 			return client, closer, nil
 		}},
 	} {

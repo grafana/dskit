@@ -42,31 +42,48 @@ func (testCodec) CodecID() string {
 	return "test"
 }
 
-func newClient(t testing.TB) *Client {
-	logger := log.NewNopLogger()
+func newTestClient(t testing.TB) *Client {
+	var (
+		logger = log.NewNopLogger()
+	)
+
 	if testing.Verbose() {
 		logger = log.NewLogfmtLogger(os.Stderr)
 	}
-	c, err := NewClient(
-		&Config{Name: "test-integration-" + randStringRunes(8)},
+
+	// use a real Kubernetes client if both environment DSKIT_TEST_KUBERNETES and KUBECONFIG are set
+	if os.Getenv("DSKIT_TEST_KUBERNETES") != "" && os.Getenv("KUBECONFIG") != "" {
+		t.Logf("connecting to real Kubernetes cluster")
+		client, err := NewClient(
+			&Config{Name: "test-integration-" + randStringRunes(8)},
+			testCodec{},
+			logger,
+			nil,
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if err := client.clientset.CoreV1().ConfigMaps(client.namespace).Delete(context.Background(), client.name, metav1.DeleteOptions{}); err != nil {
+				t.Logf("unable to delete config map: %v", err)
+			}
+		})
+		return client
+	}
+
+	// otherwise use in memory client
+	client, closer := NewInMemoryClient(
 		testCodec{},
 		logger,
-		nil,
 	)
-	require.NoError(t, err)
-
 	t.Cleanup(func() {
-		// TODO: Implement cleanup of config map
-		if err := c.client.CoreV1().ConfigMaps(c.namespace).Delete(context.Background(), c.name, metav1.DeleteOptions{}); err != nil {
-			t.Logf("unable to delete config map: %v", err)
-		}
+		closer.Close()
+		close(client.stopCh)
 	})
 
-	return c
+	return client
 }
 
-func Test_Integration(t *testing.T) {
-	c := newClient(t)
+func Test_Integration_Simple(t *testing.T) {
+	c := newTestClient(t)
 
 	keys, err := c.List(context.Background(), "")
 	require.NoError(t, err)
@@ -100,7 +117,7 @@ func Test_Integration(t *testing.T) {
 
 func Test_Delete(t *testing.T) {
 	t.Run("happy flow", func(t *testing.T) {
-		c := newClient(t)
+		c := newTestClient(t)
 
 		require.NoError(t, c.CAS(context.Background(), "/test", func(_ interface{}) (out interface{}, retry bool, err error) {
 			out = "test"
@@ -120,7 +137,7 @@ func Test_Delete(t *testing.T) {
 	})
 
 	t.Run("deleting non-existent key also works", func(t *testing.T) {
-		c := newClient(t)
+		c := newTestClient(t)
 
 		require.NoError(t, c.Delete(context.Background(), "/test"))
 

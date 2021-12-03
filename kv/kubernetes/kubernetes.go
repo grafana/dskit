@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -190,7 +189,31 @@ func (c *Client) Get(ctx context.Context, key string) (interface{}, error) {
 // Delete a specific key. Deletions are best-effort and no error will
 // be returned if the key does not exist.
 func (c *Client) Delete(ctx context.Context, key string) error {
-	return fmt.Errorf("unimplemented")
+	c.configMapMtx.RLock()
+	cm := c.configMap
+	c.configMapMtx.RUnlock()
+
+	_, ok := cm.BinaryData[convertKeyToStore(key)]
+	if !ok {
+		// Object is already deleted or never existed
+		return nil
+	}
+
+	patch, err := prepareDeletePatch(key)
+	if err != nil {
+		return err
+	}
+
+	updatedCM, err := c.client.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
+	if err != nil {
+		return err
+	}
+
+	c.configMapMtx.Lock()
+	c.configMap = updatedCM
+	c.configMapMtx.Unlock()
+
+	return nil
 }
 
 // CAS stands for Compare-And-Swap.  Will call provided callback f with the
@@ -252,48 +275,6 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 	c.configMapMtx.Unlock()
 
 	return nil
-}
-
-func preparePatch(key string, oldHash, newVal, newHash []byte) ([]byte, error) {
-	hashKey := "/binaryData/" + convertKeyToStoreHash(key)
-
-	b64 := func(b []byte) *string {
-		str := base64.StdEncoding.EncodeToString(b)
-		return &str
-	}
-
-	type operation struct {
-		Op    string  `json:"op"`
-		Path  string  `json:"path"`
-		Value *string `json:"value"`
-	}
-
-	var expectedHash *string
-	if len(oldHash) > 0 {
-		expectedHash = b64(oldHash)
-	}
-
-	testHashOp := operation{
-		Op:    "test",
-		Path:  hashKey,
-		Value: expectedHash,
-	}
-
-	setHashOp := operation{
-		Op:    "replace",
-		Path:  hashKey,
-		Value: b64(newHash),
-	}
-
-	setDataOp := operation{
-		Op:    "replace",
-		Path:  "/binaryData/" + convertKeyToStore(key),
-		Value: b64(newVal),
-	}
-
-	patch := []operation{testHashOp, setHashOp, setDataOp}
-
-	return json.Marshal(patch)
 }
 
 func hash(b []byte) []byte {

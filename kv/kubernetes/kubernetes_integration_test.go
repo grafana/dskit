@@ -70,7 +70,7 @@ func Test_Integration(t *testing.T) {
 
 	keys, err := c.List(context.Background(), "")
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{}, keys)
+	assert.Empty(t, keys)
 
 	value, err := c.Get(context.Background(), "not-exists")
 	require.NoError(t, err)
@@ -96,4 +96,40 @@ func Test_Integration(t *testing.T) {
 	value, err = c.Get(context.TODO(), "/test")
 	require.NoError(t, err)
 	assert.Equal(t, "test", value)
+}
+
+func Test_Delete(t *testing.T) {
+	t.Run("happy flow", func(t *testing.T) {
+		c := newClient(t)
+
+		require.NoError(t, c.CAS(context.Background(), "/test", func(_ interface{}) (out interface{}, retry bool, err error) {
+			out = "test"
+			retry = false
+			return
+		}))
+
+		require.NoError(t, c.Delete(context.Background(), "/test"))
+
+		keys, err := c.List(context.TODO(), "/test")
+		require.NoError(t, err)
+		assert.Empty(t, keys)
+
+		value, err := c.Get(context.TODO(), "/test")
+		assert.NoError(t, err)
+		assert.Nil(t, value)
+	})
+
+	t.Run("deleting non-existent key also works", func(t *testing.T) {
+		c := newClient(t)
+
+		require.NoError(t, c.Delete(context.Background(), "/test"))
+
+		keys, err := c.List(context.TODO(), "/test")
+		require.NoError(t, err)
+		assert.Empty(t, keys)
+
+		value, err := c.Get(context.TODO(), "/test")
+		assert.NoError(t, err)
+		assert.Nil(t, value)
+	})
 }

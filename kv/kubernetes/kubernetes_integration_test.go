@@ -55,7 +55,7 @@ func newTestClient(t testing.TB) *Client {
 	if os.Getenv("DSKIT_TEST_KUBERNETES") != "" && os.Getenv("KUBECONFIG") != "" {
 		t.Logf("connecting to real Kubernetes cluster")
 		client, err := NewClient(
-			&Config{Name: "test-integration-" + randStringRunes(8)},
+			Config{ConfigMapName: "test-integration-" + randStringRunes(8)},
 			testCodec{},
 			logger,
 			nil,

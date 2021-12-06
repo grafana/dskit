@@ -41,9 +41,10 @@ var inmemoryStore Client
 // Consul, Etcd, Memberlist or MultiClient. It was extracted from Config to keep
 // single-client config separate from final client-config (with all the wrappers)
 type StoreConfig struct {
-	Consul consul.Config `yaml:"consul"`
-	Etcd   etcd.Config   `yaml:"etcd"`
-	Multi  MultiConfig   `yaml:"multi"`
+	Consul     consul.Config     `yaml:"consul"`
+	Etcd       etcd.Config       `yaml:"etcd"`
+	Multi      MultiConfig       `yaml:"multi"`
+	Kubernetes kubernetes.Config `yaml:"kubernetes"`
 
 	// Function that returns memberlist.KV store to use. By using a function, we can delay
 	// initialization of memberlist.KV until it is actually required.
@@ -73,6 +74,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(flagsPrefix, defaultPrefix string, f 
 	cfg.Consul.RegisterFlags(f, flagsPrefix)
 	cfg.Etcd.RegisterFlagsWithPrefix(f, flagsPrefix)
 	cfg.Multi.RegisterFlagsWithPrefix(f, flagsPrefix)
+	cfg.Kubernetes.RegisterFlags(f, flagsPrefix)
 
 	if flagsPrefix == "" {
 		flagsPrefix = "ring."
@@ -144,7 +146,7 @@ func createClient(backend string, prefix string, cfg StoreConfig, codec codec.Co
 		client = inmemoryStore
 
 	case "kubernetes":
-		client, err = kubernetes.NewClient(&kubernetes.Config{}, codec, logger, reg)
+		client, err = kubernetes.NewClient(cfg.Kubernetes, codec, logger, reg)
 
 	case "memberlist":
 		kv, err := cfg.MemberlistKV()

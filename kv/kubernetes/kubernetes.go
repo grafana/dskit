@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
+	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"sort"
 	"strings"
@@ -26,7 +28,13 @@ import (
 )
 
 type Config struct {
-	Name string // name of the config map
+	ConfigMapName string // name of the config map
+}
+
+// RegisterFlags adds the flags required to config this to the given FlagSet
+// If prefix is not an empty string it should end with a period.
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, prefix string) {
+	f.StringVar(&cfg.ConfigMapName, prefix+"kubernetes.config_map_name", "dskit-ring", "Name of kubernetes configmap to use for KV store.")
 }
 
 type Client struct {
@@ -70,7 +78,12 @@ func realClientGenerator(c *Client) error {
 		if err != nil {
 			return err
 		}
-		// TODO: detect namespace
+
+		nsBytes, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+		if err != nil {
+			return err
+		}
+		c.namespace = string(nsBytes)
 	}
 
 	// creates the clientset
@@ -82,25 +95,18 @@ func realClientGenerator(c *Client) error {
 	return nil
 }
 
-func NewClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer) (*Client, error) {
+func NewClient(cfg Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer) (*Client, error) {
 	return newClient(cfg, cod, logger, registerer, realClientGenerator)
 }
 
-func newClient(cfg *Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer, clientGenerator func(*Client) error) (*Client, error) {
+func newClient(cfg Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer, clientGenerator func(*Client) error) (*Client, error) {
 	var err error
 
 	client := &Client{
 		logger: logger,
 		codec:  cod,
-		name:   "dskit-ring",
+		name:   cfg.ConfigMapName,
 		stopCh: make(chan struct{}),
-	}
-
-	// configure configuration options on the client struct
-	if cfg != nil {
-		if cfg.Name != "" {
-			client.name = cfg.Name
-		}
 	}
 
 	// creates the clientset

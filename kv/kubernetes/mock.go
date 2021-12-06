@@ -32,7 +32,7 @@ func (c fakeCoreV1) RESTClient() rest.Interface {
 func NewInMemoryClient(codec codec.Codec, logger log.Logger) (*Client, io.Closer) {
 	fakeClientset := fakeClientset{fake.NewSimpleClientset()}
 
-	client, err := newClient(&Config{}, codec, logger, nil, func(c *Client) error {
+	client, err := newClient(Config{}, codec, logger, nil, func(c *Client) error {
 		c.clientset = fakeClientset
 		return nil
 	})

@@ -29,7 +29,7 @@ func TestWatcher(t *testing.T) {
 
 		// Wait until the watcher has been registered
 		require.NoError(t, wait.Poll(time.Millisecond*10, time.Second, func() (bool, error) {
-			return len(w.watchers) > 0, nil
+			return w.keyWatchersCount() > 0, nil
 		}))
 
 		w.Notify(key, notifyVal)
@@ -58,7 +58,7 @@ func TestWatcher(t *testing.T) {
 
 		// Wait until the watcher has been registered
 		require.NoError(t, wait.Poll(time.Millisecond*10, time.Second, func() (bool, error) {
-			return len(w.prefixWatchers) > 0, nil
+			return w.prefixWatchersCount() > 0, nil
 		}))
 
 		w.Notify(key, notifyVal)

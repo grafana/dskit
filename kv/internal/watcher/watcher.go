@@ -165,6 +165,18 @@ func (w *Watcher) Notify(key string, value interface{}) {
 	}
 }
 
+func (w *Watcher) prefixWatchersCount() int {
+	w.watchersMu.Lock()
+	defer w.watchersMu.Unlock()
+	return len(w.prefixWatchers)
+}
+
+func (w *Watcher) keyWatchersCount() int {
+	w.watchersMu.Lock()
+	defer w.watchersMu.Unlock()
+	return len(w.watchers)
+}
+
 func (w *Watcher) Stop(_ error) error {
 	close(w.shutdown)
 	return nil

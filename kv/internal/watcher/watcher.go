@@ -10,6 +10,8 @@ import (
 	"github.com/go-kit/log/level"
 )
 
+// TODO dimitarvdimitrov this is code copied form memberlist; make sure to refactor memberlist to use this implementation before merging
+
 type Watcher struct {
 	logger log.Logger
 

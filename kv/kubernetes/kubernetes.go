@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 
+	watch "github.com/grafana/dskit/kv/internal/watcher"
+
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
@@ -26,6 +28,8 @@ import (
 
 	"github.com/grafana/dskit/kv/codec"
 )
+
+const hashPrefix = "__hash_"
 
 type Config struct {
 	ConfigMapName string // name of the config map
@@ -51,6 +55,8 @@ type Client struct {
 
 	configMapMtx sync.RWMutex
 	configMap    *v1.ConfigMap
+
+	watcher *watch.Watcher
 }
 
 func realClientGenerator(c *Client) error {
@@ -99,14 +105,15 @@ func NewClient(cfg Config, cod codec.Codec, logger log.Logger, registerer promet
 	return newClient(cfg, cod, logger, registerer, realClientGenerator)
 }
 
-func newClient(cfg Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer, clientGenerator func(*Client) error) (*Client, error) {
+func newClient(cfg Config, cod codec.Codec, logger log.Logger, _ prometheus.Registerer, clientGenerator func(*Client) error) (*Client, error) {
 	var err error
 
 	client := &Client{
-		logger: logger,
-		codec:  cod,
-		name:   cfg.ConfigMapName,
-		stopCh: make(chan struct{}),
+		logger:  logger,
+		codec:   cod,
+		name:    cfg.ConfigMapName,
+		stopCh:  make(chan struct{}),
+		watcher: watch.NewWatcher(logger),
 	}
 
 	// creates the clientset
@@ -128,14 +135,14 @@ func newClient(cfg Config, cod codec.Codec, logger log.Logger, registerer promet
 	}
 
 	// create a new config map
-	client.configMap = &v1.ConfigMap{
+	configMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: client.name,
 		},
 		// We want non-empty .data and .binaryData; otherwise CAS will fail because it cannot find the parent key
 		BinaryData: map[string][]byte{convertKeyToStore("_"): []byte("_")},
 	}
-	client.configMap, err = client.clientset.CoreV1().ConfigMaps(client.namespace).Create(context.Background(), client.configMap, metav1.CreateOptions{})
+	client.configMap, err = client.clientset.CoreV1().ConfigMaps(client.namespace).Create(context.Background(), configMap, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +161,7 @@ func convertKeyToStore(in string) string {
 }
 
 func convertKeyToStoreHash(in string) string {
-	return "__hash_" + base64.RawURLEncoding.EncodeToString([]byte(in))
+	return hashPrefix + base64.RawURLEncoding.EncodeToString([]byte(in))
 }
 
 func convertKeyFromStore(in string) (string, error) {
@@ -165,9 +172,19 @@ func convertKeyFromStore(in string) (string, error) {
 	return string(body), nil
 }
 
+func convertKeyFromStoreHash(in string) (string, error) {
+	withoutPrefix := strings.TrimPrefix(in, hashPrefix)
+
+	if withoutPrefix == in {
+		return "", fmt.Errorf("key is not prefixed as a hash key")
+	}
+
+	return convertKeyFromStore(withoutPrefix)
+}
+
 // List returns a list of keys under the given prefix. Returned keys will
 // include the prefix.
-func (c *Client) List(ctx context.Context, prefix string) ([]string, error) {
+func (c *Client) List(_ context.Context, prefix string) ([]string, error) {
 	c.configMapMtx.RLock()
 	cm := c.configMap
 	c.configMapMtx.RUnlock()
@@ -180,7 +197,7 @@ func (c *Client) List(ctx context.Context, prefix string) ([]string, error) {
 			c.logger.Log(fmt.Sprintf("unable to decode key '%s'", keyStore))
 			continue
 		}
-		if key == "_" {
+		if key == "_" { // the value we pre-populate the map with on creation
 			continue
 		}
 		if strings.HasPrefix(key, prefix) {
@@ -193,12 +210,12 @@ func (c *Client) List(ctx context.Context, prefix string) ([]string, error) {
 
 // Get a specific key.  Will use a codec to deserialise key to appropriate type.
 // If the key does not exist, Get will return nil and no error.
-func (c *Client) Get(ctx context.Context, key string) (interface{}, error) {
+func (c *Client) Get(_ context.Context, key string) (interface{}, error) {
 	c.configMapMtx.RLock()
 	cm := c.configMap
 	c.configMapMtx.RUnlock()
 
-	if key == "_" {
+	if key == "_" { // the value we pre-populate the map with on creation
 		return nil, nil
 	}
 
@@ -233,9 +250,7 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 		return err
 	}
 
-	c.configMapMtx.Lock()
-	c.configMap = updatedCM
-	c.configMapMtx.Unlock()
+	c.processCMUpdate(updatedCM)
 
 	return nil
 }
@@ -294,9 +309,7 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 		return err
 	}
 
-	c.configMapMtx.Lock()
-	c.configMap = updatedCM
-	c.configMapMtx.Unlock()
+	c.processCMUpdate(updatedCM)
 
 	return nil
 }
@@ -310,12 +323,15 @@ func hash(b []byte) []byte {
 	return hasher.Sum(nil)
 }
 
-// WatchKey calls f whenever the value stored under key changes.
 func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) bool) {
-	panic("implement me")
+	c.watcher.WatchKey(ctx, key, f)
 }
 
-// WatchPrefix calls f whenever any value stored under prefix changes.
 func (c *Client) WatchPrefix(ctx context.Context, prefix string, f func(string, interface{}) bool) {
-	panic("implement me")
+	c.watcher.WatchPrefix(ctx, prefix, f)
+}
+
+func (c *Client) Stop(err error) error {
+	close(c.stopCh)
+	return c.watcher.Stop(err)
 }

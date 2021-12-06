@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log/level"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -95,13 +96,32 @@ func (c *Client) process() bool {
 	}
 
 	if !exists {
-		// Below we will warm up our cache with a Pod, so that we will see a delete for one pod
-		fmt.Printf("configMap %s does not exist anymore\n", key)
+		level.Warn(c.logger).Log("msg", "configMap does not exist anymore", "name", key)
 	} else {
-		// Note that you also have to check the uid if you have a local controlled resource, which
-		// is dependent on the actual instance, to detect that a Pod was recreated with the same name
-		fmt.Printf("Sync/Add/Update for configMap %s\n", obj.(*v1.ConfigMap).GetName())
+		c.processCMUpdate(obj.(*v1.ConfigMap))
 	}
 	return true
+}
 
+func (c *Client) processCMUpdate(newValue *v1.ConfigMap) {
+	c.configMapMtx.Lock()
+	oldValue := c.configMap
+	c.configMap = newValue
+	c.configMapMtx.Unlock()
+
+	for key, value := range newValue.BinaryData {
+		decodedKey, err := convertKeyFromStoreHash(key)
+		if err != nil {
+			continue
+		}
+		if string(oldValue.BinaryData[key]) == string(value) {
+			continue
+		}
+		decoded, err := c.codec.Decode(value)
+		if err != nil {
+			level.Warn(c.logger).Log("msg", "couldn't deserialize key contents")
+			continue
+		}
+		c.watcher.Notify(decodedKey, decoded)
+	}
 }

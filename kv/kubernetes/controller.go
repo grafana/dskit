@@ -103,23 +103,26 @@ func (c *Client) process() bool {
 	return true
 }
 
-func (c *Client) processCMUpdate(newValue *v1.ConfigMap) {
+func (c *Client) processCMUpdate(newMap *v1.ConfigMap) {
 	c.configMapMtx.Lock()
-	oldValue := c.configMap
-	c.configMap = newValue
+	oldMap := c.configMap
+	c.configMap = newMap
 	c.configMapMtx.Unlock()
 
-	for key, value := range newValue.BinaryData {
+	for key, keyHash := range newMap.BinaryData {
 		decodedKey, err := convertKeyFromStoreHash(key)
 		if err != nil {
+			continue // skip non-hash keys
+		}
+		if string(oldMap.BinaryData[key]) == string(keyHash) {
 			continue
 		}
-		if string(oldValue.BinaryData[key]) == string(value) {
-			continue
-		}
-		decoded, err := c.codec.Decode(value)
+
+		keyContents := newMap.BinaryData[convertKeyToStore(decodedKey)]
+
+		decoded, err := c.codec.Decode(keyContents)
 		if err != nil {
-			level.Warn(c.logger).Log("msg", "couldn't deserialize key contents")
+			level.Warn(c.logger).Log("msg", "couldn't deserialize key contents", "error", err, "key", decodedKey)
 			continue
 		}
 		c.watcher.Notify(decodedKey, decoded)

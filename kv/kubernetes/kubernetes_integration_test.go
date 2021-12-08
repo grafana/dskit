@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"math/rand"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -10,8 +11,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	k8s_testing "k8s.io/client-go/testing"
 )
 
 func init() {
@@ -76,7 +80,7 @@ func newTestClient(t testing.TB) *Client {
 		logger,
 	)
 	t.Cleanup(func() {
-		closer.Close()
+		_ = closer.Close()
 		close(client.stopCh)
 	})
 
@@ -149,5 +153,41 @@ func Test_Delete(t *testing.T) {
 		value, err := c.Get(context.TODO(), "/test")
 		assert.NoError(t, err)
 		assert.Nil(t, value)
+	})
+}
+
+func Test_CAS(t *testing.T) {
+	t.Run("retry=true is respected", func(t *testing.T) {
+		c := newTestClient(t)
+		mockK8sResponse(c, http.StatusUnprocessableEntity)
+
+		var counter int
+
+		require.Error(t, c.CAS(context.Background(), "/test", func(interface{}) (interface{}, bool, error) {
+			counter++
+			return "something", true, nil
+		}))
+
+		assert.Equal(t, maxCASRetries, counter)
+	})
+
+	t.Run("retry=false is also respected", func(t *testing.T) {
+		c := newTestClient(t)
+		mockK8sResponse(c, http.StatusUnprocessableEntity)
+
+		var counter int
+
+		require.Error(t, c.CAS(context.Background(), "/test", func(interface{}) (interface{}, bool, error) {
+			counter++
+			return "something", false, nil
+		}))
+
+		assert.Equal(t, 1, counter)
+	})
+}
+
+func mockK8sResponse(c *Client, status int) {
+	c.clientset.(fakeClientset).PrependReactor("*", "*", func(action k8s_testing.Action) (handled bool, ret runtime.Object, err error) {
+		return true, nil, &errors.StatusError{ErrStatus: metav1.Status{Code: int32(status)}}
 	})
 }

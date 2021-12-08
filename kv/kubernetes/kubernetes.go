@@ -7,14 +7,17 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/grafana/dskit/kv/codec"
 	watch "github.com/grafana/dskit/kv/internal/watcher"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -25,20 +28,22 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
-
-	"github.com/grafana/dskit/kv/codec"
 )
 
-const hashPrefix = "__hash_"
+const (
+	hashPrefix    = "__hash_"
+	maxCASRetries = 100
+)
 
 type Config struct {
-	ConfigMapName string // name of the config map
+	ConfigMapName    string `yaml:"config_map_name"`
+	MetricsNamespace string `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 // If prefix is not an empty string it should end with a period.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.ConfigMapName, prefix+"kubernetes.config_map_name", "dskit-ring", "Name of kubernetes configmap to use for KV store.")
+	f.StringVar(&cfg.ConfigMapName, prefix+"kubernetes.config-map-name", "dskit-ring", "Name of kubernetes configmap to use for KV store.")
 }
 
 type Client struct {
@@ -57,6 +62,8 @@ type Client struct {
 	configMap    *v1.ConfigMap
 
 	watcher *watch.Watcher
+
+	metrics *metrics
 }
 
 func realClientGenerator(c *Client) error {
@@ -105,7 +112,7 @@ func NewClient(cfg Config, cod codec.Codec, logger log.Logger, registerer promet
 	return newClient(cfg, cod, logger, registerer, realClientGenerator)
 }
 
-func newClient(cfg Config, cod codec.Codec, logger log.Logger, _ prometheus.Registerer, clientGenerator func(*Client) error) (*Client, error) {
+func newClient(cfg Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer, clientGenerator func(*Client) error) (*Client, error) {
 	var err error
 
 	client := &Client{
@@ -114,6 +121,7 @@ func newClient(cfg Config, cod codec.Codec, logger log.Logger, _ prometheus.Regi
 		name:    cfg.ConfigMapName,
 		stopCh:  make(chan struct{}),
 		watcher: watch.NewWatcher(logger),
+		metrics: newMetrics(cfg.MetricsNamespace, registerer),
 	}
 
 	// creates the clientset
@@ -266,52 +274,75 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 	var (
 		intermediate interface{}
 		err          error
+		patch        []byte
+		encoded      []byte
+		retry        = true
 
 		cm *v1.ConfigMap
 	)
 
-	c.configMapMtx.RLock()
-	cm = c.configMap
-	c.configMapMtx.RUnlock()
+	refreshIntermediate := func() error {
+		c.configMapMtx.RLock()
+		cm = c.configMap
+		c.configMapMtx.RUnlock()
 
-	storedValue, ok := cm.BinaryData[convertKeyToStore(key)]
-	if ok && storedValue != nil {
-		intermediate, err = c.codec.Decode(storedValue)
-		if err != nil {
-			return err
+		storedValue, ok := cm.BinaryData[convertKeyToStore(key)]
+		if ok && storedValue != nil {
+			intermediate, err = c.codec.Decode(storedValue)
+			if err != nil {
+				return err
+			}
 		}
-	}
-
-	intermediate, _, err = f(intermediate)
-	if err != nil {
-		return err
-	}
-
-	if intermediate == nil {
 		return nil
 	}
 
-	encoded, err := c.codec.Encode(intermediate)
-	if err != nil {
-		return err
+	for tries := 0; tries < maxCASRetries && retry; tries++ {
+		c.metrics.casAttempts.Inc()
+
+		err = refreshIntermediate()
+		if err != nil {
+			return err
+		}
+
+		intermediate, retry, err = f(intermediate)
+		if err != nil {
+			return err
+		}
+
+		if intermediate == nil {
+			return nil
+		}
+
+		encoded, err = c.codec.Encode(intermediate)
+		if err != nil {
+			return err
+		}
+
+		oldEncodedHash := cm.BinaryData[convertKeyToStoreHash(key)]
+		newHash := hash(encoded)
+
+		patch, err = preparePatch(key, oldEncodedHash, encoded, newHash)
+		if err != nil {
+			return err
+		}
+
+		updatedCM, casErr := c.clientset.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
+
+		if statusErr, ok := casErr.(*errors.StatusError); ok && statusErr.ErrStatus.Code == http.StatusUnprocessableEntity {
+			err = casErr
+			continue
+		} else if casErr != nil {
+			c.metrics.casFailures.Inc()
+			return casErr
+		}
+
+		c.processCMUpdate(updatedCM)
+		c.metrics.casSuccesses.Inc()
+		return nil
 	}
 
-	oldEncodedHash := cm.BinaryData[convertKeyToStoreHash(key)]
-	newHash := hash(encoded)
-
-	patch, err := preparePatch(key, oldEncodedHash, encoded, newHash)
-	if err != nil {
-		return err
-	}
-
-	updatedCM, err := c.clientset.CoreV1().ConfigMaps(c.namespace).Patch(ctx, c.name, types.JSONPatchType, patch, metav1.PatchOptions{})
-	if err != nil {
-		return err
-	}
-
-	c.processCMUpdate(updatedCM)
-
-	return nil
+	c.metrics.casFailures.Inc()
+	return fmt.Errorf("exceeded maximum CAS retries (%d)", maxCASRetries)
 }
 
 func hash(b []byte) []byte {

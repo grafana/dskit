@@ -17,7 +17,6 @@ import (
 	watch "github.com/grafana/dskit/kv/internal/watcher"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"

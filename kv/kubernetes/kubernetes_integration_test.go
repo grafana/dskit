@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	k8s_testing "k8s.io/client-go/testing"
 )
@@ -104,13 +105,6 @@ func Test_Integration_Simple(t *testing.T) {
 		return
 	}))
 
-	require.NoError(t, c.CAS(context.Background(), "/test", func(old interface{}) (out interface{}, retry bool, err error) {
-		assert.Equal(t, "test", old)
-		out = nil
-		retry = false
-		return
-	}))
-
 	keys, err = c.List(context.TODO(), "/test")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"/test"}, keys)
@@ -157,36 +151,61 @@ func Test_Delete(t *testing.T) {
 }
 
 func Test_CAS(t *testing.T) {
-	t.Run("retry=true is respected", func(t *testing.T) {
+	t.Run("CAS is retried is retry=true", func(t *testing.T) {
+		const key = "/test"
+		var casAttempts int
 		c := newTestClient(t)
-		mockK8sResponse(c, http.StatusUnprocessableEntity)
+		// API server returns 422 (Unprocessable Entity) when the "test" JSON patch operation failed
+		mockK8sResponseStatusCode(t, c, http.StatusUnprocessableEntity)
 
-		var counter int
-
-		require.Error(t, c.CAS(context.Background(), "/test", func(interface{}) (interface{}, bool, error) {
-			counter++
+		err := c.CAS(context.Background(), key, func(interface{}) (interface{}, bool, error) {
+			casAttempts++
 			return "something", true, nil
-		}))
+		})
 
-		assert.Equal(t, maxCASRetries, counter)
+		assert.Error(t, err)
+
+		assert.Equal(t, maxCASRetries, casAttempts)
 	})
 
-	t.Run("retry=false is also respected", func(t *testing.T) {
+	t.Run("CAS is not retried if retry=false", func(t *testing.T) {
+		const key = "/test"
+		var casAttempts int
 		c := newTestClient(t)
-		mockK8sResponse(c, http.StatusUnprocessableEntity)
 
-		var counter int
+		// API server returns 422 (Unprocessable Entity) when the "test" JSON patch operation failed
+		mockK8sResponseStatusCode(t, c, http.StatusUnprocessableEntity)
 
-		require.Error(t, c.CAS(context.Background(), "/test", func(interface{}) (interface{}, bool, error) {
-			counter++
+		assert.Error(t, c.CAS(context.Background(), key, func(interface{}) (interface{}, bool, error) {
+			casAttempts++
 			return "something", false, nil
 		}))
 
-		assert.Equal(t, 1, counter)
+		assert.Equal(t, 1, casAttempts)
+	})
+
+	t.Run("non-compare errors are not retried", func(t *testing.T) {
+		const key = "/test"
+		var casAttempts int
+		c := newTestClient(t)
+		mockK8sResponseStatusCode(t, c, http.StatusBadRequest)
+
+		assert.Error(t, c.CAS(context.Background(), key, func(interface{}) (interface{}, bool, error) {
+			casAttempts++
+			return "something", true, nil
+		}))
+
+		assert.Equal(t, 1, casAttempts)
 	})
 }
 
-func mockK8sResponse(c *Client, status int) {
+func updateK8sConfigMap(t *testing.T, c *Client, object runtime.Object) {
+	var configmapsResource = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+
+	require.NoError(t, c.clientset.(fakeClientset).Tracker().Update(configmapsResource, object, ""))
+}
+
+func mockK8sResponseStatusCode(_ *testing.T, c *Client, status int) {
 	c.clientset.(fakeClientset).PrependReactor("*", "*", func(action k8s_testing.Action) (handled bool, ret runtime.Object, err error) {
 		return true, nil, &errors.StatusError{ErrStatus: metav1.Status{Code: int32(status)}}
 	})

@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	k8s_testing "k8s.io/client-go/testing"
 )
@@ -197,12 +196,6 @@ func Test_CAS(t *testing.T) {
 
 		assert.Equal(t, 1, casAttempts)
 	})
-}
-
-func updateK8sConfigMap(t *testing.T, c *Client, object runtime.Object) {
-	var configmapsResource = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-
-	require.NoError(t, c.clientset.(fakeClientset).Tracker().Update(configmapsResource, object, ""))
 }
 
 func mockK8sResponseStatusCode(_ *testing.T, c *Client, status int) {

@@ -175,9 +175,9 @@ func (i *InstanceDesc) IsReady(now time.Time, heartbeatTimeout time.Duration) er
 //
 // This method is part of memberlist.Mergeable interface, and is only used by gossiping ring.
 //
-// The Desc on which this function is called must be normalised, that is, the token lists must
-// sorted and not contain duplicates. The function guarantees that the Desc will be left in this
-// normalised state, so multiple subsequent Merge calls on the same Desc is valid.
+// The receiver must be normalised, that is, the token lists must sorted and not contain
+// duplicates. The function guarantees that the receiver will be left in this normalised state,
+// so multiple subsequent Merge calls are valid usage.
 //
 // The Mergeable passed as the parameter does not need to be normalised.
 //

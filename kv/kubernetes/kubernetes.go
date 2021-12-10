@@ -1,3 +1,5 @@
+// Package kubernetes provides a KV store implementation based on a kubernetes configmap.
+// The entrypoint to the package is NewClient.
 package kubernetes
 
 import (
@@ -107,6 +109,13 @@ func realClientGenerator(c *Client) error {
 	return nil
 }
 
+// NewClient returns a new KV store client. It will default to reading the KUBECONFIG environment variable.
+// If KUBECONFIG is not set, it will use the rest.InClusterConfig to connect to the kubernetes cluster.
+//
+// The client will try to get the configmap specified in cfg. If the configmap doesn't exist, NewClient will create it
+// before returning.
+//
+// The Client needs a role with CREATE, LIST, GET, PATCH and WATCH verbs on configmaps in the namespace.
 func NewClient(cfg Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer) (*Client, error) {
 	return newClient(cfg, cod, logger, registerer, realClientGenerator)
 }

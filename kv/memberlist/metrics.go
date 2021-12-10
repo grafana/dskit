@@ -12,61 +12,62 @@ import (
 	"github.com/grafana/dskit/services"
 )
 
+const metricsSubsystem = "memberlist_client"
+
 func (m *KV) createAndRegisterMetrics() {
-	const subsystem = "memberlist_client"
 
 	m.numberOfReceivedMessages = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "received_broadcasts_total",
 		Help:      "Number of received broadcast user messages",
 	})
 
 	m.totalSizeOfReceivedMessages = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "received_broadcasts_bytes_total",
 		Help:      "Total size of received broadcast user messages",
 	})
 
 	m.numberOfInvalidReceivedMessages = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "received_broadcasts_invalid_total",
 		Help:      "Number of received broadcast user messages that were invalid. Hopefully 0.",
 	})
 
 	m.numberOfPushes = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "state_pushes_total",
 		Help:      "How many times did this node push its full state to another node",
 	})
 
 	m.totalSizeOfPushes = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "state_pushes_bytes_total",
 		Help:      "Total size of pushed state",
 	})
 
 	m.numberOfPulls = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "state_pulls_total",
 		Help:      "How many times did this node pull full state from another node",
 	})
 
 	m.totalSizeOfPulls = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "state_pulls_bytes_total",
 		Help:      "Total size of pulled state",
 	})
 
 	m.numberOfBroadcastMessagesInQueue = promauto.With(m.registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "messages_in_broadcast_queue",
 		Help:      "Number of user messages in the broadcast queue",
 	}, func() float64 {
@@ -79,61 +80,61 @@ func (m *KV) createAndRegisterMetrics() {
 
 	m.totalSizeOfBroadcastMessagesInQueue = promauto.With(m.registerer).NewGauge(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "messages_in_broadcast_queue_bytes",
 		Help:      "Total size of messages waiting in the broadcast queue",
 	})
 
 	m.numberOfBroadcastMessagesDropped = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "messages_to_broadcast_dropped_total",
 		Help:      "Number of broadcast messages intended to be sent but were dropped due to encoding errors or for being too big",
 	})
 
 	m.casAttempts = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "cas_attempt_total",
 		Help:      "Attempted CAS operations",
 	})
 
 	m.casSuccesses = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "cas_success_total",
 		Help:      "Successful CAS operations",
 	})
 
 	m.casFailures = promauto.With(m.registerer).NewCounter(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "cas_failure_total",
 		Help:      "Failed CAS operations",
 	})
 
 	m.storeValuesDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(m.cfg.MetricsNamespace, subsystem, "kv_store_count"), // gauge
+		prometheus.BuildFQName(m.cfg.MetricsNamespace, metricsSubsystem, "kv_store_count"), // gauge
 		"Number of values in KV Store",
 		nil, nil)
 
 	m.storeTombstones = promauto.With(m.registerer).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "kv_store_value_tombstones",
 		Help:      "Number of tombstones currently present in KV store values",
 	}, []string{"key"})
 
 	m.storeRemovedTombstones = promauto.With(m.registerer).NewCounterVec(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "kv_store_value_tombstones_removed_total",
 		Help:      "Total number of tombstones which have been removed from KV store values",
 	}, []string{"key"})
 
 	m.memberlistMembersCount = promauto.With(m.registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "cluster_members_count",
 		Help:      "Number of members in memberlist cluster",
 	}, func() float64 {
@@ -146,7 +147,7 @@ func (m *KV) createAndRegisterMetrics() {
 
 	m.memberlistHealthScore = promauto.With(m.registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "cluster_node_health_score",
 		Help:      "Health score of this cluster. Lower value is better. 0 = healthy",
 	}, func() float64 {
@@ -159,7 +160,7 @@ func (m *KV) createAndRegisterMetrics() {
 
 	m.watchPrefixDroppedNotifications = promauto.With(m.registerer).NewCounterVec(prometheus.CounterOpts{
 		Namespace: m.cfg.MetricsNamespace,
-		Subsystem: subsystem,
+		Subsystem: metricsSubsystem,
 		Name:      "watch_prefix_dropped_notifications",
 		Help:      "Number of dropped notifications in WatchPrefix function",
 	}, []string{"prefix"})

@@ -79,5 +79,5 @@ func newTestWatcher() *Watcher {
 		logger = log.NewNopLogger()
 	}
 
-	return NewWatcher(logger)
+	return NewWatcher(logger, nil)
 }

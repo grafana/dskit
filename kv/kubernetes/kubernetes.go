@@ -16,7 +16,7 @@ import (
 	"sync"
 
 	"github.com/grafana/dskit/kv/codec"
-	watch "github.com/grafana/dskit/kv/internal/watcher"
+	"github.com/grafana/dskit/kv/internal/watch"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,8 +37,7 @@ const (
 )
 
 type Config struct {
-	ConfigMapName    string `yaml:"config_map_name"`
-	MetricsNamespace string `yaml:"-"`
+	ConfigMapName string `yaml:"config_map_name"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -123,13 +122,15 @@ func NewClient(cfg Config, cod codec.Codec, logger log.Logger, registerer promet
 func newClient(cfg Config, cod codec.Codec, logger log.Logger, registerer prometheus.Registerer, clientGenerator func(*Client) error) (*Client, error) {
 	var err error
 
+	m := newMetrics(registerer)
+
 	client := &Client{
 		logger:  logger,
 		codec:   cod,
 		name:    cfg.ConfigMapName,
 		stopCh:  make(chan struct{}),
-		watcher: watch.NewWatcher(logger),
-		metrics: newMetrics(cfg.MetricsNamespace, registerer),
+		watcher: watch.NewWatcher(logger, prometheus.WrapRegistererWithPrefix(m.prefix, registerer)),
+		metrics: m,
 	}
 
 	// creates the clientset

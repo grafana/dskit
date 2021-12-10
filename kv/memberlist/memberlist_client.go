@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/internal/watch"
 	"github.com/grafana/dskit/services"
 )
 
@@ -65,7 +66,7 @@ func (c *Client) Get(ctx context.Context, key string) (interface{}, error) {
 		return nil, err
 	}
 
-	return c.kv.Get(key, c.codec)
+	return c.kv.Get(key)
 }
 
 // Delete is part of kv.Client interface.
@@ -237,10 +238,7 @@ type KV struct {
 	// Codec registry
 	codecs map[string]codec.Codec
 
-	// Key watchers
-	watchersMu     sync.Mutex
-	watchers       map[string][]chan string
-	prefixWatchers map[string][]chan string
+	watcher *watch.Watcher
 
 	// Buffers with sent and received messages. Used for troubleshooting only.
 	// New messages are appended, old messages (based on configured size limit) removed from the front.
@@ -343,12 +341,11 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 		registerer: registerer,
 		provider:   dnsProvider,
 
-		store:          make(map[string]valueDesc),
-		codecs:         make(map[string]codec.Codec),
-		watchers:       make(map[string][]chan string),
-		prefixWatchers: make(map[string][]chan string),
-		shutdown:       make(chan struct{}),
-		maxCasRetries:  maxCasRetries,
+		store:         make(map[string]valueDesc),
+		codecs:        make(map[string]codec.Codec),
+		shutdown:      make(chan struct{}),
+		maxCasRetries: maxCasRetries,
+		watcher:       watch.NewWatcher(logger, prometheus.WrapRegistererWithPrefix(fmt.Sprintf("%s_%s_", cfg.MetricsNamespace, metricsSubsystem), registerer)),
 	}
 
 	mlkv.createAndRegisterMetrics()
@@ -625,13 +622,13 @@ func (m *KV) List(prefix string) []string {
 
 // Get returns current value associated with given key.
 // No communication with other nodes in the cluster is done here.
-func (m *KV) Get(key string, codec codec.Codec) (interface{}, error) {
-	val, _, err := m.get(key, codec)
-	return val, err
+func (m *KV) Get(key string) (interface{}, error) {
+	val, _ := m.get(key)
+	return val, nil
 }
 
 // Returns current value with removed tombstones.
-func (m *KV) get(key string, codec codec.Codec) (out interface{}, version uint, err error) {
+func (m *KV) get(key string) (out interface{}, version uint) {
 	m.storeMu.Lock()
 	v := m.store[key].Clone()
 	m.storeMu.Unlock()
@@ -642,52 +639,15 @@ func (m *KV) get(key string, codec codec.Codec) (out interface{}, version uint, 
 		_, _ = v.value.RemoveTombstones(time.Time{})
 	}
 
-	return v.value, v.version, nil
+	return v.value, v.version
 }
 
 // WatchKey watches for value changes for given key. When value changes, 'f' function is called with the
 // latest value. Notifications that arrive while 'f' is running are coalesced into one subsequent 'f' call.
 //
 // Watching ends when 'f' returns false, context is done, or this client is shut down.
-func (m *KV) WatchKey(ctx context.Context, key string, codec codec.Codec, f func(interface{}) bool) {
-	// keep one extra notification, to avoid missing notification if we're busy running the function
-	w := make(chan string, 1)
-
-	// register watcher
-	m.watchersMu.Lock()
-	m.watchers[key] = append(m.watchers[key], w)
-	m.watchersMu.Unlock()
-
-	defer func() {
-		// unregister watcher on exit
-		m.watchersMu.Lock()
-		defer m.watchersMu.Unlock()
-
-		removeWatcherChannel(key, w, m.watchers)
-	}()
-
-	for {
-		select {
-		case <-w:
-			// value changed
-			val, _, err := m.get(key, codec)
-			if err != nil {
-				level.Warn(m.logger).Log("msg", "failed to decode value while watching for changes", "key", key, "err", err)
-				continue
-			}
-
-			if !f(val) {
-				return
-			}
-
-		case <-m.shutdown:
-			// stop watching on shutdown
-			return
-
-		case <-ctx.Done():
-			return
-		}
-	}
+func (m *KV) WatchKey(ctx context.Context, key string, _ codec.Codec, f func(interface{}) bool) {
+	m.watcher.WatchKey(ctx, key, f)
 }
 
 // WatchPrefix watches for any change of values stored under keys with given prefix. When change occurs,
@@ -696,94 +656,13 @@ func (m *KV) WatchKey(ctx context.Context, key string, codec codec.Codec, f func
 // some notifications may be lost.
 //
 // Watching ends when 'f' returns false, context is done, or this client is shut down.
-func (m *KV) WatchPrefix(ctx context.Context, prefix string, codec codec.Codec, f func(string, interface{}) bool) {
-	// we use bigger buffer here, since keys are interesting and we don't want to lose them.
-	w := make(chan string, 16)
-
-	// register watcher
-	m.watchersMu.Lock()
-	m.prefixWatchers[prefix] = append(m.prefixWatchers[prefix], w)
-	m.watchersMu.Unlock()
-
-	defer func() {
-		// unregister watcher on exit
-		m.watchersMu.Lock()
-		defer m.watchersMu.Unlock()
-
-		removeWatcherChannel(prefix, w, m.prefixWatchers)
-	}()
-
-	for {
-		select {
-		case key := <-w:
-			val, _, err := m.get(key, codec)
-			if err != nil {
-				level.Warn(m.logger).Log("msg", "failed to decode value while watching for changes", "key", key, "err", err)
-				continue
-			}
-
-			if !f(key, val) {
-				return
-			}
-
-		case <-m.shutdown:
-			// stop watching on shutdown
-			return
-
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func removeWatcherChannel(k string, w chan string, watchers map[string][]chan string) {
-	ws := watchers[k]
-	for ix, kw := range ws {
-		if kw == w {
-			ws = append(ws[:ix], ws[ix+1:]...)
-			break
-		}
-	}
-
-	if len(ws) > 0 {
-		watchers[k] = ws
-	} else {
-		delete(watchers, k)
-	}
+func (m *KV) WatchPrefix(ctx context.Context, prefix string, _ codec.Codec, f func(string, interface{}) bool) {
+	m.watcher.WatchPrefix(ctx, prefix, f)
 }
 
 func (m *KV) notifyWatchers(key string) {
-	m.watchersMu.Lock()
-	defer m.watchersMu.Unlock()
-
-	for _, kw := range m.watchers[key] {
-		select {
-		case kw <- key:
-			// notification sent.
-		default:
-			// cannot send notification to this watcher at the moment
-			// but since this is a buffered channel, it means that
-			// there is already a pending notification anyway
-		}
-	}
-
-	for p, ws := range m.prefixWatchers {
-		if strings.HasPrefix(key, p) {
-			for _, pw := range ws {
-				select {
-				case pw <- key:
-					// notification sent.
-				default:
-					c, _ := m.watchPrefixDroppedNotifications.GetMetricWithLabelValues(p)
-					if c != nil {
-						c.Inc()
-					}
-
-					level.Warn(m.logger).Log("msg", "failed to send notification to prefix watcher", "prefix", p)
-				}
-			}
-		}
-	}
+	val, _ := m.get(key)
+	m.watcher.Notify(key, val)
 }
 
 // CAS implements Compare-And-Set/Swap operation.
@@ -853,10 +732,7 @@ outer:
 // returns change, error (or nil, if CAS succeeded), and whether to retry or not.
 // returns errNoChangeDetected if merge failed to detect change in f's output.
 func (m *KV) trySingleCas(key string, codec codec.Codec, f func(in interface{}) (out interface{}, retry bool, err error)) (Mergeable, uint, bool, error) {
-	val, ver, err := m.get(key, codec)
-	if err != nil {
-		return nil, 0, false, fmt.Errorf("failed to get value: %v", err)
-	}
+	val, ver := m.get(key)
 
 	out, retry, err := f(val)
 	if err != nil {

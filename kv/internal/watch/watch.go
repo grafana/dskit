@@ -6,11 +6,10 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
-
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
-
-// TODO dimitarvdimitrov this is code copied form memberlist; make sure to refactor memberlist to use this implementation before merging
 
 type Watcher struct {
 	logger log.Logger
@@ -22,6 +21,8 @@ type Watcher struct {
 	watchersMu     sync.Mutex
 	watchers       map[string][]chan update
 	prefixWatchers map[string][]chan update
+
+	watchPrefixDroppedNotifications *prometheus.CounterVec
 }
 
 type update struct {
@@ -29,12 +30,17 @@ type update struct {
 	value interface{}
 }
 
-func NewWatcher(l log.Logger) *Watcher {
+func NewWatcher(l log.Logger, r prometheus.Registerer) *Watcher {
 	return &Watcher{
 		logger:         l,
 		shutdown:       make(chan struct{}),
 		watchers:       make(map[string][]chan update),
 		prefixWatchers: make(map[string][]chan update),
+
+		watchPrefixDroppedNotifications: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "watch_prefix_dropped_notifications",
+			Help: "Number of dropped notifications in WatchPrefix function",
+		}, []string{"prefix"}),
 	}
 }
 
@@ -160,6 +166,11 @@ func (w *Watcher) Notify(key string, value interface{}) {
 				case pw <- watchKey:
 					// notification sent.
 				default:
+					c, _ := w.watchPrefixDroppedNotifications.GetMetricWithLabelValues(p)
+					if c != nil {
+						c.Inc()
+					}
+
 					level.Warn(w.logger).Log("msg", "failed to send notification to prefix watcher", "prefix", p)
 				}
 			}

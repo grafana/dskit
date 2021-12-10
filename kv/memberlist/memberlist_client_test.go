@@ -1001,13 +1001,13 @@ func TestMultipleCodecs(t *testing.T) {
 	// Now read both values from second KV. It should have both values by now.
 
 	// fetch directly from single KV, to see that both are stored in the same one
-	val, err := mkv2.Get("data", dataCodec{})
+	val, err := mkv2.Get("data")
 	require.NoError(t, err)
 	require.NotNil(t, val)
 	require.NotZero(t, val.(*data).Members["test"].Timestamp)
 	require.Equal(t, ACTIVE, val.(*data).Members["test"].State)
 
-	val, err = mkv2.Get("counter", distributedCounterCodec{})
+	val, err = mkv2.Get("counter")
 	require.NoError(t, err)
 	require.NotNil(t, val)
 	require.Equal(t, 5, val.(distributedCounter)["test"])

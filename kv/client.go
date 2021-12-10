@@ -74,13 +74,15 @@ func (cfg *Config) RegisterFlagsWithPrefix(flagsPrefix, defaultPrefix string, f 
 	cfg.Consul.RegisterFlags(f, flagsPrefix)
 	cfg.Etcd.RegisterFlagsWithPrefix(f, flagsPrefix)
 	cfg.Multi.RegisterFlagsWithPrefix(f, flagsPrefix)
-	cfg.Kubernetes.RegisterFlags(f, flagsPrefix)
 
 	if flagsPrefix == "" {
 		flagsPrefix = "ring."
 	}
+
+	cfg.Kubernetes.RegisterFlags(f, flagsPrefix)
+
 	f.StringVar(&cfg.Prefix, flagsPrefix+"prefix", defaultPrefix, "The prefix for the keys in the store. Should end with a /.")
-	f.StringVar(&cfg.Store, flagsPrefix+"store", "consul", "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.")
+	f.StringVar(&cfg.Store, flagsPrefix+"store", "consul", "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, kubernetes, multi.")
 }
 
 // Client is a high-level client for key-value stores (such as Etcd and

@@ -597,6 +597,7 @@ func (m *KV) stopping(_ error) error {
 	}
 
 	close(m.shutdown)
+	_ = m.watcher.Stop(nil)
 
 	err = m.memberlist.Shutdown()
 	if err != nil {

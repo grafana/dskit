@@ -91,7 +91,7 @@ func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) b
 		return
 	}
 
-	c.kv.WatchKey(ctx, key, c.codec, f)
+	c.kv.WatchKey(ctx, key, f)
 }
 
 // WatchPrefix calls f whenever any value stored under prefix changes.
@@ -102,7 +102,7 @@ func (c *Client) WatchPrefix(ctx context.Context, prefix string, f func(string, 
 		return
 	}
 
-	c.kv.WatchPrefix(ctx, prefix, c.codec, f)
+	c.kv.WatchPrefix(ctx, prefix, f)
 }
 
 // We want to use KV in Running and Stopping states.
@@ -646,7 +646,7 @@ func (m *KV) get(key string) (out interface{}, version uint) {
 // latest value. Notifications that arrive while 'f' is running are coalesced into one subsequent 'f' call.
 //
 // Watching ends when 'f' returns false, context is done, or this client is shut down.
-func (m *KV) WatchKey(ctx context.Context, key string, _ codec.Codec, f func(interface{}) bool) {
+func (m *KV) WatchKey(ctx context.Context, key string, f func(interface{}) bool) {
 	m.watcher.WatchKey(ctx, key, f)
 }
 
@@ -656,7 +656,7 @@ func (m *KV) WatchKey(ctx context.Context, key string, _ codec.Codec, f func(int
 // some notifications may be lost.
 //
 // Watching ends when 'f' returns false, context is done, or this client is shut down.
-func (m *KV) WatchPrefix(ctx context.Context, prefix string, _ codec.Codec, f func(string, interface{}) bool) {
+func (m *KV) WatchPrefix(ctx context.Context, prefix string, f func(string, interface{}) bool) {
 	m.watcher.WatchPrefix(ctx, prefix, f)
 }
 

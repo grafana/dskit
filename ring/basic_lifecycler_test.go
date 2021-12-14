@@ -190,6 +190,46 @@ func TestBasicLifecycler_UnregisterOnStop(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
+	ctx := context.Background()
+	cfg := prepareBasicLifecyclerConfig()
+	cfg.KeepInstanceInTheRingOnShutdown = true
+
+	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+
+	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
+		return ACTIVE, Tokens{1, 2, 3, 4, 5}
+	}
+	delegate.onStopping = func(lifecycler *BasicLifecycler) {
+		require.NoError(t, lifecycler.changeState(context.Background(), LEAVING))
+	}
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+	assert.Equal(t, ACTIVE, lifecycler.GetState())
+	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
+	assert.True(t, lifecycler.IsRegistered())
+	assert.NotZero(t, lifecycler.GetRegisteredAt())
+	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
+	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
+	assert.Equal(t, LEAVING, lifecycler.GetState())
+	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
+	assert.True(t, lifecycler.IsRegistered())
+	assert.NotZero(t, lifecycler.GetRegisteredAt())
+	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
+	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+
+	// Assert on the instance is in the ring.
+	inst, ok := getInstanceFromStore(t, store, testInstanceID)
+	assert.True(t, ok)
+	assert.Equal(t, cfg.Addr, inst.GetAddr())
+	assert.Equal(t, LEAVING, inst.GetState())
+	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, Tokens(inst.GetTokens()))
+	assert.Equal(t, cfg.Zone, inst.GetZone())
+}
+
 func TestBasicLifecycler_HeartbeatWhileRunning(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()

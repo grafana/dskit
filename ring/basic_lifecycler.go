@@ -51,6 +51,8 @@ type BasicLifecyclerConfig struct {
 	HeartbeatPeriod     time.Duration
 	TokensObservePeriod time.Duration
 	NumTokens           int
+
+	KeepInTheRingOnShutdown bool
 }
 
 // BasicLifecycler is a basic ring lifecycler which allows to hook custom
@@ -227,11 +229,15 @@ heartbeatLoop:
 		}
 	}
 
-	// Remove the instance from the ring.
-	if err := l.unregisterInstance(context.Background()); err != nil {
-		return errors.Wrapf(err, "failed to unregister instance from the ring (ring: %s)", l.ringName)
+	if l.cfg.KeepInTheRingOnShutdown {
+		level.Info(l.logger).Log("msg", "keeping instance the ring", "ring", l.ringName)
+	} else {
+		// Remove the instance from the ring.
+		if err := l.unregisterInstance(context.Background()); err != nil {
+			return errors.Wrapf(err, "failed to unregister instance from the ring (ring: %s)", l.ringName)
+		}
+		level.Info(l.logger).Log("msg", "instance removed from the ring", "ring", l.ringName)
 	}
-	level.Info(l.logger).Log("msg", "instance removed from the ring", "ring", l.ringName)
 
 	return nil
 }

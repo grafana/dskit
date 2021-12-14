@@ -193,7 +193,7 @@ func TestBasicLifecycler_UnregisterOnStop(t *testing.T) {
 func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()
-	cfg.KeepInTheRingOnShutdown = true
+	cfg.KeepInstanceInTheRingOnShutdown = true
 
 	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
 	require.NoError(t, err)

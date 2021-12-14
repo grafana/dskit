@@ -52,7 +52,9 @@ type BasicLifecyclerConfig struct {
 	TokensObservePeriod time.Duration
 	NumTokens           int
 
-	KeepInTheRingOnShutdown bool
+	// If true lifecycler doesn't unregister instance from the ring when it's stopping. Default value is false,
+	// which means unregistering.
+	KeepInstanceInTheRingOnShutdown bool
 }
 
 // BasicLifecycler is a basic ring lifecycler which allows to hook custom
@@ -229,7 +231,7 @@ heartbeatLoop:
 		}
 	}
 
-	if l.cfg.KeepInTheRingOnShutdown {
+	if l.cfg.KeepInstanceInTheRingOnShutdown {
 		level.Info(l.logger).Log("msg", "keeping instance the ring", "ring", l.ringName)
 	} else {
 		// Remove the instance from the ring.

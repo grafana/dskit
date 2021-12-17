@@ -33,7 +33,7 @@ const (
 	IngesterRingKey = "ring"
 
 	// RulerRingKey is the key under which we store the rulers ring in the KVStore.
-	RulerRingKey = "ring"
+	RulerRingKey = "ruler"
 
 	// DistributorRingKey is the key under which we store the distributors ring in the KVStore.
 	DistributorRingKey = "distributor"

@@ -616,7 +616,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			return ringDesc, true, nil
 		}
 
-		level.Info(i.logger).Log("msg", "existing entry found in ring", "state", i.GetState(), "tokens", len(instanceDesc.Tokens), "ring", i.RingName)
+		level.Info(i.logger).Log("msg", "existing entry found in ring", "state", instanceDesc.State, "tokens", len(instanceDesc.Tokens), "ring", i.RingName)
 
 		// If the ingester failed to clean its ring entry up it can leave its state in LEAVING
 		// OR unregister_on_shutdown=false
@@ -651,7 +651,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			instanceDesc.State = i.state
 			instanceDesc.Tokens = tokens
 		} else {
-			// We exist in the ring and not in leaving state, so assume the ring is right and copy out tokens & state out of there.
+			// We exist in the ring and not in leaving state, so assume the ring is right and copy tokens & state out of there.
 			i.setState(instanceDesc.State)
 			i.setTokens(instanceDesc.Tokens)
 		}

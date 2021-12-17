@@ -606,13 +606,18 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 					level.Debug(i.logger).Log("msg", "adding tokens from file", "tokens", len(tokensFromFile))
 					isActive = len(tokensFromFile) >= i.cfg.NumTokens
 					tokens = tokensFromFile
-				} else {
-					level.Debug(i.logger).Log("msg", "no tokens in file, generating new ones")
-					takenTokens := ringDesc.GetTokens()
+				} else if i.cfg.NumTokens == len(instanceDesc.Tokens) {
+					level.Debug(i.logger).Log("msg", "no tokens in file, adopting those of existing instance")
+					tokens = instanceDesc.Tokens
+				} else if i.cfg.NumTokens > len(instanceDesc.Tokens) {
 					needTokens := i.cfg.NumTokens - len(instanceDesc.Tokens)
-					newTokens := GenerateTokens(needTokens, takenTokens)
+					level.Debug(i.logger).Log("msg", "no tokens in file, generating new ones in addition to those of existing instance", "newTokens", needTokens)
+					newTokens := GenerateTokens(needTokens, ringDesc.GetTokens())
 					tokens = append(instanceDesc.Tokens, newTokens...)
 					sort.Sort(tokens)
+				} else {
+					level.Debug(i.logger).Log("msg", "no tokens in file, adopting a subset of existing instance's tokens", "numTokens", i.cfg.NumTokens)
+					tokens = instanceDesc.Tokens[0:i.cfg.NumTokens]
 				}
 			}
 

@@ -644,11 +644,11 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				level.Debug(i.logger).Log("msg", "switching state to active")
 				i.setState(ACTIVE)
 			} else {
-				level.Debug(i.logger).Log("msg", "not switching state to active", "state", i.state)
+				level.Debug(i.logger).Log("msg", "not switching state to active", "state", i.GetState())
 			}
 
 			i.setTokens(tokens)
-			instanceDesc.State = i.state
+			instanceDesc.State = i.GetState()
 			instanceDesc.Tokens = tokens
 		} else {
 			// We exist in the ring and not in leaving state, so assume the ring is right and copy tokens & state out of there.

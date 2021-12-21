@@ -24,7 +24,7 @@ type Update struct {
 	Metadata interface{}
 }
 
-// Watcher watches for the updates on the specified target.
+// Watcher watches for the SRV updates on the specified target.
 type Watcher interface {
 	// Next blocks until an update or error happens. It may return one or more
 	// updates. The first call should get the full set of the results. It should

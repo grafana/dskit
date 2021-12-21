@@ -101,8 +101,11 @@ func parseTarget(target string) (host, port string, err error) {
 	return "", "", fmt.Errorf("invalid target address %v", target)
 }
 
-// Resolve creates a watcher that watches the name resolution of the target.
-func (r *Resolver) Resolve(target string) (Watcher, error) {
+// Resolve creates a watcher that watches the SRV/hostname record resolution of the target.
+//
+// If service is not empty, the watcher will first attempt to resolve an SRV record.
+// If that fails, or service is empty, hostname record resolution is attempted instead.
+func (r *Resolver) Resolve(target, service string) (Watcher, error) {
 	host, port, err := parseTarget(target)
 	if err != nil {
 		return nil, err
@@ -119,22 +122,24 @@ func (r *Resolver) Resolve(target string) (Watcher, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return &dnsWatcher{
-		r:      r,
-		logger: r.logger,
-		host:   host,
-		port:   port,
-		ctx:    ctx,
-		cancel: cancel,
-		t:      time.NewTimer(0),
+		r:       r,
+		logger:  r.logger,
+		host:    host,
+		port:    port,
+		service: service,
+		ctx:     ctx,
+		cancel:  cancel,
+		t:       time.NewTimer(0),
 	}, nil
 }
 
 // dnsWatcher watches for the name resolution update for a specific target
 type dnsWatcher struct {
 	r      *Resolver
-	logger log.Logger
-	host   string
-	port   string
+	logger  log.Logger
+	host    string
+	port    string
+	service string
 	// The latest resolved address set
 	curAddrs map[string]*Update
 	ctx      context.Context
@@ -203,8 +208,13 @@ func (w *dnsWatcher) compileUpdate(newAddrs map[string]*Update) []*Update {
 }
 
 func (w *dnsWatcher) lookupSRV() map[string]*Update {
+	if w.service == "" {
+		level.Debug(w.logger).Log("msg", "not looking up DNS SRV record since w.service is empty")
+		return nil
+	}
+
 	newAddrs := make(map[string]*Update)
-	_, srvs, err := lookupSRV(w.ctx, "grpclb", "tcp", w.host)
+	_, srvs, err := lookupSRV(w.ctx, w.service, "tcp", w.host)
 	if err != nil {
 		level.Info(w.logger).Log("msg", "failed DNS SRV record lookup", "err", err)
 		return nil
@@ -251,7 +261,7 @@ func (w *dnsWatcher) lookupHost() map[string]*Update {
 func (w *dnsWatcher) lookup() []*Update {
 	newAddrs := w.lookupSRV()
 	if newAddrs == nil {
-		// If failed to get any balancer address (either no corresponding SRV for the
+		// If we failed to get any balancer address (either no corresponding SRV for the
 		// target, or caused by failure during resolution/parsing of the balancer target),
 		// return any A record info available.
 		newAddrs = w.lookupHost()

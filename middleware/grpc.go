@@ -13,8 +13,8 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// PrometheusGRPCUnaryInstrumentation records duration of gRPC requests client side.
-func PrometheusGRPCUnaryInstrumentation(metric *prometheus.HistogramVec) grpc.UnaryClientInterceptor {
+// UnaryClientInstrumentInterceptor records duration of gRPC requests client side.
+func UnaryClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, resp interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		start := time.Now()
 		err := invoker(ctx, method, req, resp, cc, opts...)
@@ -23,8 +23,8 @@ func PrometheusGRPCUnaryInstrumentation(metric *prometheus.HistogramVec) grpc.Un
 	}
 }
 
-// PrometheusGRPCStreamInstrumentation records duration of streaming gRPC requests client side.
-func PrometheusGRPCStreamInstrumentation(metric *prometheus.HistogramVec) grpc.StreamClientInterceptor {
+// StreamClientInstrumentInterceptor records duration of streaming gRPC requests client side.
+func StreamClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string,
 		streamer grpc.Streamer, opts ...grpc.CallOption,
 	) (grpc.ClientStream, error) {

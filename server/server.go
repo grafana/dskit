@@ -16,7 +16,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	node_https "github.com/prometheus/node_exporter/https"
+	"github.com/prometheus/exporter-toolkit/web"
 	"golang.org/x/net/context"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
@@ -62,8 +62,8 @@ type Config struct {
 	GRPCListenPort    int    `yaml:"grpc_listen_port"`
 	GRPCConnLimit     int    `yaml:"grpc_listen_conn_limit"`
 
-	HTTPTLSConfig node_https.TLSStruct `yaml:"http_tls_config"`
-	GRPCTLSConfig node_https.TLSStruct `yaml:"grpc_tls_config"`
+	HTTPTLSConfig web.TLSStruct `yaml:"http_tls_config"`
+	GRPCTLSConfig web.TLSStruct `yaml:"grpc_tls_config"`
 
 	RegisterInstrumentation bool `yaml:"register_instrumentation"`
 	ExcludeRequestInLog     bool `yaml:"-"`
@@ -235,16 +235,16 @@ func New(cfg Config) (*Server, error) {
 	// Setup TLS
 	var httpTLSConfig *tls.Config
 	if len(cfg.HTTPTLSConfig.TLSCertPath) > 0 && len(cfg.HTTPTLSConfig.TLSKeyPath) > 0 {
-		// Note: ConfigToTLSConfig from prometheus/node_exporter is awaiting security review.
-		httpTLSConfig, err = node_https.ConfigToTLSConfig(&cfg.HTTPTLSConfig)
+		// Note: ConfigToTLSConfig from prometheus/exporter-toolkit is awaiting security review.
+		httpTLSConfig, err = web.ConfigToTLSConfig(&cfg.HTTPTLSConfig)
 		if err != nil {
 			return nil, fmt.Errorf("error generating http tls config: %v", err)
 		}
 	}
 	var grpcTLSConfig *tls.Config
 	if len(cfg.GRPCTLSConfig.TLSCertPath) > 0 && len(cfg.GRPCTLSConfig.TLSKeyPath) > 0 {
-		// Note: ConfigToTLSConfig from prometheus/node_exporter is awaiting security review.
-		grpcTLSConfig, err = node_https.ConfigToTLSConfig(&cfg.GRPCTLSConfig)
+		// Note: ConfigToTLSConfig from prometheus/exporter-toolkit is awaiting security review.
+		grpcTLSConfig, err = web.ConfigToTLSConfig(&cfg.GRPCTLSConfig)
 		if err != nil {
 			return nil, fmt.Errorf("error generating grpc tls config: %v", err)
 		}

@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/dskit/flagext"
-	dsmath "github.com/grafana/dskit/math"
+	dsmath "github.com/grafana/dskit/internal/math"
 )
 
 const (

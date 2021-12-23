@@ -14,6 +14,7 @@
 * [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #90
 * [CHANGE] Remove package `math`. #104
 * [CHANGE] time: Remove time package. #103
+* [CHANGE] grpcutil: Convert Resolver into concrete type. #105
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

@@ -169,26 +169,6 @@ func (i *ipWatcher) Close() {
 	close(i.updateChan)
 }
 
-// AddressType indicates the address type returned by name resolution.
-type AddressType uint8
-
-const (
-	// Backend indicates the server is a backend server.
-	Backend AddressType = iota
-	// GRPCLB indicates the server is a grpclb load balancer.
-	GRPCLB
-)
-
-// AddrMetadataGRPCLB contains the information the name resolver for grpclb should provide. The
-// name resolver used by the grpclb balancer is required to provide this type of metadata in
-// its address updates.
-type AddrMetadataGRPCLB struct {
-	// AddrType is the type of server (grpc load balancer or backend).
-	AddrType AddressType
-	// ServerName is the name of the grpc load balancer. Used for authentication.
-	ServerName string
-}
-
 // compileUpdate compares the old resolved addresses and newly resolved addresses,
 // and generates an update list
 func (w *dnsWatcher) compileUpdate(newAddrs map[string]*Update) []*Update {
@@ -232,8 +212,7 @@ func (w *dnsWatcher) lookupSRV() map[string]*Update {
 				continue
 			}
 			addr := a + ":" + strconv.Itoa(int(s.Port))
-			newAddrs[addr] = &Update{Addr: addr,
-				Metadata: AddrMetadataGRPCLB{AddrType: GRPCLB, ServerName: s.Target}}
+			newAddrs[addr] = &Update{Addr: addr}
 		}
 	}
 	return newAddrs

@@ -105,6 +105,7 @@ func parseTarget(target string) (host, port string, err error) {
 //
 // If service is not empty, the watcher will first attempt to resolve an SRV record.
 // If that fails, or service is empty, hostname record resolution is attempted instead.
+// If target can be parsed as an IP address, the watcher will return it, and will not send any more updates afterwards.
 func (r *Resolver) Resolve(target, service string) (Watcher, error) {
 	host, port, err := parseTarget(target)
 	if err != nil {

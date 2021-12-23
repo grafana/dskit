@@ -12,6 +12,7 @@
 * [CHANGE] spanlogger: Take interface implementation for extracting tenant ID. #59
 * [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #68
 * [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #90
+* [CHANGE] Remove package `math`. #104
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

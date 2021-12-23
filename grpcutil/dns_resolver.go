@@ -136,7 +136,7 @@ func (r *Resolver) Resolve(target, service string) (Watcher, error) {
 
 // dnsWatcher watches for the name resolution update for a specific target
 type dnsWatcher struct {
-	r      *Resolver
+	r       *Resolver
 	logger  log.Logger
 	host    string
 	port    string
@@ -201,12 +201,12 @@ func (w *dnsWatcher) lookupSRV() map[string]*Update {
 		return nil
 	}
 	for _, s := range srvs {
-		lbAddrs, err := lookupHost(w.ctx, s.Target)
+		addrs, err := lookupHost(w.ctx, s.Target)
 		if err != nil {
-			level.Warn(w.logger).Log("msg", "failed load balancer address DNS lookup", "err", err)
+			level.Warn(w.logger).Log("msg", "failed SRV target DNS lookup", "target", s.Target, "err", err)
 			continue
 		}
-		for _, a := range lbAddrs {
+		for _, a := range addrs {
 			a, ok := formatIP(a)
 			if !ok {
 				level.Error(w.logger).Log("failed IP parsing", "err", err)
@@ -241,8 +241,7 @@ func (w *dnsWatcher) lookupHost() map[string]*Update {
 func (w *dnsWatcher) lookup() []*Update {
 	newAddrs := w.lookupSRV()
 	if newAddrs == nil {
-		// If we failed to get any balancer address (either no corresponding SRV for the
-		// target, or caused by failure during resolution/parsing of the balancer target),
+		// If we failed to get any valid addresses from SRV record lookup,
 		// return any A record info available.
 		newAddrs = w.lookupHost()
 	}

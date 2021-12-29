@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -78,6 +79,72 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 func generateKeys(r *rand.Rand, numTokens int, dest []uint32) {
 	for i := 0; i < numTokens; i++ {
 		dest[i] = r.Uint32()
+	}
+}
+
+func BenchmarkUpdateRingState(b *testing.B) {
+	for _, numInstances := range []int{50, 100, 500} {
+		for _, numZones := range []int{1, 3} {
+			for _, numTokens := range []int{128, 256, 512} {
+				for _, updateTokens := range []bool{false, true} {
+					b.Run(fmt.Sprintf("num instances = %d, num zones = %d, num tokens = %d, update tokens = %t", numInstances, numZones, numTokens, updateTokens), func(b *testing.B) {
+						benchmarkUpdateRingState(b, numInstances, numZones, numTokens, updateTokens)
+					})
+				}
+			}
+		}
+	}
+}
+
+func benchmarkUpdateRingState(b *testing.B, numInstances, numZones, numTokens int, updateTokens bool) {
+	cfg := Config{
+		KVStore:              kv.Config{},
+		HeartbeatTimeout:     0, // get healthy stats
+		ReplicationFactor:    3,
+		ZoneAwarenessEnabled: true,
+	}
+
+	// create the ring to set up metrics, but do not start
+	registry := prometheus.NewRegistry()
+	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
+	require.NoError(b, err)
+
+	// Make a random ring with N instances, and M tokens per ingests
+	// Also make a copy with different timestamps and one with different tokens
+	desc := NewDesc()
+	otherDesc := NewDesc()
+	takenTokens := []uint32{}
+	otherTakenTokens := []uint32{}
+	for i := 0; i < numInstances; i++ {
+		tokens := GenerateTokens(numTokens, takenTokens)
+		takenTokens = append(takenTokens, tokens...)
+		now := time.Now()
+		id := fmt.Sprintf("%d", i)
+		desc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, now)
+		if updateTokens {
+			otherTokens := GenerateTokens(numTokens, otherTakenTokens)
+			otherTakenTokens = append(otherTakenTokens, otherTokens...)
+			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), otherTokens, ACTIVE, now)
+		} else {
+			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, JOINING, now)
+		}
+	}
+
+	if updateTokens {
+		require.Equal(b, Different, desc.RingCompare(otherDesc))
+	} else {
+		require.Equal(b, EqualButStatesAndTimestamps, desc.RingCompare(otherDesc))
+	}
+
+	flipFlop := true
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		if flipFlop {
+			ring.updateRingState(desc)
+		} else {
+			ring.updateRingState(otherDesc)
+		}
+		flipFlop = !flipFlop
 	}
 }
 

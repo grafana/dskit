@@ -198,6 +198,7 @@ type Ring struct {
 	totalTokensGauge        prometheus.Gauge
 	numTokensGaugeVec       *prometheus.GaugeVec
 	oldestTimestampGaugeVec *prometheus.GaugeVec
+	reportedOwners          map[string]struct{}
 
 	logger log.Logger
 }
@@ -554,7 +555,7 @@ func (r *Ring) countTokens() (map[string]uint32, map[string]uint32) {
 	return numTokens, owned
 }
 
-// updateRingMetrics updates ring metrics. Caller must be holding at least a Read lock!
+// updateRingMetrics updates ring metrics. Caller must be holding the Write lock!
 func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 	if compareResult == Equal {
 		return
@@ -591,10 +592,19 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 		return
 	}
 
+	prevOwners := r.reportedOwners
+	r.reportedOwners = make(map[string]struct{})
 	numTokens, ownedRange := r.countTokens()
 	for id, totalOwned := range ownedRange {
 		r.memberOwnershipGaugeVec.WithLabelValues(id).Set(float64(totalOwned) / float64(math.MaxUint32))
 		r.numTokensGaugeVec.WithLabelValues(id).Set(float64(numTokens[id]))
+		delete(prevOwners, id)
+		r.reportedOwners[id] = struct{}{}
+	}
+
+	for k := range prevOwners {
+		r.memberOwnershipGaugeVec.DeleteLabelValues(k)
+		r.numTokensGaugeVec.DeleteLabelValues(k)
 	}
 
 	r.totalTokensGauge.Set(float64(len(r.ringTokens)))

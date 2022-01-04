@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	// ringKey is the key under which we store the ingesters ring in the KVStore.
+	// ring key used for testware
 	ringKey = "ring"
 )
 

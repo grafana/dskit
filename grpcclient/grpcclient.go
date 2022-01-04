@@ -27,7 +27,7 @@ type Config struct {
 	//
 	// See `google.golang.org/grpc/keepalive.ClientParameters.Time` for reference.
 	KeepaliveTime int64 `yaml:"keepalive_time"`
-	// KeepaliveTimeOut is the number of seconds the client waits after pinging the server, and if no activity is seen
+	// KeepaliveTimeout is the number of seconds the client waits after pinging the server, and if no activity is seen
 	// after that, the connection is closed.
 	//
 	// See `google.golang.org/grpc/keepalive.ClientParameters.Timeout` for reference.

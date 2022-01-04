@@ -190,7 +190,6 @@ func (w *dnsWatcher) compileUpdate(newAddrs map[string]*Update) []*Update {
 
 func (w *dnsWatcher) lookupSRV() map[string]*Update {
 	if w.service == "" {
-		level.Debug(w.logger).Log("msg", "not looking up DNS SRV record since w.service is empty")
 		return nil
 	}
 

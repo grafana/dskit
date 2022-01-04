@@ -26,12 +26,12 @@ type Config struct {
 	// KeepaliveTime is the number of seconds after which the client will ping the server in case of inactivity.
 	//
 	// See `google.golang.org/grpc/keepalive.ClientParameters.Time` for reference.
-	KeepaliveTime int64 `yaml:"ping_time"`
+	KeepaliveTime int64 `yaml:"keepalive_time"`
 	// KeepaliveTimeOut is the number of seconds the client waits after pinging the server, and if no activity is seen
 	// after that, the connection is closed.
 	//
 	// See `google.golang.org/grpc/keepalive.ClientParameters.Timeout` for reference.
-	KeepaliveTimeout int64 `yaml:"ping_timeout"`
+	KeepaliveTimeout int64 `yaml:"keepalive_timeout"`
 
 	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits" category:"advanced"`
 	BackoffConfig       backoff.Config `yaml:"backoff_config"`

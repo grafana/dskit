@@ -29,8 +29,8 @@ var (
 
 // NewDNSResolverWithFreq creates a DNS Resolver that can resolve DNS names, and
 // create watchers that poll the DNS server using the frequency set by freq.
-func NewDNSResolverWithFreq(freq time.Duration, logger log.Logger) (Resolver, error) {
-	return &dnsResolver{
+func NewDNSResolverWithFreq(freq time.Duration, logger log.Logger) (*Resolver, error) {
+	return &Resolver{
 		logger: logger,
 		freq:   freq,
 	}, nil
@@ -38,12 +38,12 @@ func NewDNSResolverWithFreq(freq time.Duration, logger log.Logger) (Resolver, er
 
 // NewDNSResolver creates a DNS Resolver that can resolve DNS names, and create
 // watchers that poll the DNS server using the default frequency defined by defaultFreq.
-func NewDNSResolver(logger log.Logger) (Resolver, error) {
+func NewDNSResolver(logger log.Logger) (*Resolver, error) {
 	return NewDNSResolverWithFreq(defaultFreq, logger)
 }
 
-// dnsResolver handles name resolution for names following the DNS scheme
-type dnsResolver struct {
+// Resolver handles name resolution for names following the DNS scheme.
+type Resolver struct {
 	logger log.Logger
 	// frequency of polling the DNS server that the watchers created by this resolver will use.
 	freq time.Duration
@@ -102,7 +102,7 @@ func parseTarget(target string) (host, port string, err error) {
 }
 
 // Resolve creates a watcher that watches the name resolution of the target.
-func (r *dnsResolver) Resolve(target string) (Watcher, error) {
+func (r *Resolver) Resolve(target string) (Watcher, error) {
 	host, port, err := parseTarget(target)
 	if err != nil {
 		return nil, err
@@ -131,7 +131,7 @@ func (r *dnsResolver) Resolve(target string) (Watcher, error) {
 
 // dnsWatcher watches for the name resolution update for a specific target
 type dnsWatcher struct {
-	r      *dnsResolver
+	r      *Resolver
 	logger log.Logger
 	host   string
 	port   string

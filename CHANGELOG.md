@@ -15,6 +15,8 @@
 * [CHANGE] Remove package `math`. #104
 * [CHANGE] time: Remove time package. #103
 * [CHANGE] grpcutil: Convert Resolver into concrete type. #105
+* [CHANGE] grpcutil.Resolver.Resolve: Take a service parameter. #102
+* [CHANGE] grpcutil.Update: Remove gRPC LB related metadata. #102
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

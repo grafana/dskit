@@ -89,10 +89,9 @@ func TestConfig(t *testing.T) {
 		return fakeDialOption{isInsecure: true}
 	}
 
-	cfg := Config{
-		KeepaliveTime:    10,
-		KeepaliveTimeout: 20,
-	}
+	cfg := Config{}
+	const keepaliveTime = 10
+	const keepaliveTimeout = 20
 	expOpts := []grpc.DialOption{
 		fakeDialOption{isInsecure: true},
 		fakeDialOption{callOpts: []grpc.CallOption{
@@ -107,14 +106,14 @@ func TestConfig(t *testing.T) {
 		},
 		fakeDialOption{
 			keepaliveParams: keepalive.ClientParameters{
-				Time:                10 * time.Second,
-				Timeout:             20 * time.Second,
+				Time:                keepaliveTime * time.Second,
+				Timeout:             keepaliveTimeout * time.Second,
 				PermitWithoutStream: true,
 			},
 		},
 	}
 
-	opts, err := cfg.DialOption(nil, nil)
+	opts, err := cfg.DialOption(nil, nil, keepaliveTime, keepaliveTimeout)
 	require.NoError(t, err)
 
 	assert.Empty(t, cmp.Diff(expOpts, opts))

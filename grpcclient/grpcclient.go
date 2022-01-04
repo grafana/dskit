@@ -23,15 +23,6 @@ type Config struct {
 	GRPCCompression string  `yaml:"grpc_compression" category:"advanced"`
 	RateLimit       float64 `yaml:"rate_limit" category:"advanced"`
 	RateLimitBurst  int     `yaml:"rate_limit_burst" category:"advanced"`
-	// KeepaliveTime is the number of seconds after which the client will ping the server in case of inactivity.
-	//
-	// See `google.golang.org/grpc/keepalive.ClientParameters.Time` for reference.
-	KeepaliveTime int64 `yaml:"keepalive_time"`
-	// KeepaliveTimeout is the number of seconds the client waits after pinging the server, and if no activity is seen
-	// after that, the connection is closed.
-	//
-	// See `google.golang.org/grpc/keepalive.ClientParameters.Timeout` for reference.
-	KeepaliveTimeout int64 `yaml:"keepalive_timeout"`
 
 	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits" category:"advanced"`
 	BackoffConfig       backoff.Config `yaml:"backoff_config"`
@@ -90,8 +81,15 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 	return opts
 }
 
-// DialOption returns the config as a grpc.DialOptions.
-func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor) ([]grpc.DialOption, error) {
+// DialOption returns the config as a slice of grpc.DialOptions.
+//
+// keepaliveTime is the number of seconds after which the client will ping the server in case of inactivity.
+// See `google.golang.org/grpc/keepalive.ClientParameters.Time` for reference.
+//
+// keepaliveTimeout is the number of seconds the client waits after pinging the server, and if no activity is
+// seen after that, the connection is closed. See `google.golang.org/grpc/keepalive.ClientParameters.Timeout`
+// for reference.
+func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, keepaliveTime, keepaliveTimeout int64) ([]grpc.DialOption, error) {
 	opts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
 		return nil, err
@@ -131,8 +129,8 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 		withUnaryInterceptor(middleware.ChainUnaryClient(unaryClientInterceptors...)),
 		withStreamInterceptor(middleware.ChainStreamClient(streamClientInterceptors...)),
 		withKeepaliveParams(keepalive.ClientParameters{
-			Time:                time.Duration(cfg.KeepaliveTime) * time.Second,
-			Timeout:             time.Duration(cfg.KeepaliveTimeout) * time.Second,
+			Time:                time.Duration(keepaliveTime) * time.Second,
+			Timeout:             time.Duration(keepaliveTimeout) * time.Second,
 			PermitWithoutStream: true,
 		}),
 	), nil

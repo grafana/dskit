@@ -468,7 +468,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = ringStore
-	r, err := New(ringConfig, "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 	t.Cleanup(func() {
@@ -483,7 +483,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
 
 	// Simulate ingester with 64 tokens left the ring in LEAVING state
-	err = r.KVClient.CAS(ctx, IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
 		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil)
 		if err != nil {
@@ -496,7 +496,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start ingester with increased number of tokens
-	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", IngesterRingKey, true, log.NewNopLogger(), nil)
+	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, l))
 	t.Cleanup(func() {
@@ -505,7 +505,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 
 	// Verify ingester joined, is active, and has 128 tokens
 	test.Poll(t, time.Second, true, func() interface{} {
-		d, err := r.KVClient.Get(ctx, IngesterRingKey)
+		d, err := r.KVClient.Get(ctx, ringKey)
 		require.NoError(t, err)
 
 		desc, ok := d.(*Desc)
@@ -526,7 +526,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = ringStore
-	r, err := New(ringConfig, "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 	t.Cleanup(func() {
@@ -541,7 +541,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
 
 	// Simulate ingester with 128 tokens left the ring in LEAVING state
-	err = r.KVClient.CAS(ctx, IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
 		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil)
 		if err != nil {
@@ -554,7 +554,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start ingester with decreased number of tokens
-	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", IngesterRingKey, true, log.NewNopLogger(), nil)
+	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, l))
 	t.Cleanup(func() {
@@ -563,7 +563,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 
 	// Verify ingester joined, is active, and has 64 tokens
 	test.Poll(t, time.Second, true, func() interface{} {
-		d, err := r.KVClient.Get(ctx, IngesterRingKey)
+		d, err := r.KVClient.Get(ctx, ringKey)
 		require.NoError(t, err)
 
 		desc, ok := d.(*Desc)

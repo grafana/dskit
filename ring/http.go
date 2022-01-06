@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 )
 
@@ -90,7 +91,7 @@ func init() {
 	pageTemplate = template.Must(t.Parse(pageContent))
 }
 
-func (r *Ring) forget(ctx context.Context, id string) error {
+func (h *ringPageHandler) forget(ctx context.Context, id string) error {
 	unregister := func(in interface{}) (out interface{}, retry bool, err error) {
 		if in == nil {
 			return nil, false, fmt.Errorf("found empty ring when trying to unregister")
@@ -100,7 +101,7 @@ func (r *Ring) forget(ctx context.Context, id string) error {
 		ringDesc.RemoveIngester(id)
 		return ringDesc, true, nil
 	}
-	return r.KVClient.CAS(ctx, r.key, unregister)
+	return h.r.casRing(ctx, unregister)
 }
 
 type ingesterDesc struct {
@@ -121,11 +122,30 @@ type httpResponse struct {
 	ShowTokens bool           `json:"-"`
 }
 
-func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+type ringObserver interface {
+	casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error
+	getRing(context.Context) (*Desc, map[string]uint32, error)
+}
+
+type ringPageHandler struct {
+	logger          log.Logger
+	r               ringObserver
+	heartbeatPeriod time.Duration
+}
+
+func newRingPageHandler(logger log.Logger, r ringObserver, heartbeatPeriod time.Duration) *ringPageHandler {
+	return &ringPageHandler{
+		logger:          logger,
+		r:               r,
+		heartbeatPeriod: heartbeatPeriod,
+	}
+}
+
+func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		ingesterID := req.FormValue("forget")
-		if err := r.forget(req.Context(), ingesterID); err != nil {
-			level.Error(r.logger).Log("msg", "error forgetting instance", "err", err)
+		if err := h.forget(req.Context(), ingesterID); err != nil {
+			level.Error(h.logger).Log("msg", "error forgetting instance", "err", err)
 		}
 
 		// Implement PRG pattern to prevent double-POST and work with CSRF middleware.
@@ -140,23 +160,25 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
+	ringDesc, ownedTokens, err := h.r.getRing(req.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	ingesterIDs := []string{}
-	for id := range r.ringDesc.Ingesters {
+	for id := range ringDesc.Ingesters {
 		ingesterIDs = append(ingesterIDs, id)
 	}
 	sort.Strings(ingesterIDs)
 
 	now := time.Now()
 	var ingesters []ingesterDesc
-	_, owned := r.countTokens()
 	for _, id := range ingesterIDs {
-		ing := r.ringDesc.Ingesters[id]
+		ing := ringDesc.Ingesters[id]
 		heartbeatTimestamp := time.Unix(ing.Timestamp, 0)
 		state := ing.State.String()
-		if !r.IsHealthy(&ing, Reporting, now) {
+		if !ing.IsHealthy(Reporting, h.heartbeatPeriod, now) {
 			state = unhealthy
 		}
 
@@ -175,7 +197,7 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Tokens:              ing.Tokens,
 			Zone:                ing.Zone,
 			NumTokens:           len(ing.Tokens),
-			Ownership:           (float64(owned[id]) / float64(math.MaxUint32)) * 100,
+			Ownership:           (float64(ownedTokens[id]) / float64(math.MaxUint32)) * 100,
 		})
 	}
 

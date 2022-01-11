@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/internal/math"
@@ -60,47 +61,37 @@ func ForEachUser(ctx context.Context, userIDs []string, concurrency int, userFun
 	return errs.Err()
 }
 
-// ForEach runs the provided jobFunc for each job up to concurrency concurrent workers.
+// ForEachJob runs the provided jobFunc for each job index in [0, jobs) up to concurrency concurrent workers.
 // The execution breaks on first error encountered.
-func ForEach(ctx context.Context, jobs []interface{}, concurrency int, jobFunc func(ctx context.Context, job interface{}) error) error {
-	if len(jobs) == 0 {
+func ForEachJob(ctx context.Context, jobs int, concurrency int, jobFunc func(ctx context.Context, idx int) error) error {
+	if jobs == 0 {
 		return nil
 	}
 
-	// Push all jobs to a channel.
-	ch := make(chan interface{}, len(jobs))
-	for _, job := range jobs {
-		ch <- job
-	}
-	close(ch)
+	indexes := atomic.Int64{}
+	indexes.Add(int64(jobs))
 
 	// Start workers to process jobs.
 	g, ctx := errgroup.WithContext(ctx)
-	for ix := 0; ix < math.Min(concurrency, len(jobs)); ix++ {
+	for ix := 0; ix < math.Min(concurrency, jobs); ix++ {
 		g.Go(func() error {
-			for job := range ch {
+			for {
+				idx := int(indexes.Dec())
+				if idx < 0 {
+					return nil
+				}
+
 				if err := ctx.Err(); err != nil {
 					return err
 				}
 
-				if err := jobFunc(ctx, job); err != nil {
+				if err := jobFunc(ctx, idx); err != nil {
 					return err
 				}
 			}
-
-			return nil
 		})
 	}
 
 	// Wait until done (or context has canceled).
 	return g.Wait()
-}
-
-// CreateJobsFromStrings is an utility to create jobs from an slice of strings.
-func CreateJobsFromStrings(values []string) []interface{} {
-	jobs := make([]interface{}, len(values))
-	for i := 0; i < len(values); i++ {
-		jobs[i] = values[i]
-	}
-	return jobs
 }

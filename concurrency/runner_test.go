@@ -3,6 +3,7 @@ package concurrency
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -163,4 +164,38 @@ func TestForEachJob_ShouldReturnImmediatelyOnNoJobsProvided(t *testing.T) {
 		return nil
 	}))
 	require.Zero(t, processed.Load())
+}
+
+func BenchmarkForEachJob(b *testing.B) {
+	var ctx = context.Background()
+
+	for _, jobsCount := range []int{2, 16, 256, 1024} {
+		jobs := make([]string, jobsCount)
+		for j := 0; j < jobsCount; j++ {
+			jobs[j] = string(byte('a' + j%26))
+		}
+		concurrencies := []int{1, 2, 16}
+		if jobsCount/2 > concurrencies[len(concurrencies)-1] {
+			concurrencies = append(concurrencies, jobsCount/2)
+		}
+		if jobsCount > concurrencies[len(concurrencies)-1] {
+			concurrencies = append(concurrencies, jobsCount)
+		}
+
+		for _, concurrency := range concurrencies {
+			name := fmt.Sprintf("%d jobs / concurrency %d", jobsCount, concurrency)
+			{
+				b.Run(name, func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						processed := make([]string, len(jobs))
+						err := ForEachJob(ctx, len(jobs), concurrency, func(ctx context.Context, idx int) error {
+							processed[idx] = jobs[idx]
+							return nil
+						})
+						require.NoError(b, err)
+					}
+				})
+			}
+		}
+	}
 }

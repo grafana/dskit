@@ -89,27 +89,24 @@ func ForEachJob(ctx context.Context, jobs int, concurrency int, jobFunc func(ctx
 		return nil
 	}
 
-	indexes := atomic.Int64{}
-	indexes.Add(int64(jobs))
+	// Initialise indexes with -1 so first Inc() returns index 0.
+	indexes := atomic.NewInt64(-1)
 
 	// Start workers to process jobs.
 	g, ctx := errgroup.WithContext(ctx)
 	for ix := 0; ix < math.Min(concurrency, jobs); ix++ {
 		g.Go(func() error {
-			for {
-				idx := int(indexes.Dec())
-				if idx < 0 {
+			for ctx.Err() == nil {
+				idx := int(indexes.Inc())
+				if idx >= jobs {
 					return nil
-				}
-
-				if err := ctx.Err(); err != nil {
-					return err
 				}
 
 				if err := jobFunc(ctx, idx); err != nil {
 					return err
 				}
 			}
+			return ctx.Err()
 		})
 	}
 

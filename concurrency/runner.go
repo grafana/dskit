@@ -61,6 +61,27 @@ func ForEachUser(ctx context.Context, userIDs []string, concurrency int, userFun
 	return errs.Err()
 }
 
+// ForEach runs the provided jobFunc for each job up to concurrency concurrent workers.
+// The execution breaks on first error encountered.
+// Deprecated.
+// Use ForEachJob instead.
+func ForEach(ctx context.Context, jobs []interface{}, concurrency int, jobFunc func(ctx context.Context, job interface{}) error) error {
+	return ForEachJob(ctx, len(jobs), concurrency, func(ctx context.Context, idx int) error {
+		return jobFunc(ctx, jobs[idx])
+	})
+}
+
+// CreateJobsFromStrings is an utility to create jobs from an slice of strings.
+// Deprecated.
+// Will be removed. Not needed when using ForEachJob.
+func CreateJobsFromStrings(values []string) []interface{} {
+	jobs := make([]interface{}, len(values))
+	for i := 0; i < len(values); i++ {
+		jobs[i] = values[i]
+	}
+	return jobs
+}
+
 // ForEachJob runs the provided jobFunc for each job index in [0, jobs) up to concurrency concurrent workers.
 // The execution breaks on first error encountered.
 func ForEachJob(ctx context.Context, jobs int, concurrency int, jobFunc func(ctx context.Context, idx int) error) error {

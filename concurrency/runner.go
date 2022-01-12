@@ -63,7 +63,7 @@ func ForEachUser(ctx context.Context, userIDs []string, concurrency int, userFun
 
 // ForEach runs the provided jobFunc for each job up to concurrency concurrent workers.
 // The execution breaks on first error encountered.
-// 
+//
 // Deprecated: use ForEachJob instead.
 func ForEach(ctx context.Context, jobs []interface{}, concurrency int, jobFunc func(ctx context.Context, job interface{}) error) error {
 	return ForEachJob(ctx, len(jobs), concurrency, func(ctx context.Context, idx int) error {

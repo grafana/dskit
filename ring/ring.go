@@ -515,9 +515,15 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 }
 
 // countTokens returns the number of tokens and tokens within the range for each instance.
-func countTokens(ringDesc *Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) (map[string]uint32, map[string]uint32) {
-	owned := map[string]uint32{}
-	numTokens := map[string]uint32{}
+func (r *Desc) countTokens() (map[string]uint32, map[string]uint32) {
+	var (
+		owned     = map[string]uint32{}
+		numTokens = map[string]uint32{}
+
+		ringTokens          = r.GetTokens()
+		ringInstanceByToken = r.getTokensInfo()
+	)
+
 	for i, token := range ringTokens {
 		var diff uint32
 
@@ -534,7 +540,7 @@ func countTokens(ringDesc *Desc, ringTokens []uint32, ringInstanceByToken map[ui
 	}
 
 	// Set to 0 the number of owned tokens by instances which don't have tokens yet.
-	for id := range ringDesc.Ingesters {
+	for id := range r.Ingesters {
 		if _, ok := owned[id]; !ok {
 			owned[id] = 0
 			numTokens[id] = 0
@@ -542,11 +548,6 @@ func countTokens(ringDesc *Desc, ringTokens []uint32, ringInstanceByToken map[ui
 	}
 
 	return numTokens, owned
-}
-
-// The ring read lock must be already taken when calling this function.
-func (r *Ring) countTokens() (map[string]uint32, map[string]uint32) {
-	return countTokens(r.ringDesc, r.ringTokens, r.ringInstanceByToken)
 }
 
 // updateRingMetrics updates ring metrics. Caller must be holding the Write lock!
@@ -588,7 +589,7 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 
 	prevOwners := r.reportedOwners
 	r.reportedOwners = make(map[string]struct{})
-	numTokens, ownedRange := r.countTokens()
+	numTokens, ownedRange := r.ringDesc.countTokens()
 	for id, totalOwned := range ownedRange {
 		r.memberOwnershipGaugeVec.WithLabelValues(id).Set(float64(totalOwned) / float64(math.MaxUint32))
 		r.numTokensGaugeVec.WithLabelValues(id).Set(float64(numTokens[id]))
@@ -850,14 +851,13 @@ func (r *Ring) casRing(ctx context.Context, f func(in interface{}) (out interfac
 	return r.KVClient.CAS(ctx, r.key, f)
 }
 
-func (r *Ring) getRing(ctx context.Context) (*Desc, map[string]uint32, error) {
+func (r *Ring) getRing(ctx context.Context) (*Desc, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
 	ringDesc := proto.Clone(r.ringDesc).(*Desc)
-	_, ownedTokens := r.countTokens()
 
-	return ringDesc, ownedTokens, nil
+	return ringDesc, nil
 }
 
 func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {

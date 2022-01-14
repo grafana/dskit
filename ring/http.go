@@ -91,19 +91,6 @@ func init() {
 	pageTemplate = template.Must(t.Parse(pageContent))
 }
 
-func (h *ringPageHandler) forget(ctx context.Context, id string) error {
-	unregister := func(in interface{}) (out interface{}, retry bool, err error) {
-		if in == nil {
-			return nil, false, fmt.Errorf("found empty ring when trying to unregister")
-		}
-
-		ringDesc := in.(*Desc)
-		ringDesc.RemoveIngester(id)
-		return ringDesc, true, nil
-	}
-	return h.r.casRing(ctx, unregister)
-}
-
 type ingesterDesc struct {
 	ID                  string   `json:"id"`
 	State               string   `json:"state"`
@@ -122,18 +109,18 @@ type httpResponse struct {
 	ShowTokens bool           `json:"-"`
 }
 
-type ringObserver interface {
+type ringAccess interface {
 	casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error
-	getRing(context.Context) (*Desc, map[string]uint32, error)
+	getRing(context.Context) (*Desc, error)
 }
 
 type ringPageHandler struct {
 	logger          log.Logger
-	r               ringObserver
+	r               ringAccess
 	heartbeatPeriod time.Duration
 }
 
-func newRingPageHandler(logger log.Logger, r ringObserver, heartbeatPeriod time.Duration) *ringPageHandler {
+func newRingPageHandler(logger log.Logger, r ringAccess, heartbeatPeriod time.Duration) *ringPageHandler {
 	return &ringPageHandler{
 		logger:          logger,
 		r:               r,
@@ -160,11 +147,12 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ringDesc, ownedTokens, err := h.r.getRing(req.Context())
+	ringDesc, err := h.r.getRing(req.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	_, ownedTokens := ringDesc.countTokens()
 
 	ingesterIDs := []string{}
 	for id := range ringDesc.Ingesters {
@@ -223,6 +211,19 @@ func renderHTTPResponse(w http.ResponseWriter, v httpResponse, t *template.Templ
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (h *ringPageHandler) forget(ctx context.Context, id string) error {
+	unregister := func(in interface{}) (out interface{}, retry bool, err error) {
+		if in == nil {
+			return nil, false, fmt.Errorf("found empty ring when trying to unregister")
+		}
+
+		ringDesc := in.(*Desc)
+		ringDesc.RemoveIngester(id)
+		return ringDesc, true, nil
+	}
+	return h.r.casRing(ctx, unregister)
 }
 
 // WriteJSONResponse writes some JSON as a HTTP response.

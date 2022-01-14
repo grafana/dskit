@@ -854,17 +854,13 @@ func (i *Lifecycler) casRing(ctx context.Context, f func(in interface{}) (out in
 	return i.KVStore.CAS(ctx, i.RingKey, f)
 }
 
-func (i *Lifecycler) getRing(ctx context.Context) (*Desc, map[string]uint32, error) {
+func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
 	obj, err := i.KVStore.Get(ctx, i.RingKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	ringDesc := obj.(*Desc)
-
-	_, ownedTokens := countTokens(ringDesc, ringDesc.GetTokens(), ringDesc.getTokensInfo())
-
-	return ringDesc, ownedTokens, nil
+	return GetOrCreateRingDesc(obj), nil
 }
 
 func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/cristalhq/hedgedhttp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/time/rate"
 )
 
@@ -18,23 +19,6 @@ var (
 	totalRateLimitedHedgeRequests prometheus.Counter
 	once                          sync.Once
 )
-
-func init() {
-	initMetrics()
-}
-
-func initMetrics() {
-	once = sync.Once{}
-	totalHedgeRequests = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "hedged_requests_total",
-		Help: "The total number of hedged requests.",
-	})
-
-	totalRateLimitedHedgeRequests = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "hedged_requests_rate_limited_total",
-		Help: "The total number of hedged requests rejected via rate limiting.",
-	})
-}
 
 // Config is the configuration for hedging requests.
 type Config struct {
@@ -95,10 +79,16 @@ func (cfg *Config) RoundTripperWithRegisterer(next http.RoundTripper, reg promet
 	if cfg.At == 0 {
 		return next, nil
 	}
-	// register metrics
+	// register metrics only once
 	once.Do(func() {
-		reg.MustRegister(totalHedgeRequests)
-		reg.MustRegister(totalRateLimitedHedgeRequests)
+		totalHedgeRequests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "hedged_requests_total",
+			Help: "The total number of hedged requests.",
+		})
+		totalRateLimitedHedgeRequests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "hedged_requests_rate_limited_total",
+			Help: "The total number of hedged requests rejected via rate limiting.",
+		})
 	})
 	return hedgedhttp.NewRoundTripper(
 		cfg.At,

@@ -3,6 +3,7 @@ package hedging
 import (
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,10 +20,10 @@ func (fn RoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func resetMetrics() {
+	once = sync.Once{}
 	reg := prometheus.NewRegistry()
 	prometheus.DefaultRegisterer = reg
 	prometheus.DefaultGatherer = reg
-	initMetrics()
 }
 
 func TestHedging(t *testing.T) {

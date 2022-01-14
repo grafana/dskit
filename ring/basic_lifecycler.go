@@ -507,5 +507,5 @@ func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(l.logger, l, l.cfg.HeartbeatPeriod).handle(w, req)
+	newRingPageHandler(l, l.cfg.HeartbeatPeriod).handle(w, req)
 }

@@ -864,7 +864,7 @@ func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(i.logger, i, i.cfg.HeartbeatPeriod).handle(w, req)
+	newRingPageHandler(i, i.cfg.HeartbeatPeriod).handle(w, req)
 }
 
 // unregister removes our entry from consul.

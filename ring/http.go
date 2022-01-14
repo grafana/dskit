@@ -10,9 +10,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 )
 
 const pageContent = `
@@ -115,14 +112,12 @@ type ringAccess interface {
 }
 
 type ringPageHandler struct {
-	logger          log.Logger
 	r               ringAccess
 	heartbeatPeriod time.Duration
 }
 
-func newRingPageHandler(logger log.Logger, r ringAccess, heartbeatPeriod time.Duration) *ringPageHandler {
+func newRingPageHandler(r ringAccess, heartbeatPeriod time.Duration) *ringPageHandler {
 	return &ringPageHandler{
-		logger:          logger,
 		r:               r,
 		heartbeatPeriod: heartbeatPeriod,
 	}
@@ -132,7 +127,12 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		ingesterID := req.FormValue("forget")
 		if err := h.forget(req.Context(), ingesterID); err != nil {
-			level.Error(h.logger).Log("msg", "error forgetting instance", "err", err)
+			http.Error(
+				w,
+				fmt.Errorf("error forgetting instance '%s': %w", ingesterID, err).Error(),
+				http.StatusInternalServerError,
+			)
+			return
 		}
 
 		// Implement PRG pattern to prevent double-POST and work with CSRF middleware.

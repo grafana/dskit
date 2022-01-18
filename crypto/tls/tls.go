@@ -163,8 +163,8 @@ var WithInsecure = func() grpc.DialOption {
 }
 
 // GetGRPCDialOptions creates GRPC DialOptions for TLS.
-func (cfg *ClientConfig) GetGRPCDialOptions(enabled bool) ([]grpc.DialOption, error) {
-	if !enabled {
+func (cfg *ClientConfig) GetGRPCDialOptions(tlsEnabled bool) ([]grpc.DialOption, error) {
+	if !tlsEnabled {
 		return []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, nil
 	}
 

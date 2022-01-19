@@ -37,14 +37,35 @@ func DeprecatedFlag(f *flag.FlagSet, name, message string, logger log.Logger) {
 	f.Var(deprecatedFlag{name: name, logger: logger}, name, message)
 }
 
-// RenamedFlag logs a warning when you try to use it, increases the deprecated flags metric and sets the new flag.
-func RenamedFlag(f *flag.FlagSet, logger log.Logger, value flag.Value, oldName, oldMessage, newName, newMessage string) {
+// RenamedFlag looks up the new flag and registers the old version of it, which would also be usable,
+// but it would warn and increment the deprecated flags metric.
+func RenamedFlag(f *flag.FlagSet, logger log.Logger, oldName, newName string) error {
+	fl := f.Lookup(newName)
+	if fl == nil {
+		return fmt.Errorf("flag with name %s is not registered, so can't register old version %s", newName, oldName)
+	}
+	value := fl.Value
+
 	oldValue := &renamedOldFlag{name: oldName, v: value, logger: logger}
 	newValue := &renamedNewFlag{name: newName, v: value}
 	oldValue.new, newValue.old = newValue, oldValue
 
-	f.Var(oldValue, oldName, oldMessage)
-	f.Var(newValue, newName, newMessage)
+	fl.Value = newValue
+	f.Var(oldValue, oldName, fmt.Sprintf("%s (deprecated, renamed to %s)", fl.Usage, fl.Name))
+	return nil
+}
+
+// MustRenameFlag does the same as RenamedFlag but it panics instead of returning an error.
+func MustRenameFlag(f *flag.FlagSet, logger log.Logger, oldName, newName string) {
+	if err := RenamedFlag(f, logger, oldName, newName); err != nil {
+		panic(err)
+	}
+}
+
+// boolFlag is used to identify boolean flags, see flag/flag.go from stdlib.
+type boolFlag interface {
+	flag.Value
+	IsBoolFlag() bool
 }
 
 type renamedOldFlag struct {

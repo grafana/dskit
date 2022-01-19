@@ -44,13 +44,13 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 // Client returns a hedged http client.
 // The client transport will be mutated to use the hedged roundtripper.
-func (cfg *Config) Client(client *http.Client) (*http.Client, error) {
-	return cfg.ClientWithRegisterer(client, prometheus.DefaultRegisterer)
+func Client(cfg Config, client *http.Client) (*http.Client, error) {
+	return ClientWithRegisterer(cfg, client, prometheus.DefaultRegisterer)
 }
 
 // ClientWithRegisterer returns a hedged http client with instrumentation registered to the provided registerer.
 // The client transport will be mutated to use the hedged roundtripper.
-func (cfg *Config) ClientWithRegisterer(client *http.Client, reg prometheus.Registerer) (*http.Client, error) {
+func ClientWithRegisterer(cfg Config, client *http.Client, reg prometheus.Registerer) (*http.Client, error) {
 	if cfg.At == 0 {
 		return client, nil
 	}
@@ -58,7 +58,7 @@ func (cfg *Config) ClientWithRegisterer(client *http.Client, reg prometheus.Regi
 		client = http.DefaultClient
 	}
 	var err error
-	client.Transport, err = cfg.RoundTripperWithRegisterer(client.Transport, reg)
+	client.Transport, err = RoundTripperWithRegisterer(cfg, client.Transport, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (cfg *Config) ClientWithRegisterer(client *http.Client, reg prometheus.Regi
 }
 
 // RoundTripperWithRegisterer returns a hedged roundtripper with instrumentation registered to the provided registerer.
-func (cfg *Config) RoundTripperWithRegisterer(next http.RoundTripper, reg prometheus.Registerer) (http.RoundTripper, error) {
+func RoundTripperWithRegisterer(cfg Config, next http.RoundTripper, reg prometheus.Registerer) (http.RoundTripper, error) {
 	if cfg.At == 0 {
 		return next, nil
 	}
@@ -92,8 +92,8 @@ func (cfg *Config) RoundTripperWithRegisterer(next http.RoundTripper, reg promet
 }
 
 // RoundTripper returns a hedged roundtripper.
-func (cfg *Config) RoundTripper(next http.RoundTripper) (http.RoundTripper, error) {
-	return cfg.RoundTripperWithRegisterer(next, prometheus.DefaultRegisterer)
+func RoundTripper(cfg Config, next http.RoundTripper) (http.RoundTripper, error) {
+	return RoundTripperWithRegisterer(cfg, next, prometheus.DefaultRegisterer)
 }
 
 type limitedHedgingRoundTripper struct {

@@ -28,13 +28,13 @@ func resetMetrics() {
 
 func TestHedging(t *testing.T) {
 	resetMetrics()
-	cfg := &Config{
+	cfg := Config{
 		At:           time.Duration(1),
 		UpTo:         3,
 		MaxPerSecond: 1000,
 	}
 	count := atomic.NewInt32(0)
-	client, err := cfg.Client(&http.Client{
+	client, err := Client(cfg, &http.Client{
 		Transport: RoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			count.Inc()
 			time.Sleep(200 * time.Millisecond)
@@ -63,13 +63,13 @@ hedged_requests_total 2
 
 func TestHedgingRateLimit(t *testing.T) {
 	resetMetrics()
-	cfg := &Config{
+	cfg := Config{
 		At:           time.Duration(1),
 		UpTo:         20,
 		MaxPerSecond: 1,
 	}
 	count := atomic.NewInt32(0)
-	client, err := cfg.Client(&http.Client{
+	client, err := Client(cfg, &http.Client{
 		Transport: RoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			count.Inc()
 			time.Sleep(200 * time.Millisecond)

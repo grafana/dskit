@@ -26,7 +26,7 @@ type Config struct {
 	At time.Duration `yaml:"at"`
 	// UpTo is the maximum number of requests that will be issued.
 	UpTo int `yaml:"up_to"`
-	// The maximun of hedge requests allowed per second.
+	// The maximum number of hedge requests allowed per second.
 	MaxPerSecond int `yaml:"max_per_second"`
 }
 
@@ -37,9 +37,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 // RegisterFlagsWithPrefix registers flags with prefix.
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.IntVar(&cfg.UpTo, prefix+"hedge-requests-up-to", 2, "The maximun of hedge requests allowed.")
+	f.IntVar(&cfg.UpTo, prefix+"hedge-requests-up-to", 2, "The maximum number of hedge requests allowed.")
 	f.DurationVar(&cfg.At, prefix+"hedge-requests-at", 0, "If set to a non-zero value a second request will be issued at the provided duration. Default is 0 (disabled)")
-	f.IntVar(&cfg.MaxPerSecond, prefix+"hedge-max-per-second", 5, "The maximun of hedge requests allowed per seconds.")
+	f.IntVar(&cfg.MaxPerSecond, prefix+"hedge-max-per-second", 5, "The maximum number of hedge requests allowed per second.")
 }
 
 // Client returns a hedged http client.
@@ -51,14 +51,11 @@ func (cfg *Config) Client(client *http.Client) (*http.Client, error) {
 // ClientWithRegisterer returns a hedged http client with instrumentation registered to the provided registerer.
 // The client transport will be mutated to use the hedged roundtripper.
 func (cfg *Config) ClientWithRegisterer(client *http.Client, reg prometheus.Registerer) (*http.Client, error) {
-	if reg == nil {
-		reg = prometheus.DefaultRegisterer
+	if cfg.At == 0 {
+		return client, nil
 	}
 	if client == nil {
 		client = http.DefaultClient
-	}
-	if cfg.At == 0 {
-		return client, nil
 	}
 	var err error
 	client.Transport, err = cfg.RoundTripperWithRegisterer(client.Transport, reg)
@@ -70,14 +67,11 @@ func (cfg *Config) ClientWithRegisterer(client *http.Client, reg prometheus.Regi
 
 // RoundTripperWithRegisterer returns a hedged roundtripper with instrumentation registered to the provided registerer.
 func (cfg *Config) RoundTripperWithRegisterer(next http.RoundTripper, reg prometheus.Registerer) (http.RoundTripper, error) {
-	if reg == nil {
-		reg = prometheus.DefaultRegisterer
+	if cfg.At == 0 {
+		return next, nil
 	}
 	if next == nil {
 		next = http.DefaultTransport
-	}
-	if cfg.At == 0 {
-		return next, nil
 	}
 	// register metrics only once
 	once.Do(func() {

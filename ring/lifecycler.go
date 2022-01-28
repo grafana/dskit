@@ -68,11 +68,6 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 		prefix = "ingester."
 	}
 
-	// Allow clients to override default value by setting it before calling this method.
-	if cfg.FinalSleep == 0 {
-		cfg.FinalSleep = 30 * time.Second
-	}
-
 	f.IntVar(&cfg.NumTokens, prefix+"num-tokens", 128, "Number of tokens for each ingester.")
 	f.DurationVar(&cfg.HeartbeatPeriod, prefix+"heartbeat-period", 5*time.Second, "Period at which to heartbeat to consul. 0 = disabled.")
 	f.DurationVar(&cfg.JoinAfter, prefix+"join-after", 0*time.Second, "Period to wait for a claim from another member; will join automatically after this.")

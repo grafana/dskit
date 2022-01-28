@@ -848,3 +848,18 @@ func waitRingInstance(t *testing.T, timeout time.Duration, l *Lifecycler, check 
 		return check(instance)
 	})
 }
+
+func TestDefaultFinalSleepValue(t *testing.T) {
+	t.Run("default value is 0", func(t *testing.T) {
+		cfg := &LifecyclerConfig{}
+		flagext.DefaultValues(cfg)
+		assert.Equal(t, time.Duration(0), cfg.FinalSleep)
+	})
+
+	t.Run("default value is overridable", func(t *testing.T) {
+		cfg := &LifecyclerConfig{}
+		cfg.FinalSleep = time.Minute
+		flagext.DefaultValues(cfg)
+		assert.Equal(t, time.Minute, cfg.FinalSleep)
+	})
+}

@@ -19,7 +19,8 @@
 * [CHANGE] grpcutil.Update: Remove gRPC LB related metadata. #102
 * [CHANGE] concurrency.ForEach: deprecated and reimplemented by new `concurrency.ForEachJob`. #113
 * [CHANGE] ring/client: It's now possible to set different value than `consul` as default KV store. #120
-* [CHANGE] Lifecycler: It's now possible to change default value of lifecycler's `final-sleep` to other than `30s`. #121
+* [CHANGE] Lifecycler: Default value of lifecycler's `final-sleep` is now `0s` (i.e. no sleep). #121
+* [CHANGE] Lifecycler: It's now possible to change default value of lifecycler's `final-sleep`. #121
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

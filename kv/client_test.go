@@ -2,11 +2,13 @@ package kv
 
 import (
 	"context"
+	"flag"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
@@ -156,4 +158,15 @@ type testLogger struct {
 
 func (l testLogger) Log(keyvals ...interface{}) error {
 	return nil
+}
+
+func TestDefaultStoreValue(t *testing.T) {
+	cfg1 := Config{}
+	cfg1.RegisterFlagsWithPrefix("", "", flag.NewFlagSet("test", flag.PanicOnError))
+	assert.Equal(t, "consul", cfg1.Store)
+
+	cfg2 := Config{}
+	cfg2.Store = "memberlist"
+	cfg2.RegisterFlagsWithPrefix("", "", flag.NewFlagSet("test", flag.PanicOnError))
+	assert.Equal(t, "memberlist", cfg2.Store)
 }

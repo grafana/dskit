@@ -52,7 +52,7 @@ type StoreConfig struct {
 // Config is config for a KVStore currently used by ring and HA tracker,
 // where store can be consul or inmemory.
 type Config struct {
-	Store       string `yaml:"store" category:"advanced"`
+	Store       string `yaml:"store"`
 	Prefix      string `yaml:"prefix" category:"advanced"`
 	StoreConfig `yaml:",inline"`
 

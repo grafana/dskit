@@ -21,14 +21,14 @@ import (
 
 // Config for a new etcd.Client.
 type Config struct {
-	Endpoints   []string           `yaml:"endpoints" category:"advanced"`
+	Endpoints   []string           `yaml:"endpoints"`
 	DialTimeout time.Duration      `yaml:"dial_timeout" category:"advanced"`
 	MaxRetries  int                `yaml:"max_retries" category:"advanced"`
 	EnableTLS   bool               `yaml:"tls_enabled"`
 	TLS         dstls.ClientConfig `yaml:",inline"`
 
-	UserName string `yaml:"username" category:"advanced"`
-	Password string `yaml:"password" category:"advanced"`
+	UserName string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // Clientv3Facade is a subset of all Etcd client operations that are required

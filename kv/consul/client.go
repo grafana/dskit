@@ -39,7 +39,7 @@ var (
 
 // Config to create a ConsulClient
 type Config struct {
-	Host              string        `yaml:"host" category:"advanced"`
+	Host              string        `yaml:"host"`
 	ACLToken          string        `yaml:"acl_token" category:"advanced"`
 	HTTPClientTimeout time.Duration `yaml:"http_client_timeout" category:"advanced"`
 	ConsistentReads   bool          `yaml:"consistent_reads" category:"advanced"`

@@ -40,7 +40,7 @@ type LifecyclerConfig struct {
 	TokensFilePath           string        `yaml:"tokens_file_path"`
 	Zone                     string        `yaml:"availability_zone"`
 	UnregisterOnShutdown     bool          `yaml:"unregister_on_shutdown" category:"advanced"`
-	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health"`
+	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"advanced"`
 
 	// For testing, you can override the address and ID of this ingester
 	Addr string `yaml:"address" doc:"hidden"`

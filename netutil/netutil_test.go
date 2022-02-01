@@ -3,10 +3,10 @@ package netutil
 import (
 	"net"
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/assert"
 )
 
 // Setup required logger and example interface names and addresses
@@ -56,9 +56,7 @@ func TestEmptyInterface(t *testing.T) {
 		return []net.Addr{}, nil
 	}
 	privInts := privateNetworkInterfaces(ints, logger)
-	if !reflect.DeepEqual(privInts, []string{"eth0", "en0"}) {
-		t.Errorf("Expected default/fallback interfaces, got %v\n", privInts)
-	}
+	assert.Equal(t, privInts, []string{"eth0", "en0"})
 }
 
 func TestSinglePrivateInterface(t *testing.T) {
@@ -74,9 +72,7 @@ func TestSinglePrivateInterface(t *testing.T) {
 		return []net.Addr{MockAddr{netAddr: testIntsAddrs[ifname]}}, nil
 	}
 	privInts := privateNetworkInterfaces(ints, logger)
-	if !reflect.DeepEqual(privInts, []string{ifname}) {
-		t.Errorf("Expected single result {\"%s\"}, got %v\n", ifname, privInts)
-	}
+	assert.Equal(t, privInts, []string{ifname})
 }
 
 func TestSinglePublicInterface(t *testing.T) {
@@ -92,9 +88,7 @@ func TestSinglePublicInterface(t *testing.T) {
 		return []net.Addr{MockAddr{netAddr: testIntsAddrs[ifname]}}, nil
 	}
 	privInts := privateNetworkInterfaces(ints, logger)
-	if !reflect.DeepEqual(privInts, []string{"eth0", "en0"}) {
-		t.Errorf("Expected default/fallback interfaces, got %v\n", privInts)
-	}
+	assert.Equal(t, privInts, []string{"eth0", "en0"})
 }
 
 func TestListAllPrivate(t *testing.T) {
@@ -106,9 +100,7 @@ func TestListAllPrivate(t *testing.T) {
 		}, nil
 	}
 	privInts := privateNetworkInterfaces(ints, logger)
-	if !reflect.DeepEqual(privInts, intNames) {
-		t.Errorf("Expected all input interfaces, got %v\n", privInts)
-	}
+	assert.Equal(t, privInts, intNames)
 }
 
 func TestMixPrivatePublic(t *testing.T) {
@@ -120,7 +112,5 @@ func TestMixPrivatePublic(t *testing.T) {
 		}, nil
 	}
 	privInts := privateNetworkInterfaces(ints, logger)
-	if !reflect.DeepEqual(privInts, []string{"privNetA", "privNetB", "privNetC"}) {
-		t.Errorf("Expected all private interfaces, got %v\n", privInts)
-	}
+	assert.Equal(t, privInts, []string{"privNetA", "privNetB", "privNetC"})
 }

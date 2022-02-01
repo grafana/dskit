@@ -36,7 +36,6 @@ func privateNetworkInterfaces(all []net.Interface, logger log.Logger) []string {
 				level.Warn(logger).Log("msg", "error getting ip address", "inf", i.Name, "addr", s, "err", err)
 			}
 			if ip.IsPrivate() {
-				level.Info(logger).Log(i.Name, "is private with address", s)
 				privInts = append(privInts, i.Name)
 				break
 			}

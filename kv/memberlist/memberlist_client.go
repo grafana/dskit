@@ -124,7 +124,7 @@ func (c *Client) awaitKVRunningOrStopping(ctx context.Context) error {
 // KVConfig is a config for memberlist.KV
 type KVConfig struct {
 	// Memberlist options.
-	NodeName            string        `yaml:"node_name"`
+	NodeName            string        `yaml:"node_name" category:"advanced"`
 	RandomizeNodeName   bool          `yaml:"randomize_node_name" category:"advanced"`
 	StreamTimeout       time.Duration `yaml:"stream_timeout" category:"advanced"`
 	RetransmitMult      int           `yaml:"retransmit_factor" category:"advanced"`

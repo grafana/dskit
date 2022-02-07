@@ -16,7 +16,7 @@ import (
 type Log struct {
 	Log                    logging.Interface
 	LogRequestHeaders      bool // LogRequestHeaders true -> dump http headers at debug log level
-	LogRequestsAtInfoLevel bool // LogRequestAtInfoLevel true -> dump requests at info log level
+	LogRequestsAtInfoLevel bool // LogRequestAtInfoLevel true -> log requests at info log level
 	SourceIPs              *SourceIPExtractor
 }
 

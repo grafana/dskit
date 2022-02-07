@@ -79,6 +79,7 @@ type Config struct {
 	HTTPMiddleware                []middleware.Interface         `yaml:"-"`
 	Router                        *mux.Router                    `yaml:"-"`
 	DoNotAddDefaultHTTPMiddleware bool                           `yaml:"-"`
+	LogRequestsAtInfoLevel        bool                           `yaml:"-"`
 
 	GPRCServerMaxRecvMsgSize           int           `yaml:"grpc_server_max_recv_msg_size"`
 	GRPCServerMaxSendMsgSize           int           `yaml:"grpc_server_max_send_msg_size"`
@@ -367,8 +368,9 @@ func New(cfg Config) (*Server, error) {
 			SourceIPs:    sourceIPs,
 		},
 		middleware.Log{
-			Log:       log,
-			SourceIPs: sourceIPs,
+			Log:                    log,
+			SourceIPs:              sourceIPs,
+			LogRequestsAtInfoLevel: cfg.LogRequestsAtInfoLevel,
 		},
 		middleware.Instrument{
 			RouteMatcher:     router,

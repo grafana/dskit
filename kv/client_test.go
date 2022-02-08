@@ -3,7 +3,6 @@ package kv
 import (
 	"context"
 	"flag"
-	"os"
 	"testing"
 	"time"
 
@@ -186,7 +185,7 @@ func (c stringCodec) Encode(interface{}) ([]byte, error) {
 func (c stringCodec) CodecID() string { return c.value }
 
 func TestMultipleInMemoryClient(t *testing.T) {
-	logger := log.NewJSONLogger(os.Stdout)
+	logger := log.NewNopLogger()
 	foo, err := NewClient(Config{
 		Store: "inmemory",
 	}, stringCodec{value: "foo"}, prometheus.NewRegistry(), logger)

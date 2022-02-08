@@ -149,7 +149,7 @@ func createClient(backend string, prefix string, cfg StoreConfig, codec codec.Co
 			inmemoryStore, _ = consul.NewInMemoryClient(codec, logger, reg)
 		})
 		// however we swap the codec so that we can encode different type of values.
-		client = inmemoryStore.Clone().WithCodec(codec)
+		client = inmemoryStore.WithCodec(codec)
 
 	case "memberlist":
 		kv, err := cfg.MemberlistKV()

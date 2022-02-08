@@ -397,7 +397,7 @@ func (c *Client) createRateLimiter() *rate.Limiter {
 	return rate.NewLimiter(rate.Limit(c.cfg.WatchKeyRateLimit), burst)
 }
 
-// WithCodec changes the codec of the consul client.
+// WithCodec Clones and changes the codec of the consul client.
 func (c *Client) WithCodec(codec codec.Codec) *Client {
 	new := *c
 	new.codec = codec

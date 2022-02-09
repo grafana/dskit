@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Upgrades the module Go version from 1.16 to 1.17 #134
 * [CHANGE] Flagext: `DayValue` now always uses UTC when parsing or displaying dates. #71
 * [CHANGE] Closer: remove the closer package since it's trivial to just copy/paste. #70
 * [CHANGE] Memberlist: allow specifying address and port advertised to the memberlist cluster members by setting the following configuration: #37

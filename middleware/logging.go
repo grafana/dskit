@@ -38,6 +38,15 @@ func (l Log) logWithRequest(r *http.Request) logging.Interface {
 	return user.LogWith(r.Context(), localLog)
 }
 
+func (l Log) logWithRequestAtLevelf(r *http.Request, level string, format string, args ...interface{}) {
+	switch level {
+	case "debug":
+		l.logWithRequest(r).Debugf(format, args...)
+	case "info":
+		l.logWithRequest(r).Infof(format, args...)
+	}
+}
+
 // Wrap implements Middleware
 func (l Log) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,15 +62,16 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		wrapped := newBadResponseLoggingWriter(w, &buf)
 		next.ServeHTTP(wrapped, r)
 
+		level := "debug"
+		if l.LogRequestsAtInfoLevel {
+			level = "info"
+		}
+
 		statusCode, writeErr := wrapped.statusCode, wrapped.writeError
 
 		if writeErr != nil {
 			if errors.Is(writeErr, context.Canceled) {
-				if l.LogRequestsAtInfoLevel {
-					l.logWithRequest(r).Infof("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
-				} else {
-					l.logWithRequest(r).Debugf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
-				}
+				l.logWithRequestAtLevelf(r, level, "%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
 			} else {
 				l.logWithRequest(r).Warnf("%s %s %s, error: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
 			}
@@ -69,17 +79,9 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 			return
 		}
 		if 100 <= statusCode && statusCode < 500 || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable {
-			if l.LogRequestsAtInfoLevel {
-				l.logWithRequest(r).Infof("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
-			} else {
-				l.logWithRequest(r).Debugf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
-			}
+			l.logWithRequestAtLevelf(r, level, "%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
 			if l.LogRequestHeaders && headers != nil {
-				if l.LogRequestsAtInfoLevel {
-					l.logWithRequest(r).Infof("ws: %v; %s", IsWSHandshakeRequest(r), string(headers))
-				} else {
-					l.logWithRequest(r).Debugf("ws: %v; %s", IsWSHandshakeRequest(r), string(headers))
-				}
+				l.logWithRequestAtLevelf(r, level, "ws: %v; %s", IsWSHandshakeRequest(r), string(headers))
 			}
 		} else {
 			l.logWithRequest(r).Warnf("%s %s (%d) %s Response: %q ws: %v; %s",

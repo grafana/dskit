@@ -17,8 +17,8 @@
 * [CHANGE] grpcutil: Convert Resolver into concrete type. #105
 * [CHANGE] grpcutil.Resolver.Resolve: Take a service parameter. #102
 * [CHANGE] grpcutil.Update: Remove gRPC LB related metadata. #102
+* [CHANGE] concurrency.ForEach: deprecated and reimplemented by new `concurrency.ForEachJob`. #113
 * [CHANGE] grpcclient: Bump default `grpc-max-send-msg-size` flag to 100 Mb. #123
-* [CHANGE] concurrency._ForEach_: deprecated and reimplemented by new `concurrency.ForEachJob`. #113
 * [CHANGE] ring/client: It's now possible to set different value than `consul` as default KV store. #120
 * [CHANGE] Lifecycler: Default value of lifecycler's `final-sleep` is now `0s` (i.e. no sleep). #121
 * [CHANGE] Lifecycler: It's now possible to change default value of lifecycler's `final-sleep`. #121

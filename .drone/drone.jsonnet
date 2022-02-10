@@ -1,4 +1,4 @@
-local image = 'golang:1.16.7';
+local image = 'golang:1.17.6';
 
 local pipeline = {
   new(name):: {

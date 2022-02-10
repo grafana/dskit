@@ -17,11 +17,19 @@ func PrivateNetworkInterfaces(logger log.Logger) []string {
 	if err != nil {
 		level.Warn(logger).Log("msg", "error getting network interfaces", "err", err)
 	}
-	return privateNetworkInterfaces(ints, logger)
+	return privateNetworkInterfaces(ints, []string{}, logger)
+}
+
+func PrivateNetworkInterfacesWithFallback(fallback []string, logger log.Logger) []string {
+	ints, err := net.Interfaces()
+	if err != nil {
+		level.Warn(logger).Log("msg", "error getting network interfaces", "err", err)
+	}
+	return privateNetworkInterfaces(ints, fallback, logger)
 }
 
 // private testable function that checks each given interface
-func privateNetworkInterfaces(all []net.Interface, logger log.Logger) []string {
+func privateNetworkInterfaces(all []net.Interface, fallback []string, logger log.Logger) []string {
 	var privInts []string
 	for _, i := range all {
 		addrs, err := getInterfaceAddrs(&i)
@@ -32,7 +40,8 @@ func privateNetworkInterfaces(all []net.Interface, logger log.Logger) []string {
 			s := a.String()
 			ip, _, err := net.ParseCIDR(s)
 			if err != nil {
-				level.Warn(logger).Log("msg", "error parsing network interface IP address", "inf", i.Name, "addr", s, "err", err)
+				level.Warn(logger).Log("msg", "error parsing network interface IP address", "interface", i.Name, "addr", s, "err", err)
+				continue
 			}
 			if ip.IsPrivate() {
 				privInts = append(privInts, i.Name)
@@ -41,7 +50,7 @@ func privateNetworkInterfaces(all []net.Interface, logger log.Logger) []string {
 		}
 	}
 	if len(privInts) == 0 {
-		return []string{"eth0", "en0"}
+		return fallback
 	}
 	level.Debug(logger).Log("msg", "found network interfaces with private IP addresses assigned", "interfaces", privInts)
 	return privInts

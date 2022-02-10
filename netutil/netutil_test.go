@@ -107,6 +107,7 @@ func TestPrivateInterface(t *testing.T) {
 		t.Run(scenario.description, func(t *testing.T) {
 			privInts := privateNetworkInterfaces(
 				generateTestInterfaces(scenario.interfaces),
+				defaultOutput,
 				log.NewNopLogger(),
 			)
 			assert.Equal(t, privInts, scenario.expectedOutput)
@@ -121,6 +122,6 @@ func TestPrivateInterfaceError(t *testing.T) {
 		return []net.Addr{mockAddr{netAddr: ipaddr}}, nil
 	}
 	logger := log.NewLogfmtLogger(os.Stdout)
-	privInts := privateNetworkInterfaces(interfaces, logger)
-	assert.Equal(t, privInts, []string{"eth0", "en0"})
+	privInts := privateNetworkInterfaces(interfaces, []string{}, logger)
+	assert.Equal(t, privInts, []string{})
 }

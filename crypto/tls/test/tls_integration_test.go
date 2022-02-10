@@ -584,7 +584,7 @@ type grpcConfig struct {
 // RegisterFlags registers flags.
 func (cfg *grpcConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRecvMsgSize, ".grpc-max-recv-msg-size", 100<<20, "gRPC client max receive message size (bytes).")
-	f.IntVar(&cfg.MaxSendMsgSize, ".grpc-max-send-msg-size", 16<<20, "gRPC client max send message size (bytes).")
+	f.IntVar(&cfg.MaxSendMsgSize, ".grpc-max-send-msg-size", 100<<20, "gRPC client max send message size (bytes).")
 	f.StringVar(&cfg.GRPCCompression, ".grpc-compression", "", "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)")
 	f.Float64Var(&cfg.RateLimit, ".grpc-client-rate-limit", 0., "Rate limit for gRPC client; 0 means disabled.")
 	f.IntVar(&cfg.RateLimitBurst, ".grpc-client-rate-limit-burst", 0, "Rate limit burst for gRPC client.")

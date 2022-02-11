@@ -44,9 +44,9 @@ type LifecyclerConfig struct {
 	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"advanced"`
 
 	// For testing, you can override the address and ID of this ingester
-	Addr string `yaml:"address" doc:"default=<hostname>" category:"advanced"`
+	Addr string `yaml:"address" category:"advanced"`
 	Port int    `category:"advanced"`
-	ID   string `category:"advanced"`
+	ID   string `doc:"default=<hostname>" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`

@@ -33,7 +33,7 @@ type LifecyclerConfig struct {
 	ObservePeriod    time.Duration `yaml:"observe_period" category:"advanced"`
 	JoinAfter        time.Duration `yaml:"join_after" category:"advanced"`
 	MinReadyDuration time.Duration `yaml:"min_ready_duration" category:"advanced"`
-	InfNames         []string      `yaml:"interface_names"`
+	InfNames         []string      `yaml:"interface_names" doc:"default=[<private network interfaces>]"`
 
 	// FinalSleep's default value can be overridden by
 	// setting it before calling RegisterFlags or RegisterFlagsWithPrefix.

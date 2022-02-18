@@ -73,8 +73,8 @@ func TestLoggingRequestsAtInfoLevel(t *testing.T) {
 		logrusLogger.Level = logrus.DebugLevel
 
 		loggingMiddleware := Log{
-			Log:                    logging.Logrus(logrusLogger),
-			LogRequestsAtInfoLevel: true,
+			Log:                   logging.Logrus(logrusLogger),
+			LogRequestAtInfoLevel: true,
 		}
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, "<html><body>Hello World!</body></html>")

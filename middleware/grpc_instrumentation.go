@@ -121,19 +121,16 @@ func (s *instrumentedClientStream) Header() (metadata.MD, error) {
 
 // errorCode converts an error into an error code string.
 func errorCode(err error) string {
-	respStatus := "2xx"
 	if err == nil {
-		return respStatus
+		return "2xx"
 	}
 
 	if errResp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		statusFamily := int(errResp.Code / 100)
-		respStatus = strconv.Itoa(statusFamily) + "xx"
+		return strconv.Itoa(statusFamily) + "xx"
 	} else if grpcUtils.IsCanceled(err) {
-		respStatus = "cancel"
+		return "cancel"
 	} else {
-		respStatus = "error"
+		return "error"
 	}
-
-	return respStatus
 }

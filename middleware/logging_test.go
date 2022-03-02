@@ -54,7 +54,46 @@ func TestBadWriteLogging(t *testing.T) {
 			require.True(t, bytes.Contains(buf.Bytes(), []byte(content)))
 		}
 	}
+}
 
+func TestLoggingRequestsAtInfoLevel(t *testing.T) {
+	for _, tc := range []struct {
+		err         error
+		logContains []string
+	}{{
+		err:         context.Canceled,
+		logContains: []string{"info", "request cancelled: context canceled"},
+	}, {
+		err:         nil,
+		logContains: []string{"info", "GET http://example.com/foo (200)"},
+	}} {
+		buf := bytes.NewBuffer(nil)
+		logrusLogger := logrus.New()
+		logrusLogger.Out = buf
+		logrusLogger.Level = logrus.DebugLevel
+
+		loggingMiddleware := Log{
+			Log:                   logging.Logrus(logrusLogger),
+			LogRequestAtInfoLevel: true,
+		}
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "<html><body>Hello World!</body></html>")
+		}
+		loggingHandler := loggingMiddleware.Wrap(http.HandlerFunc(handler))
+
+		req := httptest.NewRequest("GET", "http://example.com/foo", nil)
+		recorder := httptest.NewRecorder()
+
+		w := errorWriter{
+			err: tc.err,
+			w:   recorder,
+		}
+		loggingHandler.ServeHTTP(w, req)
+
+		for _, content := range tc.logContains {
+			require.True(t, bytes.Contains(buf.Bytes(), []byte(content)))
+		}
+	}
 }
 
 type errorWriter struct {

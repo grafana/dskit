@@ -91,12 +91,13 @@ type Config struct {
 	GRPCServerMinTimeBetweenPings      time.Duration `yaml:"grpc_server_min_time_between_pings"`
 	GRPCServerPingWithoutStreamAllowed bool          `yaml:"grpc_server_ping_without_stream_allowed"`
 
-	LogFormat          logging.Format    `yaml:"log_format"`
-	LogLevel           logging.Level     `yaml:"log_level"`
-	Log                logging.Interface `yaml:"-"`
-	LogSourceIPs       bool              `yaml:"log_source_ips_enabled"`
-	LogSourceIPsHeader string            `yaml:"log_source_ips_header"`
-	LogSourceIPsRegex  string            `yaml:"log_source_ips_regex"`
+	LogFormat             logging.Format    `yaml:"log_format"`
+	LogLevel              logging.Level     `yaml:"log_level"`
+	Log                   logging.Interface `yaml:"-"`
+	LogSourceIPs          bool              `yaml:"log_source_ips_enabled"`
+	LogSourceIPsHeader    string            `yaml:"log_source_ips_header"`
+	LogSourceIPsRegex     string            `yaml:"log_source_ips_regex"`
+	LogRequestAtInfoLevel bool              `yaml:"log_request_at_info_level_enabled"`
 
 	// If not set, default signal handler is used.
 	SignalHandler SignalHandler `yaml:"-"`
@@ -149,6 +150,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.LogSourceIPs, "server.log-source-ips-enabled", false, "Optionally log the source IPs.")
 	f.StringVar(&cfg.LogSourceIPsHeader, "server.log-source-ips-header", "", "Header field storing the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used")
 	f.StringVar(&cfg.LogSourceIPsRegex, "server.log-source-ips-regex", "", "Regex for matching the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used")
+	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level.")
 }
 
 // Server wraps a HTTP and gRPC server, and some common initialization.
@@ -367,8 +369,9 @@ func New(cfg Config) (*Server, error) {
 			SourceIPs:    sourceIPs,
 		},
 		middleware.Log{
-			Log:       log,
-			SourceIPs: sourceIPs,
+			Log:                   log,
+			SourceIPs:             sourceIPs,
+			LogRequestAtInfoLevel: cfg.LogRequestAtInfoLevel,
 		},
 		middleware.Instrument{
 			RouteMatcher:     router,

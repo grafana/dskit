@@ -92,6 +92,10 @@ func TestManaged_AddDependency_ShouldErrorOnCircularDependencies(t *testing.T) {
 		"serviceB": {
 			initFn: mockInitFunc,
 		},
+
+		"serviceC": {
+			initFn: mockInitFunc,
+		},
 	}
 
 	mm := NewManager(log.NewNopLogger())
@@ -99,8 +103,15 @@ func TestManaged_AddDependency_ShouldErrorOnCircularDependencies(t *testing.T) {
 		mm.RegisterModule(name, mod.initFn)
 	}
 	assert.NoError(t, mm.AddDependency("serviceA", "serviceB"))
+	assert.NoError(t, mm.AddDependency("serviceB", "serviceC"))
 
+	// Direct circular dependency.
 	err := mm.AddDependency("serviceB", "serviceA")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "circular dependency")
+
+	// Indirect circular dependency.
+	err = mm.AddDependency("serviceC", "serviceA")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular dependency")
 }

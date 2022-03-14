@@ -41,3 +41,4 @@
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
 * [BUGFIX] Allow in-memory kv-client to support multiple codec #132
+* [BUGFIX] Modules: fix a module waiting for other modules depending on it before stopping. #141

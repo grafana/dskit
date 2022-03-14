@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -45,9 +46,8 @@ func TestDependencies(t *testing.T) {
 	assert.NoError(t, mm.AddDependency("serviceC", "serviceB"))
 	assert.Equal(t, mm.modules["serviceB"].deps, []string{"serviceA"})
 
-	invDeps := mm.findInverseDependencies("serviceA", []string{"serviceB", "serviceC"})
-	require.Len(t, invDeps, 1)
-	assert.Equal(t, invDeps[0], "serviceB")
+	invDeps := mm.inverseDependenciesForModule("serviceA")
+	assert.Equal(t, []string{"serviceB", "serviceC"}, invDeps)
 
 	// Test unknown module
 	svc, err := mm.InitModuleServices("service_unknown")
@@ -63,16 +63,83 @@ func TestDependencies(t *testing.T) {
 	svc, err = mm.InitModuleServices("serviceA", "serviceB")
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(svc))
+	assert.Equal(t, []string{"serviceB"}, getStopDependenciesForModule("serviceA", svc))
+	assert.Equal(t, []string(nil), getStopDependenciesForModule("serviceB", svc))
 
 	svc, err = mm.InitModuleServices("serviceC")
 	assert.NoError(t, err)
 	assert.Equal(t, 3, len(svc))
+	assert.Equal(t, []string{"serviceB", "serviceC"}, getStopDependenciesForModule("serviceA", svc))
+	assert.Equal(t, []string{"serviceC"}, getStopDependenciesForModule("serviceB", svc))
+	assert.Equal(t, []string(nil), getStopDependenciesForModule("serviceC", svc))
 
 	// Test loading of the module second time - should produce the same set of services, but new instances.
 	svc2, err := mm.InitModuleServices("serviceC")
 	assert.NoError(t, err)
 	assert.Equal(t, 3, len(svc))
 	assert.NotEqual(t, svc, svc2)
+	assert.Equal(t, []string{"serviceB", "serviceC"}, getStopDependenciesForModule("serviceA", svc))
+	assert.Equal(t, []string{"serviceC"}, getStopDependenciesForModule("serviceB", svc))
+	assert.Equal(t, []string(nil), getStopDependenciesForModule("serviceC", svc))
+}
+
+func TestManaged_AddDependency_ShouldErrorOnCircularDependencies(t *testing.T) {
+	var testModules = map[string]module{
+		"serviceA": {
+			initFn: mockInitFunc,
+		},
+
+		"serviceB": {
+			initFn: mockInitFunc,
+		},
+
+		"serviceC": {
+			initFn: mockInitFunc,
+		},
+	}
+
+	mm := NewManager(log.NewNopLogger())
+	for name, mod := range testModules {
+		mm.RegisterModule(name, mod.initFn)
+	}
+	assert.NoError(t, mm.AddDependency("serviceA", "serviceB"))
+	assert.NoError(t, mm.AddDependency("serviceB", "serviceC"))
+
+	// Direct circular dependency.
+	err := mm.AddDependency("serviceB", "serviceA")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "circular dependency")
+
+	// Indirect circular dependency.
+	err = mm.AddDependency("serviceC", "serviceA")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "circular dependency")
+}
+
+func TestManaged_AddDependency_ShouldErrorIfModuleDoesNotExist(t *testing.T) {
+	var testModules = map[string]module{
+		"serviceA": {
+			initFn: mockInitFunc,
+		},
+
+		"serviceB": {
+			initFn: mockInitFunc,
+		},
+	}
+
+	mm := NewManager(log.NewNopLogger())
+	for name, mod := range testModules {
+		mm.RegisterModule(name, mod.initFn)
+	}
+	assert.NoError(t, mm.AddDependency("serviceA", "serviceB"))
+
+	// Module does not exist.
+	err := mm.AddDependency("serviceUnknown", "serviceA")
+	assert.EqualError(t, err, "no such module: serviceUnknown")
+
+	// Dependency does not exist.
+	err = mm.AddDependency("serviceA", "serviceUnknown")
+	assert.EqualError(t, err, "no such module: serviceUnknown")
 }
 
 func TestRegisterModuleDefaultsToUserVisible(t *testing.T) {
@@ -168,7 +235,7 @@ func TestIsModuleRegistered(t *testing.T) {
 	assert.False(t, result, "module '%v' should NOT be registered", failureModule)
 }
 
-func TestDependenciesForModule(t *testing.T) {
+func TestManager_DependenciesForModule(t *testing.T) {
 	m := NewManager(log.NewNopLogger())
 	m.RegisterModule("test", nil)
 	m.RegisterModule("dep1", nil)
@@ -181,6 +248,30 @@ func TestDependenciesForModule(t *testing.T) {
 
 	deps := m.DependenciesForModule("test")
 	assert.Equal(t, []string{"dep1", "dep2", "dep3"}, deps)
+}
+
+func TestManager_inverseDependenciesForModule(t *testing.T) {
+	m := NewManager(log.NewNopLogger())
+	m.RegisterModule("test", nil)
+	m.RegisterModule("dep1", nil)
+	m.RegisterModule("dep2", nil)
+	m.RegisterModule("dep3", nil)
+
+	require.NoError(t, m.AddDependency("test", "dep2", "dep1"))
+	require.NoError(t, m.AddDependency("dep1", "dep2"))
+	require.NoError(t, m.AddDependency("dep2", "dep3"))
+
+	invDeps := m.inverseDependenciesForModule("test")
+	assert.Equal(t, []string(nil), invDeps)
+
+	invDeps = m.inverseDependenciesForModule("dep1")
+	assert.Equal(t, []string{"test"}, invDeps)
+
+	invDeps = m.inverseDependenciesForModule("dep2")
+	assert.Equal(t, []string{"dep1", "test"}, invDeps)
+
+	invDeps = m.inverseDependenciesForModule("dep3")
+	assert.Equal(t, []string{"dep1", "dep2", "test"}, invDeps)
 }
 
 func TestModuleWaitsForAllDependencies(t *testing.T) {
@@ -229,4 +320,14 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 	require.NoError(t, err)
 	assert.NoError(t, services.StartManagerAndAwaitHealthy(context.Background(), servManager))
 	assert.NoError(t, services.StopManagerAndAwaitStopped(context.Background(), servManager))
+}
+
+func getStopDependenciesForModule(module string, services map[string]services.Service) []string {
+	var deps []string
+	for name := range services[module].(*moduleService).stopDeps(module) {
+		deps = append(deps, name)
+	}
+
+	sort.Strings(deps)
+	return deps
 }

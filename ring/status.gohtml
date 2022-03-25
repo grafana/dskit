@@ -39,23 +39,25 @@
             <td>{{ .HeartbeatTimestamp }}</td>
             <td>{{ .NumTokens }}</td>
             <td>{{ .Ownership }}%</td>
-            <td><button name="forget" value="{{ .ID }}" type="submit">Forget</button></td>
+            <td>
+                <button name="forget" value="{{ .ID }}" type="submit">Forget</button>
+            </td>
             </tr>
         {{ end }}
         </tbody>
     </table>
     <br>
     {{ if .ShowTokens }}
-        <input type="button" value="Hide Tokens" onclick="window.location.href = '?tokens=false' " />
+        <input type="button" value="Hide Tokens" onclick="window.location.href = '?tokens=false' "/>
     {{ else }}
-        <input type="button" value="Show Tokens" onclick="window.location.href = '?tokens=true'" />
+        <input type="button" value="Show Tokens" onclick="window.location.href = '?tokens=true'"/>
     {{ end }}
 
     {{ if .ShowTokens }}
         {{ range $i, $ing := .Ingesters }}
             <h2>Instance: {{ .ID }}</h2>
             <p>
-                Tokens:<br />
+                Tokens:<br/>
                 {{ range $token := .Tokens }}
                     {{ $token }}
                 {{ end }}

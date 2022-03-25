@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"fmt"
+	"html/template"
 	"net/http"
 	"sort"
 	"sync"
@@ -55,6 +56,9 @@ type BasicLifecyclerConfig struct {
 	// If true lifecycler doesn't unregister instance from the ring when it's stopping. Default value is false,
 	// which means unregistering.
 	KeepInstanceInTheRingOnShutdown bool
+
+	// CustomHTTPHandlerTemplate will be rendered by HTTPHandler instead of the embedded default one, if provided.
+	CustomHTTPHandlerTemplate *template.Template
 }
 
 // BasicLifecycler is a basic ring lifecycler which allows to hook custom
@@ -507,5 +511,5 @@ func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(l, l.cfg.HeartbeatPeriod).handle(w, req)
+	newRingPageHandler(l, l.cfg.HeartbeatPeriod, l.cfg.CustomHTTPHandlerTemplate).handle(w, req)
 }

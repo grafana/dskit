@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html/template"
 	"math"
 	"strings"
 	"sync"
@@ -164,6 +165,10 @@ type KVConfig struct {
 
 	// Codecs to register. Codecs need to be registered before joining other members.
 	Codecs []codec.Codec `yaml:"-"`
+
+	// CustomHTTPHandlerTemplate will be rendered by HTTPHandler instead of the embedded default one, if provided.
+	// This option is set internally and never exposed to the user.
+	CustomHTTPHandlerTemplate *template.Template `yaml:"-"`
 }
 
 // RegisterFlagsWithPrefix registers flags.

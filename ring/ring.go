@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"html/template"
 	"math"
 	"math/rand"
 	"net/http"
@@ -131,6 +132,10 @@ type Config struct {
 	// Whether the shuffle-sharding subring cache is disabled. This option is set
 	// internally and never exposed to the user.
 	SubringCacheDisabled bool `yaml:"-"`
+
+	// CustomHTTPHandlerTemplate will be rendered by HTTPHandler instead of the embedded default one, if provided.
+	// This option is set internally and never exposed to the user.
+	CustomHTTPHandlerTemplate *template.Template `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet with a specified prefix
@@ -861,7 +866,7 @@ func (r *Ring) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(r, r.cfg.HeartbeatTimeout).handle(w, req)
+	newRingPageHandler(r, r.cfg.HeartbeatTimeout, r.cfg.CustomHTTPHandlerTemplate).handle(w, req)
 }
 
 // Operation describes which instances can be included in the replica set, based on their state.

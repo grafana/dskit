@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"sort"
@@ -50,6 +51,10 @@ type LifecyclerConfig struct {
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
+
+	// CustomHTTPHandlerTemplate will be rendered by HTTPHandler instead of the embedded default one, if provided.
+	// This option is set internally and never exposed to the user.
+	CustomHTTPHandlerTemplate *template.Template `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -870,7 +875,7 @@ func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(i, i.cfg.HeartbeatPeriod).handle(w, req)
+	newRingPageHandler(i, i.cfg.HeartbeatPeriod, i.cfg.CustomHTTPHandlerTemplate).handle(w, req)
 }
 
 // unregister removes our entry from consul.

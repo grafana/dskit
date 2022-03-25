@@ -2,6 +2,7 @@ package memberlist
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -157,7 +158,7 @@ func (kvs *KVInitService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	sent, received := kv.getSentAndReceivedMessages()
 
-	v := pageData{
+	v := statusPageData{
 		Now:              time.Now(),
 		Memberlist:       kv.memberlist,
 		SortedMembers:    members,
@@ -183,7 +184,7 @@ func (kvs *KVInitService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err := pageTemplate.Execute(w, v)
+	err := defaultPageTemplate.Execute(w, v)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -276,7 +277,9 @@ func downloadKey(w http.ResponseWriter, kv *KV, store map[string]valueDesc, key 
 	_, _ = w.Write(encoded)
 }
 
-type pageData struct {
+// statusPageData is the root element of the status page served through HTTP.
+// Depending on the accepted content-type, it will be either marshaled as JSON or provided to the rendered HTML template.
+type statusPageData struct {
 	Now              time.Time
 	Memberlist       *memberlist.Memberlist
 	SortedMembers    []*memberlist.Node
@@ -285,149 +288,8 @@ type pageData struct {
 	ReceivedMessages []message
 }
 
-var pageTemplate = template.Must(template.New("webpage").Funcs(template.FuncMap{
+//go:embed status.gohtml
+var defaultPageContent string
+var defaultPageTemplate = template.Must(template.New("webpage").Funcs(template.FuncMap{
 	"StringsJoin": strings.Join,
-}).Parse(pageContent))
-
-const pageContent = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>Memberlist Status</title>
-	</head>
-	<body>
-		<h1>Memberlist Status</h1>
-		<p>Current time: {{ .Now }}</p>
-
-		<ul>
-		<li>Health Score: {{ .Memberlist.GetHealthScore }} (lower = better, 0 = healthy)</li>
-		<li>Members: {{ .Memberlist.NumMembers }}</li>
-		</ul>
-
-		<h2>KV Store</h2>
-
-		<table width="100%" border="1">
-			<thead>
-				<tr>
-					<th>Key</th>
-					<th>Value Details</th>
-					<th>Actions</th>
-				</tr>
-			</thead>
-
-			<tbody>
-				{{ range $k, $v := .Store }}
-				<tr>
-					<td>{{ $k }}</td>
-					<td>{{ $v }}</td>
-					<td>
-						<a href="?viewKey={{ $k }}&format=json">json</a>
-						| <a href="?viewKey={{ $k }}&format=json-pretty">json-pretty</a>
-						| <a href="?viewKey={{ $k }}&format=struct">struct</a>
-						| <a href="?downloadKey={{ $k }}">download</a>
-					</td>
-				</tr>
-				{{ end }}
-			</tbody>
-		</table>
-
-		<p>Note that value "version" is node-specific. It starts with 0 (on restart), and increases on each received update. Size is in bytes.</p>
-
-		<h2>Memberlist Cluster Members</h2>
-
-		<table width="100%" border="1">
-			<thead>
-				<tr>
-					<th>Name</th>
-					<th>Address</th>
-					<th>State</th>
-				</tr>
-			</thead>
-
-			<tbody>
-				{{ range .SortedMembers }}
-				<tr>
-					<td>{{ .Name }}</td>
-					<td>{{ .Address }}</td>
-					<td>{{ .State }}</td>
-				</tr>
-				{{ end }}
-			</tbody>
-		</table>
-
-		<p>State: 0 = Alive, 1 = Suspect, 2 = Dead, 3 = Left</p>
-
-		<h2>Received Messages</h2>
-
-		<a href="?deleteMessages=true">Delete All Messages (received and sent)</a>
-
-		<table width="100%" border="1">
-			<thead>
-				<tr>
-					<th>ID</th>
-					<th>Time</th>
-					<th>Key</th>
-					<th>Value in the Message</th>
-					<th>Version After Update (0 = no change)</th>
-					<th>Changes</th>
-					<th>Actions</th>
-				</tr>
-			</thead>
-
-			<tbody>
-				{{ range .ReceivedMessages }}
-				<tr>
-					<td>{{ .ID }}</td>
-					<td>{{ .Time.Format "15:04:05.000" }}</td>
-					<td>{{ .Pair.Key }}</td>
-					<td>size: {{ .Pair.Value | len }}, codec: {{ .Pair.Codec }}</td>
-					<td>{{ .Version }}</td>
-					<td>{{ StringsJoin .Changes ", " }}</td>
-					<td>
-						<a href="?viewMsg={{ .ID }}&format=json">json</a>
-						| <a href="?viewMsg={{ .ID }}&format=json-pretty">json-pretty</a>
-						| <a href="?viewMsg={{ .ID }}&format=struct">struct</a>
-					</td>
-				</tr>
-				{{ end }}
-			</tbody>
-		</table>
-
-		<h2>Sent Messages</h2>
-
-		<a href="?deleteMessages=true">Delete All Messages (received and sent)</a>
-
-		<table width="100%" border="1">
-			<thead>
-				<tr>
-					<th>ID</th>
-					<th>Time</th>
-					<th>Key</th>
-					<th>Value</th>
-					<th>Version</th>
-					<th>Changes</th>
-					<th>Actions</th>
-				</tr>
-			</thead>
-
-			<tbody>
-				{{ range .SentMessages }}
-				<tr>
-					<td>{{ .ID }}</td>
-					<td>{{ .Time.Format "15:04:05.000" }}</td>
-					<td>{{ .Pair.Key }}</td>
-					<td>size: {{ .Pair.Value | len }}, codec: {{ .Pair.Codec }}</td>
-					<td>{{ .Version }}</td>
-					<td>{{ StringsJoin .Changes ", " }}</td>
-					<td>
-						<a href="?viewMsg={{ .ID }}&format=json">json</a>
-						| <a href="?viewMsg={{ .ID }}&format=json-pretty">json-pretty</a>
-						| <a href="?viewMsg={{ .ID }}&format=struct">struct</a>
-					</td>
-				</tr>
-				{{ end }}
-			</tbody>
-		</table>
-	</body>
-</html>`
+}).Parse(defaultPageContent))

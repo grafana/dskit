@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -12,80 +13,14 @@ import (
 	"time"
 )
 
-const pageContent = `
-<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>Ring Status</title>
-	</head>
-	<body>
-		<h1>Ring Status</h1>
-		<p>Current time: {{ .Now }}</p>
-		<form action="" method="POST">
-			<input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">
-			<table width="100%" border="1">
-				<thead>
-					<tr>
-						<th>Instance ID</th>
-						<th>Availability Zone</th>
-						<th>State</th>
-						<th>Address</th>
-						<th>Registered At</th>
-						<th>Last Heartbeat</th>
-						<th>Tokens</th>
-						<th>Ownership</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					{{ range $i, $ing := .Ingesters }}
-					{{ if mod $i 2 }}
-					<tr>
-					{{ else }}
-					<tr bgcolor="#BEBEBE">
-					{{ end }}
-						<td>{{ .ID }}</td>
-						<td>{{ .Zone }}</td>
-						<td>{{ .State }}</td>
-						<td>{{ .Address }}</td>
-						<td>{{ .RegisteredTimestamp }}</td>
-						<td>{{ .HeartbeatTimestamp }}</td>
-						<td>{{ .NumTokens }}</td>
-						<td>{{ .Ownership }}%</td>
-						<td><button name="forget" value="{{ .ID }}" type="submit">Forget</button></td>
-					</tr>
-					{{ end }}
-				</tbody>
-			</table>
-			<br>
-			{{ if .ShowTokens }}
-			<input type="button" value="Hide Tokens" onclick="window.location.href = '?tokens=false' " />
-			{{ else }}
-			<input type="button" value="Show Tokens" onclick="window.location.href = '?tokens=true'" />
-			{{ end }}
-
-			{{ if .ShowTokens }}
-				{{ range $i, $ing := .Ingesters }}
-					<h2>Instance: {{ .ID }}</h2>
-					<p>
-						Tokens:<br />
-						{{ range $token := .Tokens }}
-							{{ $token }}
-						{{ end }}
-					</p>
-				{{ end }}
-			{{ end }}
-		</form>
-	</body>
-</html>`
-
-var pageTemplate *template.Template
+//go:embed status.gohtml
+var defaultPageContent string
+var defaultPageTemplate *template.Template
 
 func init() {
 	t := template.New("webpage")
 	t.Funcs(template.FuncMap{"mod": func(i, j int) bool { return i%j == 0 }})
-	pageTemplate = template.Must(t.Parse(pageContent))
+	defaultPageTemplate = template.Must(t.Parse(defaultPageContent))
 }
 
 type ingesterDesc struct {
@@ -114,12 +49,17 @@ type ringAccess interface {
 type ringPageHandler struct {
 	r               ringAccess
 	heartbeatPeriod time.Duration
+	template        *template.Template
 }
 
-func newRingPageHandler(r ringAccess, heartbeatPeriod time.Duration) *ringPageHandler {
+func newRingPageHandler(r ringAccess, heartbeatPeriod time.Duration, template *template.Template) *ringPageHandler {
+	if template == nil {
+		template = defaultPageTemplate
+	}
 	return &ringPageHandler{
 		r:               r,
 		heartbeatPeriod: heartbeatPeriod,
+		template:        template,
 	}
 }
 
@@ -195,7 +135,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 		Ingesters:  ingesters,
 		Now:        now,
 		ShowTokens: tokensParam == "true",
-	}, pageTemplate, req)
+	}, h.template, req)
 }
 
 // RenderHTTPResponse either responds with json or a rendered html page using the passed in template

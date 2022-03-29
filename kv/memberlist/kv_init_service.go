@@ -171,21 +171,13 @@ func (kvs *KVInitService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if strings.Contains(accept, "application/json") {
 		w.Header().Set("Content-Type", "application/json")
 
-		data, err := json.Marshal(v)
-		if err != nil {
+		if err := json.NewEncoder(w).Encode(v); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
 		}
-
-		// We ignore errors here, because we cannot do anything about them.
-		// Write will trigger sending Status code, so we cannot send a different status code afterwards.
-		// Also this isn't internal error, but error communicating with client.
-		_, _ = w.Write(data)
 		return
 	}
 
-	err := defaultPageTemplate.Execute(w, v)
-	if err != nil {
+	if err := defaultPageTemplate.Execute(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -226,7 +218,6 @@ func viewKey(w http.ResponseWriter, store map[string]valueDesc, key string, form
 }
 
 func formatValue(w http.ResponseWriter, val interface{}, format string) {
-
 	w.WriteHeader(200)
 	w.Header().Add("content-type", "text/plain")
 

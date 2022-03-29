@@ -21,7 +21,7 @@ func TestPage(t *testing.T) {
 		_ = ml.Shutdown()
 	})
 
-	require.NoError(t, pageTemplate.Execute(&bytes.Buffer{}, pageData{
+	require.NoError(t, defaultPageTemplate.Execute(&bytes.Buffer{}, pageData{
 		Now:           time.Now(),
 		Memberlist:    ml,
 		SortedMembers: ml.Members(),

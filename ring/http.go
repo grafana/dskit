@@ -119,7 +119,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 			Tokens:              ing.Tokens,
 			Zone:                ing.Zone,
 			NumTokens:           len(ing.Tokens),
-			Ownership:           float64(ownedTokens[id]) / float64(math.MaxUint32),
+			Ownership:           (float64(ownedTokens[id]) / float64(math.MaxUint32)) * 100,
 		})
 	}
 

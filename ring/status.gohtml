@@ -35,10 +35,10 @@
             <td>{{ .Zone }}</td>
             <td>{{ .State }}</td>
             <td>{{ .Address }}</td>
-            <td>{{ .RegisteredTimestamp }}</td>
-            <td>{{ .HeartbeatTimestamp }}</td>
+            <td>{{ .RegisteredTimestamp | timeOrEmptyString }}</td>
+            <td>{{ .HeartbeatTimestamp | durationSince }} ago ({{ .HeartbeatTimestamp.Format "15:04:05.999" }})</td>
             <td>{{ .NumTokens }}</td>
-            <td>{{ .Ownership }}%</td>
+            <td>{{ .Ownership | humanFloat }}%</td>
             <td>
                 <button name="forget" value="{{ .ID }}" type="submit">Forget</button>
             </td>

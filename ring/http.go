@@ -17,24 +17,34 @@ import (
 var defaultPageContent string
 var defaultPageTemplate = template.Must(template.New("webpage").Funcs(template.FuncMap{
 	"mod": func(i, j int) bool { return i%j == 0 },
+	"humanFloat": func(f float64) string {
+		return fmt.Sprintf("%.2g", f)
+	},
+	"timeOrEmptyString": func(t time.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		return t.Format(time.RFC3339Nano)
+	},
+	"durationSince": func(t time.Time) string { return time.Since(t).Truncate(time.Millisecond).String() },
 }).Parse(defaultPageContent))
-
-type ingesterDesc struct {
-	ID                  string   `json:"id"`
-	State               string   `json:"state"`
-	Address             string   `json:"address"`
-	HeartbeatTimestamp  string   `json:"timestamp"`
-	RegisteredTimestamp string   `json:"registered_timestamp"`
-	Zone                string   `json:"zone"`
-	Tokens              []uint32 `json:"tokens"`
-	NumTokens           int      `json:"-"`
-	Ownership           float64  `json:"-"`
-}
 
 type httpResponse struct {
 	Ingesters  []ingesterDesc `json:"shards"`
 	Now        time.Time      `json:"now"`
 	ShowTokens bool           `json:"-"`
+}
+
+type ingesterDesc struct {
+	ID                  string    `json:"id"`
+	State               string    `json:"state"`
+	Address             string    `json:"address"`
+	HeartbeatTimestamp  time.Time `json:"timestamp"`
+	RegisteredTimestamp time.Time `json:"registered_timestamp"`
+	Zone                string    `json:"zone"`
+	Tokens              []uint32  `json:"tokens"`
+	NumTokens           int       `json:"-"`
+	Ownership           float64   `json:"-"`
 }
 
 type ringAccess interface {
@@ -85,7 +95,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 	}
 	_, ownedTokens := ringDesc.countTokens()
 
-	ingesterIDs := []string{}
+	var ingesterIDs []string
 	for id := range ringDesc.Ingesters {
 		ingesterIDs = append(ingesterIDs, id)
 	}
@@ -95,24 +105,17 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 	var ingesters []ingesterDesc
 	for _, id := range ingesterIDs {
 		ing := ringDesc.Ingesters[id]
-		heartbeatTimestamp := time.Unix(ing.Timestamp, 0)
 		state := ing.State.String()
 		if !ing.IsHealthy(Reporting, h.heartbeatPeriod, now) {
-			state = unhealthy
-		}
-
-		// Format the registered timestamp.
-		registeredTimestamp := ""
-		if ing.RegisteredTimestamp != 0 {
-			registeredTimestamp = ing.GetRegisteredAt().String()
+			state = "UNHEALTHY"
 		}
 
 		ingesters = append(ingesters, ingesterDesc{
 			ID:                  id,
 			State:               state,
 			Address:             ing.Addr,
-			HeartbeatTimestamp:  heartbeatTimestamp.String(),
-			RegisteredTimestamp: registeredTimestamp,
+			HeartbeatTimestamp:  time.Unix(ing.Timestamp, 0).UTC(),
+			RegisteredTimestamp: ing.GetRegisteredAt().UTC(),
 			Tokens:              ing.Tokens,
 			Zone:                ing.Zone,
 			NumTokens:           len(ing.Tokens),
@@ -138,8 +141,8 @@ func renderHTTPResponse(w http.ResponseWriter, v httpResponse, t *template.Templ
 		return
 	}
 
-	err := t.Execute(w, v)
-	if err != nil {
+	w.Header().Set("Content-Type", "text/html")
+	if err := t.Execute(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -161,14 +164,7 @@ func (h *ringPageHandler) forget(ctx context.Context, id string) error {
 func writeJSONResponse(w http.ResponseWriter, v httpResponse) {
 	w.Header().Set("Content-Type", "application/json")
 
-	data, err := json.Marshal(v)
-	if err != nil {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
-
-	// We ignore errors here, because we cannot do anything about them.
-	// Write will trigger sending Status code, so we cannot send a different status code afterwards.
-	// Also this isn't internal error, but error communicating with client.
-	_, _ = w.Write(data)
 }

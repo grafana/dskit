@@ -22,6 +22,7 @@
 * [CHANGE] ring/client: It's now possible to set different value than `consul` as default KV store. #120
 * [CHANGE] Lifecycler: Default value of lifecycler's `final-sleep` is now `0s` (i.e. no sleep). #121
 * [CHANGE] Lifecycler: It's now possible to change default value of lifecycler's `final-sleep`. #121
+* [CHANGE] grpcclient: Make ping time and timeout into `Config.DialOption` arguments (with same defaults as corresponding `google.golang.org/grpc/keepalive.ClientParameters.Time*` parameters). #56
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

@@ -177,6 +177,7 @@ func (kvs *KVInitService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/html")
 	if err := defaultPageTemplate.Execute(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

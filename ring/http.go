@@ -141,8 +141,8 @@ func renderHTTPResponse(w http.ResponseWriter, v httpResponse, t *template.Templ
 		return
 	}
 
-	err := t.Execute(w, v)
-	if err != nil {
+	w.Header().Set("Content-Type", "text/html")
+	if err := t.Execute(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

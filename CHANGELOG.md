@@ -43,3 +43,4 @@
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
 * [BUGFIX] Allow in-memory kv-client to support multiple codec #132
 * [BUGFIX] Modules: fix a module waiting for other modules depending on it before stopping. #141
+* [BUGFIX] Multi KV: fix panic when using function to modify primary KV store in runtime. #153

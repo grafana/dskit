@@ -1,5 +1,10 @@
 package flagext
 
+// SecretWithValue returns Secret with specified value.
+func SecretWithValue(v string) Secret {
+	return Secret{value: v}
+}
+
 type Secret struct {
 	value string
 }

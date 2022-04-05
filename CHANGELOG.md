@@ -24,6 +24,7 @@
 * [CHANGE] Lifecycler: It's now possible to change default value of lifecycler's `final-sleep`. #121
 * [CHANGE] Minor cosmetic changes in ring and memberlist HTTP status templates. #149
 * [CHANGE] flagext.Secret: `value` field is no longer exported. Value can be read using `String()` method and set using `Set` method. #154
+* [CHANGE] spanlogger.SpanLogger: Log the user ID from the context with the `user` label instead of `org_id`
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

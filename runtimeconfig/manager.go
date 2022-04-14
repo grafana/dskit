@@ -48,7 +48,7 @@ func (mc *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&mc.LoadPath, "runtime-config.file", "", "File with the configuration that can be updated in runtime.")
 	f.DurationVar(&mc.ReloadPeriod, "runtime-config.reload-period", 10*time.Second, "How often to check runtime config file.")
 	f.StringVar(&mc.ChangeDetector, "runtime-config.change-detector", PeriodicReload,
-		"How to detect changes in the runtime configuration. Supported values are: poll and notify. The notify option may not work in every case e.g. NFS")
+		"How to detect changes in the runtime configuration. Supported values are: periodic-reload and notify. The notify option may not work in every case e.g. NFS")
 }
 
 // Manager periodically reloads the configuration from a file, and keeps this

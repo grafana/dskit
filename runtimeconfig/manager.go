@@ -27,8 +27,8 @@ import (
 type Loader func(r io.Reader) (interface{}, error)
 
 const (
-	Poll   = "poll"
-	Notify = "notify"
+	PeriodicReload = "periodic-reload"
+	Notify         = "notify"
 )
 
 // Config holds the config for an Manager instance.
@@ -47,7 +47,7 @@ type Config struct {
 func (mc *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&mc.LoadPath, "runtime-config.file", "", "File with the configuration that can be updated in runtime.")
 	f.DurationVar(&mc.ReloadPeriod, "runtime-config.reload-period", 10*time.Second, "How often to check runtime config file.")
-	f.StringVar(&mc.ChangeDetector, "runtime-config.change-detector", Poll,
+	f.StringVar(&mc.ChangeDetector, "runtime-config.change-detector", PeriodicReload,
 		"How to detect changes in the runtime configuration. Supported values are: poll and notify. The notify option may not work in every case e.g. NFS")
 }
 
@@ -137,10 +137,10 @@ func (om *Manager) detectChanges(ctx context.Context) error {
 		return nil
 	}
 
-	if om.cfg.ChangeDetector == "" || om.cfg.ChangeDetector == Poll {
-		om.pollLoop(ctx, func(error) bool { return false })
+	if om.cfg.ChangeDetector == "" || om.cfg.ChangeDetector == PeriodicReload {
+		om.periodicReload(ctx, func(error) bool { return false })
 	} else if om.cfg.ChangeDetector == Notify {
-		err := om.notifyLoop(ctx)
+		err := om.watchFileNotifications(ctx)
 		if err != nil {
 			level.Error(om.logger).Log("msg", "failed to initialize runtime configuration notify loop", "err", err)
 			return err
@@ -152,11 +152,10 @@ func (om *Manager) detectChanges(ctx context.Context) error {
 	return nil
 }
 
-// notifyLoop utilizes file notifications to reduce the amount of reads it performs
-// it will conditionally resort to poll reading when encountering errors loading the configuration
-func (om *Manager) notifyLoop(ctx context.Context) error {
-	// This is tricky to get right, see the inotify man page and https://github.com/fsnotify/fsnotify/issues/372 for a list of issues
-
+// watchForNotifications utilizes file notifications to reduce the amount of reads it performs.
+// It will conditionally resort to timed reads when encountering errors loading the configuration.
+// Overall this tricky to get right, see the inotify man page and https://github.com/fsnotify/fsnotify/issues/372 for a list of issues
+func (om *Manager) watchFileNotifications(ctx context.Context) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
@@ -164,74 +163,82 @@ func (om *Manager) notifyLoop(ctx context.Context) error {
 	defer watcher.Close()
 
 	// If the file is a symlink follow it, otherwise modifications could be missed
-	fp, err := filepath.EvalSymlinks(om.cfg.LoadPath)
+	symlinkFp, err := filepath.EvalSymlinks(om.cfg.LoadPath)
 	if err != nil {
 		return err
 	}
-
+	fp, err := filepath.Abs(symlinkFp)
+	if err != nil {
+		return err
+	}
 	// Watch the directory rather than the file directly to handle the file's remove/add, since inodes are watched not names
 	dir, _ := filepath.Split(fp)
+	if dir == "" {
+		return errors.New("Could not determine path to watch for notifications from configured load path")
+	}
+
 	err = watcher.Add(dir)
 	if err != nil {
 		return err
 	}
 
 	done := make(chan bool)
-
-	go func() {
-		defer func() {
-			done <- true
-		}()
-
-		// It's okay to stop polling if the file doesn't exist since another event will happen upon creation
-		stopPredicate := func(err error) bool {
-			return err == nil || errors.Is(err, fs.ErrNotExist)
-		}
-
-		// Attempt to load the config first since no changes may arrive
-		om.pollLoop(ctx, stopPredicate)
-
-		opMask := fsnotify.Write | fsnotify.Create
-
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-
-				if fp == event.Name && (event.Op&opMask != 0) {
-				drain:
-					for {
-						select {
-						case <-watcher.Events:
-							// Drain any remaining events before reading; they are unnecessary
-						default:
-							break drain
-						}
-					}
-					om.pollLoop(ctx, stopPredicate)
-				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				// TODO: Investigate impact of these errors and if more should be done to handle them
-				level.Error(om.logger).Log("msg", "error while watching runtime config", "err", err)
-			case <-ctx.Done():
-				return
-			}
-		}
-
-	}()
-
+	go om.notifyLoop(ctx, watcher, fp, done)
 	<-done
 	<-ctx.Done()
 
 	return nil
 }
 
-func (om *Manager) pollLoop(ctx context.Context, stopPredicate func(error) bool) {
+func (om *Manager) notifyLoop(ctx context.Context, watcher *fsnotify.Watcher, filePath string, done chan<- bool) {
+	defer func() {
+		done <- true
+	}()
+
+	// It's okay to stop reloading if the file doesn't exist since another event will happen upon creation
+	stopReloadingPredicate := func(err error) bool {
+		return err == nil || errors.Is(err, fs.ErrNotExist)
+	}
+
+	// Load the config or see it doesn't exist since no future changes may arrive
+	// This call will return when either of the above holds because of stopReloadingPredicate
+	om.periodicReload(ctx, stopReloadingPredicate)
+
+	opMask := fsnotify.Write | fsnotify.Create
+
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+
+			if filePath == event.Name && (event.Op&opMask != 0) {
+			drain:
+				for {
+					select {
+					case <-watcher.Events:
+						// Drain any remaining events before reading; they are unnecessary
+					default:
+						break drain
+					}
+				}
+				om.periodicReload(ctx, stopReloadingPredicate)
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			// TODO: Investigate impact of these errors and if more should be done to handle them
+			level.Error(om.logger).Log("msg", "error while watching runtime config", "err", err)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// periodicReload loads the configuration every reload period until stopPredicate returns true or the context is closed
+func (om *Manager) periodicReload(ctx context.Context, stopPredicate func(error) bool) {
 	ticker := time.NewTicker(om.cfg.ReloadPeriod)
 	defer ticker.Stop()
 

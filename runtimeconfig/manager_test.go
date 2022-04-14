@@ -111,6 +111,76 @@ func TestNewOverridesManager(t *testing.T) {
 	require.NotNil(t, overridesManager.GetConfig())
 }
 
+func TestNotifyChangeDetector(t *testing.T) {
+	// Create a directory to avoid setting a watch on the base temporary directory which could be noisy
+	dir, err := os.MkdirTemp("", "test-change-detection")
+	require.NoError(t, err)
+
+	tempFile, err := os.CreateTemp(dir, "runtime-config")
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, tempFile.Close())
+		require.NoError(t, os.Remove(tempFile.Name()))
+		require.NoError(t, os.Remove(dir))
+	}()
+
+	_, err = tempFile.WriteString(`overrides:
+  user1:
+    limit2: 150`)
+	require.NoError(t, err)
+
+	reloadPeriod := time.Second / 2
+
+	overridesManagerConfig := Config{
+		ReloadPeriod:   reloadPeriod,
+		LoadPath:       tempFile.Name(),
+		Loader:         testLoadOverrides,
+		ChangeDetector: Notify,
+	}
+
+	overridesManager, err := New(overridesManagerConfig, nil, log.NewLogfmtLogger(os.Stdout))
+	require.NoError(t, err)
+
+	ch := overridesManager.CreateListenerChannel(2)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
+
+	// The start method and run method both fetch this configuration first
+	var newValue interface{}
+	for i := 0; i < 2; i++ {
+		select {
+		case newValue = <-ch:
+			to := newValue.(*testOverrides)
+			require.Equal(t, 150, to.Overrides["user1"].Limit2)
+		case <-time.After(reloadPeriod * 2):
+			t.Fatal("listener was not called")
+		}
+	}
+
+	offset, err := tempFile.Seek(int64(0), 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), offset)
+
+	_, err = tempFile.WriteString(`overrides:
+  user1:
+    limit2: 200`)
+	require.NoError(t, err)
+
+	select {
+	case newValue = <-ch:
+		to := newValue.(*testOverrides)
+		require.Equal(t, 200, to.Overrides["user1"].Limit2) // from overrides
+	case <-time.After(reloadPeriod * 2):
+		t.Fatal("listener was not called")
+	}
+	// Cleaning up
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
+
+	// Make sure test limits were loaded.
+	require.NotNil(t, overridesManager.GetConfig())
+
+}
+
 func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	tempFile, err := os.CreateTemp("", "test-validation")
 	require.NoError(t, err)

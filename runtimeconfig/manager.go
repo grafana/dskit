@@ -7,10 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -23,6 +26,11 @@ import (
 // Loader loads the configuration from file.
 type Loader func(r io.Reader) (interface{}, error)
 
+const (
+	Poll   = "poll"
+	Notify = "notify"
+)
+
 // Config holds the config for an Manager instance.
 // It holds config related to loading per-tenant config.
 type Config struct {
@@ -31,12 +39,16 @@ type Config struct {
 	// non-empty value
 	LoadPath string `yaml:"file"`
 	Loader   Loader `yaml:"-"`
+	// optional
+	ChangeDetector string `yaml:"change_detector" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
 func (mc *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&mc.LoadPath, "runtime-config.file", "", "File with the configuration that can be updated in runtime.")
 	f.DurationVar(&mc.ReloadPeriod, "runtime-config.reload-period", 10*time.Second, "How often to check runtime config file.")
+	f.StringVar(&mc.ChangeDetector, "runtime-config.change-detector", Poll,
+		"How to detect changes in the runtime configuration. Supported values are: poll and notify. The notify option may not work in every case e.g. NFS")
 }
 
 // Manager periodically reloads the configuration from a file, and keeps this
@@ -76,7 +88,7 @@ func New(cfg Config, registerer prometheus.Registerer, logger log.Logger) (*Mana
 		logger: logger,
 	}
 
-	mgr.Service = services.NewBasicService(mgr.starting, mgr.loop, mgr.stopping)
+	mgr.Service = services.NewBasicService(mgr.starting, mgr.detectChanges, mgr.stopping)
 	return &mgr, nil
 }
 
@@ -118,13 +130,108 @@ func (om *Manager) CloseListenerChannel(listener <-chan interface{}) {
 	}
 }
 
-func (om *Manager) loop(ctx context.Context) error {
+func (om *Manager) detectChanges(ctx context.Context) error {
 	if om.cfg.LoadPath == "" {
 		level.Info(om.logger).Log("msg", "runtime config disabled: file not specified")
 		<-ctx.Done()
 		return nil
 	}
 
+	if om.cfg.ChangeDetector == "" || om.cfg.ChangeDetector == Poll {
+		om.pollLoop(ctx, func(error) bool { return false })
+	} else if om.cfg.ChangeDetector == Notify {
+		err := om.notifyLoop(ctx)
+		if err != nil {
+			level.Error(om.logger).Log("msg", "failed to initialize runtime configuration notify loop", "err", err)
+			return err
+		}
+	} else {
+		return errors.Errorf("Unsupported runtime configuration change detector: %s", om.cfg.ChangeDetector)
+	}
+
+	return nil
+}
+
+// notifyLoop utilizes file notifications to reduce the amount of reads it performs
+// it will conditionally resort to poll reading when encountering errors loading the configuration
+func (om *Manager) notifyLoop(ctx context.Context) error {
+	// This is tricky to get right, see the inotify man page and https://github.com/fsnotify/fsnotify/issues/372 for a list of issues
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	defer watcher.Close()
+
+	// If the file is a symlink follow it, otherwise modifications could be missed
+	fp, err := filepath.EvalSymlinks(om.cfg.LoadPath)
+	if err != nil {
+		return err
+	}
+
+	// Watch the directory rather than the file directly to handle the file's remove/add, since inodes are watched not names
+	dir, _ := filepath.Split(fp)
+	err = watcher.Add(dir)
+	if err != nil {
+		return err
+	}
+
+	done := make(chan bool)
+
+	go func() {
+		defer func() {
+			done <- true
+		}()
+
+		// It's okay to stop polling if the file doesn't exist since another event will happen upon creation
+		stopPredicate := func(err error) bool {
+			return err == nil || errors.Is(err, fs.ErrNotExist)
+		}
+
+		// Attempt to load the config first since no changes may arrive
+		om.pollLoop(ctx, stopPredicate)
+
+		opMask := fsnotify.Write | fsnotify.Create
+
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+
+				if fp == event.Name && (event.Op&opMask != 0) {
+				drain:
+					for {
+						select {
+						case <-watcher.Events:
+							// Drain any remaining events before reading; they are unnecessary
+						default:
+							break drain
+						}
+					}
+					om.pollLoop(ctx, stopPredicate)
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				// TODO: Investigate impact of these errors and if more should be done to handle them
+				level.Error(om.logger).Log("msg", "error while watching runtime config", "err", err)
+			case <-ctx.Done():
+				return
+			}
+		}
+
+	}()
+
+	<-done
+	<-ctx.Done()
+
+	return nil
+}
+
+func (om *Manager) pollLoop(ctx context.Context, stopPredicate func(error) bool) {
 	ticker := time.NewTicker(om.cfg.ReloadPeriod)
 	defer ticker.Stop()
 
@@ -136,8 +243,11 @@ func (om *Manager) loop(ctx context.Context) error {
 				// Log but don't stop on error - we don't want to halt all ingesters because of a typo
 				level.Error(om.logger).Log("msg", "failed to load config", "err", err)
 			}
+			if stopPredicate(err) {
+				return
+			}
 		case <-ctx.Done():
-			return nil
+			return
 		}
 	}
 }

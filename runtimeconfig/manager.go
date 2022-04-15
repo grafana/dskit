@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -65,8 +64,9 @@ type Manager struct {
 	configMtx sync.RWMutex
 	config    interface{}
 
-	configLoadSuccess prometheus.Gauge
-	configHash        *prometheus.GaugeVec
+	configLoadSuccess       prometheus.Gauge
+	configHash              *prometheus.GaugeVec
+	configNotificationWakes prometheus.Counter
 }
 
 // New creates an instance of Manager and starts reload config loop based on config
@@ -85,6 +85,11 @@ func New(cfg Config, registerer prometheus.Registerer, logger log.Logger) (*Mana
 			Name: "runtime_config_hash",
 			Help: "Hash of the currently active runtime config file.",
 		}, []string{"sha256"}),
+		configNotificationWakes: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "runtime_config_notification_wakes",
+			Help: "The number of times file notifications caused a wake.",
+		}),
+
 		logger: logger,
 	}
 
@@ -138,7 +143,7 @@ func (om *Manager) detectChanges(ctx context.Context) error {
 	}
 
 	if om.cfg.ChangeDetector == "" || om.cfg.ChangeDetector == PeriodicReload {
-		om.periodicReload(ctx, func(error) bool { return false })
+		om.periodicReload(ctx)
 	} else if om.cfg.ChangeDetector == Notify {
 		err := om.watchFileNotifications(ctx)
 		if err != nil {
@@ -152,8 +157,7 @@ func (om *Manager) detectChanges(ctx context.Context) error {
 	return nil
 }
 
-// watchForNotifications utilizes file notifications to reduce the amount of reads it performs.
-// It will conditionally resort to timed reads when encountering errors loading the configuration.
+// watchForNotifications utilizes file notifications to improve responsiveness of runtime configurtion loading
 // Overall this tricky to get right, see the inotify man page and https://github.com/fsnotify/fsnotify/issues/372 for a list of issues
 func (om *Manager) watchFileNotifications(ctx context.Context) error {
 	watcher, err := fsnotify.NewWatcher()
@@ -181,6 +185,7 @@ func (om *Manager) watchFileNotifications(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	om.logger.Log("Watching %s", dir)
 
 	done := make(chan bool)
 	go om.notifyLoop(ctx, watcher, fp, done)
@@ -191,27 +196,26 @@ func (om *Manager) watchFileNotifications(ctx context.Context) error {
 }
 
 func (om *Manager) notifyLoop(ctx context.Context, watcher *fsnotify.Watcher, filePath string, done chan<- bool) {
+	// Still have background reads as a failsafe. This value can be configured higher if notifications are providing responsiveness.
+	ticker := time.NewTicker(om.cfg.ReloadPeriod)
+
 	defer func() {
+		ticker.Stop()
 		done <- true
 	}()
-
-	// It's okay to stop reloading if the file doesn't exist since another event will happen upon creation
-	stopReloadingPredicate := func(err error) bool {
-		return err == nil || errors.Is(err, fs.ErrNotExist)
-	}
-
-	// Load the config or see it doesn't exist since no future changes may arrive
-	// This call will return when either of the above holds because of stopReloadingPredicate
-	om.periodicReload(ctx, stopReloadingPredicate)
 
 	opMask := fsnotify.Write | fsnotify.Create
 
 	for {
 		select {
+		case <-ticker.C:
+			om.attemptLoadConfig()
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
 			}
+
+			om.configNotificationWakes.Inc()
 
 			if filePath == event.Name && (event.Op&opMask != 0) {
 			drain:
@@ -223,13 +227,12 @@ func (om *Manager) notifyLoop(ctx context.Context, watcher *fsnotify.Watcher, fi
 						break drain
 					}
 				}
-				om.periodicReload(ctx, stopReloadingPredicate)
+				om.attemptLoadConfig()
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return
 			}
-			// TODO: Investigate impact of these errors and if more should be done to handle them
 			level.Error(om.logger).Log("msg", "error while watching runtime config", "err", err)
 		case <-ctx.Done():
 			return
@@ -238,24 +241,25 @@ func (om *Manager) notifyLoop(ctx context.Context, watcher *fsnotify.Watcher, fi
 }
 
 // periodicReload loads the configuration every reload period until stopPredicate returns true or the context is closed
-func (om *Manager) periodicReload(ctx context.Context, stopPredicate func(error) bool) {
+func (om *Manager) periodicReload(ctx context.Context) {
 	ticker := time.NewTicker(om.cfg.ReloadPeriod)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			err := om.loadConfig()
-			if err != nil {
-				// Log but don't stop on error - we don't want to halt all ingesters because of a typo
-				level.Error(om.logger).Log("msg", "failed to load config", "err", err)
-			}
-			if stopPredicate(err) {
-				return
-			}
+			om.attemptLoadConfig()
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+func (om *Manager) attemptLoadConfig() {
+	err := om.loadConfig()
+	if err != nil {
+		// Log but don't stop on error - we don't want to halt all ingesters because of a typo
+		level.Error(om.logger).Log("msg", "failed to load config", "err", err)
 	}
 }
 

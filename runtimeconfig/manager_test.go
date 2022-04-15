@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -116,69 +117,100 @@ func TestNotifyChangeDetector(t *testing.T) {
 	dir, err := os.MkdirTemp("", "test-change-detection")
 	require.NoError(t, err)
 
-	tempFile, err := os.CreateTemp(dir, "runtime-config")
-	require.NoError(t, err)
+	file := filepath.Join(dir, "runtime-config.yaml")
 
 	defer func() {
-		require.NoError(t, tempFile.Close())
-		require.NoError(t, os.Remove(tempFile.Name()))
+		require.NoError(t, os.Remove(file))
 		require.NoError(t, os.Remove(dir))
 	}()
 
-	_, err = tempFile.WriteString(`overrides:
-  user1:
-    limit2: 150`)
-	require.NoError(t, err)
+	writeRuntimeConfig := func(value int) string {
+		f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE, 0600)
+		require.NoError(t, err)
 
-	reloadPeriod := time.Second / 2
+		defer func() {
+			require.NoError(t, f.Close())
+		}()
+
+		s := fmt.Sprintf("overrides:\n user1:\n  limit2: %d", value)
+		_, err = f.WriteString(s)
+		require.NoError(t, err)
+		require.NoError(t, f.Sync())
+		return s
+	}
+	reloadPeriod := time.Second * 10 // Set this high to rely on notifications
 
 	overridesManagerConfig := Config{
 		ReloadPeriod:   reloadPeriod,
-		LoadPath:       tempFile.Name(),
+		LoadPath:       file,
 		Loader:         testLoadOverrides,
 		ChangeDetector: Notify,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, nil, log.NewLogfmtLogger(os.Stdout))
+	reg := prometheus.NewPedanticRegistry()
+	overridesManager, err := New(overridesManagerConfig, reg, log.NewLogfmtLogger(os.Stdout))
 	require.NoError(t, err)
 
-	ch := overridesManager.CreateListenerChannel(2)
+	limit2 := 1
+	config := writeRuntimeConfig(limit2)
+	ch := overridesManager.CreateListenerChannel(1)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
-	// The start method and run method both fetch this configuration first
+	// The start method fetches the runtime config first
 	var newValue interface{}
-	for i := 0; i < 2; i++ {
-		select {
-		case newValue = <-ch:
-			to := newValue.(*testOverrides)
-			require.Equal(t, 150, to.Overrides["user1"].Limit2)
-		case <-time.After(reloadPeriod * 2):
-			t.Fatal("listener was not called")
-		}
+	select {
+	case newValue = <-ch:
+		to := newValue.(*testOverrides)
+		require.Equal(t, limit2, to.Overrides["user1"].Limit2)
+	case <-time.After(reloadPeriod / 2):
+		t.Fatal("listener was not called")
 	}
 
-	offset, err := tempFile.Seek(int64(0), 0)
-	require.NoError(t, err)
-	require.Equal(t, int64(0), offset)
+	// check if the metrics is set to the config map value before
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP runtime_config_hash Hash of the currently active runtime config file.
+					# TYPE runtime_config_hash gauge
+					runtime_config_hash{sha256="%s"} 1
+					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+					# TYPE runtime_config_last_reload_successful gauge
+					runtime_config_last_reload_successful 1
+          # HELP runtime_config_notification_wakes The number of times file notifications caused a wake.
+          # TYPE runtime_config_notification_wakes counter
+          runtime_config_notification_wakes %d
+				`,
+		fmt.Sprintf("%x", sha256.Sum256([]byte(config))),
+		0))))
 
-	_, err = tempFile.WriteString(`overrides:
-  user1:
-    limit2: 200`)
-	require.NoError(t, err)
+	limit2 = 2
+	config = writeRuntimeConfig(limit2)
 
 	select {
 	case newValue = <-ch:
 		to := newValue.(*testOverrides)
-		require.Equal(t, 200, to.Overrides["user1"].Limit2) // from overrides
-	case <-time.After(reloadPeriod * 2):
+		require.Equal(t, limit2, to.Overrides["user1"].Limit2)
+	case <-time.After(reloadPeriod / 2):
 		t.Fatal("listener was not called")
 	}
+	// check if the metrics is set to the config map value before
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP runtime_config_hash Hash of the currently active runtime config file.
+					# TYPE runtime_config_hash gauge
+					runtime_config_hash{sha256="%s"} 1
+					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+					# TYPE runtime_config_last_reload_successful gauge
+					runtime_config_last_reload_successful 1
+          # HELP runtime_config_notification_wakes The number of times file notifications caused a wake.
+          # TYPE runtime_config_notification_wakes counter
+          runtime_config_notification_wakes %d
+				`,
+		fmt.Sprintf("%x", sha256.Sum256([]byte(config))),
+		1))))
+
 	// Cleaning up
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
 
 	// Make sure test limits were loaded.
 	require.NotNil(t, overridesManager.GetConfig())
-
 }
 
 func TestManager_ListenerWithDefaultLimits(t *testing.T) {
@@ -220,6 +252,9 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful 1
+          # HELP runtime_config_notification_wakes The number of times file notifications caused a wake.
+          # TYPE runtime_config_notification_wakes counter
+          runtime_config_notification_wakes 0
 				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
 
 	// need to use buffer, otherwise loadConfig will throw away update
@@ -256,6 +291,9 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful 1
+          # HELP runtime_config_notification_wakes The number of times file notifications caused a wake.
+          # TYPE runtime_config_notification_wakes counter
+          runtime_config_notification_wakes 0
 				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
 
 	// Cleaning up

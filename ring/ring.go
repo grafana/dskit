@@ -183,10 +183,8 @@ type Ring struct {
 	// If set to nil, no caching is done (used by tests, and subrings).
 	shuffledSubringCache map[subringCacheKey]*Ring
 
-	memberOwnershipGaugeVec *prometheus.GaugeVec
 	numMembersGaugeVec      *prometheus.GaugeVec
 	totalTokensGauge        prometheus.Gauge
-	numTokensGaugeVec       *prometheus.GaugeVec
 	oldestTimestampGaugeVec *prometheus.GaugeVec
 
 	logger log.Logger

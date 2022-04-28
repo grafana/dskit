@@ -7,8 +7,6 @@ import (
 
 type LifecyclerMetrics struct {
 	consulHeartbeats prometheus.Counter
-	tokensOwned      prometheus.Gauge
-	tokensToOwn      prometheus.Gauge
 	shutdownDuration *prometheus.HistogramVec
 }
 

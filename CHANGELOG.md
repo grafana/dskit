@@ -24,6 +24,11 @@
 * [CHANGE] Minor cosmetic changes in ring and memberlist HTTP status templates. #149
 * [CHANGE] flagext.Secret: `value` field is no longer exported. Value can be read using `String()` method and set using `Set` method. #154
 * [CHANGE] spanlogger.SpanLogger: Log the user ID from the context with the `user` label instead of `org_id`. #156
+* [CHANGE] ring: removed the following metrics from ring client and lifecycler: #161
+  * `member_ring_tokens_owned`
+  * `member_ring_tokens_to_own`
+  * `ring_tokens_owned`
+  * `ring_member_ownership_percent`
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

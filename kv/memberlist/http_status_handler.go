@@ -14,11 +14,13 @@ import (
 	"github.com/hashicorp/memberlist"
 )
 
+// HTTPStatusHandler is a http.Handler with status information about memberlist.
 type HTTPStatusHandler struct {
 	kvs *KVInitService
 	tpl *template.Template
 }
 
+// StatusPageData represents the data passed to the template rendered by HTTPStatusHandler
 type StatusPageData struct {
 	Now              time.Time
 	Memberlist       *memberlist.Memberlist
@@ -28,6 +30,7 @@ type StatusPageData struct {
 	ReceivedMessages []Message
 }
 
+// NewHTTPStatusHandler creates a new HTTPStatusHandler that will render the provided template using the data from StatusPageData.
 func NewHTTPStatusHandler(kvs *KVInitService, tpl *template.Template) HTTPStatusHandler {
 	return HTTPStatusHandler{kvs, tpl}
 }

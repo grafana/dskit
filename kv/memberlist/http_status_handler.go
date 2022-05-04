@@ -19,13 +19,13 @@ type HTTPStatusHandler struct {
 	tpl *template.Template
 }
 
-type statusPageData struct {
+type StatusPageData struct {
 	Now              time.Time
 	Memberlist       *memberlist.Memberlist
 	SortedMembers    []*memberlist.Node
-	Store            map[string]valueDesc
-	SentMessages     []message
-	ReceivedMessages []message
+	Store            map[string]ValueDesc
+	SentMessages     []Message
+	ReceivedMessages []Message
 }
 
 func NewHTTPStatusHandler(kvs *KVInitService, tpl *template.Template) HTTPStatusHandler {
@@ -96,7 +96,7 @@ func (h HTTPStatusHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	sent, received := kv.getSentAndReceivedMessages()
 
-	v := statusPageData{
+	v := StatusPageData{
 		Now:              time.Now(),
 		Memberlist:       kv.memberlist,
 		SortedMembers:    members,
@@ -131,7 +131,7 @@ func getFormat(req *http.Request) string {
 	return format
 }
 
-func viewMessage(w http.ResponseWriter, kv *KV, msg message, format string) {
+func viewMessage(w http.ResponseWriter, kv *KV, msg Message, format string) {
 	c := kv.GetCodec(msg.Pair.Codec)
 	if c == nil {
 		http.Error(w, "codec not found", http.StatusNotFound)
@@ -147,7 +147,7 @@ func viewMessage(w http.ResponseWriter, kv *KV, msg message, format string) {
 	formatValue(w, val, format)
 }
 
-func viewKey(w http.ResponseWriter, store map[string]valueDesc, key string, format string) {
+func viewKey(w http.ResponseWriter, store map[string]ValueDesc, key string, format string) {
 	if store[key].value == nil {
 		http.Error(w, "value not found", http.StatusNotFound)
 		return
@@ -177,7 +177,7 @@ func formatValue(w http.ResponseWriter, val interface{}, format string) {
 	}
 }
 
-func downloadKey(w http.ResponseWriter, kv *KV, store map[string]valueDesc, key string) {
+func downloadKey(w http.ResponseWriter, kv *KV, store map[string]ValueDesc, key string) {
 	if store[key].value == nil {
 		http.Error(w, "value not found", http.StatusNotFound)
 		return
@@ -185,7 +185,7 @@ func downloadKey(w http.ResponseWriter, kv *KV, store map[string]valueDesc, key 
 
 	val := store[key]
 
-	c := kv.GetCodec(store[key].codecID)
+	c := kv.GetCodec(store[key].CodecID)
 	if c == nil {
 		http.Error(w, "codec not found", http.StatusNotFound)
 		return
@@ -200,7 +200,7 @@ func downloadKey(w http.ResponseWriter, kv *KV, store map[string]valueDesc, key 
 	w.Header().Add("content-type", "application/octet-stream")
 	// Set content-length so that client knows whether it has received full response or not.
 	w.Header().Add("content-length", strconv.Itoa(len(encoded)))
-	w.Header().Add("content-disposition", fmt.Sprintf("attachment; filename=%d-%s", val.version, key))
+	w.Header().Add("content-disposition", fmt.Sprintf("attachment; filename=%d-%s", val.Version, key))
 	w.WriteHeader(200)
 
 	// Ignore errors, we cannot do anything about them.

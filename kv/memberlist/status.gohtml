@@ -1,4 +1,4 @@
-{{- /*gotype: github.com/grafana/dskit/kv/memberlist.statusPageData */ -}}
+{{- /*gotype: github.com/grafana/dskit/kv/memberlist.StatusPageData */ -}}
 <!DOCTYPE html>
 <html>
 <head>
@@ -20,7 +20,8 @@
     <thead>
     <tr>
         <th>Key</th>
-        <th>Value Details</th>
+        <th>Codec</th>
+        <th>Version</th>
         <th>Actions</th>
     </tr>
     </thead>
@@ -29,7 +30,8 @@
     {{ range $k, $v := .Store }}
         <tr>
             <td>{{ $k }}</td>
-            <td>{{ $v }}</td>
+            <td>{{ $v.CodecID }}</td>
+            <td>{{ $v.Version }}</td>
             <td>
                 <a href="?viewKey={{ $k }}&format=json">json</a>
                 | <a href="?viewKey={{ $k }}&format=json-pretty">json-pretty</a>

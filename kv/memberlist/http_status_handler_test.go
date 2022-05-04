@@ -18,12 +18,12 @@ func TestPage(t *testing.T) {
 		_ = ml.Shutdown()
 	})
 
-	require.NoError(t, defaultPageTemplate.Execute(&bytes.Buffer{}, statusPageData{
+	require.NoError(t, defaultPageTemplate.Execute(&bytes.Buffer{}, StatusPageData{
 		Now:           time.Now(),
 		Memberlist:    ml,
 		SortedMembers: ml.Members(),
 		Store:         nil,
-		ReceivedMessages: []message{{
+		ReceivedMessages: []Message{{
 			ID:   10,
 			Time: time.Now(),
 			Size: 50,
@@ -36,7 +36,7 @@ func TestPage(t *testing.T) {
 			Changes: []string{"A", "B", "C"},
 		}},
 
-		SentMessages: []message{{
+		SentMessages: []Message{{
 			ID:   10,
 			Time: time.Now(),
 			Size: 50,

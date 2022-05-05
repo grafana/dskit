@@ -22,12 +22,13 @@ type HTTPStatusHandler struct {
 
 // StatusPageData represents the data passed to the template rendered by HTTPStatusHandler
 type StatusPageData struct {
-	Now              time.Time
-	Memberlist       *memberlist.Memberlist
-	SortedMembers    []*memberlist.Node
-	Store            map[string]ValueDesc
-	SentMessages     []Message
-	ReceivedMessages []Message
+	Now                       time.Time
+	Memberlist                *memberlist.Memberlist
+	SortedMembers             []*memberlist.Node
+	Store                     map[string]ValueDesc
+	MessageHistoryBufferBytes int
+	SentMessages              []Message
+	ReceivedMessages          []Message
 }
 
 // NewHTTPStatusHandler creates a new HTTPStatusHandler that will render the provided template using the data from StatusPageData.
@@ -100,12 +101,13 @@ func (h HTTPStatusHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	sent, received := kv.getSentAndReceivedMessages()
 
 	v := StatusPageData{
-		Now:              time.Now(),
-		Memberlist:       kv.memberlist,
-		SortedMembers:    members,
-		Store:            kv.storeCopy(),
-		SentMessages:     sent,
-		ReceivedMessages: received,
+		Now:                       time.Now(),
+		Memberlist:                kv.memberlist,
+		SortedMembers:             members,
+		Store:                     kv.storeCopy(),
+		MessageHistoryBufferBytes: kv.cfg.MessageHistoryBufferBytes,
+		SentMessages:              sent,
+		ReceivedMessages:          received,
 	}
 
 	accept := req.Header.Get("Accept")

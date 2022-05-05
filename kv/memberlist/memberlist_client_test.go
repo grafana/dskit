@@ -1071,18 +1071,18 @@ func TestRejoin(t *testing.T) {
 }
 
 func TestMessageBuffer(t *testing.T) {
-	buf := []message(nil)
+	buf := []Message(nil)
 	size := 0
 
-	buf, size = addMessageToBuffer(buf, size, 100, message{Size: 50})
+	buf, size = addMessageToBuffer(buf, size, 100, Message{Size: 50})
 	assert.Len(t, buf, 1)
 	assert.Equal(t, size, 50)
 
-	buf, size = addMessageToBuffer(buf, size, 100, message{Size: 50})
+	buf, size = addMessageToBuffer(buf, size, 100, Message{Size: 50})
 	assert.Len(t, buf, 2)
 	assert.Equal(t, size, 100)
 
-	buf, size = addMessageToBuffer(buf, size, 100, message{Size: 25})
+	buf, size = addMessageToBuffer(buf, size, 100, Message{Size: 25})
 	assert.Len(t, buf, 2)
 	assert.Equal(t, size, 75)
 }

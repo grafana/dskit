@@ -53,3 +53,4 @@
 * [BUGFIX] Allow in-memory kv-client to support multiple codec #132
 * [BUGFIX] Modules: fix a module waiting for other modules depending on it before stopping. #141
 * [BUGFIX] Multi KV: fix panic when using function to modify primary KV store in runtime. #153
+* [BUGFIX] Lifecycler: if the ring backend storage is reset, the instance adds itself back to the ring with an updated registration timestamp set to current time. #165

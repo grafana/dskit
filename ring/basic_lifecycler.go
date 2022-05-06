@@ -498,10 +498,6 @@ func (l *BasicLifecycler) run(fn func() error) error {
 	}
 }
 
-func (l *BasicLifecycler) casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	return l.store.CAS(ctx, l.ringKey, f)
-}
-
 func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
 	obj, err := l.store.Get(ctx, l.ringKey)
 	if err != nil {
@@ -509,6 +505,10 @@ func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
 	}
 
 	return GetOrCreateRingDesc(obj), nil
+}
+
+func (l *BasicLifecycler) forget(ctx context.Context, id string) error {
+	return forget(ctx, l.store, l.ringKey, id)
 }
 
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {

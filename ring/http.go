@@ -48,8 +48,8 @@ type ingesterDesc struct {
 }
 
 type ringAccess interface {
-	casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error
-	getRing(context.Context) (*Desc, error)
+	getRing(ctx context.Context) (*Desc, error)
+	forget(ctx context.Context, id string) error
 }
 
 type ringPageHandler struct {
@@ -67,7 +67,7 @@ func newRingPageHandler(r ringAccess, heartbeatPeriod time.Duration) *ringPageHa
 func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		ingesterID := req.FormValue("forget")
-		if err := h.forget(req.Context(), ingesterID); err != nil {
+		if err := h.r.forget(req.Context(), ingesterID); err != nil {
 			http.Error(
 				w,
 				fmt.Errorf("error forgetting instance '%s': %w", ingesterID, err).Error(),
@@ -145,19 +145,6 @@ func renderHTTPResponse(w http.ResponseWriter, v httpResponse, t *template.Templ
 	if err := t.Execute(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func (h *ringPageHandler) forget(ctx context.Context, id string) error {
-	unregister := func(in interface{}) (out interface{}, retry bool, err error) {
-		if in == nil {
-			return nil, false, fmt.Errorf("found empty ring when trying to unregister")
-		}
-
-		ringDesc := in.(*Desc)
-		ringDesc.RemoveIngester(id)
-		return ringDesc, true, nil
-	}
-	return h.r.casRing(ctx, unregister)
 }
 
 // WriteJSONResponse writes some JSON as a HTTP response.

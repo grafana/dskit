@@ -815,10 +815,6 @@ func (r *Ring) CleanupShuffleShardCache(identifier string) {
 	}
 }
 
-func (r *Ring) casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	return r.KVClient.CAS(ctx, r.key, f)
-}
-
 func (r *Ring) getRing(ctx context.Context) (*Desc, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
@@ -826,6 +822,10 @@ func (r *Ring) getRing(ctx context.Context) (*Desc, error) {
 	ringDesc := proto.Clone(r.ringDesc).(*Desc)
 
 	return ringDesc, nil
+}
+
+func (r *Ring) forget(ctx context.Context, id string) error {
+	return forget(ctx, r.KVClient, r.key, id)
 }
 
 func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {

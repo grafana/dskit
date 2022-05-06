@@ -511,6 +511,10 @@ func (l *BasicLifecycler) Forget(ctx context.Context, id string) error {
 	return forget(ctx, l.store, l.ringKey, id)
 }
 
+func (l *BasicLifecycler) IsHealthy(instance *InstanceDesc, op Operation, now time.Time) bool {
+	return instance.IsHealthy(op, l.cfg.HeartbeatPeriod, now)
+}
+
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	NewHTTPStatusHandler(l, defaultPageTemplate, l.cfg.HeartbeatPeriod).ServeHTTP(w, req)
+	NewHTTPStatusHandler(l, defaultPageTemplate).ServeHTTP(w, req)
 }

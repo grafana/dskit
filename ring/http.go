@@ -42,23 +42,23 @@ type IngesterDesc struct {
 type Operator interface {
 	Describe(ctx context.Context) (*Desc, error)
 	Forget(ctx context.Context, id string) error
+
+	IsHealthy(instance *InstanceDesc, op Operation, now time.Time) bool
 }
 
 // NewHTTPStatusHandler will use the provided Operator to build an http.Handler to inspect the ring status over http.
 // It will render the provided template (unless Accept: application/json header is provided, in which case it will return a JSON response).
 // The handler provided also can force forgetting members of the ring by sending a POST request with the ID in the `forget` field.
-func NewHTTPStatusHandler(r Operator, tpl *template.Template, heartbeatPeriod time.Duration) HTTPStatusHandler {
+func NewHTTPStatusHandler(r Operator, tpl *template.Template) HTTPStatusHandler {
 	return HTTPStatusHandler{
-		r:               r,
-		heartbeatPeriod: heartbeatPeriod,
-		template:        tpl,
+		r:        r,
+		template: tpl,
 	}
 }
 
 type HTTPStatusHandler struct {
-	r               Operator
-	template        *template.Template
-	heartbeatPeriod time.Duration
+	r        Operator
+	template *template.Template
 }
 
 func (h HTTPStatusHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -103,7 +103,7 @@ func (h HTTPStatusHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	for _, id := range ingesterIDs {
 		ing := ringDesc.Ingesters[id]
 		state := ing.State.String()
-		if !ing.IsHealthy(Reporting, h.heartbeatPeriod, now) {
+		if !h.r.IsHealthy(&ing, Reporting, now) {
 			state = "UNHEALTHY"
 		}
 

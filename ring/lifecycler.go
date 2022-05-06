@@ -864,8 +864,12 @@ func (i *Lifecycler) Forget(ctx context.Context, id string) error {
 	return forget(ctx, i.KVStore, i.RingKey, id)
 }
 
+func (i *Lifecycler) IsHealthy(instance *InstanceDesc, op Operation, now time.Time) bool {
+	return instance.IsHealthy(op, i.cfg.HeartbeatPeriod, now)
+}
+
 func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	NewHTTPStatusHandler(i, defaultPageTemplate, i.cfg.HeartbeatPeriod).ServeHTTP(w, req)
+	NewHTTPStatusHandler(i, defaultPageTemplate).ServeHTTP(w, req)
 }
 
 // unregister removes our entry from consul.

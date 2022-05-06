@@ -14,13 +14,18 @@ import (
 )
 
 type StatusPageData struct {
-	Ingesters  []IngesterDesc `json:"shards"`
-	Now        time.Time      `json:"now"`
-	ShowTokens bool           `json:"-"`
+	// Ingesters is the list of the ingesters found in the ring.
+	Ingesters []IngesterDesc `json:"shards"`
+	// ShowTokens is true if user requested to see show the tokens.
+	// Tokens are always provided in the IngesterDesc struct, regardless of this param.
+	ShowTokens bool `json:"-"`
+	// Now is the current time (time when template was rendered)
+	Now time.Time `json:"now"`
 }
 
 type IngesterDesc struct {
-	ID                  string    `json:"id"`
+	ID string `json:"id"`
+	// State can be: "ACTIVE", "LEAVING", "PENDING", "JOINING", "LEFT" or "UNHEALTHY"
 	State               string    `json:"state"`
 	Address             string    `json:"address"`
 	HeartbeatTimestamp  time.Time `json:"timestamp"`
@@ -28,7 +33,8 @@ type IngesterDesc struct {
 	Zone                string    `json:"zone"`
 	Tokens              []uint32  `json:"tokens"`
 	NumTokens           int       `json:"-"`
-	Ownership           float64   `json:"-"`
+	// Ownership represents the percentage (0-100) of the tokens owned by this instance.
+	Ownership float64 `json:"-"`
 }
 
 // Operator allows external entities to perform generic operations on the ring,
@@ -38,19 +44,24 @@ type Operator interface {
 	Forget(ctx context.Context, id string) error
 }
 
-type ringPageHandler struct {
-	r               Operator
-	heartbeatPeriod time.Duration
-}
-
-func newRingPageHandler(r Operator, heartbeatPeriod time.Duration) *ringPageHandler {
-	return &ringPageHandler{
+// NewHTTPStatusHandler will use the provided Operator to build an http.Handler to inspect the ring status over http.
+// It will render the provided template (unless Accept: application/json header is provided, in which case it will return a JSON response).
+// The handler provided also can force forgetting members of the ring by sending a POST request with the ID in the `forget` field.
+func NewHTTPStatusHandler(r Operator, tpl *template.Template, heartbeatPeriod time.Duration) HTTPStatusHandler {
+	return HTTPStatusHandler{
 		r:               r,
 		heartbeatPeriod: heartbeatPeriod,
+		template:        tpl,
 	}
 }
 
-func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
+type HTTPStatusHandler struct {
+	r               Operator
+	template        *template.Template
+	heartbeatPeriod time.Duration
+}
+
+func (h HTTPStatusHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		ingesterID := req.FormValue("forget")
 		if err := h.r.Forget(req.Context(), ingesterID); err != nil {
@@ -115,10 +126,10 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 		Ingesters:  ingesters,
 		Now:        now,
 		ShowTokens: tokensParam == "true",
-	}, defaultPageTemplate, req)
+	}, h.template, req)
 }
 
-// RenderHTTPResponse either responds with json or a rendered html page using the passed in template
+// renderHTTPResponse either responds with json or a rendered html page using the passed in template
 // by checking the Accepts header
 func renderHTTPResponse(w http.ResponseWriter, v StatusPageData, t *template.Template, r *http.Request) {
 	accept := r.Header.Get("Accept")

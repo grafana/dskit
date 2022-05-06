@@ -865,7 +865,7 @@ func (i *Lifecycler) Forget(ctx context.Context, id string) error {
 }
 
 func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(i, i.cfg.HeartbeatPeriod).handle(w, req)
+	NewHTTPStatusHandler(i, defaultPageTemplate, i.cfg.HeartbeatPeriod).ServeHTTP(w, req)
 }
 
 // unregister removes our entry from consul.

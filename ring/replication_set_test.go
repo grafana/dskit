@@ -157,7 +157,7 @@ func TestReplicationSet_Do(t *testing.T) {
 			expectedError: errFailure,
 		},
 		{
-			name:      "max errors = 1, should handle context canceled",
+			name:      "max errors = 1, should ServeHTTP context canceled",
 			instances: []InstanceDesc{{}, {}, {}},
 			maxErrors: 1,
 			f: func(c context.Context, id *InstanceDesc) (interface{}, error) {

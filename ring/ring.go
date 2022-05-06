@@ -829,7 +829,7 @@ func (r *Ring) Forget(ctx context.Context, id string) error {
 }
 
 func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(r, r.cfg.HeartbeatTimeout).handle(w, req)
+	NewHTTPStatusHandler(r, defaultPageTemplate, r.cfg.HeartbeatTimeout).ServeHTTP(w, req)
 }
 
 // Operation describes which instances can be included in the replica set, based on their state.

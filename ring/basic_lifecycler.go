@@ -512,5 +512,5 @@ func (l *BasicLifecycler) Forget(ctx context.Context, id string) error {
 }
 
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(l, l.cfg.HeartbeatPeriod).handle(w, req)
+	NewHTTPStatusHandler(l, defaultPageTemplate, l.cfg.HeartbeatPeriod).ServeHTTP(w, req)
 }

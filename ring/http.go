@@ -47,17 +47,19 @@ type ingesterDesc struct {
 	Ownership           float64   `json:"-"`
 }
 
-type ringAccess interface {
-	describe(ctx context.Context) (*Desc, error)
-	forget(ctx context.Context, id string) error
+// Operator allows external entities to perform generic operations on the ring,
+// like describing it or force-forgetting one of the members.
+type Operator interface {
+	Describe(ctx context.Context) (*Desc, error)
+	Forget(ctx context.Context, id string) error
 }
 
 type ringPageHandler struct {
-	r               ringAccess
+	r               Operator
 	heartbeatPeriod time.Duration
 }
 
-func newRingPageHandler(r ringAccess, heartbeatPeriod time.Duration) *ringPageHandler {
+func newRingPageHandler(r Operator, heartbeatPeriod time.Duration) *ringPageHandler {
 	return &ringPageHandler{
 		r:               r,
 		heartbeatPeriod: heartbeatPeriod,
@@ -67,7 +69,7 @@ func newRingPageHandler(r ringAccess, heartbeatPeriod time.Duration) *ringPageHa
 func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		ingesterID := req.FormValue("forget")
-		if err := h.r.forget(req.Context(), ingesterID); err != nil {
+		if err := h.r.Forget(req.Context(), ingesterID); err != nil {
 			http.Error(
 				w,
 				fmt.Errorf("error forgetting instance '%s': %w", ingesterID, err).Error(),
@@ -88,7 +90,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ringDesc, err := h.r.describe(req.Context())
+	ringDesc, err := h.r.Describe(req.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

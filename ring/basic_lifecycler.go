@@ -498,7 +498,7 @@ func (l *BasicLifecycler) run(fn func() error) error {
 	}
 }
 
-func (l *BasicLifecycler) describe(ctx context.Context) (*Desc, error) {
+func (l *BasicLifecycler) Describe(ctx context.Context) (*Desc, error) {
 	obj, err := l.store.Get(ctx, l.ringKey)
 	if err != nil {
 		return nil, err
@@ -507,7 +507,7 @@ func (l *BasicLifecycler) describe(ctx context.Context) (*Desc, error) {
 	return GetOrCreateRingDesc(obj), nil
 }
 
-func (l *BasicLifecycler) forget(ctx context.Context, id string) error {
+func (l *BasicLifecycler) Forget(ctx context.Context, id string) error {
 	return forget(ctx, l.store, l.ringKey, id)
 }
 

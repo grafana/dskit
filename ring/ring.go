@@ -815,7 +815,7 @@ func (r *Ring) CleanupShuffleShardCache(identifier string) {
 	}
 }
 
-func (r *Ring) describe(ctx context.Context) (*Desc, error) {
+func (r *Ring) Describe(ctx context.Context) (*Desc, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
@@ -824,7 +824,7 @@ func (r *Ring) describe(ctx context.Context) (*Desc, error) {
 	return ringDesc, nil
 }
 
-func (r *Ring) forget(ctx context.Context, id string) error {
+func (r *Ring) Forget(ctx context.Context, id string) error {
 	return forget(ctx, r.KVClient, r.key, id)
 }
 

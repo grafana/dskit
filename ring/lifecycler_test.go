@@ -254,6 +254,67 @@ func TestLifecycler_ShouldHandleInstanceAbruptlyRestarted(t *testing.T) {
 	})
 }
 
+func TestLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
+	ctx := context.Background()
+
+	store, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringCfg Config
+	flagext.DefaultValues(&ringCfg)
+	ringCfg.KVStore.Mock = store
+
+	r, err := New(ringCfg, "ingester", testRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, r)) })
+
+	lifecyclerCfg := testLifecyclerConfig(ringCfg, testInstanceID)
+
+	lifecycler, err := NewLifecycler(lifecyclerCfg, nil, testRingName, testRingKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler)) })
+
+	// Wait until the instance has joined, is active, and has one token.
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		d, err := r.KVClient.Get(ctx, testRingKey)
+		require.NoError(t, err)
+		return checkNormalised(d, testInstanceID)
+	})
+
+	// At this point the instance has been registered to the ring.
+	prevRegisteredAt := lifecycler.getRegisteredAt()
+	prevTokens := lifecycler.getTokens()
+
+	// Wait at least 1s because the registration timestamp has seconds precision
+	// and we want to assert it gets updates later on in this test.
+	time.Sleep(time.Second)
+
+	// Now we delete it from the ring to simulate a ring storage reset and we expect the next heartbeat
+	// will restore it.
+	require.NoError(t, store.CAS(ctx, testRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		return NewDesc(), true, nil
+	}))
+
+	test.Poll(t, time.Second, true, func() interface{} {
+		_, ok := getInstanceFromStore(t, store, testInstanceID)
+		return ok
+	})
+
+	// Ensure the registration timestamp has been updated.
+	desc, _ := getInstanceFromStore(t, store, testInstanceID)
+	assert.Greater(t, desc.GetRegisteredTimestamp(), prevRegisteredAt.Unix())
+	assert.Greater(t, lifecycler.getRegisteredAt().Unix(), prevRegisteredAt.Unix())
+
+	// Ensure other information has been preserved.
+	assert.Greater(t, desc.GetTimestamp(), int64(0))
+	assert.Equal(t, ACTIVE, desc.GetState())
+	assert.Equal(t, fmt.Sprintf("%s:%d", lifecyclerCfg.Addr, lifecyclerCfg.Port), desc.GetAddr())
+	assert.Equal(t, lifecyclerCfg.Zone, desc.Zone)
+	assert.Equal(t, prevTokens, Tokens(desc.GetTokens()))
+}
+
 type MockClient struct {
 	ListFunc        func(ctx context.Context, prefix string) ([]string, error)
 	GetFunc         func(ctx context.Context, key string) (interface{}, error)

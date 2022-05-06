@@ -305,6 +305,7 @@ func TestLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 	// Ensure the registration timestamp has been updated.
 	desc, _ := getInstanceFromStore(t, store, testInstanceID)
 	assert.Greater(t, desc.GetRegisteredTimestamp(), prevRegisteredAt.Unix())
+	assert.Greater(t, lifecycler.getRegisteredAt().Unix(), prevRegisteredAt.Unix())
 
 	// Ensure other information has been preserved.
 	assert.Greater(t, desc.GetTimestamp(), int64(0))

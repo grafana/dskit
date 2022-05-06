@@ -333,6 +333,7 @@ func TestBasicLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 	// Ensure the registration timestamp has been updated.
 	desc, _ := getInstanceFromStore(t, store, testInstanceID)
 	assert.Greater(t, desc.GetRegisteredTimestamp(), prevRegisteredAt.Unix())
+	assert.Greater(t, lifecycler.GetRegisteredAt().Unix(), prevRegisteredAt.Unix())
 }
 
 func TestBasicLifecycler_ChangeState(t *testing.T) {

@@ -815,7 +815,7 @@ func (r *Ring) CleanupShuffleShardCache(identifier string) {
 	}
 }
 
-func (r *Ring) getRing(ctx context.Context) (*Desc, error) {
+func (r *Ring) describe(ctx context.Context) (*Desc, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 

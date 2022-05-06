@@ -48,7 +48,7 @@ type ingesterDesc struct {
 }
 
 type ringAccess interface {
-	getRing(ctx context.Context) (*Desc, error)
+	describe(ctx context.Context) (*Desc, error)
 	forget(ctx context.Context, id string) error
 }
 
@@ -88,7 +88,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ringDesc, err := h.r.getRing(req.Context())
+	ringDesc, err := h.r.describe(req.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

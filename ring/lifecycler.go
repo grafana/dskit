@@ -851,7 +851,7 @@ func (i *Lifecycler) processShutdown(ctx context.Context) {
 	time.Sleep(i.cfg.FinalSleep)
 }
 
-func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
+func (i *Lifecycler) describe(ctx context.Context) (*Desc, error) {
 	obj, err := i.KVStore.Get(ctx, i.RingKey)
 	if err != nil {
 		return nil, err

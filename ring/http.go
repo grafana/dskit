@@ -29,13 +29,13 @@ var defaultPageTemplate = template.Must(template.New("webpage").Funcs(template.F
 	"durationSince": func(t time.Time) string { return time.Since(t).Truncate(time.Millisecond).String() },
 }).Parse(defaultPageContent))
 
-type httpResponse struct {
-	Ingesters  []ingesterDesc `json:"shards"`
+type StatusPageData struct {
+	Ingesters  []IngesterDesc `json:"shards"`
 	Now        time.Time      `json:"now"`
 	ShowTokens bool           `json:"-"`
 }
 
-type ingesterDesc struct {
+type IngesterDesc struct {
 	ID                  string    `json:"id"`
 	State               string    `json:"state"`
 	Address             string    `json:"address"`
@@ -104,7 +104,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 	sort.Strings(ingesterIDs)
 
 	now := time.Now()
-	var ingesters []ingesterDesc
+	var ingesters []IngesterDesc
 	for _, id := range ingesterIDs {
 		ing := ringDesc.Ingesters[id]
 		state := ing.State.String()
@@ -112,7 +112,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 			state = "UNHEALTHY"
 		}
 
-		ingesters = append(ingesters, ingesterDesc{
+		ingesters = append(ingesters, IngesterDesc{
 			ID:                  id,
 			State:               state,
 			Address:             ing.Addr,
@@ -127,7 +127,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 
 	tokensParam := req.URL.Query().Get("tokens")
 
-	renderHTTPResponse(w, httpResponse{
+	renderHTTPResponse(w, StatusPageData{
 		Ingesters:  ingesters,
 		Now:        now,
 		ShowTokens: tokensParam == "true",
@@ -136,7 +136,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 
 // RenderHTTPResponse either responds with json or a rendered html page using the passed in template
 // by checking the Accepts header
-func renderHTTPResponse(w http.ResponseWriter, v httpResponse, t *template.Template, r *http.Request) {
+func renderHTTPResponse(w http.ResponseWriter, v StatusPageData, t *template.Template, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "application/json") {
 		writeJSONResponse(w, v)
@@ -150,7 +150,7 @@ func renderHTTPResponse(w http.ResponseWriter, v httpResponse, t *template.Templ
 }
 
 // WriteJSONResponse writes some JSON as a HTTP response.
-func writeJSONResponse(w http.ResponseWriter, v httpResponse) {
+func writeJSONResponse(w http.ResponseWriter, v StatusPageData) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(v); err != nil {

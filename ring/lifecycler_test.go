@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"testing"
 	"time"
@@ -717,6 +718,51 @@ func TestTokensOnDisk(t *testing.T) {
 	for i := 0; i < 512; i++ {
 		require.Equal(t, expTokens, actTokens)
 	}
+}
+
+func TestDeletePersistedTokensOnShutdown(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+
+	tokenDir := t.TempDir()
+
+	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
+	lifecyclerConfig.NumTokens = 512
+	lifecyclerConfig.TokensFilePath = tokenDir + "/tokens"
+
+	// Start first ingester.
+	l1, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
+
+	// Check this ingester joined, is active, and has 512 token.
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		d, err := r.KVClient.Get(context.Background(), ringKey)
+		require.NoError(t, err)
+
+		desc, ok := d.(*Desc)
+		return ok &&
+			len(desc.Ingesters) == 1 &&
+			desc.Ingesters["ing1"].State == ACTIVE &&
+			len(desc.Ingesters["ing1"].Tokens) == 512
+	})
+
+	// Set flag to delete tokens file on shutdown
+	l1.SetClearTokensOnShutdown(true)
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), l1))
+
+	_, err = os.Stat(lifecyclerConfig.TokensFilePath)
+	require.True(t, os.IsNotExist(err))
 }
 
 // JoinInLeavingState ensures that if the lifecycler starts up and the ring already has it in a LEAVING state that it still is able to auto join

@@ -520,7 +520,7 @@ heartbeatLoop:
 		if err := os.Remove(i.cfg.TokensFilePath); err != nil {
 			return errors.Wrapf(err, "failed to delete tokens file %s", i.cfg.TokensFilePath)
 		}
-		level.Info(i.logger).Log("msg", "removed tokens file from disk", "filename", i.cfg.TokensFilePath)
+		level.Info(i.logger).Log("msg", "removed tokens file from disk", "path", i.cfg.TokensFilePath)
 	}
 
 	return nil

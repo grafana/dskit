@@ -27,18 +27,18 @@ type GRPCServerLog struct {
 func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	begin := time.Now()
 	resp, err := handler(ctx, req)
+	if err == nil {
+		return resp, nil
+	}
+
 	entry := user.LogWith(ctx, s.Log).WithFields(logging.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
-	if err != nil {
-		if s.WithRequest {
-			entry = entry.WithField("request", req)
-		}
-		if grpcUtils.IsCanceled(err) {
-			entry.WithField(errorKey, err).Debugln(gRPC)
-		} else {
-			entry.WithField(errorKey, err).Warnln(gRPC)
-		}
+	if s.WithRequest {
+		entry = entry.WithField("request", req)
+	}
+	if grpcUtils.IsCanceled(err) {
+		entry.WithField(errorKey, err).Debugln(gRPC)
 	} else {
-		entry.Debugf("%s (success)", gRPC)
+		entry.WithField(errorKey, err).Warnln(gRPC)
 	}
 	return resp, err
 }
@@ -47,15 +47,15 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	begin := time.Now()
 	err := handler(srv, ss)
+	if err == nil {
+		return nil
+	}
+
 	entry := user.LogWith(ss.Context(), s.Log).WithFields(logging.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
-	if err != nil {
-		if grpcUtils.IsCanceled(err) {
-			entry.WithField(errorKey, err).Debugln(gRPC)
-		} else {
-			entry.WithField(errorKey, err).Warnln(gRPC)
-		}
+	if grpcUtils.IsCanceled(err) {
+		entry.WithField(errorKey, err).Debugln(gRPC)
 	} else {
-		entry.Debugf("%s (success)", gRPC)
+		entry.WithField(errorKey, err).Warnln(gRPC)
 	}
 	return err
 }

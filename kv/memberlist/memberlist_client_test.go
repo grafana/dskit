@@ -1125,6 +1125,9 @@ func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 			"c": {Timestamp: now.Unix(), State: ACTIVE},
 		}}))
 
+	// Wait until KV update has been processed.
+	time.Sleep(time.Millisecond * 100)
+
 	// Check two things here:
 	// 1) state of value in KV store
 	// 2) broadcast message only has changed members
@@ -1219,6 +1222,9 @@ func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 			}
 
 			kv.NotifyMsg(marshalKeyValuePair(t, key, codec, tc.msgToSend))
+
+			// Wait until KV update has been processed.
+			time.Sleep(time.Millisecond * 100)
 
 			bs := kv.GetBroadcasts(0, math.MaxInt32)
 			if tc.broadcastMessage == nil {

@@ -11,6 +11,7 @@ import (
 	"net"
 	"reflect"
 	"sort"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -1242,6 +1243,27 @@ func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func BenchmarkKV_GetWorkerChannel(b *testing.B) {
+	kv := NewKV(KVConfig{}, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+
+	require.NoError(b, services.StartAndAwaitRunning(context.Background(), kv))
+	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
+
+	const totalNumberOfKeys = 4
+
+	wg := sync.WaitGroup{}
+	wg.Add(b.N)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		go func(idx int) {
+			_ = kv.getKeyWorkerChannel(strconv.Itoa(idx % totalNumberOfKeys))
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
 }
 
 func decodeDataFromMarshalledKeyValuePair(t *testing.T, marshalledKVP []byte, key string, codec dataCodec) *data {

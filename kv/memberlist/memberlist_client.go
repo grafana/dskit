@@ -253,7 +253,7 @@ type KV struct {
 	messageCounter       int // Used to give each message in the sentMessages and receivedMessages a unique ID, for UI.
 
 	// Per-key value update workers
-	workersMu       sync.Mutex
+	workersMu       sync.RWMutex
 	workersChannels map[string]chan valueUpdate
 
 	// closed on shutdown
@@ -976,11 +976,19 @@ func (m *KV) NotifyMsg(msg []byte) {
 }
 
 func (m *KV) getKeyWorkerChannel(key string) chan<- valueUpdate {
-	m.workersMu.Lock()
-	defer m.workersMu.Unlock()
-
+	m.workersMu.RLock()
 	ch := m.workersChannels[key]
+	m.workersMu.RUnlock()
+
 	if ch == nil {
+		m.workersMu.Lock()
+		defer m.workersMu.Unlock()
+
+		ch = m.workersChannels[key] // double-checked locking
+		if ch != nil {
+			return ch
+		}
+
 		// spawn a key associated worker goroutine to process updates in background
 		ch = make(chan valueUpdate, notifyMsgQueueSize)
 		go m.processValueUpdate(ch, key)

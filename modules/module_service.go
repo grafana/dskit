@@ -28,6 +28,9 @@ type moduleService struct {
 }
 
 func (w moduleService) ServiceName() string {
+	if namedSvc, isNamed := w.Service.(services.NamedService); isNamed {
+		return namedSvc.ServiceName()
+	}
 	return w.name
 }
 

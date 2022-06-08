@@ -27,14 +27,6 @@ type moduleService struct {
 	startDeps, stopDeps func(string) map[string]services.Service
 }
 
-func (w moduleService) ServiceName() string {
-	msg := fmt.Sprintf("module service %s", w.name)
-	if namedSvc, isNamed := w.Service.(services.NamedService); isNamed {
-		msg += fmt.Sprintf(" for %s", namedSvc.ServiceName())
-	}
-	return msg
-}
-
 // NewModuleService wraps a module service, and makes sure that dependencies are started/stopped before module service starts or stops.
 // If any dependency fails to start, this service fails as well.
 // On stop, errors from failed dependencies are ignored.
@@ -48,6 +40,13 @@ func NewModuleService(name string, logger log.Logger, service services.Service, 
 	}
 
 	w.Service = services.NewBasicService(w.start, w.run, w.stop)
+
+	if namedService, isNamed := service.(services.NamedService); isNamed {
+		return services.NamedServiceDecorator{
+			Service: w,
+			Name:    namedService.ServiceName(),
+		}
+	}
 	return w
 }
 

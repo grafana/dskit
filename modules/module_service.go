@@ -28,10 +28,11 @@ type moduleService struct {
 }
 
 func (w moduleService) ServiceName() string {
+	msg := fmt.Sprintf("module service %s", w.name)
 	if namedSvc, isNamed := w.Service.(services.NamedService); isNamed {
-		return namedSvc.ServiceName()
+		msg += fmt.Sprintf(" for %s", namedSvc.ServiceName())
 	}
-	return w.name
+	return msg
 }
 
 // NewModuleService wraps a module service, and makes sure that dependencies are started/stopped before module service starts or stops.

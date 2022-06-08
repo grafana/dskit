@@ -27,6 +27,10 @@ type moduleService struct {
 	startDeps, stopDeps func(string) map[string]services.Service
 }
 
+func (w moduleService) ServiceName() string {
+	return w.name
+}
+
 // NewModuleService wraps a module service, and makes sure that dependencies are started/stopped before module service starts or stops.
 // If any dependency fails to start, this service fails as well.
 // On stop, errors from failed dependencies are ignored.

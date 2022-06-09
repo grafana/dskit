@@ -143,13 +143,3 @@ func DescribeService(service Service) string {
 	}
 	return name
 }
-
-type NamedServiceDecorator struct {
-	Service
-
-	Name string
-}
-
-func (n NamedServiceDecorator) ServiceName() string {
-	return n.Name
-}

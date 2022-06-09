@@ -99,7 +99,9 @@ type Service interface {
 type NamedService interface {
 	Service
 
-	// ServiceName returns name of the service, if it has one. Subsequent calls to ServiceName can return different values.
+	// ServiceName returns name of the service, if it has one.
+	// Subsequent calls to ServiceName can return different values,
+	// for example service may update its name based on its state.
 	ServiceName() string
 }
 

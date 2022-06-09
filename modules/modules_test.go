@@ -324,7 +324,7 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 
 func getStopDependenciesForModule(module string, services map[string]services.Service) []string {
 	var deps []string
-	for name := range services[module].(*moduleService).stopDeps(module) {
+	for name := range services[module].(delegatedNamedService).Service.(*moduleService).stopDeps(module) {
 		deps = append(deps, name)
 	}
 

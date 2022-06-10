@@ -655,11 +655,12 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	origTokens := GenerateTokens(100, nil)
 
 	const id = "test"
+	registeredAt := time.Now().Add(-1 * time.Hour)
 
 	ringStore.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		// Create ring with LEAVING entry with some tokens
 		r := GetOrCreateRingDesc(in)
-		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, LEAVING, time.Now().Add(-1*time.Hour))
+		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, LEAVING, registeredAt)
 		return r, true, err
 	})
 
@@ -688,6 +689,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	// Lifecycler should be in ACTIVE state, using tokens from the ring.
 	require.Equal(t, ACTIVE, l.GetState())
 	require.Equal(t, Tokens(origTokens), l.getTokens())
+	require.Equal(t, registeredAt.Truncate(time.Second), l.getRegisteredAt())
 
 	// check that ring entry has updated address and state
 	desc, err := ringStore.Get(context.Background(), ringKey)
@@ -697,6 +699,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	require.Equal(t, ACTIVE, r.Ingesters[id].State)
 	require.Equal(t, "1.1.1.1:111", r.Ingesters[id].Addr)
 	require.Equal(t, "new", r.Ingesters[id].Zone)
+	require.Equal(t, registeredAt.Unix(), r.Ingesters[id].RegisteredTimestamp)
 }
 
 func TestTokensOnDisk(t *testing.T) {

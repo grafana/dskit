@@ -657,12 +657,13 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	const id = "test"
 	registeredAt := time.Now().Add(-1 * time.Hour)
 
-	ringStore.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	err := ringStore.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		// Create ring with LEAVING entry with some tokens
 		r := GetOrCreateRingDesc(in)
 		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, LEAVING, registeredAt)
 		return r, true, err
 	})
+	require.NoError(t, err)
 
 	var lifecyclerConfig LifecyclerConfig
 	flagext.DefaultValues(&lifecyclerConfig)
@@ -680,7 +681,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l))
-	defer services.StopAndAwaitTerminated(context.Background(), l)
+	defer services.StopAndAwaitTerminated(context.Background(), l) //nolint:errcheck
 
 	test.Poll(t, 1*time.Second, nil, func() interface{} {
 		return l.CheckReady(context.Background())

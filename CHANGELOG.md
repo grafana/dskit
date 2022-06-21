@@ -29,6 +29,7 @@
   * `member_ring_tokens_to_own`
   * `ring_tokens_owned`
   * `ring_member_ownership_percent`
+* [CHANGE] Memberlist: `-memberlist.abort-if-join-fails` option now defaults to false.
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

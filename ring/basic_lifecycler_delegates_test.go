@@ -305,3 +305,56 @@ func TestAutoForgetDelegate(t *testing.T) {
 		})
 	}
 }
+
+func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
+	const tokenCount = 128
+
+	t.Run("no previous tokens, JOINING state", func(t *testing.T) {
+		delegate := NewInstanceRegisterDelegate(JOINING, 128)
+
+		cfg := prepareBasicLifecyclerConfig()
+		cfg.HeartbeatPeriod = 100 * time.Millisecond
+		lifecycler, _, err := prepareBasicLifecyclerWithDelegate(t, cfg, delegate)
+		require.NoError(t, err)
+
+		otherIngesterTokens := []uint32{100, 200, 300, 400, 500}
+
+		desc := NewDesc()
+		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now())
+
+		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, false, "test-instance", InstanceDesc{})
+		require.Equal(t, JOINING, state)
+		require.Equal(t, tokenCount, len(tokens))
+		for _, tok := range otherIngesterTokens {
+			require.NotContains(t, tokens, tok)
+		}
+	})
+
+	t.Run("with previous tokens, ACTIVE state", func(t *testing.T) {
+		delegate := NewInstanceRegisterDelegate(ACTIVE, 128)
+
+		cfg := prepareBasicLifecyclerConfig()
+		cfg.HeartbeatPeriod = 100 * time.Millisecond
+		lifecycler, _, err := prepareBasicLifecyclerWithDelegate(t, cfg, delegate)
+		require.NoError(t, err)
+
+		otherIngesterTokens := []uint32{100, 200, 300, 400, 500}
+
+		desc := NewDesc()
+		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now())
+
+		prevTokens := []uint32{10, 20, 30}
+		desc.AddIngester("test-instance", "test-addr", "zone", prevTokens, JOINING, time.Now())
+
+		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, true, "test-instance", desc.GetIngesters()["test-instance"])
+		require.Equal(t, ACTIVE, state)
+		require.Equal(t, tokenCount, len(tokens))
+
+		for _, tok := range prevTokens {
+			require.Contains(t, tokens, tok)
+		}
+		for _, tok := range otherIngesterTokens {
+			require.NotContains(t, tokens, tok)
+		}
+	})
+}

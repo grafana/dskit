@@ -49,7 +49,7 @@ type Config struct {
 
 	// Used in tests only.
 	MaxCasRetries int           `yaml:"-"`
-	CasRetryDelay time.Duration `yaml:"-"`
+	CasRetryDelay time.Duration `yaml:"retry_delay" category:"advanced"`
 }
 
 type kv interface {
@@ -78,6 +78,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.ConsistentReads, prefix+"consul.consistent-reads", false, "Enable consistent reads to Consul.")
 	f.Float64Var(&cfg.WatchKeyRateLimit, prefix+"consul.watch-rate-limit", 1, "Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit.")
 	f.IntVar(&cfg.WatchKeyBurstSize, prefix+"consul.watch-burst-size", 1, "Burst size used in rate limit. Values less than 1 are treated as 1.")
+	f.DurationVar(&cfg.CasRetryDelay, prefix+"consul.cas-retry-delay", 0, "Duration (in nanoseconds) to be waited before retrying a CAS failure.")
 }
 
 // NewClient returns a new Client.

@@ -171,7 +171,7 @@ func (d InstanceRegisterDelegate) OnRingInstanceRegister(_ *BasicLifecycler, rin
 		tokens = instanceDesc.GetTokens()
 	}
 
-	_, takenTokens := ringDesc.TokensFor(instanceID)
+	takenTokens := ringDesc.GetTokens()
 	newTokens := GenerateTokens(d.tokenCount-len(tokens), takenTokens)
 
 	// Tokens sorting will be enforced by the parent caller.

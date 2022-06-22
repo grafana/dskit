@@ -46,10 +46,10 @@ type Config struct {
 	ConsistentReads   bool           `yaml:"consistent_reads" category:"advanced"`
 	WatchKeyRateLimit float64        `yaml:"watch_rate_limit" category:"advanced"` // Zero disables rate limit
 	WatchKeyBurstSize int            `yaml:"watch_burst_size" category:"advanced"` // Burst when doing rate-limit, defaults to 1
+	CasRetryDelay     time.Duration  `yaml:"cas_retry_delay" category:"advanced"`
 
 	// Used in tests only.
-	MaxCasRetries int           `yaml:"-"`
-	CasRetryDelay time.Duration `yaml:"cas_retry_delay" category:"advanced"`
+	MaxCasRetries int `yaml:"-"`
 }
 
 type kv interface {

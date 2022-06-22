@@ -78,7 +78,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.ConsistentReads, prefix+"consul.consistent-reads", false, "Enable consistent reads to Consul.")
 	f.Float64Var(&cfg.WatchKeyRateLimit, prefix+"consul.watch-rate-limit", 1, "Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit.")
 	f.IntVar(&cfg.WatchKeyBurstSize, prefix+"consul.watch-burst-size", 1, "Burst size used in rate limit. Values less than 1 are treated as 1.")
-	f.DurationVar(&cfg.CasRetryDelay, prefix+"consul.cas-retry-delay", 0, "Duration (in nanoseconds) to be waited before retrying a CAS failure.")
+	f.DurationVar(&cfg.CasRetryDelay, prefix+"consul.cas-retry-delay", 0, "Duration to be waited before retrying a Compare And Swap (CAS) failure.")
 }
 
 // NewClient returns a new Client.

@@ -49,7 +49,7 @@ type Config struct {
 
 	// Used in tests only.
 	MaxCasRetries int           `yaml:"-"`
-	CasRetryDelay time.Duration `yaml:"retry_delay" category:"advanced"`
+	CasRetryDelay time.Duration `yaml:"cas_retry_delay" category:"advanced"`
 }
 
 type kv interface {

@@ -616,23 +616,18 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			return ringDesc, true, nil
 		}
 
-		level.Info(i.logger).Log("msg", "existing entry found in ring", "state", instanceDesc.State, "tokens", len(instanceDesc.Tokens), "ring", i.RingName)
-
 		// If the ingester failed to clean its ring entry up it can leave its state in LEAVING
 		// OR unregister_on_shutdown=false
 		// Move it into ACTIVE to ensure the ingester joins the ring.
 		if instanceDesc.State == LEAVING {
-			var tokens Tokens
-			isActive := true
+			var tokens Tokens = instanceDesc.Tokens // way of forcing tokens to be of type Tokens instead of []uint32.
+			setIsActive := true
 			if len(instanceDesc.Tokens) != i.cfg.NumTokens {
 				level.Debug(i.logger).Log("msg", "existing entry has different number of tokens", "existingTokens", len(instanceDesc.Tokens), "newTokens", i.cfg.NumTokens)
 				if len(tokensFromFile) > 0 {
 					level.Debug(i.logger).Log("msg", "adding tokens from file", "tokens", len(tokensFromFile))
-					isActive = len(tokensFromFile) >= i.cfg.NumTokens
+					setIsActive = len(tokensFromFile) >= i.cfg.NumTokens
 					tokens = tokensFromFile
-				} else if i.cfg.NumTokens == len(instanceDesc.Tokens) {
-					level.Debug(i.logger).Log("msg", "no tokens in file, adopting those of existing instance")
-					tokens = instanceDesc.Tokens
 				} else if i.cfg.NumTokens > len(instanceDesc.Tokens) {
 					needTokens := i.cfg.NumTokens - len(instanceDesc.Tokens)
 					level.Debug(i.logger).Log("msg", "no tokens in file, generating new ones in addition to those of existing instance", "newTokens", needTokens)
@@ -643,9 +638,11 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 					level.Debug(i.logger).Log("msg", "no tokens in file, adopting a subset of existing instance's tokens", "numTokens", i.cfg.NumTokens)
 					tokens = instanceDesc.Tokens[0:i.cfg.NumTokens]
 				}
+			} else {
+				level.Debug(i.logger).Log("msg", "adopting tokens of existing instance")
 			}
 
-			if isActive {
+			if setIsActive {
 				level.Debug(i.logger).Log("msg", "switching state to active")
 				i.setState(ACTIVE)
 			} else {
@@ -660,6 +657,17 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			i.setState(instanceDesc.State)
 			i.setTokens(instanceDesc.Tokens)
 		}
+
+		// We're taking over this entry, update instanceDesc with our values
+		instanceDesc.Addr = i.Addr
+		instanceDesc.Zone = i.Zone
+
+		// We exist in the ring, so assume the ring is right and copy out tokens & state out of there.
+		i.setState(instanceDesc.State)
+		tokens, _ := ringDesc.TokensFor(i.ID)
+		i.setTokens(tokens)
+
+		level.Info(i.logger).Log("msg", "existing entry found in ring", "state", i.GetState(), "tokens", len(tokens), "ring", i.RingName)
 
 		// Update the ring if the instance has been changed. We don't want to rely on heartbeat update, as heartbeat
 		// can be configured to long time, and until then lifecycler would not report this instance as ready in CheckReady.

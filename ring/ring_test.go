@@ -2247,10 +2247,6 @@ func TestUpdateMetrics(t *testing.T) {
 	ring.updateRingState(&ringDesc)
 
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
-		# HELP ring_member_ownership_percent The percent ownership of the ring by member
-		# TYPE ring_member_ownership_percent gauge
-		ring_member_ownership_percent{member="A",name="test"} 0.500000000349246
-		ring_member_ownership_percent{member="B",name="test"} 0.49999999965075403
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
 		ring_members{name="test",state="ACTIVE"} 2
@@ -2265,10 +2261,6 @@ func TestUpdateMetrics(t *testing.T) {
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
-		# HELP ring_tokens_owned The number of tokens in the ring owned by the member
-		# TYPE ring_tokens_owned gauge
-		ring_tokens_owned{member="A",name="test"} 2
-		ring_tokens_owned{member="B",name="test"} 2
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 4
@@ -2299,10 +2291,6 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 	ring.updateRingState(&ringDesc)
 
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
-		# HELP ring_member_ownership_percent The percent ownership of the ring by member
-		# TYPE ring_member_ownership_percent gauge
-		ring_member_ownership_percent{member="A",name="test"} 0.500000000349246
-		ring_member_ownership_percent{member="B",name="test"} 0.49999999965075403
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
 		ring_members{name="test",state="ACTIVE"} 2
@@ -2317,10 +2305,6 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
-		# HELP ring_tokens_owned The number of tokens in the ring owned by the member
-		# TYPE ring_tokens_owned gauge
-		ring_tokens_owned{member="A",name="test"} 2
-		ring_tokens_owned{member="B",name="test"} 2
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 4
@@ -2335,9 +2319,6 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 	ring.updateRingState(&ringDescNew)
 
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
-		# HELP ring_member_ownership_percent The percent ownership of the ring by member
-		# TYPE ring_member_ownership_percent gauge
-		ring_member_ownership_percent{member="A",name="test"} 1
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
 		ring_members{name="test",state="ACTIVE"} 1
@@ -2352,9 +2333,6 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
-		# HELP ring_tokens_owned The number of tokens in the ring owned by the member
-		# TYPE ring_tokens_owned gauge
-		ring_tokens_owned{member="A",name="test"} 2
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 2

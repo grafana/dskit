@@ -292,14 +292,14 @@ func TestBasicLifecycler_HeartbeatWhileStopping(t *testing.T) {
 	assert.True(t, onStoppingCalled)
 }
 
-func TestBasicLifecycler_HeartbeatAfterBackendRest(t *testing.T) {
+func TestBasicLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()
 	cfg.HeartbeatPeriod = 10 * time.Millisecond
 
 	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
 	require.NoError(t, err)
-	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler)) })
 
 	registerTokens := Tokens{1, 2, 3, 4, 5}
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (state InstanceState, tokens Tokens) {
@@ -309,7 +309,11 @@ func TestBasicLifecycler_HeartbeatAfterBackendRest(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
 
 	// At this point the instance has been registered to the ring.
-	expectedRegisteredAt := lifecycler.GetRegisteredAt()
+	prevRegisteredAt := lifecycler.GetRegisteredAt()
+
+	// Wait at least 1s because the registration timestamp has seconds precision
+	// and we want to assert it gets updates later on in this test.
+	time.Sleep(time.Second)
 
 	// Now we delete it from the ring to simulate a ring storage reset and we expect the next heartbeat
 	// will restore it.
@@ -323,9 +327,13 @@ func TestBasicLifecycler_HeartbeatAfterBackendRest(t *testing.T) {
 			desc.GetTimestamp() > 0 &&
 			desc.GetState() == ACTIVE &&
 			Tokens(desc.GetTokens()).Equals(registerTokens) &&
-			desc.GetAddr() == cfg.Addr &&
-			desc.GetRegisteredAt().Unix() == expectedRegisteredAt.Unix()
+			desc.GetAddr() == cfg.Addr
 	})
+
+	// Ensure the registration timestamp has been updated.
+	desc, _ := getInstanceFromStore(t, store, testInstanceID)
+	assert.Greater(t, desc.GetRegisteredTimestamp(), prevRegisteredAt.Unix())
+	assert.Greater(t, lifecycler.GetRegisteredAt().Unix(), prevRegisteredAt.Unix())
 }
 
 func TestBasicLifecycler_ChangeState(t *testing.T) {

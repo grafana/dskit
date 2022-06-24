@@ -1071,18 +1071,18 @@ func TestRejoin(t *testing.T) {
 }
 
 func TestMessageBuffer(t *testing.T) {
-	buf := []message(nil)
+	buf := []Message(nil)
 	size := 0
 
-	buf, size = addMessageToBuffer(buf, size, 100, message{Size: 50})
+	buf, size = addMessageToBuffer(buf, size, 100, Message{Size: 50})
 	assert.Len(t, buf, 1)
 	assert.Equal(t, size, 50)
 
-	buf, size = addMessageToBuffer(buf, size, 100, message{Size: 50})
+	buf, size = addMessageToBuffer(buf, size, 100, Message{Size: 50})
 	assert.Len(t, buf, 2)
 	assert.Equal(t, size, 100)
 
-	buf, size = addMessageToBuffer(buf, size, 100, message{Size: 25})
+	buf, size = addMessageToBuffer(buf, size, 100, Message{Size: 25})
 	assert.Len(t, buf, 2)
 	assert.Equal(t, size, 75)
 }
@@ -1124,6 +1124,9 @@ func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 			"b": {Timestamp: now.Unix() + 5, State: ACTIVE, Tokens: []uint32{1, 2, 3}},
 			"c": {Timestamp: now.Unix(), State: ACTIVE},
 		}}))
+
+	// Wait until KV update has been processed.
+	time.Sleep(time.Millisecond * 100)
 
 	// Check two things here:
 	// 1) state of value in KV store
@@ -1219,6 +1222,9 @@ func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 			}
 
 			kv.NotifyMsg(marshalKeyValuePair(t, key, codec, tc.msgToSend))
+
+			// Wait until KV update has been processed.
+			time.Sleep(time.Millisecond * 100)
 
 			bs := kv.GetBroadcasts(0, math.MaxInt32)
 			if tc.broadcastMessage == nil {

@@ -2199,27 +2199,27 @@ func TestShuffleShardWithCaching(t *testing.T) {
 	// Change of shard size -> new subring needed.
 	subring = newSubring
 	newSubring = ring.ShuffleShard("user", 1)
-	require.False(t, subring == newSubring)
+	require.NotSame(t, subring, newSubring)
 	// Zone-aware shuffle-shard gives all zones the same number of instances (at least one).
 	require.Equal(t, zones, newSubring.InstancesCount())
 
 	// Verify that getting the same subring uses cached instance.
 	subring = newSubring
 	newSubring = ring.ShuffleShard("user", 1)
-	require.True(t, subring == newSubring)
+	require.Same(t, subring, newSubring)
 
 	// But after cleanup, it doesn't.
 	ring.CleanupShuffleShardCache("user")
 	newSubring = ring.ShuffleShard("user", 1)
-	require.False(t, subring == newSubring)
+	require.NotSame(t, subring, newSubring)
 
 	// If we ask for ALL instances, we get original ring.
 	newSubring = ring.ShuffleShard("user", numLifecyclers)
-	require.True(t, ring == newSubring)
+	require.Same(t, ring, newSubring)
 
 	// If we ask for single instance, but use long lookback, we get all instances again (original ring).
 	newSubring = ring.ShuffleShardWithLookback("user", 1, 10*time.Minute, time.Now())
-	require.True(t, ring == newSubring)
+	require.Same(t, ring, newSubring)
 }
 
 // User shuffle shard token.

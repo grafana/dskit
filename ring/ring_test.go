@@ -2165,7 +2165,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 	sleep := (2 * time.Second) / iters
 	for i := 0; i < iters; i++ {
 		newSubring := ring.ShuffleShard(user, shardSize)
-		require.True(t, subring == newSubring, "cached subring reused")
+		require.Same(t, subring, newSubring, "cached subring reused")
 		require.Equal(t, shardSize, subring.InstancesCount())
 		time.Sleep(sleep)
 	}
@@ -2193,7 +2193,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 
 	// Change of instances -> new subring needed.
 	newSubring := ring.ShuffleShard("user", zones)
-	require.False(t, subring == newSubring)
+	require.NotSame(t, subring, newSubring)
 	require.Equal(t, zones, subring.InstancesCount())
 
 	// Change of shard size -> new subring needed.

@@ -2131,8 +2131,8 @@ func TestShuffleShardWithCaching(t *testing.T) {
 	})
 
 	// We will stop <number of zones> instances later, to see that subring is recomputed.
-	const numLifecyclers = 6
 	const zones = 3
+	const numLifecyclers = zones * 3 // 3 instances in each zone.
 
 	lcs := []*Lifecycler(nil)
 	for i := 0; i < numLifecyclers; i++ {
@@ -2212,6 +2212,14 @@ func TestShuffleShardWithCaching(t *testing.T) {
 	ring.CleanupShuffleShardCache("user")
 	newSubring = ring.ShuffleShard("user", 1)
 	require.False(t, subring == newSubring)
+
+	// If we ask for ALL instances, we get original ring.
+	newSubring = ring.ShuffleShard("user", numLifecyclers)
+	require.True(t, ring == newSubring)
+
+	// If we ask for single instance, but use long lookback, we get all instances again (original ring).
+	newSubring = ring.ShuffleShardWithLookback("user", 1, 10*time.Minute, time.Now())
+	require.True(t, ring == newSubring)
 }
 
 // User shuffle shard token.

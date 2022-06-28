@@ -709,6 +709,11 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		}
 	}
 
+	// If we have selected ALL instances (eg. due to lookback), we can simply return "this" ring.
+	if len(shard) == len(r.ringDesc.Ingesters) {
+		return r
+	}
+
 	// Build a read-only ring for the shard.
 	shardDesc := &Desc{Ingesters: shard}
 	shardTokensByZone := shardDesc.getTokensByZone()

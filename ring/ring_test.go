@@ -2131,8 +2131,8 @@ func TestShuffleShardWithCaching(t *testing.T) {
 	})
 
 	// We will stop <number of zones> instances later, to see that subring is recomputed.
-	const numLifecyclers = 6
 	const zones = 3
+	const numLifecyclers = zones * 3 // 3 instances in each zone.
 
 	lcs := []*Lifecycler(nil)
 	for i := 0; i < numLifecyclers; i++ {
@@ -2165,7 +2165,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 	sleep := (2 * time.Second) / iters
 	for i := 0; i < iters; i++ {
 		newSubring := ring.ShuffleShard(user, shardSize)
-		require.True(t, subring == newSubring, "cached subring reused")
+		require.Same(t, subring, newSubring, "cached subring reused")
 		require.Equal(t, shardSize, subring.InstancesCount())
 		time.Sleep(sleep)
 	}
@@ -2193,25 +2193,33 @@ func TestShuffleShardWithCaching(t *testing.T) {
 
 	// Change of instances -> new subring needed.
 	newSubring := ring.ShuffleShard("user", zones)
-	require.False(t, subring == newSubring)
+	require.NotSame(t, subring, newSubring)
 	require.Equal(t, zones, subring.InstancesCount())
 
 	// Change of shard size -> new subring needed.
 	subring = newSubring
 	newSubring = ring.ShuffleShard("user", 1)
-	require.False(t, subring == newSubring)
+	require.NotSame(t, subring, newSubring)
 	// Zone-aware shuffle-shard gives all zones the same number of instances (at least one).
 	require.Equal(t, zones, newSubring.InstancesCount())
 
 	// Verify that getting the same subring uses cached instance.
 	subring = newSubring
 	newSubring = ring.ShuffleShard("user", 1)
-	require.True(t, subring == newSubring)
+	require.Same(t, subring, newSubring)
 
 	// But after cleanup, it doesn't.
 	ring.CleanupShuffleShardCache("user")
 	newSubring = ring.ShuffleShard("user", 1)
-	require.False(t, subring == newSubring)
+	require.NotSame(t, subring, newSubring)
+
+	// If we ask for ALL instances, we get original ring.
+	newSubring = ring.ShuffleShard("user", numLifecyclers)
+	require.Same(t, ring, newSubring)
+
+	// If we ask for single instance, but use long lookback, we get all instances again (original ring).
+	newSubring = ring.ShuffleShardWithLookback("user", 1, 10*time.Minute, time.Now())
+	require.Same(t, ring, newSubring)
 }
 
 // User shuffle shard token.

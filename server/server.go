@@ -289,9 +289,9 @@ func New(cfg Config) (*Server, error) {
 
 	// Setup gRPC server
 	serverLog := middleware.GRPCServerLog{
-		Log:         log,
-		WithRequest: !cfg.ExcludeRequestInLog,
-		EnableDebug: cfg.EnableSuccessfulDebugLog,
+		Log:                      log,
+		WithRequest:              !cfg.ExcludeRequestInLog,
+		DisableRequestSuccessLog: cfg.DisableRequestSuccessLog,
 	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,

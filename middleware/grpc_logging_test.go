@@ -13,7 +13,7 @@ import (
 
 func BenchmarkGRPCServerLog_UnaryServerInterceptor_NoError(b *testing.B) {
 	logger := logging.GoKit(level.NewFilter(log.NewNopLogger(), level.AllowError()))
-	l := GRPCServerLog{Log: logger, WithRequest: false, EnableDebug: false}
+	l := GRPCServerLog{Log: logger, WithRequest: false, DisableRequestSuccessLog: true}
 	ctx := context.Background()
 	info := &grpc.UnaryServerInfo{FullMethod: "Test"}
 

@@ -65,8 +65,9 @@ type Config struct {
 	HTTPTLSConfig web.TLSStruct `yaml:"http_tls_config"`
 	GRPCTLSConfig web.TLSStruct `yaml:"grpc_tls_config"`
 
-	RegisterInstrumentation bool `yaml:"register_instrumentation"`
-	ExcludeRequestInLog     bool `yaml:"-"`
+	RegisterInstrumentation  bool `yaml:"register_instrumentation"`
+	ExcludeRequestInLog      bool `yaml:"-"`
+	DisableRequestSuccessLog bool `yaml:"-"`
 
 	ServerGracefulShutdownTimeout time.Duration `yaml:"graceful_shutdown_timeout"`
 	HTTPServerReadTimeout         time.Duration `yaml:"http_server_read_timeout"`
@@ -288,8 +289,9 @@ func New(cfg Config) (*Server, error) {
 
 	// Setup gRPC server
 	serverLog := middleware.GRPCServerLog{
-		WithRequest: !cfg.ExcludeRequestInLog,
-		Log:         log,
+		Log:                      log,
+		WithRequest:              !cfg.ExcludeRequestInLog,
+		DisableRequestSuccessLog: cfg.DisableRequestSuccessLog,
 	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,

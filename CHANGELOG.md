@@ -52,7 +52,7 @@
 * [ENHANCEMENT] Memberlist: extracted HTTP status page handler to `memberlist.HTTPStatusHandler` which now can be instantiated with a custom template. #163
 * [ENHANCEMENT] Lifecycler: add flag to clear tokens on shutdown. #167
 * [ENHANCEMENT] ring: Added InstanceRegisterDelegate. #177
-* [ENHANCEMENT] Ring: When using big lookback period that selects all instances, we don't need to recompute the ring from scratch, but can use original ring instead. #180
+* [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #181
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

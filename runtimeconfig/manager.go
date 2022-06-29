@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/dskit/services"
 )
@@ -35,7 +37,7 @@ type Config struct {
 
 // RegisterFlags registers flags.
 func (mc *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&mc.LoadPath, "runtime-config.file", "", "File with the configuration that can be updated in runtime.")
+	f.StringVar(&mc.LoadPath, "runtime-config.file", "", "Comma separated list of yaml files with the configuration that can be updated at runtime.")
 	f.DurationVar(&mc.ReloadPeriod, "runtime-config.reload-period", 10*time.Second, "How often to check runtime config file.")
 }
 
@@ -142,16 +144,30 @@ func (om *Manager) loop(ctx context.Context) error {
 	}
 }
 
-// loadConfig loads configuration using the loader function, and if successful,
-// stores it as current configuration and notifies listeners.
+// loadConfig loads all configuration files using the loader function, merges the yaml configuration files into one yaml document,
+// and notifies listeners if successful.
 func (om *Manager) loadConfig() error {
-	buf, err := os.ReadFile(om.cfg.LoadPath)
+	mergedConfig := map[string]interface{}{}
+	for _, f := range strings.Split(om.cfg.LoadPath, ",") {
+		yamlFile := map[string]interface{}{}
+		buf, err := os.ReadFile(f)
+		if err != nil {
+			om.configLoadSuccess.Set(0)
+			return errors.Wrap(err, "read file")
+		}
+		err = yaml.Unmarshal(buf, &yamlFile)
+		if err != nil {
+			om.configLoadSuccess.Set(0)
+			return errors.Wrap(err, "unmarshal file")
+		}
+		mergedConfig = mergeConfigMaps(mergedConfig, yamlFile)
+	}
+	buf, err := yaml.Marshal(mergedConfig)
 	if err != nil {
 		om.configLoadSuccess.Set(0)
-		return errors.Wrap(err, "read file")
+		return errors.Wrap(err, "marshal file")
 	}
 	hash := sha256.Sum256(buf)
-
 	cfg, err := om.cfg.Loader(bytes.NewReader(buf))
 	if err != nil {
 		om.configLoadSuccess.Set(0)
@@ -165,8 +181,26 @@ func (om *Manager) loadConfig() error {
 	// expose hash of runtime config
 	om.configHash.Reset()
 	om.configHash.WithLabelValues(fmt.Sprintf("%x", hash[:])).Set(1)
-
 	return nil
+}
+
+func mergeConfigMaps(a, b map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(a))
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		if v, ok := v.(map[string]interface{}); ok {
+			if bv, ok := out[k]; ok {
+				if bv, ok := bv.(map[string]interface{}); ok {
+					out[k] = mergeConfigMaps(bv, v)
+					continue
+				}
+			}
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func (om *Manager) setConfig(config interface{}) {

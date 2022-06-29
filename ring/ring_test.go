@@ -1726,10 +1726,10 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 		userID              = "user-1"
 	)
 
-	for _, updateRegisteredTimestampCache := range []bool{false, true} {
+	for _, registeredTimestampCache := range []bool{false, true} {
 		for _, numInstances := range numInitialInstances {
 			for _, numZones := range numInitialZones {
-				testName := fmt.Sprintf("num instances = %d, num zones = %d", numInstances, numZones)
+				testName := fmt.Sprintf("num instances = %d, num zones = %d, registered timestamp cache = %v", numInstances, numZones, registeredTimestampCache)
 
 				t.Run(testName, func(t *testing.T) {
 					// Randomise the seed but log it in case we need to reproduce the test on failure.
@@ -1752,7 +1752,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						ringZones:           getZones(ringDesc.getTokensByZone()),
 						strategy:            NewDefaultReplicationStrategy(),
 					}
-					if updateRegisteredTimestampCache {
+					if registeredTimestampCache {
 						ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
 					}
 
@@ -1792,7 +1792,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							ring.ringTokensByZone = ringDesc.getTokensByZone()
 							ring.ringInstanceByToken = ringDesc.getTokensInfo()
 							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							if updateRegisteredTimestampCache {
+							if registeredTimestampCache {
 								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
 							}
 						case r < 90:
@@ -1813,7 +1813,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							ring.ringTokensByZone = ringDesc.getTokensByZone()
 							ring.ringInstanceByToken = ringDesc.getTokensInfo()
 							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							if updateRegisteredTimestampCache {
+							if registeredTimestampCache {
 								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
 							}
 

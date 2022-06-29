@@ -609,8 +609,11 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 	}
 
 	result := r.shuffleShard(identifier, size, 0, time.Now())
-
-	r.setCachedShuffledSubring(identifier, size, result)
+	// Only cache subring if it is different from this ring, to avoid deadlocks in getCachedShuffledSubring,
+	// when we update the cached ring.
+	if result != r {
+		r.setCachedShuffledSubring(identifier, size, result)
+	}
 	return result
 }
 
@@ -642,7 +645,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	//
 	// If any instance had RegisteredTimestamp equal to 0 (it would not cause additional lookup of next instance),
 	// then r.oldestRegisteredTimestamp is zero too, and we skip this optimization.
-	if r.oldestRegisteredTimestamp > 0 && r.oldestRegisteredTimestamp >= lookbackUntil {
+	if lookbackPeriod > 0 && r.oldestRegisteredTimestamp > 0 && r.oldestRegisteredTimestamp >= lookbackUntil {
 		return r
 	}
 
@@ -725,11 +728,6 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		}
 	}
 
-	// If we have selected ALL instances (eg. due to lookback), we can simply return "this" ring.
-	if len(shard) == len(r.ringDesc.Ingesters) {
-		return r
-	}
-
 	// Build a read-only ring for the shard.
 	shardDesc := &Desc{Ingesters: shard}
 	shardTokensByZone := shardDesc.getTokensByZone()
@@ -791,6 +789,11 @@ func (r *Ring) getCachedShuffledSubring(identifier string, size int) *Ring {
 	cached := r.shuffledSubringCache[subringCacheKey{identifier: identifier, shardSize: size}]
 	if cached == nil {
 		return nil
+	}
+
+	// No need to update cached subring, if it is the original ring itself.
+	if r == cached {
+		return cached
 	}
 
 	cached.mtx.Lock()

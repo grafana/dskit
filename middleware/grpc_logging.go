@@ -21,24 +21,29 @@ type GRPCServerLog struct {
 	Log logging.Interface
 	// WithRequest will log the entire request rather than just the error
 	WithRequest bool
+	EnableDebug bool
 }
 
 // UnaryServerInterceptor returns an interceptor that logs gRPC requests
 func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	begin := time.Now()
 	resp, err := handler(ctx, req)
-	if err == nil {
+	if err == nil && !s.EnableDebug {
 		return resp, nil
 	}
 
 	entry := user.LogWith(ctx, s.Log).WithFields(logging.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
-	if s.WithRequest {
-		entry = entry.WithField("request", req)
-	}
-	if grpcUtils.IsCanceled(err) {
-		entry.WithField(errorKey, err).Debugln(gRPC)
+	if err != nil {
+		if s.WithRequest {
+			entry = entry.WithField("request", req)
+		}
+		if grpcUtils.IsCanceled(err) {
+			entry.WithField(errorKey, err).Debugln(gRPC)
+		} else {
+			entry.WithField(errorKey, err).Warnln(gRPC)
+		}
 	} else {
-		entry.WithField(errorKey, err).Warnln(gRPC)
+		entry.Debugf("%s (success)", gRPC)
 	}
 	return resp, err
 }
@@ -47,15 +52,19 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	begin := time.Now()
 	err := handler(srv, ss)
-	if err == nil {
+	if err == nil && !s.EnableDebug {
 		return nil
 	}
 
 	entry := user.LogWith(ss.Context(), s.Log).WithFields(logging.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
-	if grpcUtils.IsCanceled(err) {
-		entry.WithField(errorKey, err).Debugln(gRPC)
+	if err != nil {
+		if grpcUtils.IsCanceled(err) {
+			entry.WithField(errorKey, err).Debugln(gRPC)
+		} else {
+			entry.WithField(errorKey, err).Warnln(gRPC)
+		}
 	} else {
-		entry.WithField(errorKey, err).Warnln(gRPC)
+		entry.Debugf("%s (success)", gRPC)
 	}
 	return err
 }

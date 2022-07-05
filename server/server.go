@@ -50,6 +50,14 @@ type SignalHandler interface {
 	Stop()
 }
 
+// TLSConfig contains TLS parameters for Config.
+type TLSConfig struct {
+	TLSCertPath string `yaml:"cert_file"`
+	TLSKeyPath  string `yaml:"key_file"`
+	ClientAuth  string `yaml:"client_auth_type"`
+	ClientCAs   string `yaml:"client_ca_file"`
+}
+
 // Config for a Server
 type Config struct {
 	MetricsNamespace  string `yaml:"-"`
@@ -62,8 +70,8 @@ type Config struct {
 	GRPCListenPort    int    `yaml:"grpc_listen_port"`
 	GRPCConnLimit     int    `yaml:"grpc_listen_conn_limit"`
 
-	HTTPTLSConfig web.TLSStruct `yaml:"http_tls_config"`
-	GRPCTLSConfig web.TLSStruct `yaml:"grpc_tls_config"`
+	HTTPTLSConfig TLSConfig `yaml:"http_tls_config"`
+	GRPCTLSConfig TLSConfig `yaml:"grpc_tls_config"`
 
 	RegisterInstrumentation  bool `yaml:"register_instrumentation"`
 	ExcludeRequestInLog      bool `yaml:"-"`
@@ -239,7 +247,12 @@ func New(cfg Config) (*Server, error) {
 	var httpTLSConfig *tls.Config
 	if len(cfg.HTTPTLSConfig.TLSCertPath) > 0 && len(cfg.HTTPTLSConfig.TLSKeyPath) > 0 {
 		// Note: ConfigToTLSConfig from prometheus/exporter-toolkit is awaiting security review.
-		httpTLSConfig, err = web.ConfigToTLSConfig(&cfg.HTTPTLSConfig)
+		httpTLSConfig, err = web.ConfigToTLSConfig(&web.TLSStruct{
+			TLSCertPath: cfg.HTTPTLSConfig.TLSCertPath,
+			TLSKeyPath:  cfg.HTTPTLSConfig.TLSKeyPath,
+			ClientAuth:  cfg.HTTPTLSConfig.ClientAuth,
+			ClientCAs:   cfg.HTTPTLSConfig.ClientCAs,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("error generating http tls config: %v", err)
 		}
@@ -247,7 +260,12 @@ func New(cfg Config) (*Server, error) {
 	var grpcTLSConfig *tls.Config
 	if len(cfg.GRPCTLSConfig.TLSCertPath) > 0 && len(cfg.GRPCTLSConfig.TLSKeyPath) > 0 {
 		// Note: ConfigToTLSConfig from prometheus/exporter-toolkit is awaiting security review.
-		grpcTLSConfig, err = web.ConfigToTLSConfig(&cfg.GRPCTLSConfig)
+		grpcTLSConfig, err = web.ConfigToTLSConfig(&web.TLSStruct{
+			TLSCertPath: cfg.GRPCTLSConfig.TLSCertPath,
+			TLSKeyPath:  cfg.GRPCTLSConfig.TLSKeyPath,
+			ClientAuth:  cfg.GRPCTLSConfig.ClientAuth,
+			ClientCAs:   cfg.GRPCTLSConfig.ClientCAs,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("error generating grpc tls config: %v", err)
 		}

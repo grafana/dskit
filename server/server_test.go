@@ -22,7 +22,6 @@ import (
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/exporter-toolkit/web"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
@@ -522,13 +521,13 @@ func TestTLSServer(t *testing.T) {
 		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
 		HTTPListenPort:    9193,
-		HTTPTLSConfig: web.TLSStruct{
+		HTTPTLSConfig: TLSConfig{
 			TLSCertPath: "certs/server.crt",
 			TLSKeyPath:  "certs/server.key",
 			ClientAuth:  "RequireAndVerifyClientCert",
 			ClientCAs:   "certs/root.crt",
 		},
-		GRPCTLSConfig: web.TLSStruct{
+		GRPCTLSConfig: TLSConfig{
 			TLSCertPath: "certs/server.crt",
 			TLSKeyPath:  "certs/server.key",
 			ClientAuth:  "VerifyClientCertIfGiven",

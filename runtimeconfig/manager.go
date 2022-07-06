@@ -22,14 +22,14 @@ import (
 	"github.com/grafana/dskit/services"
 )
 
-// Loader loads the configuration from file.
+// Loader loads the configuration from files.
 type Loader func(r io.Reader) (interface{}, error)
 
 // Config holds the config for an Manager instance.
 // It holds config related to loading per-tenant config.
 type Config struct {
 	ReloadPeriod time.Duration `yaml:"period" category:"advanced"`
-	// LoadPath contains the path to the runtime config file, requires an
+	// LoadPath contains the path to the runtime config files, requires a
 	// non-empty value
 	LoadPath string `yaml:"file"`
 	Loader   Loader `yaml:"-"`
@@ -37,11 +37,11 @@ type Config struct {
 
 // RegisterFlags registers flags.
 func (mc *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&mc.LoadPath, "runtime-config.file", "", "Comma separated list of yaml files with the configuration that can be updated at runtime.")
-	f.DurationVar(&mc.ReloadPeriod, "runtime-config.reload-period", 10*time.Second, "How often to check runtime config file.")
+	f.StringVar(&mc.LoadPath, "runtime-config.file", "", "Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.")
+	f.DurationVar(&mc.ReloadPeriod, "runtime-config.reload-period", 10*time.Second, "How often to check runtime config files.")
 }
 
-// Manager periodically reloads the configuration from a file, and keeps this
+// Manager periodically reloads the configuration from specified files, and keeps this
 // configuration available for clients.
 type Manager struct {
 	services.Service

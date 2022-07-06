@@ -2,6 +2,7 @@ package runtimeconfig
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -75,7 +76,7 @@ func newTestOverridesManagerConfig(t *testing.T, i int32) (*atomic.Int32, Config
 	}
 }
 
-func generateRuntimeFiles(overrideStrings []string) ([]*os.File, error) {
+func generateRuntimeFiles(t *testing.T, overrideStrings []string) ([]*os.File, error) {
 	var overrideFiles []*os.File
 
 	for count, override := range overrideStrings {
@@ -90,6 +91,9 @@ func generateRuntimeFiles(overrideStrings []string) ([]*os.File, error) {
 		}
 		overrideFiles = append(overrideFiles, tempFile)
 	}
+	t.Cleanup(func() {
+		cleanupOverridesFiles(overrideFiles)
+	})
 	return overrideFiles, nil
 }
 
@@ -101,7 +105,7 @@ func generateLoadPath(overrideFiles []*os.File) string {
 	return strings.Join(fileNames, ",")
 }
 
-func cleanup(overrideFiles []*os.File) error {
+func cleanupOverridesFiles(overrideFiles []*os.File) error {
 	for _, f := range overrideFiles {
 		err := f.Close()
 		if err != nil {
@@ -116,15 +120,11 @@ func cleanup(overrideFiles []*os.File) error {
 }
 
 func TestNewOverridesManager(t *testing.T) {
-	tempFiles, err := generateRuntimeFiles(
+	tempFiles, err := generateRuntimeFiles(t,
 		[]string{`overrides:
   user1:
     limit2: 150`})
 	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, cleanup(tempFiles))
-	}()
 
 	defaultTestLimits = &TestLimits{Limit1: 100}
 
@@ -144,10 +144,13 @@ func TestNewOverridesManager(t *testing.T) {
 
 	// Make sure test limits were loaded.
 	require.NotNil(t, overridesManager.GetConfig())
+	conf := overridesManager.GetConfig().(*testOverrides)
+	require.NotNil(t, conf)
+	require.Equal(t, 150, conf.Overrides["user1"].Limit2)
 }
 
 func TestOverridesManagerMultipleFilesAppend(t *testing.T) {
-	tempFiles, err := generateRuntimeFiles(
+	tempFiles, err := generateRuntimeFiles(t,
 		[]string{`overrides:
   user1:
     limit1: 101`,
@@ -161,10 +164,6 @@ func TestOverridesManagerMultipleFilesAppend(t *testing.T) {
   user2:
     limit2: 104`})
 	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, cleanup(tempFiles))
-	}()
 
 	// testing NewRuntimeConfigManager with overrides reload config set
 	overridesManagerConfig := Config{
@@ -190,7 +189,7 @@ func TestOverridesManagerMultipleFilesAppend(t *testing.T) {
 }
 
 func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
-	tempFiles, err := generateRuntimeFiles(
+	tempFiles, err := generateRuntimeFiles(t,
 		[]string{
 			`overrides:
   user1:
@@ -199,10 +198,6 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
   user1:
     limit1: 1234`})
 	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, cleanup(tempFiles))
-	}()
 
 	// testing NewRuntimeConfigManager with overrides reload config set
 	overridesManagerConfig := Config{
@@ -225,16 +220,12 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
 }
 
 func TestOverridesManagerMultipleFilesWithEmptyFile(t *testing.T) {
-	tempFiles, err := generateRuntimeFiles(
+	tempFiles, err := generateRuntimeFiles(t,
 		[]string{`overrides:
   user1:
     limit1: 100`,
 			``})
 	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, cleanup(tempFiles))
-	}()
 
 	// testing NewRuntimeConfigManager with overrides reload config set
 	overridesManagerConfig := Config{
@@ -267,8 +258,9 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	}()
 
 	config := []byte(`overrides:
-  user1:
-    limit2: 150`)
+    user1:
+        limit2: 150
+`)
 	err = os.WriteFile(tempFile.Name(), config, 0600)
 	require.NoError(t, err)
 
@@ -288,22 +280,23 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
 	// check if the metrics is set to the config map value before
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime config file.
 					# TYPE runtime_config_hash gauge
-					runtime_config_hash{sha256="fa368abb9506cf551faee8f92705fa5d5e1e3cf17ad43bb01f69ff64bac7c301"} 1
+					runtime_config_hash{sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful 1
-				`)))
+				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
 
 	// need to use buffer, otherwise loadConfig will throw away update
 	ch := overridesManager.CreateListenerChannel(1)
 
 	// rewrite file
 	config = []byte(`overrides:
-  user2:
-    limit2: 200`)
+    user2:
+        limit2: 200
+`)
 	err = os.WriteFile(tempFile.Name(), config, 0600)
 	require.NoError(t, err)
 
@@ -324,14 +317,14 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	require.Equal(t, 100, to.Overrides["user2"].Limit1) // from defaults
 
 	// check if the metrics have been updated
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime config file.
 					# TYPE runtime_config_hash gauge
-					runtime_config_hash{sha256="8ff7f344466630e84a3fab44273e8797ec5799dd29f6fdbeea99e4bd771be9bd"} 1
+					runtime_config_hash{sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful 1
-				`)))
+				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
 
 	// Cleaning up
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))

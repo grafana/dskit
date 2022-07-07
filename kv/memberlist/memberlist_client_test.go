@@ -576,6 +576,7 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 
 	err := testMultipleClientsWithConfigGenerator(t, members, configGen)
 	require.Error(t, err)
+	require.Contains(t, err.Error(), fmt.Sprintf("expected to see %d updates, got", members))
 }
 
 func TestMultipleClientsWithMixedLabelsAndSkipLabelCheck(t *testing.T) {

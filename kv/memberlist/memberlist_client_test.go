@@ -210,11 +210,7 @@ func getData(t *testing.T, kv *Client, key string) *data {
 }
 
 func cas(kv *Client, key string, updateFn func(*data) (*data, bool, error)) error {
-	if err := casWithErr(context.Background(), kv, key, updateFn); err != nil {
-		return err
-	}
-
-	return nil
+	return casWithErr(context.Background(), kv, key, updateFn)
 }
 
 func casWithErr(ctx context.Context, kv *Client, key string, updateFn func(*data) (*data, bool, error)) error {
@@ -748,11 +744,11 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 		} else {
 			if len(allTokens) != len(tokens) {
 				return fmt.Errorf("Member %d: Expected %d tokens, got %d", i, len(allTokens), len(tokens))
-			} else {
-				for ix, tok := range allTokens {
-					if tok != tokens[ix] {
-						return fmt.Errorf("Member %d: Tokens at position %d differ: %v, %v", i, ix, tok, tokens[ix])
-					}
+			}
+
+			for ix, tok := range allTokens {
+				if tok != tokens[ix] {
+					return fmt.Errorf("Member %d: Tokens at position %d differ: %v, %v", i, ix, tok, tokens[ix])
 				}
 			}
 		}

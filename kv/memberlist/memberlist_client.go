@@ -140,8 +140,8 @@ type KVConfig struct {
 	AdvertiseAddr string `yaml:"advertise_addr"`
 	AdvertisePort int    `yaml:"advertise_port"`
 
-	ClusterLabel                    string `yaml:"cluster_label" category:"experimental"`
-	ClusterLabelVerificationEnabled bool   `yaml:"cluster_label_verification_enabled" category:"experimental"`
+	ClusterLabel                     string `yaml:"cluster_label" category:"experimental"`
+	ClusterLabelVerificationDisabled bool   `yaml:"cluster_label_verification_disabled" category:"experimental"`
 
 	// List of members to join
 	JoinMembers      flagext.StringSlice `yaml:"join_members"`
@@ -197,7 +197,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
 	f.IntVar(&cfg.AdvertisePort, prefix+"memberlist.advertise-port", mlDefaults.AdvertisePort, "Gossip port to advertise to other members in the cluster. Used for NAT traversal.")
 	f.StringVar(&cfg.ClusterLabel, prefix+"memberlist.cluster-label", mlDefaults.Label, "The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'skip-inbound-label-check' configuration option is enabled.")
-	f.BoolVar(&cfg.ClusterLabelVerificationEnabled, prefix+"memberlist.cluster-label-verification-enabled", true, "When disabled, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be skipped while rolling out the change to the configured cluster label in a live memberlist cluster.")
+	f.BoolVar(&cfg.ClusterLabelVerificationDisabled, prefix+"memberlist.cluster-label-verification-disabled", mlDefaults.SkipInboundLabelCheck, "When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be skipped while rolling out the change to the configured cluster label in a live memberlist cluster.")
 
 	cfg.TCPTransport.RegisterFlagsWithPrefix(f, prefix)
 }
@@ -405,7 +405,7 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	mlCfg.AdvertisePort = m.cfg.AdvertisePort
 
 	mlCfg.Label = m.cfg.ClusterLabel
-	mlCfg.SkipInboundLabelCheck = !m.cfg.ClusterLabelVerificationEnabled
+	mlCfg.SkipInboundLabelCheck = m.cfg.ClusterLabelVerificationDisabled
 
 	if m.cfg.NodeName != "" {
 		mlCfg.Name = m.cfg.NodeName

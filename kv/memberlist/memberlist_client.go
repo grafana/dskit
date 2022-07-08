@@ -196,8 +196,8 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.EnableCompression, prefix+"memberlist.compression-enabled", mlDefaults.EnableCompression, "Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization.")
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
 	f.IntVar(&cfg.AdvertisePort, prefix+"memberlist.advertise-port", mlDefaults.AdvertisePort, "Gossip port to advertise to other members in the cluster. Used for NAT traversal.")
-	f.StringVar(&cfg.Label, prefix+"memberlist.label", mlDefaults.Label, "Label is an optional set of bytes to include on the outside of each packet and stream.")
-	f.BoolVar(&cfg.SkipInboundLabelCheck, prefix+"memberlist.skip-inbound-label-check", mlDefaults.SkipInboundLabelCheck, "When enabled we ignore labels on inbound packets and gossip streams.")
+	f.StringVar(&cfg.Label, prefix+"memberlist.label", mlDefaults.Label, "Label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'skip-inbound-label-check' configuration option is enabled.")
+	f.BoolVar(&cfg.SkipInboundLabelCheck, prefix+"memberlist.skip-inbound-label-check", mlDefaults.SkipInboundLabelCheck, "When enabled, memberlist doesn't verify that inbound packets and gossip streams have the label matching the configured one. This verification should be skipped while rolling out the change of the configured label in a live memberlist cluster.")
 
 	cfg.TCPTransport.RegisterFlagsWithPrefix(f, prefix)
 }

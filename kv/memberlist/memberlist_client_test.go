@@ -533,7 +533,7 @@ func defaultKVConfig(i int) KVConfig {
 	cfg.NodeName = id
 
 	cfg.GossipInterval = 100 * time.Millisecond
-	cfg.GossipNodes = 3
+	cfg.GossipNodes = 10
 	cfg.PushPullInterval = 5 * time.Second
 
 	cfg.TCPTransport = TCPTransportConfig{

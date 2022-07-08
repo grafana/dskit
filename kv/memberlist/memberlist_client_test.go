@@ -552,14 +552,13 @@ func TestMultipleClients(t *testing.T) {
 }
 
 func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
-	members := 3
 	// We want 3 members, they will be configured with the following labels:
 	// 1) ""
 	// 2) "label1"
 	// 3) "label2"
 	//
 	// We expect that it won't be possible to build a memberlist cluster with mixed labels.
-	var labels = []string{
+	var membersLabel = []string{
 		"",
 		"label1",
 		"label2",
@@ -568,25 +567,24 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 	configGen := func(i int) KVConfig {
 		cfg := defaultKVConfig(i)
 
-		cfg.SkipInboundLabelCheck = false
-		cfg.Label = labels[i]
+		cfg.ClusterLabelVerificationEnabled = true
+		cfg.ClusterLabel = membersLabel[i]
 
 		return cfg
 	}
 
-	err := testMultipleClientsWithConfigGenerator(t, members, configGen)
+	err := testMultipleClientsWithConfigGenerator(t, len(membersLabel), configGen)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), fmt.Sprintf("expected to see %d updates, got", members))
+	require.Contains(t, err.Error(), fmt.Sprintf("expected to see at least %d updates, got", len(membersLabel)))
 }
 
-func TestMultipleClientsWithMixedLabelsAndSkipLabelCheck(t *testing.T) {
-	members := 3
-	// We want 3 members, all will have the skip-inbound-label-check enabled.
+func TestMultipleClientsWithMixedLabelsAndClusterLabelVerificationDisabled(t *testing.T) {
+	// We want 3 members, all will have the cluster label verification disabled.
 	// They will be configured with mixed labels, and some without any labels.
 	//
-	// If the skip-inbound-label-check works as expected then these members
+	// If the disabled verification works as expected then these members
 	// will be able to form a cluster together.
-	var labels = []string{
+	var membersLabel = []string{
 		"",
 		"label1",
 		"label2",
@@ -595,24 +593,24 @@ func TestMultipleClientsWithMixedLabelsAndSkipLabelCheck(t *testing.T) {
 	configGen := func(i int) KVConfig {
 		cfg := defaultKVConfig(i)
 
-		cfg.SkipInboundLabelCheck = true
-		cfg.Label = labels[i]
+		cfg.ClusterLabelVerificationEnabled = false
+		cfg.ClusterLabel = membersLabel[i]
 
 		return cfg
 	}
 
-	err := testMultipleClientsWithConfigGenerator(t, members, configGen)
+	err := testMultipleClientsWithConfigGenerator(t, len(membersLabel), configGen)
 	require.NoError(t, err)
 }
 
-func TestMultipleClientsWithSameLabelWithoutSkipLabelCheck(t *testing.T) {
+func TestMultipleClientsWithSameLabelWithClusterLabelVerification(t *testing.T) {
 	members := 10
 	label := "myTestLabel"
 
 	configGen := func(i int) KVConfig {
 		cfg := defaultKVConfig(i)
 
-		cfg.Label = label
+		cfg.ClusterLabel = label
 
 		return cfg
 	}
@@ -705,7 +703,7 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 	if updates < members {
 		// in general, at least one update from each node. (although that's not necessarily true...
 		// but typically we get more updates than that anyway)
-		return fmt.Errorf("expected to see %d updates, got %d", members, updates)
+		return fmt.Errorf("expected to see at least %d updates, got %d", members, updates)
 	}
 
 	if err := getClientErr(); err != nil {
@@ -864,7 +862,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 	close(stop)
 
 	if observedMembers < members {
-		t.Errorf("expected to see %d but saw %d", members, observedMembers)
+		t.Errorf("expected to see at least %d but saw %d", members, observedMembers)
 	}
 }
 

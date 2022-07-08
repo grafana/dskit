@@ -567,7 +567,7 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 	configGen := func(i int) KVConfig {
 		cfg := defaultKVConfig(i)
 
-		cfg.ClusterLabelVerificationEnabled = true
+		cfg.ClusterLabelVerificationDisabled = false
 		cfg.ClusterLabel = membersLabel[i]
 
 		return cfg
@@ -593,7 +593,7 @@ func TestMultipleClientsWithMixedLabelsAndClusterLabelVerificationDisabled(t *te
 	configGen := func(i int) KVConfig {
 		cfg := defaultKVConfig(i)
 
-		cfg.ClusterLabelVerificationEnabled = false
+		cfg.ClusterLabelVerificationDisabled = true
 		cfg.ClusterLabel = membersLabel[i]
 
 		return cfg

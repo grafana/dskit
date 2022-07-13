@@ -427,7 +427,7 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	mlCfg.ProbeInterval = 5 * time.Second // Probe a random node every this interval. This setting is also the total timeout for the direct + indirect probes.
 	mlCfg.ProbeTimeout = 2 * time.Second  // Timeout for the direct probe.
 
-	level.Info(m.logger).Log("msg", "Using memberlist cluster label and node name", "cluster_label", mlCfg.Label, "node", mlCfg.Name))
+	level.Info(m.logger).Log("msg", "Using memberlist cluster label and node name", "cluster_label", mlCfg.Label, "node", mlCfg.Name)
 
 	return mlCfg, nil
 }

@@ -58,7 +58,7 @@ func checkInvalidate(t *testing.T, messages map[string]ringBroadcast, key1, key2
 	}
 }
 
-func TestInvalidation(t *testing.T) {
+func TestTransmitLimitedQueue(t *testing.T) {
 	broadcasts := &memberlist.TransmitLimitedQueue{RetransmitMult: 3, NumNodes: func() int { return 5 }}
 
 	// This message gets assigned internal id 1 by TransmitLimitedQueue.

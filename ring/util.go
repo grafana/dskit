@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"net"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -55,7 +54,7 @@ func GetInstanceAddr(configAddr string, netInterfaces []string, logger log.Logge
 		return configAddr, nil
 	}
 
-	addr, err := getFirstAddressOf(netInterfaces, logger)
+	addr, err := GetFirstAddressOf(netInterfaces, logger)
 	if err != nil {
 		return "", err
 	}
@@ -172,9 +171,9 @@ func searchToken(tokens []uint32, key uint32) int {
 	return i
 }
 
-// GetFirstAddressOf returns the first IPv4 address of the supplied interface names, omitting any 169.254.x.x automatic private IPs if possible.
-func getFirstAddressOf(names []string, logger log.Logger) (string, error) {
-	var ipAddr string
+// GetFirstAddressOf returns the first IPv4/IPV6 address of the supplied interface names, omitting any link-local addresses.
+func GetFirstAddressOf(names []string, logger log.Logger) (string, error) {
+	var ipAddr net.IP
 	for _, name := range names {
 		inf, err := net.InterfaceByName(name)
 		if err != nil {
@@ -190,33 +189,33 @@ func getFirstAddressOf(names []string, logger log.Logger) (string, error) {
 			level.Warn(logger).Log("msg", "no addresses found for interface", "inf", name, "err", err)
 			continue
 		}
-		if ip := filterIPs(addrs); ip != "" {
+		if ip := filterIPs(addrs); ip.String() != "" {
 			ipAddr = ip
 		}
-		if strings.HasPrefix(ipAddr, `169.254.`) || ipAddr == "" {
+		if ipAddr.IsLinkLocalUnicast() || ipAddr == nil {
 			continue
 		}
-		return ipAddr, nil
+		return ipAddr.String(), nil
 	}
-	if ipAddr == "" {
-		return "", fmt.Errorf("No address found for %s", names)
+	if ipAddr == nil {
+		return "", fmt.Errorf("no useable address found for interfaces %s", names)
 	}
-	if strings.HasPrefix(ipAddr, `169.254.`) {
-		level.Warn(logger).Log("msg", "using automatic private ip", "address", ipAddr)
+	if ipAddr.IsLinkLocalUnicast() {
+		level.Warn(logger).Log("msg", "using link-local address", "address", ipAddr.String())
 	}
-	return ipAddr, nil
+	return ipAddr.String(), nil
 }
 
 // filterIPs attempts to return the first non automatic private IP (APIPA / 169.254.x.x) if possible, only returning APIPA if available and no other valid IP is found.
-func filterIPs(addrs []net.Addr) string {
-	var ipAddr string
+func filterIPs(addrs []net.Addr) net.IP {
+	var ipAddr net.IP
 	for _, addr := range addrs {
 		if v, ok := addr.(*net.IPNet); ok {
-			if ip := v.IP.To4(); ip != nil {
-				ipAddr = v.IP.String()
-				if !strings.HasPrefix(ipAddr, `169.254.`) {
-					return ipAddr
-				}
+			if v != nil {
+				ipAddr = v.IP
+			}
+			if !v.IP.IsLinkLocalUnicast() {
+				return v.IP
 			}
 		}
 	}

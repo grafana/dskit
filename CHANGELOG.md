@@ -32,6 +32,7 @@
   * `ring_member_ownership_percent`
 * [CHANGE] Memberlist: `-memberlist.abort-if-join-fails` option now defaults to false.
 * [CHANGE] Remove middleware package. #182
+* [CHANGE] Memberlist: disabled TCP-based ping fallback, because dskit already uses a custom transport based on TCP. #194
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

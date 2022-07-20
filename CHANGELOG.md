@@ -32,6 +32,7 @@
   * `ring_member_ownership_percent`
 * [CHANGE] Memberlist: `-memberlist.abort-if-join-fails` option now defaults to false.
 * [CHANGE] Remove middleware package. #182
+* [CHANGE] Memberlist: disabled TCP-based ping fallback, because dskit already uses a custom transport based on TCP. #194
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41
@@ -55,6 +56,7 @@
 * [ENHANCEMENT] ring: Added InstanceRegisterDelegate. #177
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #181
 * [ENHANCEMENT] Runtimeconfig: Allow providing multiple runtime config yaml files as comma separated list file paths. #183
+* [ENHANCEMENT] Memberlist: Add cluster label support to memberlist client. #187
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

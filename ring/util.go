@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"net/netip"
 	"sort"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 
 	"github.com/grafana/dskit/backoff"
 )
@@ -173,14 +175,17 @@ func searchToken(tokens []uint32, key uint32) int {
 
 // GetFirstAddressOf returns the first IPv4/IPV6 address of the supplied interface names, omitting any link-local addresses.
 func GetFirstAddressOf(names []string, logger log.Logger) (string, error) {
-	var ipAddr net.IP
+	return getFirstAddressOf(names, logger, getInterfaceAddresses)
+}
+
+// NetworkInterfaceGetter matches the signature of net.InterfaceByName() to allow for test mocks.
+type NetworkInterfaceAddressGetter func(name string) ([]netip.Addr, error)
+
+// GetFirstAddressOf returns the first IPv4/IPV6 address of the supplied interface names, omitting any link-local addresses.
+func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrs NetworkInterfaceAddressGetter) (string, error) {
+	var ipAddr netip.Addr
 	for _, name := range names {
-		inf, err := net.InterfaceByName(name)
-		if err != nil {
-			level.Warn(logger).Log("msg", "error getting interface", "inf", name, "err", err)
-			continue
-		}
-		addrs, err := inf.Addrs()
+		addrs, err := interfaceAddrs(name)
 		if err != nil {
 			level.Warn(logger).Log("msg", "error getting addresses for interface", "inf", name, "err", err)
 			continue
@@ -189,15 +194,15 @@ func GetFirstAddressOf(names []string, logger log.Logger) (string, error) {
 			level.Warn(logger).Log("msg", "no addresses found for interface", "inf", name, "err", err)
 			continue
 		}
-		if ip := filterIPs(addrs); ip.String() != "" {
+		if ip := filterIPs(addrs); ip.IsValid() {
 			ipAddr = ip
 		}
-		if ipAddr.IsLinkLocalUnicast() || ipAddr == nil {
+		if ipAddr.IsLinkLocalUnicast() || !ipAddr.IsValid() {
 			continue
 		}
 		return ipAddr.String(), nil
 	}
-	if ipAddr == nil {
+	if !ipAddr.IsValid() {
 		return "", fmt.Errorf("no useable address found for interfaces %s", names)
 	}
 	if ipAddr.IsLinkLocalUnicast() {
@@ -206,17 +211,42 @@ func GetFirstAddressOf(names []string, logger log.Logger) (string, error) {
 	return ipAddr.String(), nil
 }
 
+// getInterfaceAddresses is the standard approach to collecting []net.Addr from a network interface by name.
+func getInterfaceAddresses(name string) ([]netip.Addr, error) {
+	inf, err := net.InterfaceByName(name)
+	if err != nil {
+		return nil, err
+	}
+
+	addrs, err := inf.Addrs()
+	if err != nil {
+		return nil, err
+	}
+
+	// Using netip.Addr to allow for easier and consistent address parsing.
+	// Without this, the net.ParseCIDR() that we might like to use in a test does
+	// not have the same net.Addr implementation that we get from calling
+	// interface.Addrs() as above.  Here we normalize on netip.Addr.
+	netaddrs := make([]netip.Addr, len(addrs))
+	for i, a := range addrs {
+		netaddrs[i], err = netip.ParseAddr(a.String())
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to parse netip.Addr")
+		}
+	}
+
+	return netaddrs, nil
+}
+
 // filterIPs attempts to return the first non automatic private IP (APIPA / 169.254.x.x) if possible, only returning APIPA if available and no other valid IP is found.
-func filterIPs(addrs []net.Addr) net.IP {
-	var ipAddr net.IP
+func filterIPs(addrs []netip.Addr) netip.Addr {
+	var ipAddr netip.Addr
 	for _, addr := range addrs {
-		if v, ok := addr.(*net.IPNet); ok {
-			if v != nil {
-				ipAddr = v.IP
-			}
-			if !v.IP.IsLinkLocalUnicast() {
-				return v.IP
-			}
+		if addr.String() != "" {
+			ipAddr = addr
+		}
+		if !addr.IsLinkLocalUnicast() {
+			return addr
 		}
 	}
 	return ipAddr

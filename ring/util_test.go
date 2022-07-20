@@ -3,9 +3,12 @@ package ring
 import (
 	"context"
 	"fmt"
+	"net/netip"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -414,4 +417,105 @@ func TestWaitInstanceState_ExitsAfterActualStateEqualsState(t *testing.T) {
 
 	assert.Nil(t, err)
 	ring.AssertNumberOfCalls(t, "GetInstanceState", 1)
+}
+
+func getMockInterfaceAddresses(name string) ([]netip.Addr, error) {
+	toAddr := func(addr string) netip.Addr {
+		prefix := netip.MustParsePrefix(addr)
+		return prefix.Addr()
+	}
+
+	interfaces := map[string][]netip.Addr{
+		"wlan0": {
+			toAddr("172.16.16.51/24"),
+			toAddr("fc16::c9a7:1d89:2dd8:f59a/64"),
+			toAddr("fe80::ec62:ed39:f931:bf6d/64"),
+		},
+		"em0": {
+			toAddr("fe80::ec62:ed39:f931:bf6d/64"),
+			toAddr("fc99::9a/64"),
+		},
+		"lo1": {
+			toAddr("fe80::ec62:ed39:f931:bf6d/64"),
+		},
+		"lo2": {
+			toAddr("169.254.1.1/16"),
+		},
+		"lo9":  {},
+		"lo10": {},
+		"enp0s31f6": {
+			toAddr("1.1.1.1/31"),
+		},
+		"enp0s31f7": {
+			toAddr("2001::1111/120"),
+		},
+	}
+
+	if val, ok := interfaces[name]; ok {
+		return val, nil
+	}
+
+	return nil, fmt.Errorf("no such network interface")
+}
+
+func TestGetFirstAddressOf(t *testing.T) {
+	// logger := log.NewNopLogger()
+	logger := log.NewLogfmtLogger(os.Stdout)
+
+	cases := []struct {
+		names []string
+		addr  string
+		err   error
+	}{
+		{
+			names: []string{"wlan0"},
+			addr:  "172.16.16.51",
+		},
+		{
+			names: []string{"em0"},
+			addr:  "fc99::9a",
+		},
+		{
+			names: []string{"lo1"},
+			addr:  "fe80::ec62:ed39:f931:bf6d",
+		},
+		{
+			names: []string{"lo2"},
+			addr:  "169.254.1.1",
+		},
+		{
+			names: []string{"lo9"},
+			err:   fmt.Errorf("no useable address found for interfaces [lo9]"),
+		},
+		{
+			names: []string{"lo9", "lo10"},
+			err:   fmt.Errorf("no useable address found for interfaces [lo9 lo10]"),
+		},
+		{
+			names: []string{"lo1", "lo2", "enp0s31f6"},
+			addr:  "1.1.1.1",
+		},
+		{
+			names: []string{"lo1", "lo2", "enp0s31f7"},
+			addr:  "2001::1111",
+		},
+		{
+			names: []string{"lo1", "lo2", "enp0s31f7", "enp0s31f6"},
+			addr:  "2001::1111",
+		},
+		{
+			names: []string{"lo1", "lo2", "enp0s31f6", "enp0s31f7"},
+			addr:  "1.1.1.1",
+		},
+	}
+
+	for _, tc := range cases {
+		addr, err := getFirstAddressOf(tc.names, logger, getMockInterfaceAddresses)
+		if tc.err != nil {
+			require.Equal(t, tc.err, err)
+		} else {
+			require.NoError(t, err)
+		}
+		require.Equal(t, tc.addr, addr)
+	}
 }

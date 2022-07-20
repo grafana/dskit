@@ -92,7 +92,7 @@ func generateRuntimeFiles(t *testing.T, overrideStrings []string) ([]*os.File, e
 		overrideFiles = append(overrideFiles, tempFile)
 	}
 	t.Cleanup(func() {
-		cleanupOverridesFiles(overrideFiles)
+		require.NoError(t, cleanupOverridesFiles(overrideFiles))
 	})
 	return overrideFiles, nil
 }

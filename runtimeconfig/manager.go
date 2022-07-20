@@ -29,8 +29,8 @@ type Loader func(r io.Reader) (interface{}, error)
 // It holds config related to loading per-tenant config.
 type Config struct {
 	ReloadPeriod time.Duration `yaml:"period" category:"advanced"`
-	// LoadPath contains the path to the runtime config files, requires a
-	// non-empty value
+	// LoadPath contains the path to the runtime config files.
+	// Requires a non-empty value
 	LoadPath string `yaml:"file"`
 	Loader   Loader `yaml:"-"`
 }
@@ -144,7 +144,7 @@ func (om *Manager) loop(ctx context.Context) error {
 	}
 }
 
-// loadConfig loads all configuration files using the loader function, merges the yaml configuration files into one yaml document,
+// loadConfig loads all configuration files using the loader function then merges the yaml configuration files into one yaml document.
 // and notifies listeners if successful.
 func (om *Manager) loadConfig() error {
 	mergedConfig := map[string]interface{}{}
@@ -153,12 +153,12 @@ func (om *Manager) loadConfig() error {
 		buf, err := os.ReadFile(f)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
-			return errors.Wrap(err, "read file")
+			return errors.Wrapf(err, "read file %q", f)
 		}
 		err = yaml.Unmarshal(buf, &yamlFile)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
-			return errors.Wrap(err, "unmarshal file")
+			return errors.Wrapf(err, "unmarshal file %q", f)
 		}
 		mergedConfig = mergeConfigMaps(mergedConfig, yamlFile)
 	}

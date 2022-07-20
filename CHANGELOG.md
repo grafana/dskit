@@ -33,6 +33,7 @@
 * [CHANGE] Memberlist: `-memberlist.abort-if-join-fails` option now defaults to false.
 * [CHANGE] Remove middleware package. #182
 * [CHANGE] Memberlist: disabled TCP-based ping fallback, because dskit already uses a custom transport based on TCP. #194
+* [CHANGE] Memberlist: KV store now fast-joins memberlist cluster before serving any KV requests. #195
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

@@ -437,7 +437,7 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	return mlCfg, nil
 }
 
-func (m *KV) starting(_ context.Context) error {
+func (m *KV) starting(ctx context.Context) error {
 	mlCfg, err := m.buildMemberlistConfig()
 	if err != nil {
 		return err
@@ -463,25 +463,21 @@ func (m *KV) starting(_ context.Context) error {
 	}
 	m.initWG.Done()
 
+	// Try to fast-join memberlist cluster in Starting state, so that we don't start with empty KV store.
+	if len(m.cfg.JoinMembers) > 0 {
+		m.fastJoinMembersOnStartup(ctx)
+	}
+
 	return nil
 }
 
 var errFailedToJoinCluster = errors.New("failed to join memberlist cluster on startup")
 
 func (m *KV) running(ctx context.Context) error {
-	// Join the cluster, if configured. We want this to happen in Running state, because started memberlist
-	// is good enough for usage from Client (which checks for Running state), even before it connects to the cluster.
 	if len(m.cfg.JoinMembers) > 0 {
-		// Lookup SRV records for given addresses to discover members.
-		members := m.discoverMembers(ctx, m.cfg.JoinMembers)
-
-		err := m.joinMembersOnStartup(ctx, members)
-		if err != nil {
-			level.Error(m.logger).Log("msg", "failed to join memberlist cluster", "err", err)
-
-			if m.cfg.AbortIfJoinFails {
-				return errFailedToJoinCluster
-			}
+		ok := m.joinMembersOnStartup(ctx)
+		if !ok && m.cfg.AbortIfJoinFails {
+			return errFailedToJoinCluster
 		}
 	}
 
@@ -533,19 +529,56 @@ func (m *KV) JoinMembers(members []string) (int, error) {
 	return m.memberlist.Join(members)
 }
 
-func (m *KV) joinMembersOnStartup(ctx context.Context, members []string) error {
-	reached, err := m.memberlist.Join(members)
-	if err == nil {
-		level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached)
-		return nil
+// fastJoinMembersOnStartup attempts to reach small subset of nodes (computed as RetransmitMult * log10(number of discovered members + 1)).
+func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
+	startTime := time.Now()
+
+	members := m.discoverMembers(ctx, m.cfg.JoinMembers)
+	toReach := m.cfg.RetransmitMult * int(math.Ceil(math.Log10(float64(len(members)+1))))
+	if toReach > len(members) {
+		toReach = len(members)
 	}
 
-	if m.cfg.MaxJoinRetries <= 0 {
-		return err
+	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "members_found", len(members), "to_reach", toReach)
+
+	totalReached := 0
+	previouslyAttemptedMembers := map[string]bool{}
+
+	for ; toReach > 0; members = m.discoverMembers(ctx, m.cfg.JoinMembers) {
+		// Remove members we have tried before.
+		for ix := len(members) - 1; ix >= 0; ix-- {
+			if previouslyAttemptedMembers[members[ix]] {
+				members = append(members[:ix], members[ix+1:]...)
+			}
+		}
+
+		// If there are no more nodes to try, we give up.
+		if len(members) == 0 {
+			break
+		}
+
+		if len(members) > toReach {
+			members = members[:toReach]
+		}
+
+		for _, m := range members {
+			previouslyAttemptedMembers[m] = true
+		}
+
+		reached, err := m.memberlist.Join(members)
+		if err == nil {
+			totalReached += reached
+			toReach -= reached
+		} else {
+			level.Debug(m.logger).Log("msg", "failed to reach any nodes while fast-joining memberlist cluster", "attempted_nodes", len(members), "err", err)
+		}
 	}
 
-	level.Debug(m.logger).Log("msg", "attempt to join memberlist cluster failed", "retries", 0, "err", err)
-	lastErr := err
+	level.Info(m.logger).Log("msg", "fast-join memberlist cluster finished", "reached_nodes", totalReached, "elapsed_time", time.Since(startTime))
+}
+
+func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
+	startTime := time.Now()
 
 	cfg := backoff.Config{
 		MinBackoff: m.cfg.MinJoinBackoff,
@@ -553,23 +586,26 @@ func (m *KV) joinMembersOnStartup(ctx context.Context, members []string) error {
 		MaxRetries: m.cfg.MaxJoinRetries,
 	}
 
-	backoff := backoff.New(ctx, cfg)
+	boff := backoff.New(ctx, cfg)
+	var lastErr error
 
-	for backoff.Ongoing() {
-		backoff.Wait()
+	for boff.Ongoing() {
+		members := m.discoverMembers(ctx, m.cfg.JoinMembers)
 
-		reached, err := m.memberlist.Join(members)
-		if err != nil {
-			lastErr = err
-			level.Debug(m.logger).Log("msg", "attempt to join memberlist cluster failed", "retries", backoff.NumRetries(), "err", err)
-			continue
+		reached, err := m.memberlist.Join(members) // err is only returned if reached==0.
+		if err == nil {
+			level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
+			return true
 		}
 
-		level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached)
-		return nil
+		level.Debug(m.logger).Log("msg", "failed to reach any nodes while joining memberlist cluster", "retries", boff.NumRetries(), "err", err)
+		lastErr = err
+
+		boff.Wait()
 	}
 
-	return lastErr
+	level.Error(m.logger).Log("msg", "failed to join memberlist cluster", "last_error", lastErr, "elapsed_time", time.Since(startTime))
+	return false
 }
 
 // Provides a dns-based member disovery to join a memberlist cluster w/o knowning members' addresses upfront.

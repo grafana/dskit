@@ -534,9 +534,11 @@ func (m *KV) JoinMembers(members []string) (int, error) {
 }
 
 func (m *KV) joinMembersOnStartup(ctx context.Context, members []string) error {
+	startTime := time.Now()
+
 	reached, err := m.memberlist.Join(members)
 	if err == nil {
-		level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached)
+		level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached, "join_time", time.Since(startTime))
 		return nil
 	}
 
@@ -565,7 +567,7 @@ func (m *KV) joinMembersOnStartup(ctx context.Context, members []string) error {
 			continue
 		}
 
-		level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached)
+		level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached, "join_time", time.Since(startTime))
 		return nil
 	}
 

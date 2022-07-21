@@ -546,7 +546,7 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 
 	totalJoined := 0
 	for toJoin > 0 && len(members) > 0 {
-		reached, err := m.memberlist.Join(members[0:1])
+		reached, err := m.memberlist.Join(members[0:1]) // Try to join single node only.
 		if err != nil {
 			level.Debug(m.logger).Log("msg", "fast-joining node failed", "node", members[0], "err", err)
 		}

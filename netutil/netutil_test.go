@@ -1,12 +1,15 @@
 package netutil
 
 import (
+	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // A type that implements the net.Addr interface
@@ -124,4 +127,121 @@ func TestPrivateInterfaceError(t *testing.T) {
 	logger := log.NewLogfmtLogger(os.Stdout)
 	privInts := privateNetworkInterfaces(interfaces, []string{}, logger)
 	assert.Equal(t, privInts, []string{})
+}
+
+func getMockInterfaceAddresses(name string) ([]netip.Addr, error) {
+	toAddr := func(addr string) netip.Addr {
+		prefix := netip.MustParsePrefix(addr)
+		return prefix.Addr()
+	}
+
+	interfaces := map[string][]netip.Addr{
+		"wlan0": {
+			toAddr("172.16.16.51/24"),
+			toAddr("fc16::c9a7:1d89:2dd8:f59a/64"),
+			toAddr("fe80::ec62:ed39:f931:bf6d/64"),
+		},
+		"em0": {
+			toAddr("fe80::ec62:ed39:f931:bf6d/64"),
+			toAddr("fc99::9a/64"),
+		},
+		"em1": {
+			toAddr("10.54.99.53/24"),
+			toAddr("fcca::e6:9274:f580:7a1b:c335/64"),
+			toAddr("fe80::38f8:7eff:fe7c:6e5d/64"),
+		},
+		"lo1": {
+			toAddr("fe80::ec62:ed39:f931:bf6d/64"),
+		},
+		"lo2": {
+			toAddr("169.254.1.1/16"),
+		},
+		"lo9":  {},
+		"lo10": {},
+		"enp0s31f6": {
+			toAddr("1.1.1.1/31"),
+		},
+		"enp0s31f7": {
+			toAddr("2001::1111/120"),
+		},
+	}
+
+	if val, ok := interfaces[name]; ok {
+		return val, nil
+	}
+
+	return nil, fmt.Errorf("no such network interface")
+}
+
+func TestGetFirstAddressOf(t *testing.T) {
+	// logger := log.NewNopLogger()
+	logger := log.NewLogfmtLogger(os.Stdout)
+
+	cases := []struct {
+		names       []string
+		addr        string
+		err         error
+		preferInet6 bool
+	}{
+		{
+			names: []string{"wlan0"},
+			addr:  "172.16.16.51",
+		},
+		{
+			names: []string{"em0"},
+			addr:  "fc99::9a",
+		},
+		{
+			names: []string{"lo1"},
+			addr:  "fe80::ec62:ed39:f931:bf6d",
+		},
+		{
+			names: []string{"lo2"},
+			addr:  "169.254.1.1",
+		},
+		{
+			names: []string{"lo9"},
+			err:   fmt.Errorf("no useable address found for interfaces [lo9]"),
+		},
+		{
+			names: []string{"lo9", "lo10"},
+			err:   fmt.Errorf("no useable address found for interfaces [lo9 lo10]"),
+		},
+		{
+			names: []string{"lo1", "lo2", "enp0s31f6"},
+			addr:  "1.1.1.1",
+		},
+		{
+			names: []string{"lo1", "lo2", "enp0s31f7"},
+			addr:  "2001::1111",
+		},
+		{
+			names: []string{"lo1", "lo2", "enp0s31f7", "enp0s31f6"},
+			addr:  "2001::1111",
+		},
+		{
+			names: []string{"lo1", "lo2", "enp0s31f6", "enp0s31f7"},
+			addr:  "1.1.1.1",
+		},
+		{
+			names:       []string{"lo1", "lo2", "enp0s31f6", "enp0s31f7"},
+			addr:        "2001::1111",
+			preferInet6: true,
+		},
+		{
+			names:       []string{"em1"},
+			addr:        "fcca::e6:9274:f580:7a1b:c335",
+			preferInet6: true,
+		},
+	}
+
+	for _, tc := range cases {
+		addr, err := getFirstAddressOf(tc.names, logger, getMockInterfaceAddresses, tc.preferInet6)
+		if tc.err != nil {
+			require.Equal(t, tc.err, err)
+		} else {
+			require.NoError(t, err)
+		}
+		require.Equal(t, tc.addr, addr)
+	}
 }

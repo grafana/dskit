@@ -557,11 +557,13 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 		members = members[1:]
 	}
 
-	level.Info(m.logger).Log("msg", "fast-join memberlist cluster finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
+	level.Info(m.logger).Log("msg", "memberlist fast-join finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
 }
 
 func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 	startTime := time.Now()
+
+	level.Info(m.logger).Log("msg", "joining memberlist cluster", "join_members", []string(m.cfg.JoinMembers))
 
 	cfg := backoff.Config{
 		MinBackoff: m.cfg.MinJoinBackoff,
@@ -577,17 +579,17 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 
 		reached, err := m.memberlist.Join(members) // err is only returned if reached==0.
 		if err == nil {
-			level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
+			level.Info(m.logger).Log("msg", "joining memberlist cluster succeeded", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
 			return true
 		}
 
-		level.Debug(m.logger).Log("msg", "failed to reach any nodes while joining memberlist cluster", "retries", boff.NumRetries(), "err", err)
+		level.Debug(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err)
 		lastErr = err
 
 		boff.Wait()
 	}
 
-	level.Error(m.logger).Log("msg", "failed to join memberlist cluster", "last_error", lastErr, "elapsed_time", time.Since(startTime))
+	level.Error(m.logger).Log("msg", "joining memberlist cluster failed", "last_error", lastErr, "elapsed_time", time.Since(startTime))
 	return false
 }
 

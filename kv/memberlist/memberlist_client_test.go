@@ -1358,6 +1358,55 @@ func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 	}
 }
 
+func TestFastJoin(t *testing.T) {
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: []string{"localhost"},
+		BindPort:  0, // randomize
+	}
+
+	cfg.Codecs = []codec.Codec{
+		dataCodec{},
+	}
+
+	mkv1 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
+
+	kv1, err := NewClient(mkv1, dataCodec{})
+	require.NoError(t, err)
+
+	const memberKey = "entry"
+
+	// Calling updateFn once creates single entry, in JOINING state.
+	err = cas(kv1, key, updateFn(memberKey))
+	require.NoError(t, err)
+
+	// We will read values from second KV, which will join the first one
+	cfg.JoinMembers = []string{fmt.Sprintf("127.0.0.1:%d", mkv1.GetListeningPort())}
+
+	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	go func() {
+		// Wait a bit, and then start mkv2.
+		time.Sleep(500 * time.Millisecond)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
+	}()
+
+	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
+
+	// While waiting for mkv2 to start, we can already create a client for it.
+	// Any client operations will block until mkv2 transitioned to Running state.
+	kv2, err := NewClient(mkv2, dataCodec{})
+	require.NoError(t, err)
+
+	val, err := kv2.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.NotNil(t, val)
+	require.NotZero(t, val.(*data).Members[memberKey].Timestamp)
+	require.Equal(t, JOINING, val.(*data).Members[memberKey].State)
+}
+
 func decodeDataFromMarshalledKeyValuePair(t *testing.T, marshalledKVP []byte, key string, codec dataCodec) *data {
 	kvp := KeyValuePair{}
 	require.NoError(t, kvp.Unmarshal(marshalledKVP))

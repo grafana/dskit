@@ -55,7 +55,7 @@ func (s State) String() string {
 //
 type Service interface {
 	// StartAsync starts Service asynchronously. Service must be in New State, otherwise error is returned.
-	// Context is used as a parent context for service own context.
+	// Context is used as a parent context for all of the service's own child operation contexts.
 	StartAsync(ctx context.Context) error
 
 	// AwaitRunning waits until service gets into Running state.

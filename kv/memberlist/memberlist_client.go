@@ -557,7 +557,12 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 		nodes = nodes[1:]
 	}
 
-	level.Info(m.logger).Log("msg", "memberlist fast-join finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
+	l := level.Info(m.logger)
+	// Warn, if we didn't join any node.
+	if totalJoined == 0 {
+		l = level.Warn(m.logger)
+	}
+	l.Log("msg", "memberlist fast-join finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
 }
 
 func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
@@ -575,6 +580,8 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 	var lastErr error
 
 	for boff.Ongoing() {
+		// We rejoin all nodes, including those that were joined during "fast-join".
+		// This is harmless and simpler.
 		nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
 
 		reached, err := m.memberlist.Join(nodes) // err is only returned if reached==0.
@@ -583,7 +590,7 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 			return true
 		}
 
-		level.Debug(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err)
+		level.Warn(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err)
 		lastErr = err
 
 		boff.Wait()

@@ -3,12 +3,13 @@ package memberlist
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
+	crypto_rand "crypto/rand"
 	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
 	"math"
+	math_rand "math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -208,7 +209,7 @@ func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
 
 func generateRandomSuffix(logger log.Logger) string {
 	suffix := make([]byte, 4)
-	_, err := rand.Read(suffix)
+	_, err := crypto_rand.Read(suffix)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to generate random suffix", "err", err)
 		return "error"
@@ -534,47 +535,29 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 	startTime := time.Now()
 
 	members := m.discoverMembers(ctx, m.cfg.JoinMembers)
-	toReach := m.cfg.RetransmitMult * int(math.Ceil(math.Log10(float64(len(members)+1))))
-	if toReach > len(members) {
-		toReach = len(members)
+	math_rand.Shuffle(len(members), func(i, j int) {
+		members[i], members[j] = members[j], members[i]
+	})
+
+	// This is consistent with algorithm used by memberlist to compute the number of nodes that a single message should be gossiped to.
+	toJoin := m.cfg.RetransmitMult * int(math.Ceil(math.Log10(float64(len(members)+1))))
+
+	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "members_found", len(members), "to_join", toJoin)
+
+	totalJoined := 0
+	for toJoin > 0 && len(members) > 0 {
+		reached, err := m.memberlist.Join(members[0:1])
+		if err != nil {
+			level.Debug(m.logger).Log("msg", "fast-joining node failed", "node", members[0], "err", err)
+		}
+
+		totalJoined += reached
+		toJoin -= reached
+
+		members = members[1:]
 	}
 
-	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "members_found", len(members), "to_reach", toReach)
-
-	totalReached := 0
-	previouslyAttemptedMembers := map[string]bool{}
-
-	for ; toReach > 0; members = m.discoverMembers(ctx, m.cfg.JoinMembers) {
-		// Remove members we have tried before.
-		for ix := len(members) - 1; ix >= 0; ix-- {
-			if previouslyAttemptedMembers[members[ix]] {
-				members = append(members[:ix], members[ix+1:]...)
-			}
-		}
-
-		// If there are no more nodes to try, we give up.
-		if len(members) == 0 {
-			break
-		}
-
-		if len(members) > toReach {
-			members = members[:toReach]
-		}
-
-		for _, m := range members {
-			previouslyAttemptedMembers[m] = true
-		}
-
-		reached, err := m.memberlist.Join(members)
-		if err == nil {
-			totalReached += reached
-			toReach -= reached
-		} else {
-			level.Debug(m.logger).Log("msg", "failed to reach any nodes while fast-joining memberlist cluster", "attempted_nodes", len(members), "err", err)
-		}
-	}
-
-	level.Info(m.logger).Log("msg", "fast-join memberlist cluster finished", "reached_nodes", totalReached, "elapsed_time", time.Since(startTime))
+	level.Info(m.logger).Log("msg", "fast-join memberlist cluster finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
 }
 
 func (m *KV) joinMembersOnStartup(ctx context.Context) bool {

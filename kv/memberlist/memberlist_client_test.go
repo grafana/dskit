@@ -866,7 +866,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 	}
 }
 
-func TestMemberlistFailsToJoinInRunningState(t *testing.T) {
+func TestMemberlistFailsToJoin(t *testing.T) {
 	c := dataCodec{}
 
 	ports, err := getFreePorts(1)

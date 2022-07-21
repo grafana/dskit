@@ -539,7 +539,7 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 		members[i], members[j] = members[j], members[i]
 	})
 
-	// This is consistent with algorithm used by memberlist to compute the number of nodes that a single message should be gossiped to.
+	// This is the same formula as used by memberlist for number of nodes that a single message should be gossiped to.
 	toJoin := m.cfg.RetransmitMult * int(math.Ceil(math.Log10(float64(len(members)+1))))
 
 	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "members_found", len(members), "to_join", toJoin)

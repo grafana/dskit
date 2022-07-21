@@ -534,27 +534,27 @@ func (m *KV) JoinMembers(members []string) (int, error) {
 func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 	startTime := time.Now()
 
-	members := m.discoverMembers(ctx, m.cfg.JoinMembers)
-	math_rand.Shuffle(len(members), func(i, j int) {
-		members[i], members[j] = members[j], members[i]
+	nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
+	math_rand.Shuffle(len(nodes), func(i, j int) {
+		nodes[i], nodes[j] = nodes[j], nodes[i]
 	})
 
 	// This is the same formula as used by memberlist for number of nodes that a single message should be gossiped to.
-	toJoin := m.cfg.RetransmitMult * int(math.Ceil(math.Log10(float64(len(members)+1))))
+	toJoin := m.cfg.RetransmitMult * int(math.Ceil(math.Log10(float64(len(nodes)+1))))
 
-	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "members_found", len(members), "to_join", toJoin)
+	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "nodes_found", len(nodes), "to_join", toJoin)
 
 	totalJoined := 0
-	for toJoin > 0 && len(members) > 0 {
-		reached, err := m.memberlist.Join(members[0:1]) // Try to join single node only.
+	for toJoin > 0 && len(nodes) > 0 {
+		reached, err := m.memberlist.Join(nodes[0:1]) // Try to join single node only.
 		if err != nil {
-			level.Debug(m.logger).Log("msg", "fast-joining node failed", "node", members[0], "err", err)
+			level.Debug(m.logger).Log("msg", "fast-joining node failed", "node", nodes[0], "err", err)
 		}
 
 		totalJoined += reached
 		toJoin -= reached
 
-		members = members[1:]
+		nodes = nodes[1:]
 	}
 
 	level.Info(m.logger).Log("msg", "memberlist fast-join finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))

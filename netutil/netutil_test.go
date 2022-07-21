@@ -150,6 +150,11 @@ func getMockInterfaceAddresses(name string) ([]netip.Addr, error) {
 			toAddr("fcca::e6:9274:f580:7a1b:c335/64"),
 			toAddr("fe80::38f8:7eff:fe7c:6e5d/64"),
 		},
+		"em2": {
+			toAddr("10.54.99.53/24"),
+			toAddr("fe80::38f8:7eff:fe7c:6e56/64"),
+			toAddr("fe80::38f8:7eff:fe7c:6e5d/64"),
+		},
 		"lo1": {
 			toAddr("fe80::ec62:ed39:f931:bf6d/64"),
 		},
@@ -229,8 +234,28 @@ func TestGetFirstAddressOf(t *testing.T) {
 			preferInet6: true,
 		},
 		{
+			names:       []string{"em0", "em1"},
+			addr:        "fc99::9a",
+			preferInet6: true,
+		},
+		{
 			names:       []string{"em1"},
 			addr:        "fcca::e6:9274:f580:7a1b:c335",
+			preferInet6: true,
+		},
+		{
+			names:       []string{"lo1", "enp0s31f6"},
+			addr:        "1.1.1.1",
+			preferInet6: true,
+		},
+		{
+			names:       []string{"lo2", "enp0s31f6"},
+			addr:        "1.1.1.1",
+			preferInet6: true,
+		},
+		{
+			names:       []string{"em2"},
+			addr:        "10.54.99.53",
 			preferInet6: true,
 		},
 	}
@@ -244,4 +269,88 @@ func TestGetFirstAddressOf(t *testing.T) {
 		}
 		require.Equal(t, tc.addr, addr)
 	}
+}
+
+func TestFilterBestIP(t *testing.T) {
+	// logger := log.NewLogfmtLogger(os.Stdout)
+	toAddr := func(addr string) netip.Addr {
+		a, err := netip.ParseAddr(addr)
+		require.NoError(t, err)
+		return a
+	}
+
+	cases := []struct {
+		addrs       []netip.Addr
+		addr        string
+		preferInet6 bool
+	}{
+		{
+			addrs: []netip.Addr{
+				toAddr("1.1.1.1"),
+			},
+			addr: "1.1.1.1",
+		},
+		{
+			addrs: []netip.Addr{
+				toAddr("10.54.99.53"),
+				toAddr("169.254.1.1"),
+			},
+			addr: "10.54.99.53",
+		},
+		{
+			addrs: []netip.Addr{
+				toAddr("169.254.1.1"),
+				toAddr("fe80::1"),
+			},
+			addr: "169.254.1.1",
+		},
+		{
+			addrs: []netip.Addr{
+				toAddr("169.254.1.1"),
+				toAddr("fe80::1"),
+			},
+			addr:        "fe80::1",
+			preferInet6: true,
+		},
+		{
+			addrs: []netip.Addr{
+				toAddr("169.254.1.1"),
+				toAddr("fe80::1"),
+			},
+			addr:        "fe80::1",
+			preferInet6: true,
+		},
+		{
+			addrs: []netip.Addr{
+				toAddr("fc99::1"),
+				toAddr("fe80::1"),
+			},
+			addr: "fc99::1",
+		},
+		{
+			addrs: []netip.Addr{
+				toAddr("169.254.1.1"),
+				toAddr("10.54.99.53"),
+				toAddr("fc99::1"),
+				toAddr("fe80::1"),
+			},
+			addr:        "fc99::1",
+			preferInet6: true,
+		},
+		{
+			addrs: []netip.Addr{
+				toAddr("169.254.1.1"),
+				toAddr("10.54.99.53"),
+				toAddr("fc99::1"),
+				toAddr("fe80::1"),
+			},
+			addr: "10.54.99.53",
+		},
+	}
+
+	for _, tc := range cases {
+		addr := filterBestIP(tc.addrs, tc.preferInet6)
+		require.Equal(t, tc.addr, addr.String())
+	}
+
 }

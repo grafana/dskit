@@ -59,31 +59,8 @@ func privateNetworkInterfaces(all []net.Interface, fallback []string, logger log
 }
 
 // GetFirstAddressOf returns the first IPv4/IPV6 address of the supplied interface names, omitting any link-local addresses.
-func GetFirstAddressOf(names []string, logger log.Logger) (string, error) {
-	return getFirstAddressOf(names, logger, getInterfaceAddresses, false)
-}
-
-// GetPrivateInet6Address returns the first IPv6 address found on any interface, omitting link-local addresses.
-func GetPrivateInet6Address(logger log.Logger) (string, error) {
-	return getFirstInet6AddressOf([]string{}, logger, getInterfaceAddresses)
-}
-
-func getFirstInet6AddressOf(names []string, logger log.Logger, interfaceAddrs NetworkInterfaceAddressGetter) (string, error) {
-	addr, err := getFirstAddressOf(names, logger, interfaceAddrs, true)
-	if err != nil {
-		return "", fmt.Errorf("failed to get valid address: %w", err)
-	}
-
-	a, err := netip.ParseAddr(addr)
-	if err != nil {
-		return "", fmt.Errorf("faild to parse address: %w", err)
-	}
-
-	if !a.Is6() || !a.IsValid() {
-		return "", fmt.Errorf("no inet6 address available")
-	}
-
-	return addr, nil
+func GetFirstAddressOf(names []string, logger log.Logger, preferInet6 bool) (string, error) {
+	return getFirstAddressOf(names, logger, getInterfaceAddresses, preferInet6)
 }
 
 // NetworkInterfaceGetter matches the signature of net.InterfaceByName() to allow for test mocks.
@@ -103,7 +80,10 @@ func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc Net
 		for i, v := range infs {
 			ifNames[i] = v.Name
 		}
+		names = ifNames
 	}
+
+	level.Debug(logger).Log("msg", "looking for addresses", "inf", fmt.Sprintf("%s", names), "inet6pref", preferInet6)
 
 	// Replace a nil func with the standard approach.
 	if interfaceAddrsFunc == nil {
@@ -116,27 +96,32 @@ func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc Net
 			level.Warn(logger).Log("msg", "error getting addresses for interface", "inf", name, "err", err)
 			continue
 		}
-		level.Debug(logger).Log("msg", "addresses for interface", "addrs", fmt.Sprintf("%+v", addrs), "inf", name, "inet6pref", preferInet6)
 
 		if len(addrs) <= 0 {
 			level.Warn(logger).Log("msg", "no addresses found for interface", "inf", name, "err", err)
 			continue
 		}
-		if ip := filterIPs(addrs, preferInet6); ip.IsValid() {
-			ipAddr = ip
+		if ip := filterBestIP(addrs, preferInet6); ip.IsValid() {
+			// Select the best between what we've received
+			ipAddr = filterBestIP([]netip.Addr{ip, ipAddr}, preferInet6)
 		}
-
-		level.Debug(logger).Log("msg", "filtered", "ipAddr", ipAddr.String(), "inf", name)
-
+		level.Debug(logger).Log("msg", "filtered best", "ipAddr", ipAddr.String(), "inf", name)
 		if ipAddr.IsLinkLocalUnicast() || !ipAddr.IsValid() {
+			level.Debug(logger).Log("msg", "skipping", "ipAddr", ipAddr.String(), "inf", name)
 			continue
 		}
-		if preferInet6 && !ipAddr.Is6() {
+
+		if preferInet6 {
+			if ipAddr.Is6() {
+				return ipAddr.String(), nil
+			}
 			continue
 		}
+
 		return ipAddr.String(), nil
 	}
-	level.Debug(logger).Log("msg", "ipAddr", "addrs", ipAddr)
+
+	level.Debug(logger).Log("msg", "ipAddr after all interface names", "ipAddr", ipAddr.String())
 	if !ipAddr.IsValid() {
 		return "", fmt.Errorf("no useable address found for interfaces %s", names)
 	}
@@ -191,4 +176,61 @@ func filterIPs(addrs []netip.Addr, preferInet6 bool) netip.Addr {
 		}
 	}
 	return ipAddr
+}
+
+// filterBestIP returns an opinionated "best" address from a list of addresses.
+// A high quality address is one that is considered routeable, and not in the link-local address space.
+// A low quality address is a link-local address.
+// When an IPv6 preference is indicated using preferInet6, an IPv6 will be preferred over an equivalent quality IPv4 address.
+func filterBestIP(addrs []netip.Addr, preferInet6 bool) netip.Addr {
+	var invalid, inetAddr, inet6Addr netip.Addr
+
+	for _, addr := range addrs {
+		if addr.IsValid() {
+			if addr.Is4() {
+				// If we have already been set, can we improve on the quality?
+				if inetAddr.IsValid() {
+					if inetAddr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
+						inetAddr = addr
+					}
+					continue
+				}
+				inetAddr = addr
+			}
+			if addr.Is6() {
+				// If we have already been set, can we improve on the quality?
+				if inet6Addr.IsValid() {
+					if inet6Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
+						inet6Addr = addr
+					}
+					continue
+				}
+				inet6Addr = addr
+			}
+		}
+	}
+
+	// If both address families have been set, compare.
+	if inetAddr.IsValid() && inet6Addr.IsValid() {
+		if inetAddr.IsLinkLocalUnicast() && !inet6Addr.IsLinkLocalUnicast() {
+			return inet6Addr
+		}
+		if inet6Addr.IsLinkLocalUnicast() && !inetAddr.IsLinkLocalUnicast() {
+			return inetAddr
+		}
+		if preferInet6 {
+			return inet6Addr
+		}
+		return inetAddr
+	}
+
+	if inetAddr.IsValid() {
+		return inetAddr
+	}
+
+	if inet6Addr.IsValid() {
+		return inet6Addr
+	}
+
+	return invalid
 }

@@ -18,6 +18,7 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 )
 
@@ -65,10 +66,10 @@ func newTestOverridesManagerConfig(t *testing.T, i int32) (*atomic.Int32, Config
 		os.Remove(tempFile.Name())
 	})
 
-	// testing NewRuntimeConfigManager with overrides reload config set
+	// testing runtimeconfig Manager with overrides reload config set
 	return config, Config{
 		ReloadPeriod: 5 * time.Second,
-		LoadPath:     tempFile.Name(),
+		LoadPath:     []string{tempFile.Name()},
 		Loader: func(_ io.Reader) (i interface{}, err error) {
 			val := int(config.Load())
 			return val, nil
@@ -78,6 +79,10 @@ func newTestOverridesManagerConfig(t *testing.T, i int32) (*atomic.Int32, Config
 
 func generateRuntimeFiles(t *testing.T, overrideStrings []string) ([]*os.File, error) {
 	var overrideFiles []*os.File
+
+	t.Cleanup(func() {
+		require.NoError(t, cleanupOverridesFiles(overrideFiles))
+	})
 
 	for count, override := range overrideStrings {
 		pattern := fmt.Sprintf("overrides-file-%d", count)
@@ -91,18 +96,16 @@ func generateRuntimeFiles(t *testing.T, overrideStrings []string) ([]*os.File, e
 		}
 		overrideFiles = append(overrideFiles, tempFile)
 	}
-	t.Cleanup(func() {
-		require.NoError(t, cleanupOverridesFiles(overrideFiles))
-	})
+
 	return overrideFiles, nil
 }
 
-func generateLoadPath(overrideFiles []*os.File) string {
+func generateLoadPath(overrideFiles []*os.File) []string {
 	var fileNames []string
 	for _, f := range overrideFiles {
 		fileNames = append(fileNames, f.Name())
 	}
-	return strings.Join(fileNames, ",")
+	return fileNames
 }
 
 func cleanupOverridesFiles(overrideFiles []*os.File) error {
@@ -128,7 +131,7 @@ func TestNewOverridesManager(t *testing.T) {
 
 	defaultTestLimits = &TestLimits{Limit1: 100}
 
-	// testing NewRuntimeConfigManager with overrides reload config set
+	// testing runtimeconfig Manager with overrides reload config set
 	overridesManagerConfig := Config{
 		ReloadPeriod: time.Second,
 		LoadPath:     generateLoadPath(tempFiles),
@@ -165,7 +168,7 @@ func TestOverridesManagerMultipleFilesAppend(t *testing.T) {
     limit2: 104`})
 	require.NoError(t, err)
 
-	// testing NewRuntimeConfigManager with overrides reload config set
+	// testing runtimeconfig Manager with overrides reload config set
 	overridesManagerConfig := Config{
 		ReloadPeriod: time.Second,
 		LoadPath:     generateLoadPath(tempFiles),
@@ -199,10 +202,10 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
     limit1: 1234`})
 	require.NoError(t, err)
 
-	// testing NewRuntimeConfigManager with overrides reload config set
+	// testing runtimeconfig Manager with overrides reload config set
 	overridesManagerConfig := Config{
 		ReloadPeriod: time.Second,
-		LoadPath:     generateLoadPath(tempFiles),
+		LoadPath:     flagext.StringSliceCSV(generateLoadPath(tempFiles)),
 		Loader:       testLoadOverrides,
 	}
 
@@ -227,7 +230,7 @@ func TestOverridesManagerMultipleFilesWithEmptyFile(t *testing.T) {
 			``})
 	require.NoError(t, err)
 
-	// testing NewRuntimeConfigManager with overrides reload config set
+	// testing runtimeconfig Manager with overrides reload config set
 	overridesManagerConfig := Config{
 		ReloadPeriod: time.Second,
 		LoadPath:     generateLoadPath(tempFiles),
@@ -269,7 +272,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	// testing NewRuntimeConfigManager with overrides reload config set
 	overridesManagerConfig := Config{
 		ReloadPeriod: time.Second,
-		LoadPath:     tempFile.Name(),
+		LoadPath:     []string{tempFile.Name()},
 		Loader:       testLoadOverrides,
 	}
 
@@ -408,7 +411,7 @@ func TestManager_ShouldFastFailOnInvalidConfigAtStartup(t *testing.T) {
 	// Create the config manager and start it.
 	cfg := Config{
 		ReloadPeriod: time.Second,
-		LoadPath:     tempFile.Name(),
+		LoadPath:     []string{tempFile.Name()},
 		Loader:       testLoadOverrides,
 	}
 

@@ -182,10 +182,15 @@ func filterIPs(addrs []netip.Addr, preferInet6 bool) netip.Addr {
 // A high quality address is one that is considered routeable, and not in the link-local address space.
 // A low quality address is a link-local address.
 // When an IPv6 preference is indicated using preferInet6, an IPv6 will be preferred over an equivalent quality IPv4 address.
+// Loopback addresses are never selected.
 func filterBestIP(addrs []netip.Addr, preferInet6 bool) netip.Addr {
 	var invalid, inetAddr, inet6Addr netip.Addr
 
 	for _, addr := range addrs {
+		if addr.IsLoopback() {
+			continue
+		}
+
 		if addr.IsValid() {
 			if addr.Is4() {
 				// If we have already been set, can we improve on the quality?

@@ -9,17 +9,48 @@ import (
 	"time"
 )
 
+func generateTokens(offset, interval uint32, total int) []uint32 {
+	tokens := make([]uint32, 0, total)
+	for i := 0; i < total; i++ {
+		tokens = append(tokens, offset+(uint32(i)*interval))
+	}
+	return tokens
+}
+
 func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 	now := time.Now().Unix()
-	desc := unbalancedSeriesRingDesc
 
 	// Update the ring to ensure all instances are ACTIVE and healthy.
+	desc := unbalancedSeriesRingDesc
 	for id, instance := range desc.Ingesters {
 		instance.Addr = id
 		instance.State = ACTIVE
 		instance.Timestamp = now
 		desc.Ingesters[id] = instance
 	}
+
+	//simulatedZones := []string{"zone-a", "zone-b", "zone-c"}
+	//simulatedIngesters := 129
+	//simulatedTokensPerIngester := 512
+	//tokensInterval := uint32(math.Round(float64(math.MaxUint32) / float64(simulatedIngesters)))
+	//tokensOffsetStep := uint32(math.Round(float64(tokensInterval) / float64(simulatedIngesters)))
+	//
+	//desc := &Desc{Ingesters: map[string]InstanceDesc{}}
+	//for i := 0; i < simulatedIngesters/len(simulatedZones); i++ {
+	//	for _, zone := range simulatedZones {
+	//		ingesterID := fmt.Sprintf("ingester-%s-%d", zone, i)
+	//		desc.Ingesters[ingesterID] = InstanceDesc{
+	//			Addr:      ingesterID,
+	//			Timestamp: now,
+	//			State:     ACTIVE,
+	//			Tokens: generateTokens(
+	//				uint32(len(desc.Ingesters))*tokensOffsetStep,
+	//				tokensInterval,
+	//				simulatedTokensPerIngester),
+	//			Zone: zone,
+	//		}
+	//	}
+	//}
 
 	// Create a ring with the instances.
 	ring := Ring{
@@ -58,101 +89,102 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 	fmt.Println("")
 	fmt.Println("------------------------------------------------------")
 	fmt.Println("")
+	/*
+		// Compute statistics to find out whether the ingesters with less series are the ones owning less tokens.
+		// Since we use zone-aware replication, we need to look at the per-zone ownership %.
+		perZoneTokensOwnership := computePerZoneTokensOwnership(desc)
+		perZoneSeriesOwnership := computePerZoneSeriesOwnership(datasetSeriesPerIngester)
+		seriesVsTokensCorrelationDistribution := make([]int, 10)
+		seriesVsTokensCorrelationOutliers := map[string]int{}
+		seriesVsTokensCorrelationThreshold := 80
 
-	// Compute statistics to find out whether the ingesters with less series are the ones owning less tokens.
-	// Since we use zone-aware replication, we need to look at the per-zone ownership %.
-	perZoneTokensOwnership := computePerZoneTokensOwnership(desc)
-	perZoneSeriesOwnership := computePerZoneSeriesOwnership(datasetSeriesPerIngester)
-	seriesVsTokensCorrelationDistribution := make([]int, 10)
-	seriesVsTokensCorrelationOutliers := map[string]int{}
-	seriesVsTokensCorrelationThreshold := 80
+		for zone, perIngesterTokensOwnership := range perZoneTokensOwnership {
+			for ingesterID, tokensOwnership := range perIngesterTokensOwnership {
+				seriesOwnership := perZoneSeriesOwnership[zone][ingesterID]
 
-	for zone, perIngesterTokensOwnership := range perZoneTokensOwnership {
-		for ingesterID, tokensOwnership := range perIngesterTokensOwnership {
-			seriesOwnership := perZoneSeriesOwnership[zone][ingesterID]
+				// Compute a correlation score between [0, 100]. The higher the value, the higher the correlation between
+				// the number of owned series and owned tokens.
+				// This is a percentage: 100% means an ingester owns a number of series equal to the number of owned tokens.
+				// 50% means an ingester owns either half or the double of series compared to the number of owned tokens.
+				correlation := 100 - int(math.Round((math.Abs(seriesOwnership-tokensOwnership)/seriesOwnership)*100))
 
-			// Compute a correlation score between [0, 100]. The higher the value, the higher the correlation between
-			// the number of owned series and owned tokens.
-			// This is a percentage: 100% means an ingester owns a number of series equal to the number of owned tokens.
-			// 50% means an ingester owns either half or the double of series compared to the number of owned tokens.
-			correlation := 100 - int(math.Round((math.Abs(seriesOwnership-tokensOwnership)/seriesOwnership)*100))
+				// Increment the counter in the expect distribution bucket.
+				if correlation < 100 {
+					seriesVsTokensCorrelationDistribution[correlation/10]++
+				} else {
+					// Just to cover the case the value is 100.
+					seriesVsTokensCorrelationDistribution[9]++
+				}
 
-			// Increment the counter in the expect distribution bucket.
-			if correlation < 100 {
-				seriesVsTokensCorrelationDistribution[correlation/10]++
-			} else {
-				// Just to cover the case the value is 100.
-				seriesVsTokensCorrelationDistribution[9]++
+				if correlation < seriesVsTokensCorrelationThreshold {
+					seriesVsTokensCorrelationOutliers[ingesterID] = correlation
+				}
+
+				// fmt.Println(fmt.Sprintf("%s owns %.2f%% tokens and %.2f%% series, correlation: %d", ingesterID, tokensOwnership, seriesOwnership, correlation))
 			}
-
-			if correlation < seriesVsTokensCorrelationThreshold {
-				seriesVsTokensCorrelationOutliers[ingesterID] = correlation
-			}
-
-			// fmt.Println(fmt.Sprintf("%s owns %.2f%% tokens and %.2f%% series, correlation: %d", ingesterID, tokensOwnership, seriesOwnership, correlation))
-		}
-	}
-
-	//fmt.Println("Correlation between number of tokens owned and in-memory series")
-	//fmt.Println("This is a percentage: 100% means an ingester owns a number of series equal to the number of owned tokens.")
-	//fmt.Println("50% means an ingester owns either half or the double of series compared to the number of owned tokens.")
-	//fmt.Println("")
-	//for idx, numIngesters := range seriesVsTokensCorrelationDistribution {
-	//	bucketStart := idx * 10
-	//	bucketEnd := bucketStart + 10
-	//	fmt.Println(fmt.Sprintf("[%3d, %3d] Number ingesters: %d", bucketStart, bucketEnd, numIngesters))
-	//}
-	//
-	//if len(seriesVsTokensCorrelationOutliers) > 0 {
-	//	fmt.Println("")
-	//	fmt.Println(fmt.Sprintf("Outliers (correlation < %d):", seriesVsTokensCorrelationThreshold))
-	//
-	//	for ingesterID, correlation := range seriesVsTokensCorrelationOutliers {
-	//		fmt.Println(fmt.Sprintf("- %s \twith correlation %d (number of series: %.3fM)", ingesterID, correlation, float64(datasetSeriesPerIngester[ingesterID])/1000000))
-	//	}
-	//}
-
-	fmt.Println("")
-	fmt.Println("------------------------------------------------------")
-	fmt.Println("")
-
-	// Compute statistics to find out if the number of tenants is well balanced between ingesters.
-	tenantsPerZoneAndIngester := map[string]map[string]int{}
-
-	for tenantID, shardSize := range datasetShardSizePerUser {
-		set, err := ring.ShuffleShard(tenantID, shardSize).GetAllHealthy(Read)
-		if err != nil {
-			panic(err)
 		}
 
-		for _, ingester := range set.Instances {
-			// When we prepare the ring in this tool, we do set the address to be equal to the ID.
-			ingesterID := ingester.Addr
+		fmt.Println("Correlation between number of tokens owned and in-memory series")
+		fmt.Println("This is a percentage: 100% means an ingester owns a number of series equal to the number of owned tokens.")
+		fmt.Println("50% means an ingester owns either half or the double of series compared to the number of owned tokens.")
+		fmt.Println("")
+		for idx, numIngesters := range seriesVsTokensCorrelationDistribution {
+			bucketStart := idx * 10
+			bucketEnd := bucketStart + 10
+			fmt.Println(fmt.Sprintf("[%3d, %3d] Number ingesters: %d", bucketStart, bucketEnd, numIngesters))
+		}
 
-			zone := getZoneFromIngesterID(ingesterID)
-			if _, ok := tenantsPerZoneAndIngester[zone]; !ok {
-				tenantsPerZoneAndIngester[zone] = map[string]int{}
+		if len(seriesVsTokensCorrelationOutliers) > 0 {
+			fmt.Println("")
+			fmt.Println(fmt.Sprintf("Outliers (correlation < %d):", seriesVsTokensCorrelationThreshold))
+
+			for ingesterID, correlation := range seriesVsTokensCorrelationOutliers {
+				fmt.Println(fmt.Sprintf("- %s \twith correlation %d (number of series: %.3fM)", ingesterID, correlation, float64(datasetSeriesPerIngester[ingesterID])/1000000))
+			}
+		}
+
+		fmt.Println("")
+		fmt.Println("------------------------------------------------------")
+		fmt.Println("")
+
+		// Compute statistics to find out if the number of tenants is well balanced between ingesters.
+		tenantsPerZoneAndIngester := map[string]map[string]int{}
+
+		for tenantID, shardSize := range datasetShardSizePerUser {
+			set, err := ring.ShuffleShard(tenantID, shardSize).GetAllHealthy(Read)
+			if err != nil {
+				panic(err)
 			}
 
-			tenantsPerZoneAndIngester[zone][ingesterID]++
+			for _, ingester := range set.Instances {
+				// When we prepare the ring in this tool, we do set the address to be equal to the ID.
+				ingesterID := ingester.Addr
+
+				zone := getZoneFromIngesterID(ingesterID)
+				if _, ok := tenantsPerZoneAndIngester[zone]; !ok {
+					tenantsPerZoneAndIngester[zone] = map[string]int{}
+				}
+
+				tenantsPerZoneAndIngester[zone][ingesterID]++
+			}
 		}
-	}
 
-	fmt.Println("Number of tenants per ingester:")
-	for _, zone := range ring.ringZones {
-		min, max, maxVariance := computeMinMaxAndVarianceInt(tenantsPerZoneAndIngester[zone])
-		fmt.Println(fmt.Sprintf("- %s min=%d max=%d max variance=%.2f%%", zone, min, max, maxVariance))
-	}
-	fmt.Println("")
+		fmt.Println("Number of tenants per ingester:")
+		for _, zone := range ring.ringZones {
+			min, max, maxVariance := computeMinMaxAndVarianceInt(tenantsPerZoneAndIngester[zone])
+			fmt.Println(fmt.Sprintf("- %s min=%d max=%d max variance=%.2f%%", zone, min, max, maxVariance))
+		}
+		fmt.Println("")
 
-	// Are the ingesters with more tenants the ones with more series too?
-	for _, ingester := range topkIngestersBySeries(10) {
-		fmt.Println(fmt.Sprintf("- %s \tnum series: %.2fM num tenants: %d", ingester.id, float64(ingester.numSeries)/1000000, tenantsPerZoneAndIngester[ingester.zone][ingester.id]))
-	}
+		// Are the ingesters with more tenants the ones with more series too?
+		for _, ingester := range topkIngestersBySeries(10) {
+			fmt.Println(fmt.Sprintf("- %s \tnum series: %.2fM num tenants: %d", ingester.id, float64(ingester.numSeries)/1000000, tenantsPerZoneAndIngester[ingester.zone][ingester.id]))
+		}
 
-	fmt.Println("")
-	fmt.Println("------------------------------------------------------")
-	fmt.Println("")
+		fmt.Println("")
+		fmt.Println("------------------------------------------------------")
+		fmt.Println("")
+	*/
 
 	// Simulate if it would be better balanced if the shard size would be set on the actual number of series per tenant.
 	realSeriesPerIngester := map[string]float64{}
@@ -204,9 +236,9 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 		//}
 	}
 
-	for ingesterID, realSeries := range realSeriesPerIngester {
-		fmt.Println(fmt.Sprintf("- %s \treal: %d \tsimulated:%d", ingesterID, int(realSeries), int(simulatedSeriesPerIngester[ingesterID])))
-	}
+	//for ingesterID, realSeries := range realSeriesPerIngester {
+	//	fmt.Println(fmt.Sprintf("- %s \treal: %d \tsimulated:%d", ingesterID, int(realSeries), int(simulatedSeriesPerIngester[ingesterID])))
+	//}
 
 	fmt.Println("SIMULATION")
 	fmt.Println(fmt.Sprintf("Adjust shard size based on the actual number of series, targetting %d series / ingester (after replication)", simulatedTargetSeriesPerIngester))
@@ -308,6 +340,8 @@ func computeMinAndMaxTokensOwnership(desc *Desc) (float64, float64, float64) {
 
 	for _, numTokens := range desc.countTokens() {
 		ownedPercentage := (float64(numTokens) / float64(math.MaxUint32)) * 100
+		//fmt.Println(ingesterID, ownedPercentage)
+
 		if ownedPercentage < minOwnedPercentage {
 			minOwnedPercentage = ownedPercentage
 		}

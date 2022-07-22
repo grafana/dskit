@@ -3,6 +3,7 @@ package ring
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"regexp"
 	"sort"
 	"testing"
@@ -15,6 +16,16 @@ func generateTokens(offset, interval uint32, total int) []uint32 {
 		tokens = append(tokens, offset+(uint32(i)*interval))
 	}
 	return tokens
+}
+
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func RandStringBytes(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+	}
+	return string(b)
 }
 
 func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
@@ -201,7 +212,9 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 			realShardSize = 3
 		}
 
-		realSet, err := ring.ShuffleShard(tenantID, realShardSize).GetAllHealthy(Read)
+		shuffleShardKey := tenantID
+
+		realSet, err := ring.ShuffleShard(shuffleShardKey, realShardSize).GetAllHealthy(Read)
 		if err != nil {
 			panic(err)
 		}
@@ -221,7 +234,7 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 			simulatedShardSize = len(desc.Ingesters)
 		}
 
-		simulatedSet, err := ring.ShuffleShard(tenantID, simulatedShardSize).GetAllHealthy(Read)
+		simulatedSet, err := ring.ShuffleShard(shuffleShardKey, simulatedShardSize).GetAllHealthy(Read)
 		if err != nil {
 			panic(err)
 		}

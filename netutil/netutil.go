@@ -1,11 +1,14 @@
 package netutil
 
 import (
+	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -55,4 +58,186 @@ func privateNetworkInterfaces(all []net.Interface, fallback []string, logger log
 	}
 	level.Debug(logger).Log("msg", "found network interfaces with private IP addresses assigned", "interfaces", strings.Join(privInts, " "))
 	return privInts
+}
+
+// GetFirstAddressOf returns the first IPv4/IPV6 address of the supplied interface names, omitting any link-local addresses.
+func GetFirstAddressOf(names []string, logger log.Logger, preferInet6 bool) (string, error) {
+	return getFirstAddressOf(names, logger, getInterfaceAddresses, preferInet6)
+}
+
+// NetworkInterfaceGetter matches the signature of net.InterfaceByName() to allow for test mocks.
+type NetworkInterfaceAddressGetter func(name string) ([]netip.Addr, error)
+
+// getFirstAddressOf returns the first IPv4/IPV6 address of the supplied interface names, omitting any link-local addresses.
+func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc NetworkInterfaceAddressGetter, preferInet6 bool) (string, error) {
+	var ipAddr netip.Addr
+
+	// When passing an empty list of interface names, we select all interfaces.
+	if len(names) == 0 {
+		infs, err := net.Interfaces()
+		if err != nil {
+			return "", fmt.Errorf("failed to get interface list and no interface names supplied: %w", err)
+		}
+		ifNames := make([]string, len(infs))
+		for i, v := range infs {
+			ifNames[i] = v.Name
+		}
+		names = ifNames
+	}
+
+	level.Debug(logger).Log("msg", "looking for addresses", "inf", fmt.Sprintf("%s", names), "inet6pref", preferInet6)
+
+	// Replace a nil func with the standard approach.
+	if interfaceAddrsFunc == nil {
+		interfaceAddrsFunc = getInterfaceAddresses
+	}
+
+	for _, name := range names {
+		addrs, err := interfaceAddrsFunc(name)
+		if err != nil {
+			level.Warn(logger).Log("msg", "error getting addresses for interface", "inf", name, "err", err)
+			continue
+		}
+
+		if len(addrs) <= 0 {
+			level.Warn(logger).Log("msg", "no addresses found for interface", "inf", name, "err", err)
+			continue
+		}
+		if ip := filterBestIP(addrs, preferInet6); ip.IsValid() {
+			// Select the best between what we've received
+			ipAddr = filterBestIP([]netip.Addr{ip, ipAddr}, preferInet6)
+		}
+		level.Debug(logger).Log("msg", "filtered best", "ipAddr", ipAddr.String(), "inf", name)
+		if ipAddr.IsLinkLocalUnicast() || !ipAddr.IsValid() {
+			level.Debug(logger).Log("msg", "skipping", "ipAddr", ipAddr.String(), "inf", name)
+			continue
+		}
+
+		if preferInet6 {
+			if ipAddr.Is6() {
+				return ipAddr.String(), nil
+			}
+			continue
+		}
+
+		return ipAddr.String(), nil
+	}
+
+	level.Debug(logger).Log("msg", "ipAddr after all interface names", "ipAddr", ipAddr.String())
+	if !ipAddr.IsValid() {
+		return "", fmt.Errorf("no useable address found for interfaces %s", names)
+	}
+	if ipAddr.IsLinkLocalUnicast() {
+		level.Warn(logger).Log("msg", "using link-local address", "address", ipAddr.String())
+	}
+	return ipAddr.String(), nil
+}
+
+// getInterfaceAddresses is the standard approach to collecting []net.Addr from a network interface by name.
+func getInterfaceAddresses(name string) ([]netip.Addr, error) {
+	inf, err := net.InterfaceByName(name)
+	if err != nil {
+		return nil, err
+	}
+
+	addrs, err := inf.Addrs()
+	if err != nil {
+		return nil, err
+	}
+
+	// Using netip.Addr to allow for easier and consistent address parsing.
+	// Without this, the net.ParseCIDR() that we might like to use in a test does
+	// not have the same net.Addr implementation that we get from calling
+	// interface.Addrs() as above.  Here we normalize on netip.Addr.
+	netaddrs := make([]netip.Addr, len(addrs))
+	for i, a := range addrs {
+		prefix, err := netip.ParsePrefix(a.String())
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to parse netip.Prefix")
+		}
+		netaddrs[i] = prefix.Addr()
+	}
+
+	return netaddrs, nil
+}
+
+// filterIPs attempts to return the first non automatic private IP (APIPA / 169.254.x.x / link-local) if possible, only returning APIPA if available and no other valid IP is found.
+func filterIPs(addrs []netip.Addr, preferInet6 bool) netip.Addr {
+	var ipAddr netip.Addr
+	for _, addr := range addrs {
+		if addr.IsValid() {
+			ipAddr = addr
+		}
+
+		if preferInet6 && !addr.Is6() {
+			continue
+		}
+
+		if !addr.IsLinkLocalUnicast() {
+			return addr
+		}
+	}
+	return ipAddr
+}
+
+// filterBestIP returns an opinionated "best" address from a list of addresses.
+// A high quality address is one that is considered routeable, and not in the link-local address space.
+// A low quality address is a link-local address.
+// When an IPv6 preference is indicated using preferInet6, an IPv6 will be preferred over an equivalent quality IPv4 address.
+// Loopback addresses are never selected.
+func filterBestIP(addrs []netip.Addr, preferInet6 bool) netip.Addr {
+	var invalid, inetAddr, inet6Addr netip.Addr
+
+	for _, addr := range addrs {
+		if addr.IsLoopback() {
+			continue
+		}
+
+		if addr.IsValid() {
+			if addr.Is4() {
+				// If we have already been set, can we improve on the quality?
+				if inetAddr.IsValid() {
+					if inetAddr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
+						inetAddr = addr
+					}
+					continue
+				}
+				inetAddr = addr
+			}
+			if addr.Is6() {
+				// If we have already been set, can we improve on the quality?
+				if inet6Addr.IsValid() {
+					if inet6Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
+						inet6Addr = addr
+					}
+					continue
+				}
+				inet6Addr = addr
+			}
+		}
+	}
+
+	// If both address families have been set, compare.
+	if inetAddr.IsValid() && inet6Addr.IsValid() {
+		if inetAddr.IsLinkLocalUnicast() && !inet6Addr.IsLinkLocalUnicast() {
+			return inet6Addr
+		}
+		if inet6Addr.IsLinkLocalUnicast() && !inetAddr.IsLinkLocalUnicast() {
+			return inetAddr
+		}
+		if preferInet6 {
+			return inet6Addr
+		}
+		return inetAddr
+	}
+
+	if inetAddr.IsValid() {
+		return inetAddr
+	}
+
+	if inet6Addr.IsValid() {
+		return inet6Addr
+	}
+
+	return invalid
 }

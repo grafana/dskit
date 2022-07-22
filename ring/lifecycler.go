@@ -34,6 +34,7 @@ type LifecyclerConfig struct {
 	JoinAfter        time.Duration `yaml:"join_after" category:"advanced"`
 	MinReadyDuration time.Duration `yaml:"min_ready_duration" category:"advanced"`
 	InfNames         []string      `yaml:"interface_names" doc:"default=[<private network interfaces>]"`
+	PreferInet6      bool          `yaml:"prefer_inet6" category:"advanced"`
 
 	// FinalSleep's default value can be overridden by
 	// setting it before calling RegisterFlags or RegisterFlagsWithPrefix.
@@ -138,7 +139,7 @@ type Lifecycler struct {
 
 // NewLifecycler creates new Lifecycler. It must be started via StartAsync.
 func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringName, ringKey string, flushOnShutdown bool, logger log.Logger, reg prometheus.Registerer) (*Lifecycler, error) {
-	addr, err := GetInstanceAddr(cfg.Addr, cfg.InfNames, logger)
+	addr, err := GetInstanceAddr(cfg.Addr, cfg.InfNames, logger, cfg.PreferInet6)
 	if err != nil {
 		return nil, err
 	}

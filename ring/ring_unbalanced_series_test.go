@@ -140,7 +140,7 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 
 	fmt.Println("Number of tenants per ingester:")
 	for _, zone := range ring.ringZones {
-		min, max, maxVariance := computeMinMaxAndVariance(tenantsPerZoneAndIngester[zone])
+		min, max, maxVariance := computeMinMaxAndVarianceInt(tenantsPerZoneAndIngester[zone])
 		fmt.Println(fmt.Sprintf("- %s min=%d max=%d max variance=%.2f%%", zone, min, max, maxVariance))
 	}
 	fmt.Println("")
@@ -149,6 +149,73 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 	for _, ingester := range topkIngestersBySeries(10) {
 		fmt.Println(fmt.Sprintf("- %s \tnum series: %.2fM num tenants: %d", ingester.id, float64(ingester.numSeries)/1000000, tenantsPerZoneAndIngester[ingester.zone][ingester.id]))
 	}
+
+	fmt.Println("")
+	fmt.Println("------------------------------------------------------")
+	fmt.Println("")
+
+	// Simulate if it would be better balanced if the shard size would be set on the actual number of series per tenant.
+	realSeriesPerIngester := map[string]float64{}
+	simulatedSeriesPerIngester := map[string]float64{}
+	simulatedTargetSeriesPerIngester := 100000
+
+	for tenantID, numSeries := range datasetSeriesPerUser {
+		// Compute the number of series per ingester, with the real shard size.
+		realShardSize := datasetShardSizePerUser[tenantID]
+
+		// TODO Re-run the query to get shard size using in-memory series and NOT active series
+		if realShardSize == 0 {
+			//fmt.Println("WARN - Missing real shard size of tenant", tenantID, "with", datasetSeriesPerUser[tenantID], "in-memory series")
+			realShardSize = 3
+		}
+
+		realSet, err := ring.ShuffleShard(tenantID, realShardSize).GetAllHealthy(Read)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, ingester := range realSet.Instances {
+			realSeriesPerIngester[ingester.Addr] += float64(numSeries) / float64(realShardSize)
+		}
+
+		// Compute the number of series per ingester, with the simulated shard size.
+		// - Target each tenant to 100K series / ingester (after replication)
+		// - Round up and ensure it's a multiple of 3 (so that it's multi-zone ready)
+		simulatedShardSize := (numSeries / simulatedTargetSeriesPerIngester) + 3 - ((numSeries / simulatedTargetSeriesPerIngester) % 3)
+		if simulatedShardSize < 3 {
+			simulatedShardSize = 3
+		}
+		if simulatedShardSize > len(desc.Ingesters) {
+			simulatedShardSize = len(desc.Ingesters)
+		}
+
+		simulatedSet, err := ring.ShuffleShard(tenantID, simulatedShardSize).GetAllHealthy(Read)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, ingester := range simulatedSet.Instances {
+			simulatedSeriesPerIngester[ingester.Addr] += float64(numSeries) / float64(simulatedShardSize)
+		}
+
+		// Log tenants for which the shard size would be different.
+		//if realShardSize != simulatedShardSize {
+		//	fmt.Println(fmt.Sprintf("- %s \tseries: %d \treal shard size: %d \tsimulated shard size: %d", tenantID, numSeries, realShardSize, simulatedShardSize))
+		//}
+	}
+
+	for ingesterID, realSeries := range realSeriesPerIngester {
+		fmt.Println(fmt.Sprintf("- %s \treal: %d \tsimulated:%d", ingesterID, int(realSeries), int(simulatedSeriesPerIngester[ingesterID])))
+	}
+
+	fmt.Println("SIMULATION")
+	fmt.Println(fmt.Sprintf("Adjust shard size based on the actual number of series, targetting %d series / ingester (after replication)", simulatedTargetSeriesPerIngester))
+	fmt.Println("")
+	min, max, maxVariance := computeMinMaxAndVarianceFloat(realSeriesPerIngester)
+	fmt.Println(fmt.Sprintf("Real:       min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
+	min, max, maxVariance = computeMinMaxAndVarianceFloat(simulatedSeriesPerIngester)
+	fmt.Println(fmt.Sprintf("Simulation: min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
+	fmt.Println("")
 }
 
 type ingester struct {
@@ -255,7 +322,26 @@ func computeMinAndMaxTokensOwnership(desc *Desc) (float64, float64, float64) {
 }
 
 // TODO test me
-func computeMinMaxAndVariance(input map[string]int) (int, int, float64) {
+func computeMinMaxAndVarianceFloat(input map[string]float64) (float64, float64, float64) {
+	minValue := math.MaxFloat64
+	maxValue := float64(0)
+
+	for _, value := range input {
+		if value < minValue {
+			minValue = value
+		}
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+
+	maxVariance := ((maxValue - minValue) / maxValue) * 100
+
+	return minValue, maxValue, maxVariance
+}
+
+// TODO test me
+func computeMinMaxAndVarianceInt(input map[string]int) (int, int, float64) {
 	minValue := math.MaxInt
 	maxValue := 0
 

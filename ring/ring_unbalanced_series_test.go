@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"testing"
 	"time"
 )
@@ -14,6 +15,7 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 
 	// Update the ring to ensure all instances are ACTIVE and healthy.
 	for id, instance := range desc.Ingesters {
+		instance.Addr = id
 		instance.State = ACTIVE
 		instance.Timestamp = now
 		desc.Ingesters[id] = instance
@@ -53,10 +55,14 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 		fmt.Println(fmt.Sprintf("Per-zone ownership: zone=%s min=%.2f%% max=%.2f%% max variance=%.2f%%", zone, minOwnedPercentage, maxOwnedPercentage, maxVariance))
 	}
 
+	fmt.Println("")
+	fmt.Println("------------------------------------------------------")
+	fmt.Println("")
+
 	// Compute statistics to find out whether the ingesters with less series are the ones owning less tokens.
 	// Since we use zone-aware replication, we need to look at the per-zone ownership %.
 	perZoneTokensOwnership := computePerZoneTokensOwnership(desc)
-	perZoneSeriesOwnership := computePerZoneSeriesOwnership(inmemorySeriesPerIngester)
+	perZoneSeriesOwnership := computePerZoneSeriesOwnership(datasetSeriesPerIngester)
 	seriesVsTokensCorrelationDistribution := make([]int, 10)
 	seriesVsTokensCorrelationOutliers := map[string]int{}
 	seriesVsTokensCorrelationThreshold := 80
@@ -87,28 +93,90 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 		}
 	}
 
+	//fmt.Println("Correlation between number of tokens owned and in-memory series")
+	//fmt.Println("This is a percentage: 100% means an ingester owns a number of series equal to the number of owned tokens.")
+	//fmt.Println("50% means an ingester owns either half or the double of series compared to the number of owned tokens.")
+	//fmt.Println("")
+	//for idx, numIngesters := range seriesVsTokensCorrelationDistribution {
+	//	bucketStart := idx * 10
+	//	bucketEnd := bucketStart + 10
+	//	fmt.Println(fmt.Sprintf("[%3d, %3d] Number ingesters: %d", bucketStart, bucketEnd, numIngesters))
+	//}
+	//
+	//if len(seriesVsTokensCorrelationOutliers) > 0 {
+	//	fmt.Println("")
+	//	fmt.Println(fmt.Sprintf("Outliers (correlation < %d):", seriesVsTokensCorrelationThreshold))
+	//
+	//	for ingesterID, correlation := range seriesVsTokensCorrelationOutliers {
+	//		fmt.Println(fmt.Sprintf("- %s \twith correlation %d (number of series: %.3fM)", ingesterID, correlation, float64(datasetSeriesPerIngester[ingesterID])/1000000))
+	//	}
+	//}
+
 	fmt.Println("")
 	fmt.Println("------------------------------------------------------")
 	fmt.Println("")
-	fmt.Println("Correlation between number of tokens owned and in-memory series")
-	fmt.Println("This is a percentage: 100% means an ingester owns a number of series equal to the number of owned tokens.")
-	fmt.Println("50% means an ingester owns either half or the double of series compared to the number of owned tokens.")
-	fmt.Println("")
-	for idx, numIngesters := range seriesVsTokensCorrelationDistribution {
-		bucketStart := idx * 10
-		bucketEnd := bucketStart + 10
-		fmt.Println(fmt.Sprintf("[%3d, %3d] Number ingesters: %d", bucketStart, bucketEnd, numIngesters))
-	}
 
-	if len(seriesVsTokensCorrelationOutliers) > 0 {
-		fmt.Println("")
-		fmt.Println(fmt.Sprintf("Outliers (correlation < %d):", seriesVsTokensCorrelationThreshold))
+	// Compute statistics to find out if the number of tenants is well balanced between ingesters.
+	tenantsPerZoneAndIngester := map[string]map[string]int{}
 
-		for ingesterID, correlation := range seriesVsTokensCorrelationOutliers {
-			fmt.Println(fmt.Sprintf("- %s \twith correlation %d (number of series: %.3fM)", ingesterID, correlation, float64(inmemorySeriesPerIngester[ingesterID])/1000000))
+	for tenantID, shardSize := range datasetShardSizePerUser {
+		set, err := ring.ShuffleShard(tenantID, shardSize).GetAllHealthy(Read)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, ingester := range set.Instances {
+			// When we prepare the ring in this tool, we do set the address to be equal to the ID.
+			ingesterID := ingester.Addr
+
+			zone := getZoneFromIngesterID(ingesterID)
+			if _, ok := tenantsPerZoneAndIngester[zone]; !ok {
+				tenantsPerZoneAndIngester[zone] = map[string]int{}
+			}
+
+			tenantsPerZoneAndIngester[zone][ingesterID]++
 		}
 	}
 
+	fmt.Println("Number of tenants per ingester:")
+	for _, zone := range ring.ringZones {
+		min, max, maxVariance := computeMinMaxAndVariance(tenantsPerZoneAndIngester[zone])
+		fmt.Println(fmt.Sprintf("- %s min=%d max=%d max variance=%.2f%%", zone, min, max, maxVariance))
+	}
+	fmt.Println("")
+
+	// Are the ingesters with more tenants the ones with more series too?
+	for _, ingester := range topkIngestersBySeries(10) {
+		fmt.Println(fmt.Sprintf("- %s \tnum series: %.2fM num tenants: %d", ingester.id, float64(ingester.numSeries)/1000000, tenantsPerZoneAndIngester[ingester.zone][ingester.id]))
+	}
+}
+
+type ingester struct {
+	id        string
+	zone      string
+	numSeries int
+}
+
+func topkIngestersBySeries(k int) []ingester {
+	ingesters := make([]ingester, 0, len(datasetSeriesPerIngester))
+	for ingesterID, numSeries := range datasetSeriesPerIngester {
+		ingesters = append(ingesters, ingester{
+			id:        ingesterID,
+			zone:      getZoneFromIngesterID(ingesterID),
+			numSeries: numSeries,
+		})
+	}
+
+	// Sort by number of series desc.
+	sort.Slice(ingesters, func(i, j int) bool {
+		return ingesters[i].numSeries > ingesters[j].numSeries
+	})
+
+	if k > len(ingesters) {
+		k = len(ingesters)
+	}
+
+	return ingesters[:k]
 }
 
 // TODO test me
@@ -184,6 +252,25 @@ func computeMinAndMaxTokensOwnership(desc *Desc) (float64, float64, float64) {
 	maxVariance := ((maxOwnedPercentage - minOwnedPercentage) / maxOwnedPercentage) * 100
 
 	return minOwnedPercentage, maxOwnedPercentage, maxVariance
+}
+
+// TODO test me
+func computeMinMaxAndVariance(input map[string]int) (int, int, float64) {
+	minValue := math.MaxInt
+	maxValue := 0
+
+	for _, value := range input {
+		if value < minValue {
+			minValue = value
+		}
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+
+	maxVariance := (float64(maxValue-minValue) / float64(maxValue)) * 100
+
+	return minValue, maxValue, maxVariance
 }
 
 var ingesterIDRegex = regexp.MustCompile("^ingester-(zone-[a-z]{1})-\\d+$")

@@ -568,7 +568,7 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 	startTime := time.Now()
 
-	level.Info(m.logger).Log("msg", "joining memberlist cluster", "join_members", []string(m.cfg.JoinMembers))
+	level.Info(m.logger).Log("msg", "joining memberlist cluster", "join_members", strings.Join(m.cfg.JoinMembers, ","))
 
 	cfg := backoff.Config{
 		MinBackoff: m.cfg.MinJoinBackoff,

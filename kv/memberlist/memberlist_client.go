@@ -619,7 +619,7 @@ func (m *KV) discoverMembers(ctx context.Context, members []string) []string {
 
 	err := m.provider.Resolve(ctx, resolve)
 	if err != nil {
-		level.Error(m.logger).Log("msg", "failed to resolve members", "addrs", strings.Join(resolve, ","))
+		level.Error(m.logger).Log("msg", "failed to resolve members", "addrs", strings.Join(resolve, ","), "err", err)
 	}
 
 	ms = append(ms, m.provider.Addresses()...)

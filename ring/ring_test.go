@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -192,13 +193,15 @@ func TestDoBatch_QuorumError(t *testing.T) {
 	ring.updateRingState(desc)
 	operationKeys := []uint32{1, 10, 100}
 	ctx := context.Background()
+	unfinishedDoBatchCalls := sync.WaitGroup{}
 	runDoBatch := func() error {
+		unfinishedDoBatchCalls.Add(1)
 		returnInstanceError := func(i InstanceDesc, _ []int) error {
 			instanceID, err := strconv.Atoi(i.Addr)
 			require.NoError(t, err)
 			return instanceReturnErrors[instanceID]
 		}
-		return DoBatch(ctx, Write, ring, operationKeys, returnInstanceError, func() {})
+		return DoBatch(ctx, Write, ring, operationKeys, returnInstanceError, unfinishedDoBatchCalls.Done)
 	}
 
 	// Using 429 just to make sure we are not hitting the &limits
@@ -213,6 +216,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, codes.Code(429), s.Code())
 	}
+	unfinishedDoBatchCalls.Wait()
 
 	// Simulating 2 5xx and 1 4xx -> Should return 5xx
 	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")
@@ -225,6 +229,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, codes.Code(500), s.Code())
 	}
+	unfinishedDoBatchCalls.Wait()
 
 	// Simulating 2 different errors and 1 success -> This case we may return any of the errors
 	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")
@@ -237,15 +242,15 @@ func TestDoBatch_QuorumError(t *testing.T) {
 		require.True(t, ok)
 		require.True(t, s.Code() == 429 || s.Code() == 500)
 	}
+	unfinishedDoBatchCalls.Wait()
 
 	// Simulating 1 error -> Should return 2xx
 	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")
 	instanceReturnErrors[1] = nil
 	instanceReturnErrors[2] = nil
 
-	for i := 0; i < 1; i++ {
-		require.NoError(t, runDoBatch())
-	}
+	require.NoError(t, runDoBatch())
+	unfinishedDoBatchCalls.Wait()
 
 	// Simulating an unhealthy instance (instance 2)
 	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")

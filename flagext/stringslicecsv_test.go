@@ -32,3 +32,25 @@ func Test_StringSliceCSV(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, testStruct, testStruct2)
 }
+
+func Test_EmptyStringSliceCSV(t *testing.T) {
+	type TestStruct struct {
+		CSV StringSliceCSV `yaml:"csv"`
+	}
+
+	var testStructEmpty TestStruct
+	empty := "\"\""
+	assert.Nil(t, testStructEmpty.CSV.Set(empty))
+	assert.Equal(t, len(testStructEmpty.CSV), 0)
+	expected := []byte(`csv: ""
+`)
+	actual, err := yaml.Marshal(testStructEmpty)
+	assert.Nil(t, err)
+	assert.Equal(t, expected, actual)
+
+	var testStruct2 TestStruct
+
+	err = yaml.Unmarshal(expected, &testStruct2)
+	assert.Nil(t, err)
+	assert.Equal(t, testStructEmpty, testStruct2)
+}

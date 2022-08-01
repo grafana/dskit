@@ -34,6 +34,7 @@
 * [CHANGE] Remove middleware package. #182
 * [CHANGE] Memberlist: disabled TCP-based ping fallback, because dskit already uses a custom transport based on TCP. #194
 * [CHANGE] Memberlist: KV store now fast-joins memberlist cluster before serving any KV requests. #195
+* [CHANGE] Ring: remove duplicate state in NewOp func #203
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41
@@ -68,3 +69,4 @@
 * [BUGFIX] Ring: fix bug where hash ring instances may appear unhealthy in the web UI even though they are not. #172
 * [BUGFIX] Lifecycler: if existing ring entry is reused, ring is updated immediately, and not on next heartbeat. #175
 * [BUGFIX] stringslicecsv: handle unmarshalling empty yaml string #206
+

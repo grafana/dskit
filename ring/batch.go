@@ -128,45 +128,45 @@ func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callb
 	}
 }
 
-func (b *batchTracker) record(sampleTrackers []*itemTracker, err error) {
-	// If we reach the required number of successful puts on this sample, then decrement the
-	// number of pending samples by one.
+func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
+	// If we reach the required number of successful puts on this item, then decrement the
+	// number of pending items by one.
 	//
 	// The use of atomic increments here is needed as:
-	// * rpcsPending and rpcsFailed guarantees only a single sendSamples goroutine will write to either channel
+	// * rpcsPending and rpcsFailed guarantees only a single goroutine will write to either channel
 	// * succeeded, failed4xx, failed5xx and remaining guarantees that the "return decision" is made atomically
 	// avoiding race condition
-	for i := range sampleTrackers {
+	for i := range itemTrackers {
 		if err != nil {
 			// Track the number of errors by error family, and if it exceeds maxFailures
 			// shortcut the waiting rpc.
-			errCount := sampleTrackers[i].recordError(err)
+			errCount := itemTrackers[i].recordError(err)
 			// We should return an error if we reach the maxFailure (quorum) on a given error family OR
-			// we dont have any remaining instances to try
+			// we don't have any remaining instances to try
 			// Ex: 2xx, 4xx, 5xx -> return 5xx
 			// Ex: 4xx, 4xx, _ -> return 4xx
 			// Ex: 5xx, _, 5xx -> return 5xx
-			if errCount > int32(sampleTrackers[i].maxFailures) || sampleTrackers[i].remaining.Dec() == 0 {
+			if errCount > int32(itemTrackers[i].maxFailures) || itemTrackers[i].remaining.Dec() == 0 {
 				if b.rpcsFailed.Inc() == 1 {
 					b.err <- err
 				}
 			}
 		} else {
-			// If we successfully push all samples to min success instances,
-			// wake up the waiting rpc so it can return early.
-			if sampleTrackers[i].succeeded.Inc() >= int32(sampleTrackers[i].minSuccess) {
+			// If we successfully process items in minSuccess instances,
+			// then wake up the waiting rpc, so it can return early.
+			if itemTrackers[i].succeeded.Inc() >= int32(itemTrackers[i].minSuccess) {
 				if b.rpcsPending.Dec() == 0 {
 					b.done <- struct{}{}
 				}
 				continue
 			}
 
-			// If we succeeded to call this particular instance but we dont have any remaining instances to try
-			// and we did not succeeded calling `minSuccess` instances we need to return the last error
+			// If we succeeded to call this particular instance, but we don't have any remaining instances to try,
+			// and we did not succeed calling minSuccess instances, then we need to return the last error
 			// Ex: 4xx, 5xx, 2xx
-			if sampleTrackers[i].remaining.Dec() == 0 {
+			if itemTrackers[i].remaining.Dec() == 0 {
 				if b.rpcsFailed.Inc() == 1 {
-					b.err <- sampleTrackers[i].err.Load()
+					b.err <- itemTrackers[i].err.Load()
 				}
 			}
 		}

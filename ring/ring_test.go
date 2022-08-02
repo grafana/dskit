@@ -175,7 +175,7 @@ func TestDoBatchZeroInstances(t *testing.T) {
 }
 
 func TestDoBatch_QuorumError(t *testing.T) {
-	// we should run several write request to make sure we dont have any race condition on the batchTracker#record code
+	// we should run several write request to make sure we dont have any race condition on the batchTracker.record code
 	const numberOfOperations = 10000
 	instanceReturnErrors := [3]error{nil, nil, nil}
 	desc := NewDesc()

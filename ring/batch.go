@@ -142,10 +142,20 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
 			// shortcut the waiting rpc.
 			errCount := itemTrackers[i].recordError(err)
 			// We should return an error if we reach the maxFailure (quorum) on a given error family OR
-			// we don't have any remaining instances to try
+			// we don't have any remaining instances to try.
+			//
 			// Ex: 2xx, 4xx, 5xx -> return 5xx
 			// Ex: 4xx, 4xx, _ -> return 4xx
 			// Ex: 5xx, _, 5xx -> return 5xx
+			//
+			// The reason for searching for quorum in 4xx and 5xx errors separately is to give a more accurate
+			// response to the initial request. So if a quorum of instances rejects the request with 4xx, then the request should be rejected
+			// even if less-than-quorum instances indicated a failure to process the request (via 5xx).
+			// The speculation is that had the unavailable instances been available,
+			// they would have rejected the request with a 4xx as well.
+			// Conversely, if a quorum of instances failed to process the request via 5xx and less-than-quorum
+			// instances rejected it with 4xx, then we do not have quorum to reject the request as a 4xx. Instead,
+			// we return the last 5xx error for debuggability.
 			if errCount > int32(itemTrackers[i].maxFailures) || itemTrackers[i].remaining.Dec() == 0 {
 				if b.rpcsFailed.Inc() == 1 {
 					b.err <- err

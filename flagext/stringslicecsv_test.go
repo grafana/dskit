@@ -38,9 +38,8 @@ func Test_EmptyStringSliceCSV(t *testing.T) {
 		CSV StringSliceCSV `yaml:"csv"`
 	}
 
-	var testStructEmpty TestStruct
-	empty := "\"\""
-	assert.Nil(t, testStructEmpty.CSV.Set(empty))
+	var testStructEmpty TestStruct = TestStruct{CSV: nil}
+
 	assert.Equal(t, len(testStructEmpty.CSV), 0)
 	expected := []byte(`csv: ""
 `)
@@ -50,7 +49,7 @@ func Test_EmptyStringSliceCSV(t *testing.T) {
 
 	var testStruct2 TestStruct
 
-	err = yaml.Unmarshal(expected, &testStruct2)
+	err = yaml.Unmarshal(actual, &testStruct2)
 	assert.Nil(t, err)
 	assert.Equal(t, testStructEmpty, testStruct2)
 }

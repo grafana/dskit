@@ -13,9 +13,11 @@ func (v StringSliceCSV) String() string {
 
 // Set implements flag.Value
 func (v *StringSliceCSV) Set(s string) error {
-	if s != "\"\"" && len(s) > 0 {
-		*v = strings.Split(s, ",")
+	if len(s) == 0 {
+		*v = nil
+		return nil
 	}
+	*v = strings.Split(s, ",")
 	return nil
 }
 

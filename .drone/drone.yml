@@ -7,21 +7,21 @@
          "commands": [
             "make mod-check"
          ],
-         "image": "golang:1.17.6",
+         "image": "golang:1.18.4",
          "name": "make-mod-check"
       },
       {
          "commands": [
             "make lint"
          ],
-         "image": "golang:1.17.6",
+         "image": "golang:1.18.4",
          "name": "make-lint"
       },
       {
          "commands": [
             "make test"
          ],
-         "image": "golang:1.17.6",
+         "image": "golang:1.18.4",
          "name": "make-test"
       },
       {
@@ -30,13 +30,13 @@
             "go mod vendor",
             "make check-protos"
          ],
-         "image": "golang:1.17.6",
+         "image": "golang:1.18.4",
          "name": "make-check-protos"
       }
    ]
 }
 ---
 kind: signature
-hmac: ece0e7c96218aed975b8e9fa0399bee2a8b0d72bbe3ce0830d39fdc84d238b7a
+hmac: 59146de8cd97a9baf7d86dd30178bfc99415358fc4f4f4cafc4a128005bc05fe
 
 ...

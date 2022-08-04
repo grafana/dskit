@@ -143,7 +143,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 	}
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(tlsConfig.RootCAs.Subjects()), "ensure one CA is returned")
+	assert.Equal(t, 1, len(tlsConfig.RootCAs.Subjects()), "ensure one CA is returned") //nolint:staticcheck
 	assert.Equal(t, false, tlsConfig.InsecureSkipVerify, "make sure we default to not skip verification")
 
 	// test two cas passed
@@ -153,7 +153,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 	}
 	tlsConfig, err = c.GetTLSConfig()
 	assert.NoError(t, err)
-	assert.Equal(t, 2, len(tlsConfig.RootCAs.Subjects()), "ensure two CAs are returned")
+	assert.Equal(t, 2, len(tlsConfig.RootCAs.Subjects()), "ensure two CAs are returned") //nolint:staticcheck
 	assert.False(t, tlsConfig.InsecureSkipVerify, "make sure we default to not skip verification")
 
 	// expect errors to be passed

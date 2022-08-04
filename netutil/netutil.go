@@ -159,25 +159,6 @@ func getInterfaceAddresses(name string) ([]netip.Addr, error) {
 	return netaddrs, nil
 }
 
-// filterIPs attempts to return the first non automatic private IP (APIPA / 169.254.x.x / link-local) if possible, only returning APIPA if available and no other valid IP is found.
-func filterIPs(addrs []netip.Addr, preferInet6 bool) netip.Addr {
-	var ipAddr netip.Addr
-	for _, addr := range addrs {
-		if addr.IsValid() {
-			ipAddr = addr
-		}
-
-		if preferInet6 && !addr.Is6() {
-			continue
-		}
-
-		if !addr.IsLinkLocalUnicast() {
-			return addr
-		}
-	}
-	return ipAddr
-}
-
 // filterBestIP returns an opinionated "best" address from a list of addresses.
 // A high quality address is one that is considered routeable, and not in the link-local address space.
 // A low quality address is a link-local address.

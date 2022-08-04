@@ -286,6 +286,13 @@ func TestFilterBestIP(t *testing.T) {
 	}{
 		{
 			addrs: []netip.Addr{
+				toAddr("169.254.1.1"),
+				toAddr("127.0.0.1"),
+			},
+			addr: "169.254.1.1",
+		},
+		{
+			addrs: []netip.Addr{
 				toAddr("1.1.1.1"),
 			},
 			addr: "1.1.1.1",

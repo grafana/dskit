@@ -35,6 +35,7 @@
 * [CHANGE] Memberlist: disabled TCP-based ping fallback, because dskit already uses a custom transport based on TCP. #194
 * [CHANGE] Memberlist: KV store now fast-joins memberlist cluster before serving any KV requests. #195
 * [CHANGE] Ring: remove duplicate state in NewOp func #203
+* [CHANGE] Memberlist: Increase the leave timeout to 10x the connection timeout, so that we can communicate the leave to at least 1 node, if the first 9 we try to contact times out.
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

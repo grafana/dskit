@@ -10,6 +10,10 @@ utilities from the [Cortex] project.
 
 [Cortex]: https://github.com/cortexproject/cortex
 
+## Go version compatibility
+
+This library aims to support at least the two latest Go minor releases.
+
 ## Contributing
 
 If you're interested in contributing to this project:

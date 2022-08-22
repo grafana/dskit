@@ -585,12 +585,12 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 		nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
 
 		reached, err := m.memberlist.Join(nodes) // err is only returned if reached==0.
-		if err == nil {
+		if err == nil && !(len(m.cfg.JoinMembers) > 0 && len(nodes) == 0) {
 			level.Info(m.logger).Log("msg", "joining memberlist cluster succeeded", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
 			return true
 		}
 
-		level.Warn(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err)
+		level.Warn(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err, "discover_nodes", len(nodes))
 		lastErr = err
 
 		boff.Wait()

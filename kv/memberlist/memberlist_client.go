@@ -475,11 +475,9 @@ func (m *KV) starting(ctx context.Context) error {
 var errFailedToJoinCluster = errors.New("failed to join memberlist cluster on startup")
 
 func (m *KV) running(ctx context.Context) error {
-	if len(m.cfg.JoinMembers) > 0 {
-		ok := m.joinMembersOnStartup(ctx)
-		if !ok && m.cfg.AbortIfJoinFails {
-			return errFailedToJoinCluster
-		}
+	ok := m.joinMembersOnStartup(ctx)
+	if !ok && m.cfg.AbortIfJoinFails {
+		return errFailedToJoinCluster
 	}
 
 	var tickerChan <-chan time.Time
@@ -600,7 +598,7 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 			level.Warn(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err)
 			lastErr = err
 		} else {
-			level.Warn(m.logger).Log("msg", "joining memberlist cluster: failed to resolve nodes", "retries", boff.NumRetries())
+			level.Warn(m.logger).Log("msg", "joining memberlist cluster: found no nodes to join", "retries", boff.NumRetries())
 		}
 
 		boff.Wait()

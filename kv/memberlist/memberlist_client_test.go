@@ -839,7 +839,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 					time.Sleep(testData.startDelayForRest)
 				}
 
-				mkv := NewKV(cfg, log.NewNopLogger(), &delayedDnsProviderMock{delay: dnsDelay}, prometheus.NewPedanticRegistry()) // Not started yet.
+				mkv := NewKV(cfg, log.NewNopLogger(), &delayedDNSProviderMock{delay: dnsDelay}, prometheus.NewPedanticRegistry()) // Not started yet.
 				watcher.WatchService(mkv)
 
 				kv, err := NewClient(mkv, c)
@@ -1507,12 +1507,12 @@ func (p dnsProviderMock) Addresses() []string {
 	return p.resolved
 }
 
-type delayedDnsProviderMock struct {
+type delayedDNSProviderMock struct {
 	resolved []string
 	delay    int
 }
 
-func (p *delayedDnsProviderMock) Resolve(ctx context.Context, addrs []string) error {
+func (p *delayedDNSProviderMock) Resolve(ctx context.Context, addrs []string) error {
 	if p.delay == 0 {
 		p.resolved = make([]string, len(addrs))
 		for _, addr := range addrs {
@@ -1524,6 +1524,6 @@ func (p *delayedDnsProviderMock) Resolve(ctx context.Context, addrs []string) er
 	return nil
 }
 
-func (p delayedDnsProviderMock) Addresses() []string {
+func (p delayedDNSProviderMock) Addresses() []string {
 	return p.resolved
 }

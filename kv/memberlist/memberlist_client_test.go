@@ -880,7 +880,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 				now := time.Now()
 				t.Log("Update", now.Sub(startTime).String(), ": Ring has", len(r.Members), "members, and", len(r.getAllTokens()),
 					"tokens")
-				return true // yes, keep watching
+				return observedMembers != members // wait until expected members reached
 			})
 			cancel() // make linter happy
 

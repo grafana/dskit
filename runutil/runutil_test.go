@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCloseWithLogOnErr(t *testing.T) {
@@ -94,30 +95,17 @@ func TestCloseWithErrCapture(t *testing.T) {
 			expectedErrStr: "2 errors: test; close: test",
 		},
 	} {
-		if ok := t.Run("", func(t *testing.T) {
+		t.Run(tcase.expectedErrStr, func(t *testing.T) {
 			ret := tcase.err
 			CloseWithErrCapture(&ret, tcase.closer, "close")
 
 			if tcase.expectedErrStr == "" {
-				if ret != nil {
-					t.Error("Expected error to be nil")
-					t.Fail()
-				}
+				assert.NoError(t, ret)
 			} else {
-				if ret == nil {
-					t.Error("Expected error to be not nil")
-					t.Fail()
-				}
-
-				if tcase.expectedErrStr != ret.Error() {
-					t.Errorf("%s != %s", tcase.expectedErrStr, ret.Error())
-					t.Fail()
-				}
+				require.Error(t, ret)
+				assert.Equal(t, tcase.expectedErrStr, ret.Error())
 			}
-
-		}); !ok {
-			return
-		}
+		})
 	}
 }
 
@@ -162,8 +150,8 @@ func TestCloseMoreThanOnce(t *testing.T) {
 
 	CloseWithLogOnErr(lc, r, "should not be called")
 	CloseWithLogOnErr(lc, r, "should not be called")
-	assert.Equal(t, false, lc.WasCalled)
+	assert.False(t, lc.WasCalled)
 
 	CloseWithLogOnErr(lc, r, "should be called")
-	assert.Equal(t, true, lc.WasCalled)
+	assert.True(t, lc.WasCalled)
 }

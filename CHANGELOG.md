@@ -70,4 +70,4 @@
 * [BUGFIX] Ring: fix bug where hash ring instances may appear unhealthy in the web UI even though they are not. #172
 * [BUGFIX] Lifecycler: if existing ring entry is reused, ring is updated immediately, and not on next heartbeat. #175
 * [BUGFIX] stringslicecsv: handle unmarshalling empty yaml string #206
-
+* [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #215

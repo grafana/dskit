@@ -11,6 +11,7 @@ import (
 	"net"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -762,107 +763,134 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 	const members = 3
 	const key = "ring"
 
-	var clients []*Client
-
-	stop := make(chan struct{})
-	start := make(chan struct{})
-
-	ports, err := getFreePorts(members)
-	require.NoError(t, err)
-
-	watcher := services.NewFailureWatcher()
-	go func() {
-		for {
-			select {
-			case err := <-watcher.Chan():
-				t.Errorf("service reported error: %v", err)
-			case <-stop:
-				return
-			}
-		}
-	}()
-
-	for i, port := range ports {
-		id := fmt.Sprintf("Member-%d", i)
-		var cfg KVConfig
-		flagext.DefaultValues(&cfg)
-		cfg.NodeName = id
-
-		cfg.GossipInterval = 100 * time.Millisecond
-		cfg.GossipNodes = 3
-		cfg.PushPullInterval = 5 * time.Second
-
-		cfg.MinJoinBackoff = 100 * time.Millisecond
-		cfg.MaxJoinBackoff = 1 * time.Minute
-		cfg.MaxJoinRetries = 10
-		cfg.AbortIfJoinFails = true
-
-		cfg.TCPTransport = TCPTransportConfig{
-			BindAddrs: []string{"localhost"},
-			BindPort:  port,
-		}
-
-		cfg.Codecs = []codec.Codec{c}
-
-		if i == 0 {
-			// Add members to first KV config to join immediately on initialization.
-			// This will enforce backoff as each next members listener is not open yet.
-			cfg.JoinMembers = []string{fmt.Sprintf("localhost:%d", ports[1])}
-		} else {
-			// Add delay to each next member to force backoff
-			time.Sleep(1 * time.Second)
-		}
-
-		mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry()) // Not started yet.
-		watcher.WatchService(mkv)
-
-		kv, err := NewClient(mkv, c)
-		require.NoError(t, err)
-
-		clients = append(clients, kv)
-
-		startKVAndRunClient := func(kv *Client, id string, port int) {
-			err = services.StartAndAwaitRunning(context.Background(), mkv)
-			if err != nil {
-				t.Errorf("failed to start KV: %v", err)
-			}
-			err = runClient(kv, id, key, port, time.Second, start, stop)
-			require.NoError(t, err)
-		}
-
-		if i == 0 {
-			go startKVAndRunClient(kv, id, 0)
-		} else {
-			go startKVAndRunClient(kv, id, ports[i-1])
-		}
+	tests := map[string]struct {
+		dnsDelayForFirstKV int
+		startDelayForRest  time.Duration
+		queryType          string
+	}{
+		"Test late start of members with fast join": {
+			dnsDelayForFirstKV: 0,
+			startDelayForRest:  1 * time.Second,
+			queryType:          "",
+		},
+		"Test late start of members with DNS lookup": {
+			dnsDelayForFirstKV: 0,
+			startDelayForRest:  1 * time.Second,
+			queryType:          "dns+",
+		},
+		"Test late start of DNS service": {
+			dnsDelayForFirstKV: 5, // fail DNS lookup for 5 times (fast join and first couple of normal join DNS lookups)
+			startDelayForRest:  0,
+			queryType:          "dns+",
+		},
 	}
 
-	t.Log("Waiting for all members to join memberlist cluster")
-	close(start)
-	time.Sleep(2 * time.Second)
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			var clients []*Client
 
-	t.Log("Observing ring ...")
+			stop := make(chan struct{})
+			start := make(chan struct{})
 
-	startTime := time.Now()
-	firstKv := clients[0]
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	observedMembers := 0
-	firstKv.WatchKey(ctx, key, func(in interface{}) bool {
-		r := in.(*data)
-		observedMembers = len(r.Members)
+			ports, err := getFreePorts(members)
+			require.NoError(t, err)
 
-		now := time.Now()
-		t.Log("Update", now.Sub(startTime).String(), ": Ring has", len(r.Members), "members, and", len(r.getAllTokens()),
-			"tokens")
-		return true // yes, keep watching
-	})
-	cancel() // make linter happy
+			watcher := services.NewFailureWatcher()
+			go func() {
+				for {
+					select {
+					case err := <-watcher.Chan():
+						t.Errorf("service reported error: %v", err)
+					case <-stop:
+						return
+					}
+				}
+			}()
 
-	// Let clients exchange messages for a while
-	close(stop)
+			for i, port := range ports {
+				id := fmt.Sprintf("Member-%d", i)
+				var cfg KVConfig
+				flagext.DefaultValues(&cfg)
+				cfg.NodeName = id
 
-	if observedMembers < members {
-		t.Errorf("expected to see at least %d but saw %d", members, observedMembers)
+				cfg.GossipInterval = 100 * time.Millisecond
+				cfg.GossipNodes = 3
+				cfg.PushPullInterval = 5 * time.Second
+
+				cfg.MinJoinBackoff = 100 * time.Millisecond
+				cfg.MaxJoinBackoff = 1 * time.Minute
+				cfg.MaxJoinRetries = 10
+				cfg.AbortIfJoinFails = true
+
+				cfg.TCPTransport = TCPTransportConfig{
+					BindAddrs: []string{"localhost"},
+					BindPort:  port,
+				}
+
+				cfg.Codecs = []codec.Codec{c}
+				dnsDelay := 0
+				if i == 0 {
+					// Add members to first KV config to join immediately on initialization.
+					// This will enforce backoff as each next members listener is not open yet.
+					cfg.JoinMembers = []string{fmt.Sprintf("%slocalhost:%d", testData.queryType, ports[1])}
+					dnsDelay = testData.dnsDelayForFirstKV
+				} else {
+					// Add possible delay to each next member to force backoff
+					time.Sleep(testData.startDelayForRest)
+				}
+
+				mkv := NewKV(cfg, log.NewNopLogger(), &delayedDNSProviderMock{delay: dnsDelay}, prometheus.NewPedanticRegistry()) // Not started yet.
+				watcher.WatchService(mkv)
+
+				kv, err := NewClient(mkv, c)
+				require.NoError(t, err)
+
+				clients = append(clients, kv)
+
+				startKVAndRunClient := func(kv *Client, id string, port int) {
+					err = services.StartAndAwaitRunning(context.Background(), mkv)
+					if err != nil {
+						t.Errorf("failed to start KV: %v", err)
+					}
+					err = runClient(kv, id, key, port, time.Second, start, stop)
+					require.NoError(t, err)
+				}
+
+				if i < 2 {
+					go startKVAndRunClient(kv, id, 0)
+				} else {
+					go startKVAndRunClient(kv, id, ports[i-1])
+				}
+			}
+
+			t.Log("Waiting for all members to join memberlist cluster")
+			close(start)
+			time.Sleep(2 * time.Second)
+
+			t.Log("Observing ring ...")
+
+			startTime := time.Now()
+			firstKv := clients[0]
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			observedMembers := 0
+			firstKv.WatchKey(ctx, key, func(in interface{}) bool {
+				r := in.(*data)
+				observedMembers = len(r.Members)
+
+				now := time.Now()
+				t.Log("Update", now.Sub(startTime).String(), ": Ring has", len(r.Members), "members, and", len(r.getAllTokens()),
+					"tokens")
+				return observedMembers != members // wait until expected members reached
+			})
+			cancel() // make linter happy
+
+			// Let clients exchange messages for a while
+			close(stop)
+
+			if observedMembers < members {
+				t.Errorf("expected to see at least %d but saw %d", members, observedMembers)
+			}
+		})
 	}
 }
 
@@ -1476,5 +1504,26 @@ func (p *dnsProviderMock) Resolve(ctx context.Context, addrs []string) error {
 }
 
 func (p dnsProviderMock) Addresses() []string {
+	return p.resolved
+}
+
+type delayedDNSProviderMock struct {
+	resolved []string
+	delay    int
+}
+
+func (p *delayedDNSProviderMock) Resolve(ctx context.Context, addrs []string) error {
+	if p.delay == 0 {
+		p.resolved = make([]string, len(addrs))
+		for _, addr := range addrs {
+			p.resolved = append(p.resolved, addr[strings.Index(addr, "+")+1:])
+		}
+		return nil
+	}
+	p.delay--
+	return nil
+}
+
+func (p delayedDNSProviderMock) Addresses() []string {
 	return p.resolved
 }

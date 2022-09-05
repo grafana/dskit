@@ -7,8 +7,8 @@ import (
 	"github.com/grafana/dskit/multierror"
 )
 
-// LimitedConcurrencySingleFlight ensures that for any number of concurrent ForEachNotInFlight calls each with any number of tokens only up to maxConcurrent f
-// invocations are executing concurrently. See the docs of ForEachNotInFlight for the uniqueness semantics of tokens.
+// LimitedConcurrencySingleFlight ensures that across all concurrent calls to ForEachNotInFlight, only up to maxConcurrent
+// tokens are running concurrently. See the docs of ForEachNotInFlight for the uniqueness semantics of tokens.
 type LimitedConcurrencySingleFlight struct {
 	inflightTokensMx sync.Mutex
 	inflightTokens   map[string]struct{}

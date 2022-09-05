@@ -7,26 +7,26 @@ import (
 	"github.com/grafana/dskit/multierror"
 )
 
-// WorkerPool ensures that for any number of concurrent ForEachNotInFlight calls each with any number of tokens only up to numWorkers f
+// LimitedConcurrencySingleFlight ensures that for any number of concurrent ForEachNotInFlight calls each with any number of tokens only up to maxConcurrent f
 // invocations are executing concurrently. See the docs of ForEachNotInFlight for the uniqueness semantics of tokens.
-type WorkerPool struct {
+type LimitedConcurrencySingleFlight struct {
 	inflightTokensMx sync.Mutex
 	inflightTokens   map[string]struct{}
 	inflightCalls    sync.WaitGroup
 	semaphore        chan struct{}
 }
 
-func NewWorkerPool(numWorkers int) *WorkerPool {
-	return &WorkerPool{
+func NewWorkerPool(maxConcurrent int) *LimitedConcurrencySingleFlight {
+	return &LimitedConcurrencySingleFlight{
 		inflightTokensMx: sync.Mutex{},
 		inflightTokens:   make(map[string]struct{}),
 		inflightCalls:    sync.WaitGroup{},
-		semaphore:        make(chan struct{}, numWorkers),
+		semaphore:        make(chan struct{}, maxConcurrent),
 	}
 }
 
 // Wait returns when there are no in-flight calls to ForEachNotInFlight.
-func (w *WorkerPool) Wait() {
+func (w *LimitedConcurrencySingleFlight) Wait() {
 	w.inflightCalls.Wait()
 }
 
@@ -34,7 +34,7 @@ func (w *WorkerPool) Wait() {
 // concurrent call to ForEachNotInFlight. ForEachNotInFlight returns when invocations to f for all such tokens have
 // returned. Upon context cancellation ForEachNotInFlight stops making new invocations of f for tokens and waits for all
 // already started invocations of f to return. ForEachNotInFlight returns the combined errors from all f invocations.
-func (w *WorkerPool) ForEachNotInFlight(ctx context.Context, tokens []string, f func(context.Context, string) error) error {
+func (w *LimitedConcurrencySingleFlight) ForEachNotInFlight(ctx context.Context, tokens []string, f func(context.Context, string) error) error {
 	w.inflightCalls.Add(1)
 	defer w.inflightCalls.Done()
 

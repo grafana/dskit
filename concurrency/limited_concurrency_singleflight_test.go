@@ -12,7 +12,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-func TestWorkerPool_ForEachNotInFlight_ConcurrencyLimit(t *testing.T) {
+func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ConcurrencyLimit(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -57,7 +57,7 @@ func TestWorkerPool_ForEachNotInFlight_ConcurrencyLimit(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_ForEachNotInFlight_ReturnsWhenAllTokensAreInflight(t *testing.T) {
+func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenAllTokensAreInflight(t *testing.T) {
 	const token = "t"
 
 	var (
@@ -87,7 +87,7 @@ func TestWorkerPool_ForEachNotInFlight_ReturnsWhenAllTokensAreInflight(t *testin
 	assert.False(t, duplicatedTokenInvoked, "the same token was invoked again while there is an in-flight invocation with it")
 }
 
-func TestWorkerPool_ForEachNotInFlight_CallsOnlyNotInFlightTokens(t *testing.T) {
+func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CallsOnlyNotInFlightTokens(t *testing.T) {
 	const (
 		tokenA = "a"
 		tokenB = "b"
@@ -120,7 +120,7 @@ func TestWorkerPool_ForEachNotInFlight_CallsOnlyNotInFlightTokens(t *testing.T) 
 	assert.Equal(t, int64(1), workersInvoked.Load(), "the same tokenA was invoked again while there is an in-flight invocation with it")
 }
 
-func TestWorkerPool_ForEachNotInFlight_ReturnsWhenTokensAreEmpty(t *testing.T) {
+func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenTokensAreEmpty(t *testing.T) {
 	t.Parallel()
 
 	var invocations atomic.Int64

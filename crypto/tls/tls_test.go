@@ -1,6 +1,7 @@
 package tls
 
 import (
+	"crypto/tls"
 	"os"
 	"path/filepath"
 	"testing"
@@ -181,4 +182,23 @@ func TestGetTLSConfig_ServerName(t *testing.T) {
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, "myserver.com", tlsConfig.ServerName)
+}
+
+func TestGetTLSConfig_MinVersion(t *testing.T) {
+	c := &ClientConfig{
+		MinVersion: "VersionTLS13",
+	}
+	tlsConfig, err := c.GetTLSConfig()
+	assert.NoError(t, err)
+	assert.Equal(t, uint16(tls.VersionTLS13), tlsConfig.MinVersion)
+}
+
+func TestGetTLSConfig_CipherSuites(t *testing.T) {
+	c := &ClientConfig{
+		CipherSuites: "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+	}
+	tlsConfig, err := c.GetTLSConfig()
+	assert.NoError(t, err)
+	assert.Contains(t, tlsConfig.CipherSuites, tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256)
+	assert.Contains(t, tlsConfig.CipherSuites, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
 }

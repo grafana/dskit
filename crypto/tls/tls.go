@@ -4,13 +4,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	cliFlags "k8s.io/component-base/cli/flag"
 )
 
 // ClientConfig is the config for client TLS.
@@ -27,6 +27,13 @@ type ClientConfig struct {
 var (
 	errKeyMissing  = errors.New("certificate given but no key configured")
 	errCertMissing = errors.New("key given but no certificate configured")
+
+	tlsVersions = map[string]uint16{
+		"VersionTLS10": tls.VersionTLS10,
+		"VersionTLS11": tls.VersionTLS11,
+		"VersionTLS12": tls.VersionTLS12,
+		"VersionTLS13": tls.VersionTLS13,
+	}
 )
 
 // RegisterFlagsWithPrefix registers flags with prefix.
@@ -36,8 +43,8 @@ func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	f.StringVar(&cfg.CAPath, prefix+".tls-ca-path", "", "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.")
 	f.StringVar(&cfg.ServerName, prefix+".tls-server-name", "", "Override the expected name on the server certificate.")
 	f.BoolVar(&cfg.InsecureSkipVerify, prefix+".tls-insecure-skip-verify", false, "Skip validating server certificate.")
-	f.StringVar(&cfg.CipherSuites, prefix+".tls-cipher-suites", "", "Override the default cipher suite list (separated by commas).")
-	f.StringVar(&cfg.MinVersion, prefix+".tls-min-version", "", "Override the default minimum TLS version.")
+	f.StringVar(&cfg.CipherSuites, prefix+".tls-cipher-suites", "", "Override the default cipher suite list (separated by commas). Allowed values are listed in the crypto/tls package.")
+	f.StringVar(&cfg.MinVersion, prefix+".tls-min-version", "", "Override the default minimum TLS version. Allowed values are listed in the crypto/tls package.")
 }
 
 // GetTLSConfig initialises tls.Config from config options
@@ -76,16 +83,16 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 	}
 
 	if cfg.MinVersion != "" {
-		minVersion, err := cliFlags.TLSVersion(cfg.MinVersion)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to set minimum TLS version %s", cfg.MinVersion)
+		minVersion, ok := tlsVersions[cfg.MinVersion]
+		if !ok {
+			return nil, fmt.Errorf("failed to set minimum TLS version: %q", cfg.MinVersion)
 		}
 		config.MinVersion = minVersion
 	}
 
 	if cfg.CipherSuites != "" {
-		rawCipherSuites := strings.Split(cfg.CipherSuites, ",")
-		cipherSuites, err := cliFlags.TLSCipherSuites(rawCipherSuites)
+		cipherSuitesNames := strings.Split(cfg.CipherSuites, ",")
+		cipherSuites, err := mapCipherNamesToIDs(cipherSuitesNames)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to set cipher suites %s", cfg.CipherSuites)
 		}
@@ -107,4 +114,32 @@ func (cfg *ClientConfig) GetGRPCDialOptions(enabled bool) ([]grpc.DialOption, er
 	}
 
 	return []grpc.DialOption{grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))}, nil
+}
+
+func mapCipherNamesToIDs(cipherSuiteNames []string) ([]uint16, error) {
+	cipherSuites := []uint16{}
+	allCipherSuites := tlsCipherSuites()
+
+	for _, name := range cipherSuiteNames {
+		id, ok := allCipherSuites[name]
+		if !ok {
+			return nil, fmt.Errorf("unsupported cipher suite: %q", name)
+		}
+		cipherSuites = append(cipherSuites, id)
+	}
+
+	return cipherSuites, nil
+}
+
+func tlsCipherSuites() map[string]uint16 {
+	cipherSuites := map[string]uint16{}
+
+	for _, suite := range tls.CipherSuites() {
+		cipherSuites[suite.Name] = suite.ID
+	}
+	for _, suite := range tls.InsecureCipherSuites() {
+		cipherSuites[suite.Name] = suite.ID
+	}
+
+	return cipherSuites
 }

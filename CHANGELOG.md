@@ -60,6 +60,7 @@
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #181
 * [ENHANCEMENT] Runtimeconfig: Allow providing multiple runtime config yaml files as comma separated list file paths. #183
 * [ENHANCEMENT] Memberlist: Add cluster label support to memberlist client. #187
+* [ENHANCEMENT] Runtimeconfig: Don't unmarshal and merge runtime config yaml files if they haven't changed since last check.
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

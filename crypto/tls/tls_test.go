@@ -354,12 +354,4 @@ func TestGetTLSConfig_CipherSuites(t *testing.T) {
 			}
 		})
 	}
-
-	c := &ClientConfig{
-		CipherSuites: "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-	}
-	tlsConfig, err := c.GetTLSConfig()
-	assert.NoError(t, err)
-	assert.Contains(t, tlsConfig.CipherSuites, tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256)
-	assert.Contains(t, tlsConfig.CipherSuites, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
 }

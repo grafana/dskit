@@ -43,8 +43,8 @@ func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	f.StringVar(&cfg.CAPath, prefix+".tls-ca-path", "", "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.")
 	f.StringVar(&cfg.ServerName, prefix+".tls-server-name", "", "Override the expected name on the server certificate.")
 	f.BoolVar(&cfg.InsecureSkipVerify, prefix+".tls-insecure-skip-verify", false, "Skip validating server certificate.")
-	f.StringVar(&cfg.CipherSuites, prefix+".tls-cipher-suites", "", "Override the default cipher suite list (separated by commas). Allowed values are listed in the crypto/tls package.")
-	f.StringVar(&cfg.MinVersion, prefix+".tls-min-version", "", "Override the default minimum TLS version. Allowed values are listed in the crypto/tls package.")
+	f.StringVar(&cfg.CipherSuites, prefix+".tls-cipher-suites", "", "Override the default cipher suite list (separated by commas). Allowed values are listed here: https://pkg.go.dev/crypto/tls#pkg-constants.")
+	f.StringVar(&cfg.MinVersion, prefix+".tls-min-version", "", "Override the default minimum TLS version. Allowed values are listed here: https://pkg.go.dev/crypto/tls#pkg-constants.")
 }
 
 // GetTLSConfig initialises tls.Config from config options
@@ -85,16 +85,17 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 	if cfg.MinVersion != "" {
 		minVersion, ok := tlsVersions[cfg.MinVersion]
 		if !ok {
-			return nil, fmt.Errorf("failed to set minimum TLS version: %q", cfg.MinVersion)
+			return nil, fmt.Errorf("unknown minimum TLS version: %q", cfg.MinVersion)
 		}
 		config.MinVersion = minVersion
 	}
 
 	if cfg.CipherSuites != "" {
-		cipherSuitesNames := strings.Split(cfg.CipherSuites, ",")
+		cleanedCipherSuiteNames := strings.ReplaceAll(cfg.CipherSuites, " ", "")
+		cipherSuitesNames := strings.Split(cleanedCipherSuiteNames, ",")
 		cipherSuites, err := mapCipherNamesToIDs(cipherSuitesNames)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to set cipher suites %s", cfg.CipherSuites)
+			return nil, err
 		}
 		config.CipherSuites = cipherSuites
 	}

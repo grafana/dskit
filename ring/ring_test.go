@@ -204,7 +204,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 		return DoBatch(ctx, Write, ring, operationKeys, returnInstanceError, unfinishedDoBatchCalls.Done)
 	}
 
-	// Using 429 just to make sure we are not hitting the &limits
+	// Using 429 just to make sure we are not hitting the limits
 	// Simulating 2 4xx and 1 5xx -> Should return 4xx
 	instanceReturnErrors[0] = httpgrpc.Errorf(429, "Throttling")
 	instanceReturnErrors[1] = httpgrpc.Errorf(500, "InternalServerError")
@@ -231,7 +231,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 	}
 	unfinishedDoBatchCalls.Wait()
 
-	// Simulating 2 different errors and 1 success -> This case we may return any of the errors
+	// Simulating 2 different errors and 1 success -> In this case we may return any of the errors
 	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")
 	instanceReturnErrors[1] = httpgrpc.Errorf(429, "Throttling")
 	instanceReturnErrors[2] = nil

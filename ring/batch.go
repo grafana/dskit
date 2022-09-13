@@ -133,8 +133,8 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
 	// number of pending items by one.
 	//
 	// The use of atomic increments here is needed as:
-	// * rpcsPending and rpcsFailed guarantees only a single goroutine will write to either channel
-	// * succeeded, failed4xx, failed5xx and remaining guarantees that the "return decision" is made atomically
+	// * rpcsPending and rpcsFailed guarantee only a single goroutine will write to either channel
+	// * succeeded, failed4xx, failed5xx and remaining guarantee that the "return decision" is made atomically
 	// avoiding race condition
 	for i := range itemTrackers {
 		if err != nil {
@@ -171,8 +171,8 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
 				continue
 			}
 
-			// If we succeeded to call this particular instance, but we don't have any remaining instances to try,
-			// and we did not succeed calling minSuccess instances, then we need to return the last error
+			// If we successfully called this particular instance, but we don't have any remaining instances to try,
+			// and we failed to call minSuccess instances, then we need to return the last error
 			// Ex: 4xx, 5xx, 2xx
 			if itemTrackers[i].remaining.Dec() == 0 {
 				if b.rpcsFailed.Inc() == 1 {

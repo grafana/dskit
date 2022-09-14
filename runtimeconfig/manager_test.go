@@ -20,6 +20,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 )
 
 type TestLimits struct {
@@ -54,26 +55,49 @@ func testLoadOverrides(r io.Reader) (interface{}, error) {
 	return overrides, nil
 }
 
-func newTestOverridesManagerConfig(t *testing.T, i int32) (*atomic.Int32, Config) {
-	var config = atomic.NewInt32(i)
+type value struct {
+	Value int `yaml:"value"`
+}
 
+func valueLoader(r io.Reader) (i interface{}, err error) {
+	v := value{Value: 0}
+	buf, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	err = yaml.Unmarshal(buf, &v)
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
+}
+
+func writeValueToFile(t *testing.T, path string, v value) {
+	t.Helper()
+	buf, err := yaml.Marshal(v)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path+".tmp", buf, 0777))
+	// Atomically replace file with new file, so that manager cannot see unfinished modification.
+	require.NoError(t, os.Rename(path+".tmp", path))
+}
+
+func newTestOverridesManagerConfig(t *testing.T, reloadPeriod time.Duration, loader func(reader io.Reader) (interface{}, error)) Config {
 	// create empty file
 	tempFile, err := os.CreateTemp("", "test-validation")
 	require.NoError(t, err)
+	require.NoError(t, tempFile.Close())
 
 	t.Cleanup(func() {
-		tempFile.Close()
-		os.Remove(tempFile.Name())
+		_ = os.Remove(tempFile.Name())
 	})
 
 	// testing runtimeconfig Manager with overrides reload config set
-	return config, Config{
-		ReloadPeriod: 5 * time.Second,
+	return Config{
+		ReloadPeriod: reloadPeriod,
 		LoadPath:     []string{tempFile.Name()},
-		Loader: func(_ io.Reader) (i interface{}, err error) {
-			val := int(config.Load())
-			return val, nil
-		},
+		Loader:       loader,
 	}
 }
 
@@ -284,7 +308,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 
 	// check if the metrics is set to the config map value before
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-					# HELP runtime_config_hash Hash of the currently active runtime config file.
+					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
 					runtime_config_hash{sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
@@ -303,15 +327,12 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	err = os.WriteFile(tempFile.Name(), config, 0600)
 	require.NoError(t, err)
 
-	// reload
-	err = overridesManager.loadConfig()
-	require.NoError(t, err)
-
+	// Wait for reload.
 	var newValue interface{}
 	select {
 	case newValue = <-ch:
 		// ok
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("listener was not called")
 	}
 
@@ -321,7 +342,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 
 	// check if the metrics have been updated
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-					# HELP runtime_config_hash Hash of the currently active runtime config file.
+					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
 					runtime_config_hash{sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
@@ -337,33 +358,31 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 }
 
 func TestManager_ListenerChannel(t *testing.T) {
-	config, overridesManagerConfig := newTestOverridesManagerConfig(t, 555)
+	cfg := newTestOverridesManagerConfig(t, 500*time.Millisecond, valueLoader)
 
-	overridesManager, err := New(overridesManagerConfig, nil, log.NewNopLogger())
+	writeValueToFile(t, cfg.LoadPath.String(), value{Value: 555})
+
+	overridesManager, err := New(cfg, nil, log.NewNopLogger())
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
 	// need to use buffer, otherwise loadConfig will throw away update
 	ch := overridesManager.CreateListenerChannel(1)
 
-	err = overridesManager.loadConfig()
-	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
 	select {
 	case newValue := <-ch:
-		require.Equal(t, 555, newValue)
-	case <-time.After(time.Second):
+		require.Equal(t, value{Value: 555}, newValue)
+	case <-time.After(5 * time.Second):
 		t.Fatal("listener was not called")
 	}
 
-	config.Store(1111)
-	err = overridesManager.loadConfig()
-	require.NoError(t, err)
+	writeValueToFile(t, cfg.LoadPath.String(), value{Value: 1111})
 
 	select {
 	case newValue := <-ch:
-		require.Equal(t, 1111, newValue)
-	case <-time.After(time.Second):
+		require.Equal(t, value{Value: 1111}, newValue)
+	case <-time.After(5 * time.Second):
 		t.Fatal("listener was not called")
 	}
 
@@ -377,13 +396,12 @@ func TestManager_ListenerChannel(t *testing.T) {
 }
 
 func TestManager_StopClosesListenerChannels(t *testing.T) {
-	_, overridesManagerConfig := newTestOverridesManagerConfig(t, 555)
+	cfg := newTestOverridesManagerConfig(t, time.Second, valueLoader)
 
-	overridesManager, err := New(overridesManagerConfig, nil, log.NewNopLogger())
+	overridesManager, err := New(cfg, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
-	// need to use buffer, otherwise loadConfig will throw away update
 	ch := overridesManager.CreateListenerChannel(0)
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
@@ -418,4 +436,38 @@ func TestManager_ShouldFastFailOnInvalidConfigAtStartup(t *testing.T) {
 	m, err := New(cfg, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Error(t, services.StartAndAwaitRunning(context.Background(), m))
+}
+
+func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
+	loadCounter := atomic.NewInt32(0)
+
+	cfg := newTestOverridesManagerConfig(t, 100*time.Millisecond, func(reader io.Reader) (interface{}, error) {
+		loadCounter.Inc()
+		return valueLoader(reader)
+	})
+
+	overridesManager, err := New(cfg, nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ch := overridesManager.CreateListenerChannel(10) // must be big enough to hold all modifications.
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
+
+	test.Poll(t, time.Second, 1, func() interface{} {
+		return int(loadCounter.Load())
+	})
+
+	// Let's make some modifications to the config
+	const mods = 3
+	const modDelay = 500 * time.Millisecond
+	for i := 0; i < mods; i++ {
+		writeValueToFile(t, cfg.LoadPath[0], value{Value: i})
+		// wait before next rewrite, but also after last rewrite to give manager a chance to reload the file again
+		time.Sleep(modDelay)
+	}
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
+
+	assert.Equal(t, mods+1, int(loadCounter.Load())) // + 1 for initial load, before modifications
+	assert.Equal(t, mods+1, len(ch))                 // Loaded values
 }

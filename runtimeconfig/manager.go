@@ -58,7 +58,7 @@ type Manager struct {
 	configLoadSuccess prometheus.Gauge
 	configHash        *prometheus.GaugeVec
 
-	// Maps path to hash. Only used by loadConfig in Starting and Running, so it doesn't need synchronization.
+	// Maps path to hash. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes map[string]string
 }
 

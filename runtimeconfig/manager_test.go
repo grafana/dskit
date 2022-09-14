@@ -75,6 +75,7 @@ func valueLoader(r io.Reader) (i interface{}, err error) {
 }
 
 func writeValueToFile(t *testing.T, path string, v value) {
+	t.Helper()
 	buf, err := yaml.Marshal(v)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path+".tmp", buf, 0777))
@@ -467,6 +468,6 @@ func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
 
-	assert.Equal(t, int(loadCounter.Load()), mods+1)  // + 1 for initial load, before modifications
-	assert.Equal(t, int(loadCounter.Load()), len(ch)) // Loaded values
+	assert.Equal(t, mods+1, int(loadCounter.Load())) // + 1 for initial load, before modifications
+	assert.Equal(t, mods+1, len(ch))                 // Loaded values
 }

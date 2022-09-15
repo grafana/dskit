@@ -31,12 +31,50 @@ func TestBadResponseLoggingWriter(t *testing.T) {
 		default:
 			http.Error(wrapped, tc.data, tc.statusCode)
 		}
-		if wrapped.statusCode != tc.statusCode {
-			t.Errorf("Wrong status code: have %d want %d", wrapped.statusCode, tc.statusCode)
+		if wrapped.getStatusCode() != tc.statusCode {
+			t.Errorf("Wrong status code: have %d want %d", wrapped.getStatusCode(), tc.statusCode)
 		}
 		data := string(buf.Bytes())
 		if data != tc.expected {
 			t.Errorf("Wrong data: have %q want %q", data, tc.expected)
 		}
+	}
+}
+
+// nonFlushingResponseWriter implements http.ResponseWriter but does not implement http.Flusher
+type nonFlushingResponseWriter struct{}
+
+func (rw *nonFlushingResponseWriter) Header() http.Header {
+	return nil
+}
+
+func (rw *nonFlushingResponseWriter) Write(_ []byte) (int, error) {
+	return -1, nil
+}
+
+func (rw *nonFlushingResponseWriter) WriteHeader(_ int) {
+}
+
+func TestBadResponseLoggingWriter_WithAndWithoutFlusher(t *testing.T) {
+	var buf bytes.Buffer
+
+	nf := newBadResponseLoggingWriter(&nonFlushingResponseWriter{}, &buf)
+
+	_, ok := nf.(http.Flusher)
+	if ok {
+		t.Errorf("Should not be able to cast nf as an http.Flusher")
+	}
+
+	rec := httptest.NewRecorder()
+	f := newBadResponseLoggingWriter(rec, &buf)
+
+	ff, ok := f.(http.Flusher)
+	if !ok {
+		t.Errorf("Should be able to cast f as an http.Flusher")
+	}
+
+	ff.Flush()
+	if !rec.Flushed {
+		t.Errorf("Flush should have worked but did not")
 	}
 }

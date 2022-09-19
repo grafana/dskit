@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	failureWatcherNotInitializedErr = errors.New("FailureWatcher has not been initialized")
+	errFailureWatcherNotInitialized = errors.New("FailureWatcher has not been initialized")
 )
 
 // FailureWatcher waits for service failures, and passed them to the channel.
@@ -32,7 +32,7 @@ func (w *FailureWatcher) WatchService(service Service) {
 	// Ensure that if the caller request to watch a service, then the FailureWatcher
 	// has been initialized.
 	if w == nil {
-		panic(failureWatcherNotInitializedErr)
+		panic(errFailureWatcherNotInitialized)
 	}
 
 	service.AddListener(NewListener(nil, nil, nil, nil, func(from State, failure error) {
@@ -44,7 +44,7 @@ func (w *FailureWatcher) WatchManager(manager *Manager) {
 	// Ensure that if the caller request to watch services, then the FailureWatcher
 	// has been initialized.
 	if w == nil {
-		panic(failureWatcherNotInitializedErr)
+		panic(errFailureWatcherNotInitialized)
 	}
 
 	manager.AddListener(NewManagerListener(nil, nil, func(service Service) {

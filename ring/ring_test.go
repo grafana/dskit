@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/httpgrpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
@@ -168,6 +172,104 @@ func TestDoBatchZeroInstances(t *testing.T) {
 		strategy: NewDefaultReplicationStrategy(),
 	}
 	require.Error(t, DoBatch(ctx, Write, &r, keys, callback, cleanup))
+}
+
+func TestDoBatch_QuorumError(t *testing.T) {
+	// we should run several write request to make sure we dont have any race condition on the batchTracker.record code
+	const numberOfOperations = 10000
+	instanceReturnErrors := [3]error{nil, nil, nil}
+	desc := NewDesc()
+	for address := range instanceReturnErrors {
+		instTokens := GenerateTokens(128, nil)
+		instanceID := fmt.Sprintf("%d", address)
+		desc.AddIngester(instanceID, instanceID, "", instTokens, ACTIVE, time.Now())
+	}
+	ringConfig := Config{
+		HeartbeatTimeout:  time.Hour,
+		ReplicationFactor: 3,
+	}
+	ring, err := NewWithStoreClientAndStrategy(ringConfig, "ingester", ringKey, nil, NewDefaultReplicationStrategy(), nil, log.NewNopLogger())
+	require.NoError(t, err)
+	ring.updateRingState(desc)
+	operationKeys := []uint32{1, 10, 100}
+	ctx := context.Background()
+	unfinishedDoBatchCalls := sync.WaitGroup{}
+	runDoBatch := func() error {
+		unfinishedDoBatchCalls.Add(1)
+		returnInstanceError := func(i InstanceDesc, _ []int) error {
+			instanceID, err := strconv.Atoi(i.Addr)
+			require.NoError(t, err)
+			return instanceReturnErrors[instanceID]
+		}
+		return DoBatch(ctx, Write, ring, operationKeys, returnInstanceError, unfinishedDoBatchCalls.Done)
+	}
+
+	// Using 429 just to make sure we are not hitting the limits
+	// Simulating 2 4xx and 1 5xx -> Should return 4xx
+	instanceReturnErrors[0] = httpgrpc.Errorf(429, "Throttling")
+	instanceReturnErrors[1] = httpgrpc.Errorf(500, "InternalServerError")
+	instanceReturnErrors[2] = httpgrpc.Errorf(429, "Throttling")
+
+	for i := 0; i < numberOfOperations; i++ {
+		err := runDoBatch()
+		s, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.Code(429), s.Code())
+	}
+	unfinishedDoBatchCalls.Wait()
+
+	// Simulating 2 5xx and 1 4xx -> Should return 5xx
+	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")
+	instanceReturnErrors[1] = httpgrpc.Errorf(429, "Throttling")
+	instanceReturnErrors[2] = httpgrpc.Errorf(500, "InternalServerError")
+
+	for i := 0; i < numberOfOperations; i++ {
+		err = runDoBatch()
+		s, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.Code(500), s.Code())
+	}
+	unfinishedDoBatchCalls.Wait()
+
+	// Simulating 2 different errors and 1 success -> In this case we may return any of the errors
+	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")
+	instanceReturnErrors[1] = httpgrpc.Errorf(429, "Throttling")
+	instanceReturnErrors[2] = nil
+
+	for i := 0; i < numberOfOperations; i++ {
+		err = runDoBatch()
+		s, ok := status.FromError(err)
+		require.True(t, ok)
+		require.True(t, s.Code() == 429 || s.Code() == 500)
+	}
+	unfinishedDoBatchCalls.Wait()
+
+	// Simulating 1 error -> Should return 2xx
+	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")
+	instanceReturnErrors[1] = nil
+	instanceReturnErrors[2] = nil
+
+	require.NoError(t, runDoBatch())
+	unfinishedDoBatchCalls.Wait()
+
+	// Simulating an unhealthy instance (instance 2)
+	instanceReturnErrors[0] = httpgrpc.Errorf(500, "InternalServerError")
+	instanceReturnErrors[1] = nil
+	instanceReturnErrors[2] = nil
+
+	instance2 := ring.ringDesc.Ingesters["2"]
+	instance2.State = LEFT
+	instance2.Timestamp = time.Now().Unix()
+	ring.ringDesc.Ingesters["2"] = instance2
+	ring.updateRingState(ring.ringDesc)
+
+	for i := 0; i < numberOfOperations; i++ {
+		err := runDoBatch()
+		require.Error(t, err)
+		s, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.Code(500), s.Code())
+	}
 }
 
 func TestAddIngester(t *testing.T) {

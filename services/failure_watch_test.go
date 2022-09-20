@@ -14,6 +14,19 @@ func TestNilServiceFailureWatcher(t *testing.T) {
 
 	// prove it doesn't fail, but returns nil channel.
 	require.Nil(t, w.Chan())
+
+	// Ensure WatchService() panics.
+	require.Panics(t, func() {
+		w.WatchService(NewIdleService(nil, nil))
+	})
+
+	// Ensure WatchManager() panics.
+	m, err := NewManager(NewIdleService(nil, nil))
+	require.NoError(t, err)
+
+	require.Panics(t, func() {
+		w.WatchManager(m)
+	})
 }
 
 func TestServiceFailureWatcher(t *testing.T) {

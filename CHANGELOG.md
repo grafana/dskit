@@ -37,6 +37,7 @@
 * [CHANGE] Ring: remove duplicate state in NewOp func #203
 * [CHANGE] Memberlist: Increase the leave timeout to 10x the connection timeout, so that we can communicate the leave to at least 1 node, if the first 9 we try to contact times out.
 * [CHANGE] Runtimeconfig: Listener channels created by Manager no longer receive current value on every reload period, but only if any configuration file has changed. #218
+* [CHANGE] Services: `FailureWatcher.WatchService()` and `FailureWatcher.WatchManager()` now panic if `FailureWatcher` is `nil`. #219
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

@@ -43,8 +43,8 @@ func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	f.StringVar(&cfg.CAPath, prefix+".tls-ca-path", "", "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.")
 	f.StringVar(&cfg.ServerName, prefix+".tls-server-name", "", "Override the expected name on the server certificate.")
 	f.BoolVar(&cfg.InsecureSkipVerify, prefix+".tls-insecure-skip-verify", false, "Skip validating server certificate.")
-	f.StringVar(&cfg.CipherSuites, prefix+".tls-cipher-suites", "", "Override the default cipher suite list (separated by commas). Allowed values are listed here: https://pkg.go.dev/crypto/tls#pkg-constants.")
-	f.StringVar(&cfg.MinVersion, prefix+".tls-min-version", "", "Override the default minimum TLS version. Allowed values are listed here: https://pkg.go.dev/crypto/tls#pkg-constants.")
+	f.StringVar(&cfg.CipherSuites, prefix+".tls-cipher-suites", "", tlsCipherSuiteHelpText())
+	f.StringVar(&cfg.MinVersion, prefix+".tls-min-version", "", "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13")
 }
 
 // GetTLSConfig initialises tls.Config from config options
@@ -143,4 +143,20 @@ func tlsCipherSuites() map[string]uint16 {
 	}
 
 	return cipherSuites
+}
+
+func tlsCipherSuiteHelpText() string {
+	text := "Override the default cipher suite list (separated by commas). Allowed values:\n\n"
+
+	text += "Secure Ciphers:\n"
+	for _, suite := range tls.CipherSuites() {
+		text += fmt.Sprintf("- %s\n", suite.Name)
+	}
+
+	text += "\nInsecure Ciphers:\n"
+	for _, suite := range tls.InsecureCipherSuites() {
+		text += fmt.Sprintf("- %s\n", suite.Name)
+	}
+
+	return text
 }

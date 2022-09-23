@@ -2,7 +2,6 @@ package concurrency
 
 import (
 	"context"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -31,12 +30,8 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ConcurrencyLimit(t *t
 	t.Cleanup(pool.Wait)
 	t.Cleanup(func() { close(workersWait) })
 
-	forEachNotInFlight := func(tokens []int, f func(context.Context, string) error) {
-		stringTokens := make([]string, len(tokens))
-		for i, token := range tokens {
-			stringTokens[i] = strconv.Itoa(token)
-		}
-		require.NoError(t, pool.ForEachNotInFlight(ctx, stringTokens, f))
+	forEachNotInFlight := func(f func(context.Context, string) error, tokens ...string) {
+		require.NoError(t, pool.ForEachNotInFlight(ctx, tokens, f))
 	}
 
 	busyWorker := func(ctx context.Context, s string) error {
@@ -46,18 +41,18 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ConcurrencyLimit(t *t
 	}
 
 	workersToStart.Add(10)
-	go forEachNotInFlight([]int{0, 1}, busyWorker)
-	go forEachNotInFlight([]int{2, 3}, busyWorker)
-	go forEachNotInFlight([]int{4, 5}, busyWorker)
-	go forEachNotInFlight([]int{6, 7}, busyWorker)
-	go forEachNotInFlight([]int{8, 9}, busyWorker)
+	go forEachNotInFlight(busyWorker, "0", "1")
+	go forEachNotInFlight(busyWorker, "2", "3")
+	go forEachNotInFlight(busyWorker, "4", "5")
+	go forEachNotInFlight(busyWorker, "6", "7")
+	go forEachNotInFlight(busyWorker, "8", "9")
 	workersToStart.Wait()
 
 	extraWorkerInvoked := make(chan struct{})
-	go forEachNotInFlight([]int{10}, func(ctx context.Context, s string) error {
+	go forEachNotInFlight(func(ctx context.Context, s string) error {
 		close(extraWorkerInvoked)
 		return nil
-	})
+	}, "10")
 
 	select {
 	case <-extraWorkerInvoked:

@@ -9,6 +9,11 @@ import (
 
 // LimitedConcurrencySingleFlight ensures that across all concurrent calls to ForEachNotInFlight, only up to maxConcurrent
 // tokens are running concurrently. See the docs of ForEachNotInFlight for the uniqueness semantics of tokens.
+//
+// An example use case for LimitedConcurrencySingleFlight is to run a periodic job concurrently for N users. Sometimes a single user's
+// job may take longer than the period. And this will block future scheduled jobs until the first job for that user completes.
+// Call LimitedConcurrencySingleFlight.ForEachNotInFlight in its own goroutine with user IDs as tokens.
+// This will run the jobs concurrently and make sure that two jobs for the same user don't run concurrently.
 type LimitedConcurrencySingleFlight struct {
 	inflightTokensMx sync.Mutex
 	inflightTokens   map[string]struct{}

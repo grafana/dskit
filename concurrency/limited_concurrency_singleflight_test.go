@@ -18,9 +18,13 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ConcurrencyLimit(t *t
 	var (
 		ctx            = context.Background()
 		pool           = NewWorkerPool(10)
-		workersWait    chan struct{}
+		workersWait    = make(chan struct{})
 		workersToStart sync.WaitGroup
 	)
+
+	// Wait for the pool so we don't leak goroutines
+	t.Cleanup(pool.Wait)
+	t.Cleanup(func() { close(workersWait) })
 
 	forEachNotInFlight := func(tokens []int, f func(context.Context, string) error) {
 		stringTokens := make([]string, len(tokens))
@@ -63,9 +67,13 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenAllTokensA
 	var (
 		ctx            = context.Background()
 		pool           = NewWorkerPool(10)
-		workersWait    chan struct{}
+		workersWait    = make(chan struct{})
 		workersToStart sync.WaitGroup
 	)
+
+	// Wait for the pool so we don't leak goroutines
+	t.Cleanup(pool.Wait)
+	t.Cleanup(func() { close(workersWait) })
 
 	workersToStart.Add(1)
 	go func() {
@@ -96,9 +104,13 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CallsOnlyNotInFlightT
 	var (
 		ctx            = context.Background()
 		pool           = NewWorkerPool(10)
-		workersWait    chan struct{}
+		workersWait    = make(chan struct{})
 		workersToStart sync.WaitGroup
 	)
+
+	// Wait for the pool so we don't leak goroutines
+	t.Cleanup(pool.Wait)
+	t.Cleanup(func() { close(workersWait) })
 
 	workersToStart.Add(1)
 	go func() {

@@ -10,7 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ConcurrencyLimit(t *testing.T) {
 	t.Parallel()

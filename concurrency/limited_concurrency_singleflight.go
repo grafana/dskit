@@ -55,12 +55,25 @@ func (w *LimitedConcurrencySingleFlight) ForEachNotInFlight(ctx context.Context,
 		workers sync.WaitGroup
 	)
 
+	tokenProcessed := func(t string) {
+		w.inflightTokensMx.Lock()
+		delete(w.inflightTokens, t)
+		w.inflightTokensMx.Unlock()
+	}
+
 	for _, token := range notInflightTokens {
 		select {
 		case <-ctx.Done():
-			workers.Wait()
-			return errs.Err()
+			tokenProcessed(token)
+			continue
 		case w.semaphore <- struct{}{}:
+		}
+		select {
+		case <-ctx.Done():
+			tokenProcessed(token)
+			<-w.semaphore
+			continue
+		default:
 		}
 
 		workers.Add(1)
@@ -71,9 +84,7 @@ func (w *LimitedConcurrencySingleFlight) ForEachNotInFlight(ctx context.Context,
 				errsMx.Unlock()
 			}
 
-			w.inflightTokensMx.Lock()
-			delete(w.inflightTokens, token)
-			w.inflightTokensMx.Unlock()
+			tokenProcessed(token)
 
 			<-w.semaphore
 			workers.Done()

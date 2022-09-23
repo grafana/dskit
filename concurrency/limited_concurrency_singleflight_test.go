@@ -178,7 +178,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CancelledContext(t *t
 
 	// We expect only a single one of the workers below to run. The other should be starved for concurrency.
 	workersToStart.Add(1)
-	go pool.ForEachNotInFlight(ctx, tokens, worker)
+	go func() { require.NoError(t, pool.ForEachNotInFlight(ctx, tokens, worker)) }()
 	workersToStart.Wait()
 
 	// Cancel the context _before_ unblocking the worker to return.

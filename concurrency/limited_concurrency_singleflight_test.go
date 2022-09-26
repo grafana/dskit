@@ -21,17 +21,17 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ConcurrencyLimit(t *t
 
 	var (
 		ctx            = context.Background()
-		pool           = NewWorkerPool(10)
+		sf             = NewLimitedConcurrencySingleFlight(10)
 		workersWait    = make(chan struct{})
 		workersToStart sync.WaitGroup
 	)
 
-	// Wait for the pool so we don't leak goroutines
-	t.Cleanup(pool.Wait)
+	// Wait for the workers so we don't leak goroutines
+	t.Cleanup(sf.Wait)
 	t.Cleanup(func() { close(workersWait) })
 
 	forEachNotInFlight := func(f func(context.Context, string) error, tokens ...string) {
-		require.NoError(t, pool.ForEachNotInFlight(ctx, tokens, f))
+		require.NoError(t, sf.ForEachNotInFlight(ctx, tokens, f))
 	}
 
 	busyWorker := func(ctx context.Context, s string) error {
@@ -66,18 +66,18 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenAllTokensA
 
 	var (
 		ctx            = context.Background()
-		pool           = NewWorkerPool(10)
+		sf             = NewLimitedConcurrencySingleFlight(10)
 		workersWait    = make(chan struct{})
 		workersToStart sync.WaitGroup
 	)
 
-	// Wait for the pool so we don't leak goroutines
-	t.Cleanup(pool.Wait)
+	// Wait for the workers so we don't leak goroutines
+	t.Cleanup(sf.Wait)
 	t.Cleanup(func() { close(workersWait) })
 
 	workersToStart.Add(1)
 	go func() {
-		require.NoError(t, pool.ForEachNotInFlight(ctx, []string{token}, func(ctx context.Context, s string) error {
+		require.NoError(t, sf.ForEachNotInFlight(ctx, []string{token}, func(ctx context.Context, s string) error {
 			workersToStart.Done()
 			<-workersWait
 			return nil
@@ -87,7 +87,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenAllTokensA
 	workersToStart.Wait()
 
 	duplicatedTokenInvoked := false
-	require.NoError(t, pool.ForEachNotInFlight(ctx, []string{token}, func(ctx context.Context, s string) error {
+	require.NoError(t, sf.ForEachNotInFlight(ctx, []string{token}, func(ctx context.Context, s string) error {
 		duplicatedTokenInvoked = true
 		return nil
 	}))
@@ -103,18 +103,18 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CallsOnlyNotInFlightT
 
 	var (
 		ctx            = context.Background()
-		pool           = NewWorkerPool(10)
+		sf             = NewLimitedConcurrencySingleFlight(10)
 		workersWait    = make(chan struct{})
 		workersToStart sync.WaitGroup
 	)
 
-	// Wait for the pool so we don't leak goroutines
-	t.Cleanup(pool.Wait)
+	// Wait for the workers so we don't leak goroutines
+	t.Cleanup(sf.Wait)
 	t.Cleanup(func() { close(workersWait) })
 
 	workersToStart.Add(1)
 	go func() {
-		require.NoError(t, pool.ForEachNotInFlight(ctx, []string{tokenA}, func(ctx context.Context, s string) error {
+		require.NoError(t, sf.ForEachNotInFlight(ctx, []string{tokenA}, func(ctx context.Context, s string) error {
 			workersToStart.Done()
 			<-workersWait
 			return nil
@@ -123,7 +123,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CallsOnlyNotInFlightT
 
 	workersToStart.Wait()
 	var invocations atomic.Int64
-	assert.NoError(t, pool.ForEachNotInFlight(ctx, []string{tokenA, tokenB}, func(ctx context.Context, s string) error {
+	assert.NoError(t, sf.ForEachNotInFlight(ctx, []string{tokenA, tokenB}, func(ctx context.Context, s string) error {
 		assert.Equal(t, tokenB, s)
 		invocations.Inc()
 		return nil
@@ -136,7 +136,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenTokensAreE
 	t.Parallel()
 
 	var invocations atomic.Int64
-	assert.NoError(t, NewWorkerPool(10).ForEachNotInFlight(context.Background(), []string{}, func(ctx context.Context, s string) error {
+	assert.NoError(t, NewLimitedConcurrencySingleFlight(10).ForEachNotInFlight(context.Background(), []string{}, func(ctx context.Context, s string) error {
 		invocations.Inc()
 		return nil
 	}))
@@ -150,12 +150,12 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CancelledContext(t *t
 	var (
 		tokens         = []string{"t1", "t2"}
 		ctx, cancel    = context.WithCancel(context.Background())
-		pool           = NewWorkerPool(1)
+		sf             = NewLimitedConcurrencySingleFlight(1)
 		workersWait    = make(chan struct{})
 		workersToStart sync.WaitGroup
 		invocations    atomic.Int32
 	)
-	t.Cleanup(pool.Wait)
+	t.Cleanup(sf.Wait)
 
 	worker := func(ctx context.Context, _ string) error {
 		select {
@@ -163,9 +163,8 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CancelledContext(t *t
 			msg := `
 			A worker was called with a cancelled context.
 			This means there is a race between the context cancellation and another worker returning.
-			If the worker currently in flight sees the closed channel before the pool sees the cancellation, it will return,
-			and _this_ worker has started executing. The race is between the context cancellation and returning the
-			semaphore in the pool.`
+			If the worker currently in flight sees the closed channel before the singleFlight sees the cancellation, it will return,
+			and _this_ worker has started executing. The race is between the context cancellation and returning the semaphore.`
 			t.Error(msg)
 			return nil
 		default:
@@ -178,19 +177,19 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CancelledContext(t *t
 
 	// We expect only a single one of the workers below to run. The other should be starved for concurrency.
 	workersToStart.Add(1)
-	go func() { require.NoError(t, pool.ForEachNotInFlight(ctx, tokens, worker)) }()
+	go func() { require.NoError(t, sf.ForEachNotInFlight(ctx, tokens, worker)) }()
 	workersToStart.Wait()
 
 	// Cancel the context _before_ unblocking the worker to return.
 	cancel()
 	close(workersWait)
-	pool.Wait()
+	sf.Wait()
 
 	assert.Equal(t, int32(1), invocations.Load(), "expected one invocation before the context cancellation and none after it")
 	invocations.Store(0)
 
 	// Running the same tokens again should give us two invocations.
 	workersToStart.Add(2)
-	require.NoError(t, pool.ForEachNotInFlight(context.Background(), tokens, worker))
+	require.NoError(t, sf.ForEachNotInFlight(context.Background(), tokens, worker))
 	assert.Equal(t, int32(2), invocations.Load(), "not both workers were called; maybe inflight tokens are in an invalid state")
 }

@@ -21,7 +21,7 @@ type LimitedConcurrencySingleFlight struct {
 	semaphore        chan struct{}
 }
 
-func NewWorkerPool(maxConcurrent int) *LimitedConcurrencySingleFlight {
+func NewLimitedConcurrencySingleFlight(maxConcurrent int) *LimitedConcurrencySingleFlight {
 	return &LimitedConcurrencySingleFlight{
 		inflightTokensMx: sync.Mutex{},
 		inflightTokens:   make(map[string]struct{}),

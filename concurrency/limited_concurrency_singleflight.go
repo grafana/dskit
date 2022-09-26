@@ -43,39 +43,23 @@ func (w *LimitedConcurrencySingleFlight) ForEachNotInFlight(ctx context.Context,
 	w.inflightCalls.Add(1)
 	defer w.inflightCalls.Done()
 
-	notInflightTokens := make([]string, 0, len(tokens))
-	w.inflightTokensMx.Lock()
-	for _, token := range tokens {
-		if _, ok := w.inflightTokens[token]; ok {
-			continue
-		}
-		notInflightTokens = append(notInflightTokens, token)
-		w.inflightTokens[token] = struct{}{}
-	}
-	w.inflightTokensMx.Unlock()
-
 	var (
-		errs    multierror.MultiError
-		errsMx  sync.Mutex
-		workers sync.WaitGroup
+		errs              multierror.MultiError
+		errsMx            sync.Mutex
+		workers           sync.WaitGroup
+		tokensNotInFlight = w.tokensNotInFlight(tokens)
 	)
 
-	tokenProcessed := func(t string) {
-		w.inflightTokensMx.Lock()
-		delete(w.inflightTokens, t)
-		w.inflightTokensMx.Unlock()
-	}
-
-	for _, token := range notInflightTokens {
+	for _, token := range tokensNotInFlight {
 		select {
 		case <-ctx.Done():
-			tokenProcessed(token)
+			w.tokenProcessed(token)
 			continue
 		case w.semaphore <- struct{}{}:
 		}
 		select {
 		case <-ctx.Done():
-			tokenProcessed(token)
+			w.tokenProcessed(token)
 			<-w.semaphore
 			continue
 		default:
@@ -89,7 +73,7 @@ func (w *LimitedConcurrencySingleFlight) ForEachNotInFlight(ctx context.Context,
 				errsMx.Unlock()
 			}
 
-			tokenProcessed(token)
+			w.tokenProcessed(token)
 
 			<-w.semaphore
 			workers.Done()
@@ -98,4 +82,24 @@ func (w *LimitedConcurrencySingleFlight) ForEachNotInFlight(ctx context.Context,
 
 	workers.Wait()
 	return errs.Err()
+}
+
+func (w *LimitedConcurrencySingleFlight) tokensNotInFlight(tokens []string) []string {
+	notInflightTokens := make([]string, 0, len(tokens))
+	w.inflightTokensMx.Lock()
+	for _, token := range tokens {
+		if _, ok := w.inflightTokens[token]; ok {
+			continue
+		}
+		notInflightTokens = append(notInflightTokens, token)
+		w.inflightTokens[token] = struct{}{}
+	}
+	w.inflightTokensMx.Unlock()
+	return notInflightTokens
+}
+
+func (w *LimitedConcurrencySingleFlight) tokenProcessed(t string) {
+	w.inflightTokensMx.Lock()
+	delete(w.inflightTokens, t)
+	w.inflightTokensMx.Unlock()
 }

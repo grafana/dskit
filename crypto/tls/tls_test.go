@@ -1,6 +1,7 @@
 package tls
 
 import (
+	"crypto/tls"
 	"os"
 	"path/filepath"
 	"testing"
@@ -181,4 +182,176 @@ func TestGetTLSConfig_ServerName(t *testing.T) {
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, "myserver.com", tlsConfig.ServerName)
+}
+
+func TestGetTLSConfig_MinVersion(t *testing.T) {
+	type test struct {
+		desc            string
+		MinVersion      string
+		ExpectedVersion uint16
+		RequireError    bool
+	}
+
+	table := []test{
+		{
+			desc:            "no version set",
+			MinVersion:      "",
+			ExpectedVersion: 0,
+			RequireError:    false,
+		},
+		{
+			desc:            "TLS v1.0 set",
+			MinVersion:      "VersionTLS10",
+			ExpectedVersion: tls.VersionTLS10,
+			RequireError:    false,
+		},
+		{
+			desc:            "TLS v1.1 set",
+			MinVersion:      "VersionTLS11",
+			ExpectedVersion: tls.VersionTLS11,
+			RequireError:    false,
+		},
+		{
+			desc:            "TLS v1.2 set",
+			MinVersion:      "VersionTLS12",
+			ExpectedVersion: tls.VersionTLS12,
+			RequireError:    false,
+		},
+		{
+			desc:            "TLS v1.3 set",
+			MinVersion:      "VersionTLS13",
+			ExpectedVersion: tls.VersionTLS13,
+			RequireError:    false,
+		},
+		{
+			desc:            "bad TLS version set",
+			MinVersion:      "VersionTLS14",
+			ExpectedVersion: 0,
+			RequireError:    true,
+		},
+	}
+
+	for _, tst := range table {
+		tst := tst
+		t.Run(tst.desc, func(t *testing.T) {
+			t.Parallel()
+
+			c := &ClientConfig{
+				MinVersion: tst.MinVersion,
+			}
+
+			tlsConfig, err := c.GetTLSConfig()
+
+			if tst.RequireError {
+				assert.Error(t, err)
+				assert.Nil(t, tlsConfig)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tst.ExpectedVersion, tlsConfig.MinVersion)
+			}
+		})
+	}
+}
+
+func TestGetTLSConfig_CipherSuites(t *testing.T) {
+	type test struct {
+		desc                 string
+		CipherSuites         string
+		ExpectedCipherSuites []uint16
+		RequireError         bool
+	}
+
+	cipherSuiteNames := "TLS_RSA_WITH_RC4_128_SHA," +
+		"TLS_RSA_WITH_3DES_EDE_CBC_SHA," +
+		"TLS_RSA_WITH_AES_128_CBC_SHA," +
+		"TLS_RSA_WITH_AES_256_CBC_SHA," +
+		"TLS_RSA_WITH_AES_128_CBC_SHA256," +
+		"TLS_RSA_WITH_AES_128_GCM_SHA256," +
+		"TLS_RSA_WITH_AES_256_GCM_SHA384," +
+		"TLS_ECDHE_ECDSA_WITH_RC4_128_SHA," +
+		"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA," +
+		"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA," +
+		"TLS_ECDHE_RSA_WITH_RC4_128_SHA," +
+		"TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA," +
+		"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA," +
+		"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA," +
+		"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256," +
+		"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256," +
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," +
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256," +
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384," +
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384," +
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256," +
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," +
+		"TLS_AES_128_GCM_SHA256," +
+		"TLS_AES_256_GCM_SHA384," +
+		"TLS_CHACHA20_POLY1305_SHA256"
+
+	table := []test{
+		{
+			desc:                 "no cipher suites set",
+			CipherSuites:         "",
+			ExpectedCipherSuites: nil,
+			RequireError:         false,
+		},
+		{
+			desc:         "all cipher suites set",
+			CipherSuites: cipherSuiteNames,
+			ExpectedCipherSuites: []uint16{
+				tls.TLS_RSA_WITH_RC4_128_SHA,
+				tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+				tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+				tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+				tls.TLS_AES_128_GCM_SHA256,
+				tls.TLS_AES_256_GCM_SHA384,
+				tls.TLS_CHACHA20_POLY1305_SHA256,
+			},
+			RequireError: false,
+		},
+		{
+			desc:                 "bad cipher suites set",
+			CipherSuites:         "TLS_NO_SUITE",
+			ExpectedCipherSuites: nil,
+			RequireError:         true,
+		},
+	}
+
+	for _, tst := range table {
+		tst := tst
+		t.Run(tst.desc, func(t *testing.T) {
+			t.Parallel()
+
+			c := &ClientConfig{
+				CipherSuites: tst.CipherSuites,
+			}
+
+			tlsConfig, err := c.GetTLSConfig()
+
+			if tst.RequireError {
+				assert.Error(t, err)
+				assert.Nil(t, tlsConfig)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tst.ExpectedCipherSuites, tlsConfig.CipherSuites)
+			}
+		})
+	}
 }

@@ -20,7 +20,7 @@ type ClientConfig struct {
 	CAPath             string `yaml:"tls_ca_path" category:"advanced"`
 	ServerName         string `yaml:"tls_server_name" category:"advanced"`
 	InsecureSkipVerify bool   `yaml:"tls_insecure_skip_verify" category:"advanced"`
-	CipherSuites       string `yaml:"tls_cipher_suites" category:"advanced"`
+	CipherSuites       string `yaml:"tls_cipher_suites" category:"advanced" doc:"description_method=GetTLSCipherSuitesLongDescription"`
 	MinVersion         string `yaml:"tls_min_version" category:"advanced"`
 }
 
@@ -43,8 +43,28 @@ func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	f.StringVar(&cfg.CAPath, prefix+".tls-ca-path", "", "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.")
 	f.StringVar(&cfg.ServerName, prefix+".tls-server-name", "", "Override the expected name on the server certificate.")
 	f.BoolVar(&cfg.InsecureSkipVerify, prefix+".tls-insecure-skip-verify", false, "Skip validating server certificate.")
-	f.StringVar(&cfg.CipherSuites, prefix+".tls-cipher-suites", "", tlsCipherSuiteHelpText())
+	f.StringVar(&cfg.CipherSuites, prefix+".tls-cipher-suites", "", cfg.GetTLSCipherSuitesShortDescription())
 	f.StringVar(&cfg.MinVersion, prefix+".tls-min-version", "", "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13")
+}
+
+func (cfg *ClientConfig) GetTLSCipherSuitesShortDescription() string {
+	return "Override the default cipher suite list (separated by commas)."
+}
+
+func (cfg *ClientConfig) GetTLSCipherSuitesLongDescription() string {
+	text := cfg.GetTLSCipherSuitesShortDescription() + " Allowed values:\n\n"
+
+	text += "Secure Ciphers:\n"
+	for _, suite := range tls.CipherSuites() {
+		text += fmt.Sprintf("- %s\n", suite.Name)
+	}
+
+	text += "\nInsecure Ciphers:\n"
+	for _, suite := range tls.InsecureCipherSuites() {
+		text += fmt.Sprintf("- %s\n", suite.Name)
+	}
+
+	return text
 }
 
 // GetTLSConfig initialises tls.Config from config options
@@ -143,20 +163,4 @@ func tlsCipherSuites() map[string]uint16 {
 	}
 
 	return cipherSuites
-}
-
-func tlsCipherSuiteHelpText() string {
-	text := "Override the default cipher suite list (separated by commas). Allowed values:\n\n"
-
-	text += "Secure Ciphers:\n"
-	for _, suite := range tls.CipherSuites() {
-		text += fmt.Sprintf("- %s\n", suite.Name)
-	}
-
-	text += "\nInsecure Ciphers:\n"
-	for _, suite := range tls.InsecureCipherSuites() {
-		text += fmt.Sprintf("- %s\n", suite.Name)
-	}
-
-	return text
 }

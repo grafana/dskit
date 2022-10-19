@@ -6,6 +6,7 @@ package dns
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -33,70 +34,74 @@ func TestProvider(t *testing.T) {
 	}
 	ctx := context.TODO()
 
+	checkMetrics := func(metrics string) {
+		const metadata = `
+		# HELP dns_provider_results The number of resolved endpoints for each configured address
+		# TYPE dns_provider_results gauge
+		`
+		expected := strings.NewReader(metadata + metrics + "\n")
+		testutil.Ok(t, promtestutil.CollectAndCompare(prv, expected))
+	}
 	err := prv.Resolve(ctx, []string{"any+x"})
 	testutil.Ok(t, err)
 	result := prv.Addresses()
 	sort.Strings(result)
 	testutil.Equals(t, []string(nil), result)
-	testutil.Equals(t, 1, promtestutil.CollectAndCount(prv.resolverAddrs))
-	testutil.Equals(t, float64(0), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+x")))
+	checkMetrics(`dns_provider_results{addr="any+x"} 0`)
 
 	err = prv.Resolve(ctx, []string{"any+a", "any+b", "any+c"})
 	testutil.Ok(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
 	testutil.Equals(t, ips, result)
-	testutil.Equals(t, 3, promtestutil.CollectAndCount(prv.resolverAddrs))
-	testutil.Equals(t, float64(2), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+a")))
-	testutil.Equals(t, float64(2), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+b")))
-	testutil.Equals(t, float64(1), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+c")))
+	checkMetrics(`
+		dns_provider_results{addr="any+a"} 2
+		dns_provider_results{addr="any+b"} 2
+		dns_provider_results{addr="any+c"} 1`)
 
 	err = prv.Resolve(ctx, []string{"any+b", "any+c"})
 	testutil.Ok(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
 	testutil.Equals(t, ips[2:], result)
-	testutil.Equals(t, 2, promtestutil.CollectAndCount(prv.resolverAddrs))
-	testutil.Equals(t, float64(2), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+b")))
-	testutil.Equals(t, float64(1), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+c")))
+	checkMetrics(`
+		dns_provider_results{addr="any+b"} 2
+		dns_provider_results{addr="any+c"} 1`)
 
 	err = prv.Resolve(ctx, []string{"any+x"})
 	testutil.Ok(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
 	testutil.Equals(t, []string(nil), result)
-	testutil.Equals(t, 1, promtestutil.CollectAndCount(prv.resolverAddrs))
-	testutil.Equals(t, float64(0), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+x")))
+	checkMetrics(`dns_provider_results{addr="any+x"} 0`)
 
 	err = prv.Resolve(ctx, []string{"any+a", "any+b", "any+c"})
 	testutil.Ok(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
 	testutil.Equals(t, ips, result)
-	testutil.Equals(t, 3, promtestutil.CollectAndCount(prv.resolverAddrs))
-	testutil.Equals(t, float64(2), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+a")))
-	testutil.Equals(t, float64(2), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+b")))
-	testutil.Equals(t, float64(1), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+c")))
+	checkMetrics(`
+		dns_provider_results{addr="any+a"} 2
+		dns_provider_results{addr="any+b"} 2
+		dns_provider_results{addr="any+c"} 1`)
 
 	err = prv.Resolve(ctx, []string{"any+b", "example.com:90", "any+c"})
 	testutil.Ok(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
 	testutil.Equals(t, append(ips[2:], "example.com:90"), result)
-	testutil.Equals(t, 3, promtestutil.CollectAndCount(prv.resolverAddrs))
-	testutil.Equals(t, float64(2), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+b")))
-	testutil.Equals(t, float64(1), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("example.com:90")))
-	testutil.Equals(t, float64(1), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+c")))
-
+	checkMetrics(`
+		dns_provider_results{addr="any+b"} 2
+		dns_provider_results{addr="example.com:90"} 1
+		dns_provider_results{addr="any+c"} 1`)
 	err = prv.Resolve(ctx, []string{"any+b", "any+c"})
 	testutil.Ok(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
 	testutil.Equals(t, ips[2:], result)
-	testutil.Equals(t, 2, promtestutil.CollectAndCount(prv.resolverAddrs))
-	testutil.Equals(t, float64(2), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+b")))
-	testutil.Equals(t, float64(1), promtestutil.ToFloat64(prv.resolverAddrs.WithLabelValues("any+c")))
-
+	checkMetrics(`
+		dns_provider_results{addr="any+b"} 2
+		dns_provider_results{addr="any+c"} 1`)
 }
 
 type mockResolver struct {

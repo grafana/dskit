@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/dskit/dns/godns"
 	"github.com/grafana/dskit/dns/miekgdns"
 	"github.com/grafana/dskit/multierror"
-	"github.com/thanos-io/thanos/pkg/extprom"
 )
 
 // Provider is a stateful cache for asynchronous DNS resolutions. It provides a way to resolve addresses and obtain them.
@@ -29,7 +28,7 @@ type Provider struct {
 	resolved map[string][]string
 	logger   log.Logger
 
-	resolverAddrs         *extprom.TxGaugeVec
+	resolverAddrsDesc     *prometheus.Desc
 	resolverLookupsCount  prometheus.Counter
 	resolverFailuresCount prometheus.Counter
 }
@@ -62,10 +61,11 @@ func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType Reso
 		resolver: NewResolver(resolverType.ToResolver(logger), logger),
 		resolved: make(map[string][]string),
 		logger:   logger,
-		resolverAddrs: extprom.NewTxGaugeVec(reg, prometheus.GaugeOpts{
-			Name: "dns_provider_results",
-			Help: "The number of resolved endpoints for each configured address",
-		}, []string{"addr"}),
+		resolverAddrsDesc: prometheus.NewDesc(
+			"dns_provider_results",
+			"The number of resolved endpoints for each configured address",
+			[]string{"addr"},
+			nil),
 		resolverLookupsCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "dns_lookups_total",
 			Help: "The number of DNS lookups resolutions attempts",
@@ -74,6 +74,9 @@ func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType Reso
 			Name: "dns_failures_total",
 			Help: "The number of DNS lookup failures",
 		}),
+	}
+	if reg != nil {
+		reg.MustRegister(p)
 	}
 
 	return p
@@ -85,7 +88,7 @@ func (p *Provider) Clone() *Provider {
 		resolver:              p.resolver,
 		resolved:              make(map[string][]string),
 		logger:                p.logger,
-		resolverAddrs:         p.resolverAddrs,
+		resolverAddrsDesc:     p.resolverAddrsDesc,
 		resolverLookupsCount:  p.resolverLookupsCount,
 		resolverFailuresCount: p.resolverFailuresCount,
 	}
@@ -139,15 +142,9 @@ func (p *Provider) Resolve(ctx context.Context, addrs []string) error {
 	}
 
 	// All addresses have been resolved. We can now take an exclusive lock to
-	// update the resolved addresses metric and update the local state.
+	// update the local state.
 	p.Lock()
 	defer p.Unlock()
-
-	p.resolverAddrs.ResetTx()
-	for name, addrs := range resolvedAddrs {
-		p.resolverAddrs.WithLabelValues(name).Set(float64(len(addrs)))
-	}
-	p.resolverAddrs.Submit()
 
 	p.resolved = resolvedAddrs
 
@@ -164,4 +161,22 @@ func (p *Provider) Addresses() []string {
 		result = append(result, addrs...)
 	}
 	return result
+}
+
+// Describe implements prometheus.Collector
+func (p *Provider) Describe(ch chan<- *prometheus.Desc) {
+	ch <- p.resolverAddrsDesc
+}
+
+// Describe implements prometheus.Collector
+func (p *Provider) Collect(ch chan<- prometheus.Metric) {
+	p.RLock()
+	defer p.RUnlock()
+
+	for name, addrs := range p.resolved {
+		metric, err := prometheus.NewConstMetric(p.resolverAddrsDesc, prometheus.GaugeValue, float64(len(addrs)), name)
+		if err == nil {
+			ch <- metric
+		}
+	}
 }

@@ -3,6 +3,7 @@ module github.com/grafana/dskit
 go 1.18
 
 require (
+	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d
 	github.com/armon/go-metrics v0.3.0
 	github.com/cristalhq/hedgedhttp v0.7.0
 	github.com/go-kit/log v0.2.0
@@ -14,6 +15,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.1
 	github.com/hashicorp/go-sockaddr v1.0.2
 	github.com/hashicorp/memberlist v0.2.3
+	github.com/miekg/dns v1.1.26
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
@@ -59,7 +61,6 @@ require (
 	github.com/mattn/go-colorable v0.1.6 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
-	github.com/miekg/dns v1.1.26 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect

@@ -10,9 +10,8 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
-
-	"github.com/thanos-io/thanos/pkg/testutil"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestProvider(t *testing.T) {
@@ -40,65 +39,65 @@ func TestProvider(t *testing.T) {
 		# TYPE dns_provider_results gauge
 		`
 		expected := strings.NewReader(metadata + metrics + "\n")
-		testutil.Ok(t, promtestutil.CollectAndCompare(prv, expected))
+		assert.NoError(t, testutil.CollectAndCompare(prv, expected))
 	}
 	err := prv.Resolve(ctx, []string{"any+x"})
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	result := prv.Addresses()
 	sort.Strings(result)
-	testutil.Equals(t, []string(nil), result)
+	assert.Equal(t, []string(nil), result)
 	checkMetrics(`dns_provider_results{addr="any+x"} 0`)
 
 	err = prv.Resolve(ctx, []string{"any+a", "any+b", "any+c"})
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
-	testutil.Equals(t, ips, result)
+	assert.Equal(t, ips, result)
 	checkMetrics(`
 		dns_provider_results{addr="any+a"} 2
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="any+c"} 1`)
 
 	err = prv.Resolve(ctx, []string{"any+b", "any+c"})
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
-	testutil.Equals(t, ips[2:], result)
+	assert.Equal(t, ips[2:], result)
 	checkMetrics(`
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="any+c"} 1`)
 
 	err = prv.Resolve(ctx, []string{"any+x"})
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
-	testutil.Equals(t, []string(nil), result)
+	assert.Equal(t, []string(nil), result)
 	checkMetrics(`dns_provider_results{addr="any+x"} 0`)
 
 	err = prv.Resolve(ctx, []string{"any+a", "any+b", "any+c"})
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
-	testutil.Equals(t, ips, result)
+	assert.Equal(t, ips, result)
 	checkMetrics(`
 		dns_provider_results{addr="any+a"} 2
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="any+c"} 1`)
 
 	err = prv.Resolve(ctx, []string{"any+b", "example.com:90", "any+c"})
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
-	testutil.Equals(t, append(ips[2:], "example.com:90"), result)
+	assert.Equal(t, append(ips[2:], "example.com:90"), result)
 	checkMetrics(`
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="example.com:90"} 1
 		dns_provider_results{addr="any+c"} 1`)
 	err = prv.Resolve(ctx, []string{"any+b", "any+c"})
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	result = prv.Addresses()
 	sort.Strings(result)
-	testutil.Equals(t, ips[2:], result)
+	assert.Equal(t, ips[2:], result)
 	checkMetrics(`
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="any+c"} 1`)
@@ -144,6 +143,6 @@ func TestIsDynamicNode(t *testing.T) {
 		},
 	} {
 		isDynamic := IsDynamicNode(tcase.node)
-		testutil.Equals(t, tcase.isDynamic, isDynamic, "mismatch between results")
+		assert.Equal(t, tcase.isDynamic, isDynamic, "mismatch between results")
 	}
 }

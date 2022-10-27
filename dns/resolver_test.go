@@ -10,10 +10,9 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/pkg/errors"
-
-	"github.com/thanos-io/thanos/pkg/testutil"
 )
 
 type mockHostnameResolver struct {
@@ -195,11 +194,10 @@ func testDnsSd(t *testing.T, tt DNSSDTest) {
 
 	result, err := dnsSD.Resolve(ctx, tt.addr, tt.qtype)
 	if tt.expectedErr != nil {
-		testutil.NotOk(t, err)
-		testutil.Assert(t, tt.expectedErr.Error() == err.Error(), "expected error '%v', but got '%v'", tt.expectedErr.Error(), err.Error())
+		assert.EqualError(t, err, tt.expectedErr.Error())
 	} else {
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 	}
 	sort.Strings(result)
-	testutil.Equals(t, tt.expectedResult, result)
+	assert.Equal(t, tt.expectedResult, result)
 }

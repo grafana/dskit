@@ -183,12 +183,12 @@ var (
 func TestDnsSD_Resolve(t *testing.T) {
 	for _, tt := range dnsSDTests {
 		t.Run(tt.testName, func(t *testing.T) {
-			testDnsSd(t, tt)
+			testDNSSd(t, tt)
 		})
 	}
 }
 
-func testDnsSd(t *testing.T, tt DNSSDTest) {
+func testDNSSd(t *testing.T, tt DNSSDTest) {
 	ctx := context.TODO()
 	dnsSD := dnsSD{tt.resolver, log.NewNopLogger()}
 

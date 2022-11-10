@@ -22,7 +22,14 @@
             "make test"
          ],
          "image": "golang:1.18.4",
-         "name": "make-test"
+         "name": "make-test (go 1.18.4)"
+      },
+      {
+         "commands": [
+            "make test"
+         ],
+         "image": "golang:1.19.3",
+         "name": "make-test (go 1.19.3)"
       },
       {
          "commands": [
@@ -37,6 +44,6 @@
 }
 ---
 kind: signature
-hmac: 59146de8cd97a9baf7d86dd30178bfc99415358fc4f4f4cafc4a128005bc05fe
+hmac: b9e3e4dbdfad99c1969c6617ed95fe1f32e2a111c7b51690311bd4bb17a18397
 
 ...

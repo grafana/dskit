@@ -81,3 +81,4 @@
 * [BUGFIX] Lifecycler: if existing ring entry is reused, ring is updated immediately, and not on next heartbeat. #175
 * [BUGFIX] stringslicecsv: handle unmarshalling empty yaml string #206
 * [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #215
+* [BUGFIX] Ring status page: display 100% ownership as "100%", rather than "1e+02%". #231

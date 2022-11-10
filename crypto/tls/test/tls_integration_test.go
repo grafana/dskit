@@ -206,13 +206,10 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 	(&cfg).RegisterFlags(flag.NewFlagSet("fake", flag.ContinueOnError))
 
 	unavailableDescErr := errorContainsString("rpc error: code = Unavailable desc =")
-
-	var notTrustedErr func(*testing.T, error)
+	notTrustedErr := errorContainsString("x509: certificate signed by unknown authority")
 
 	if runtime.GOOS == "darwin" {
 		notTrustedErr = errorContainsString("x509: “server” certificate is not trusted")
-	} else {
-		notTrustedErr = errorContainsString("x509: certificate signed by unknown authority")
 	}
 
 	cfg.HTTPTLSConfig.TLSCertPath = certs.serverCertFile
@@ -280,13 +277,10 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 	(&cfg).RegisterFlags(flag.NewFlagSet("fake", flag.ContinueOnError))
 
 	unavailableDescErr := errorContainsString("rpc error: code = Unavailable desc =")
-
-	var invalidCertErr func(*testing.T, error)
+	invalidCertErr := errorContainsString("x509: certificate is valid for my-other-name, not localhost")
 
 	if runtime.GOOS == "darwin" {
 		invalidCertErr = errorContainsString("x509: “server-no-localhost” certificate is not trusted")
-	} else {
-		invalidCertErr = errorContainsString("x509: certificate is valid for my-other-name, not localhost")
 	}
 
 	// Test a TLS server without localhost cert without any client certificate enforcement

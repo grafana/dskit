@@ -85,11 +85,6 @@ func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc Net
 
 	level.Debug(logger).Log("msg", "looking for addresses", "inf", fmt.Sprintf("%s", names), "inet6enabled", enableInet6)
 
-	// Replace a nil func with the standard approach.
-	if interfaceAddrsFunc == nil {
-		interfaceAddrsFunc = getInterfaceAddresses
-	}
-
 	for _, name := range names {
 		addrs, err := interfaceAddrsFunc(name)
 		if err != nil {
@@ -105,9 +100,9 @@ func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc Net
 			// Select the best between what we've received
 			ipAddr = filterBestIP([]netip.Addr{ip, ipAddr}, enableInet6)
 		}
-		level.Debug(logger).Log("msg", "filtered best", "ipAddr", ipAddr.String(), "inf", name)
+		level.Debug(logger).Log("msg", "detected hightest quality address", "ipAddr", ipAddr.String(), "inf", name)
 		if ipAddr.IsLinkLocalUnicast() || !ipAddr.IsValid() {
-			level.Debug(logger).Log("msg", "skipping", "ipAddr", ipAddr.String(), "inf", name)
+			level.Debug(logger).Log("msg", "ignoring address", "ipAddr", ipAddr.String(), "inf", name)
 			continue
 		}
 
@@ -121,7 +116,7 @@ func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc Net
 		return ipAddr.String(), nil
 	}
 
-	level.Debug(logger).Log("msg", "ipAddr after all interface names", "ipAddr", ipAddr.String())
+	level.Debug(logger).Log("msg", "detected IP address after looking up all configured interface names", "ipAddr", ipAddr.String())
 	if !ipAddr.IsValid() {
 		return "", fmt.Errorf("no useable address found for interfaces %s", names)
 	}
@@ -160,7 +155,7 @@ func getInterfaceAddresses(name string) ([]netip.Addr, error) {
 }
 
 // filterBestIP returns an opinionated "best" address from a list of addresses.
-// A high quality address is one that is considered routeable, and not in the link-local address space.
+// A high quality address is one that is considered routable, and not in the link-local address space.
 // A low quality address is a link-local address.
 // When an IPv6 preference is indicated using enableInet6, an IPv6 will be preferred over an equivalent quality IPv4 address.
 // Loopback addresses are never selected.

@@ -63,7 +63,7 @@ func GetFirstAddressOf(names []string, logger log.Logger, enableInet6 bool) (str
 	return getFirstAddressOf(names, logger, getInterfaceAddresses, enableInet6)
 }
 
-// NetworkInterfaceGetter matches the signature of net.InterfaceByName() to allow for test mocks.
+// NetworkInterfaceAddressGetter matches the signature of net.InterfaceByName() to allow for test mocks.
 type NetworkInterfaceAddressGetter func(name string) ([]netip.Addr, error)
 
 // getFirstAddressOf returns the first IPv4/IPV6 address of the supplied interface names, omitting any link-local addresses.
@@ -83,7 +83,7 @@ func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc Net
 		names = ifNames
 	}
 
-	level.Debug(logger).Log("msg", "looking for addresses", "inf", fmt.Sprintf("%s", names), "inet6pref", enableInet6)
+	level.Debug(logger).Log("msg", "looking for addresses", "inf", fmt.Sprintf("%s", names), "inet6enabled", enableInet6)
 
 	// Replace a nil func with the standard approach.
 	if interfaceAddrsFunc == nil {

@@ -34,7 +34,7 @@ type LifecyclerConfig struct {
 	JoinAfter        time.Duration `yaml:"join_after" category:"advanced"`
 	MinReadyDuration time.Duration `yaml:"min_ready_duration" category:"advanced"`
 	InfNames         []string      `yaml:"interface_names" doc:"default=[<private network interfaces>]"`
-	PreferInet6      bool          `yaml:"prefer_inet6" category:"advanced"`
+	EnableInet6      bool          `yaml:"enable_inet6" category:"advanced"`
 
 	// FinalSleep's default value can be overridden by
 	// setting it before calling RegisterFlags or RegisterFlagsWithPrefix.
@@ -92,6 +92,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.StringVar(&cfg.Zone, prefix+"availability-zone", "", "The availability zone where this instance is running.")
 	f.BoolVar(&cfg.UnregisterOnShutdown, prefix+"unregister-on-shutdown", true, "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false.")
 	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
+	f.BoolVar(&cfg.EnableInet6, prefix+"enable-inet6", false, "Enable IPv6 support.  Required to make use of IP addresses from IPv6 interfaces.")
 }
 
 // Lifecycler is responsible for managing the lifecycle of entries in the ring.
@@ -141,7 +142,7 @@ type Lifecycler struct {
 
 // NewLifecycler creates new Lifecycler. It must be started via StartAsync.
 func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringName, ringKey string, flushOnShutdown bool, logger log.Logger, reg prometheus.Registerer) (*Lifecycler, error) {
-	addr, err := GetInstanceAddr(cfg.Addr, cfg.InfNames, logger, cfg.PreferInet6)
+	addr, err := GetInstanceAddr(cfg.Addr, cfg.InfNames, logger, cfg.EnableInet6)
 	if err != nil {
 		return nil, err
 	}

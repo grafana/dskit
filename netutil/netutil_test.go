@@ -186,7 +186,7 @@ func TestGetFirstAddressOf(t *testing.T) {
 		names       []string
 		addr        string
 		err         error
-		preferInet6 bool
+		enableInet6 bool
 	}{
 		{
 			names: []string{"wlan0"},
@@ -231,37 +231,37 @@ func TestGetFirstAddressOf(t *testing.T) {
 		{
 			names:       []string{"lo1", "lo2", "enp0s31f6", "enp0s31f7"},
 			addr:        "2001::1111",
-			preferInet6: true,
+			enableInet6: true,
 		},
 		{
 			names:       []string{"em0", "em1"},
 			addr:        "fc99::9a",
-			preferInet6: true,
+			enableInet6: true,
 		},
 		{
 			names:       []string{"em1"},
 			addr:        "fcca::e6:9274:f580:7a1b:c335",
-			preferInet6: true,
+			enableInet6: true,
 		},
 		{
 			names:       []string{"lo1", "enp0s31f6"},
 			addr:        "1.1.1.1",
-			preferInet6: true,
+			enableInet6: true,
 		},
 		{
 			names:       []string{"lo2", "enp0s31f6"},
 			addr:        "1.1.1.1",
-			preferInet6: true,
+			enableInet6: true,
 		},
 		{
 			names:       []string{"em2"},
 			addr:        "10.54.99.53",
-			preferInet6: true,
+			enableInet6: true,
 		},
 	}
 
 	for _, tc := range cases {
-		addr, err := getFirstAddressOf(tc.names, logger, getMockInterfaceAddresses, tc.preferInet6)
+		addr, err := getFirstAddressOf(tc.names, logger, getMockInterfaceAddresses, tc.enableInet6)
 		if tc.err != nil {
 			require.Equal(t, tc.err, err)
 		} else {
@@ -282,7 +282,7 @@ func TestFilterBestIP(t *testing.T) {
 	cases := []struct {
 		addrs       []netip.Addr
 		addr        string
-		preferInet6 bool
+		enableInet6 bool
 	}{
 		{
 			addrs: []netip.Addr{
@@ -317,7 +317,7 @@ func TestFilterBestIP(t *testing.T) {
 				toAddr("fe80::1"),
 			},
 			addr:        "fe80::1",
-			preferInet6: true,
+			enableInet6: true,
 		},
 		{
 			addrs: []netip.Addr{
@@ -325,7 +325,7 @@ func TestFilterBestIP(t *testing.T) {
 				toAddr("fe80::1"),
 			},
 			addr:        "fe80::1",
-			preferInet6: true,
+			enableInet6: true,
 		},
 		{
 			addrs: []netip.Addr{
@@ -342,7 +342,7 @@ func TestFilterBestIP(t *testing.T) {
 				toAddr("fe80::1"),
 			},
 			addr:        "fc99::1",
-			preferInet6: true,
+			enableInet6: true,
 		},
 		{
 			addrs: []netip.Addr{
@@ -356,7 +356,7 @@ func TestFilterBestIP(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		addr := filterBestIP(tc.addrs, tc.preferInet6)
+		addr := filterBestIP(tc.addrs, tc.enableInet6)
 		require.Equal(t, tc.addr, addr.String())
 	}
 

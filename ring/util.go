@@ -47,12 +47,12 @@ func GenerateTokens(numTokens int, takenTokens []uint32) []uint32 {
 
 // GetInstanceAddr returns the address to use to register the instance
 // in the ring.
-func GetInstanceAddr(configAddr string, netInterfaces []string, logger log.Logger, preferInet6 bool) (string, error) {
+func GetInstanceAddr(configAddr string, netInterfaces []string, logger log.Logger, enableInet6 bool) (string, error) {
 	if configAddr != "" {
 		return configAddr, nil
 	}
 
-	addr, err := netutil.GetFirstAddressOf(netInterfaces, logger, preferInet6)
+	addr, err := netutil.GetFirstAddressOf(netInterfaces, logger, enableInet6)
 	if err != nil {
 		return "", err
 	}

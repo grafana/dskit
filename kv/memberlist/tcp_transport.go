@@ -378,16 +378,12 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 				return nil, 0, fmt.Errorf("no private IP address found, and explicit IP not provided")
 			}
 
-			addr, err := netip.ParseAddr(ip)
+			advertiseAddr, err = netip.ParseAddr(ip)
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to parse advertise address %q", ip)
 			}
-
-			if addr.IsValid() {
-				advertiseAddr = addr
-			}
 		case colonColonZero:
-			inet6Ip, err := netutil.GetFirstAddressOf([]string{}, t.logger, true)
+			inet6Ip, err := netutil.GetFirstAddressOf(nil, t.logger, true)
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to get private inet6 address: %w", err)
 			}

@@ -354,16 +354,14 @@ func (t *TCPTransport) GetAutoBindPort() int {
 func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, error) {
 	var advertiseAddr netip.Addr
 	var advertisePort int
+	var err error
 	if ip != "" {
 		// If they've supplied a prefix, use that.
-		prefix, err := netip.ParsePrefix(ip)
+		advertiseAddr, err = netip.ParseAddr(ip)
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to parse advertise address prefix %q", ip)
+			return nil, 0, fmt.Errorf("failed to parse advertise address %q", ip)
 		}
 
-		if addr := prefix.Addr(); addr.IsValid() {
-			advertiseAddr = addr
-		}
 		advertisePort = port
 	} else {
 
@@ -499,7 +497,7 @@ func (t *TCPTransport) writeTo(b []byte, addr string) error {
 
 	if t.cfg.PacketWriteTimeout > 0 {
 		deadline := time.Now().Add(t.cfg.PacketWriteTimeout)
-		err := c.SetDeadline(deadline)
+		err = c.SetDeadline(deadline)
 		if err != nil {
 			return fmt.Errorf("setting deadline: %v", err)
 		}

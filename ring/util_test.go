@@ -21,8 +21,8 @@ func (r *RingMock) Collect(ch chan<- prometheus.Metric) {}
 
 func (r *RingMock) Describe(ch chan<- *prometheus.Desc) {}
 
-func (r *RingMock) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
-	args := r.Called(key, op, bufDescs, bufHosts, bufZones)
+func (r *RingMock) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string, opts ...GetOption) (ReplicationSet, error) {
+	args := r.Called(key, op, bufDescs, bufHosts, bufZones, opts)
 	return args.Get(0).(ReplicationSet), args.Error(1)
 }
 

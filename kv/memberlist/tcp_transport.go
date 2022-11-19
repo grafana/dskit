@@ -396,11 +396,10 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 		default:
 			// Use the IP that we're bound to, based on the first
 			// TCP listener, which we already ensure is there.
-			addr, err := netip.ParseAddr(t.tcpListeners[0].Addr().(*net.TCPAddr).IP.String())
+			advertiseAddr, err = netip.ParseAddr(t.tcpListeners[0].Addr().(*net.TCPAddr).IP.String())
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to parse advertise address from tcp listener %q", ip)
 			}
-			advertiseAddr = addr
 		}
 
 		// Use the port we are bound to.

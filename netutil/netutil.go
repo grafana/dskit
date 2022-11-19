@@ -100,7 +100,7 @@ func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc Net
 			// Select the best between what we've received
 			ipAddr = filterBestIP([]netip.Addr{ip, ipAddr}, enableInet6)
 		}
-		level.Debug(logger).Log("msg", "detected hightest quality address", "ipAddr", ipAddr.String(), "inf", name)
+		level.Debug(logger).Log("msg", "detected highest quality address", "ipAddr", ipAddr.String(), "inf", name)
 		if ipAddr.IsLinkLocalUnicast() || !ipAddr.IsValid() {
 			level.Debug(logger).Log("msg", "ignoring address", "ipAddr", ipAddr.String(), "inf", name)
 			continue

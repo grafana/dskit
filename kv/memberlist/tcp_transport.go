@@ -356,7 +356,7 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 	var advertisePort int
 	var err error
 	if ip != "" {
-		// If they've supplied a prefix, use that.
+		// If they've supplied an address, use that.
 		advertiseAddr, err = netip.ParseAddr(ip)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to parse advertise address %q", ip)

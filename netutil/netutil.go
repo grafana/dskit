@@ -157,7 +157,8 @@ func getInterfaceAddresses(name string) ([]netip.Addr, error) {
 // filterBestIP returns an opinionated "best" address from a list of addresses.
 // A high quality address is one that is considered routable, and not in the link-local address space.
 // A low quality address is a link-local address.
-// When an IPv6 preference is indicated using enableInet6, an IPv6 will be preferred over an equivalent quality IPv4 address.
+// When an IPv6 is enabled using enableInet6, an IPv6 will be preferred over an equivalent quality IPv4 address,
+// otherwise IPv6 addresses are guaranteed to not be returned from this function.
 // Loopback addresses are never selected.
 func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
 	var invalid, inetAddr, inet6Addr netip.Addr

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -352,13 +351,12 @@ func (t *TCPTransport) GetAutoBindPort() int {
 // the rest of the cluster.
 // (Copied from memberlist' net_transport.go)
 func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, error) {
-	var advertiseAddr netip.Addr
+	var advertiseAddr net.IP
 	var advertisePort int
-	var err error
 	if ip != "" {
 		// If they've supplied an address, use that.
-		advertiseAddr, err = netip.ParseAddr(ip)
-		if err != nil {
+		advertiseAddr = net.ParseIP(ip)
+		if advertiseAddr == nil {
 			return nil, 0, fmt.Errorf("failed to parse advertise address %q", ip)
 		}
 
@@ -378,8 +376,8 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 				return nil, 0, fmt.Errorf("no private IP address found, and explicit IP not provided")
 			}
 
-			advertiseAddr, err = netip.ParseAddr(ip)
-			if err != nil {
+			advertiseAddr = net.ParseIP(ip)
+			if advertiseAddr == nil {
 				return nil, 0, fmt.Errorf("failed to parse advertise address %q", ip)
 			}
 		case colonColonZero:
@@ -388,16 +386,15 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 				return nil, 0, fmt.Errorf("failed to get private inet6 address: %w", err)
 			}
 
-			addr, err := netip.ParseAddr(inet6Ip)
-			if err != nil {
+			advertiseAddr = net.ParseIP(inet6Ip)
+			if advertiseAddr == nil {
 				return nil, 0, fmt.Errorf("failed to parse inet6 advertise address %q", ip)
 			}
-			advertiseAddr = addr
 		default:
 			// Use the IP that we're bound to, based on the first
 			// TCP listener, which we already ensure is there.
-			advertiseAddr, err = netip.ParseAddr(t.tcpListeners[0].Addr().(*net.TCPAddr).IP.String())
-			if err != nil {
+			advertiseAddr = t.tcpListeners[0].Addr().(*net.TCPAddr).IP
+			if advertiseAddr == nil {
 				return nil, 0, fmt.Errorf("failed to parse advertise address from tcp listener %q", ip)
 			}
 		}
@@ -406,12 +403,10 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 		advertisePort = t.GetAutoBindPort()
 	}
 
-	finalAddr := net.ParseIP(advertiseAddr.String())
+	level.Debug(t.logger).Log("msg", "FinalAdvertiseAddr", "advertiseAddr", advertiseAddr.String(), "advertisePort", advertisePort)
 
-	level.Debug(t.logger).Log("msg", "FinalAdvertiseAddr", "advertiseAddr", finalAddr.String(), "advertisePort", advertisePort)
-
-	t.setAdvertisedAddr(finalAddr, advertisePort)
-	return finalAddr, advertisePort, nil
+	t.setAdvertisedAddr(advertiseAddr, advertisePort)
+	return advertiseAddr, advertisePort, nil
 }
 
 func (t *TCPTransport) setAdvertisedAddr(advertiseAddr net.IP, advertisePort int) {

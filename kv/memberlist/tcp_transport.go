@@ -487,7 +487,7 @@ func (t *TCPTransport) writeTo(b []byte, addr string) error {
 
 	if t.cfg.PacketWriteTimeout > 0 {
 		deadline := time.Now().Add(t.cfg.PacketWriteTimeout)
-		err = c.SetDeadline(deadline)
+		err := c.SetDeadline(deadline)
 		if err != nil {
 			return fmt.Errorf("setting deadline: %v", err)
 		}

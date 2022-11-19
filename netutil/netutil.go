@@ -179,15 +179,17 @@ func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
 				}
 				inetAddr = addr
 			}
-			if addr.Is6() {
-				// If we have already been set, can we improve on the quality?
-				if inet6Addr.IsValid() {
-					if inet6Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
-						inet6Addr = addr
+			if enableInet6 {
+				if addr.Is6() {
+					// If we have already been set, can we improve on the quality?
+					if inet6Addr.IsValid() {
+						if inet6Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
+							inet6Addr = addr
+						}
+						continue
 					}
-					continue
+					inet6Addr = addr
 				}
-				inet6Addr = addr
 			}
 		}
 	}
@@ -210,8 +212,10 @@ func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
 		return inetAddr
 	}
 
-	if inet6Addr.IsValid() {
-		return inet6Addr
+	if enableInet6 {
+		if inet6Addr.IsValid() {
+			return inet6Addr
+		}
 	}
 
 	return invalid

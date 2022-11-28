@@ -164,7 +164,7 @@ func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
 	var invalid, inetAddr, inet6Addr netip.Addr
 
 	for _, addr := range addrs {
-		if addr.IsLoopback() {
+		if addr.IsLoopback() || !addr.IsValid() {
 			continue
 		}
 

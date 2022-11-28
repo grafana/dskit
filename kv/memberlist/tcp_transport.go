@@ -394,9 +394,6 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 			// Use the IP that we're bound to, based on the first
 			// TCP listener, which we already ensure is there.
 			advertiseAddr = t.tcpListeners[0].Addr().(*net.TCPAddr).IP
-			if advertiseAddr == nil {
-				return nil, 0, fmt.Errorf("failed to parse advertise address from tcp listener %q", ip)
-			}
 		}
 
 		// Use the port we are bound to.

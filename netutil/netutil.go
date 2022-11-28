@@ -167,29 +167,30 @@ func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
 			continue
 		}
 
-		if addr.IsValid() {
-			if addr.Is4() {
-				// If we have already been set, can we improve on the quality?
-				if inet4Addr.IsValid() {
-					if inet4Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
-						inet4Addr = addr
-					}
-					continue
+		if addr.Is6() && !enableInet6 {
+			continue
+		}
+
+		if addr.Is4() {
+			// If we have already been set, can we improve on the quality?
+			if inet4Addr.IsValid() {
+				if inet4Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
+					inet4Addr = addr
 				}
-				inet4Addr = addr
+				continue
 			}
-			if enableInet6 {
-				if addr.Is6() {
-					// If we have already been set, can we improve on the quality?
-					if inet6Addr.IsValid() {
-						if inet6Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
-							inet6Addr = addr
-						}
-						continue
-					}
+			inet4Addr = addr
+		}
+
+		if addr.Is6() {
+			// If we have already been set, can we improve on the quality?
+			if inet6Addr.IsValid() {
+				if inet6Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
 					inet6Addr = addr
 				}
+				continue
 			}
+			inet6Addr = addr
 		}
 	}
 
@@ -211,10 +212,8 @@ func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
 		return inet4Addr
 	}
 
-	if enableInet6 {
-		if inet6Addr.IsValid() {
-			return inet6Addr
-		}
+	if inet6Addr.IsValid() {
+		return inet6Addr
 	}
 
 	return invalid

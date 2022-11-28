@@ -76,11 +76,10 @@ func getFirstAddressOf(names []string, logger log.Logger, interfaceAddrsFunc Net
 		if err != nil {
 			return "", fmt.Errorf("failed to get interface list and no interface names supplied: %w", err)
 		}
-		ifNames := make([]string, len(infs))
+		names = make([]string, len(infs))
 		for i, v := range infs {
-			ifNames[i] = v.Name
+			names[i] = v.Name
 		}
-		names = ifNames
 	}
 
 	level.Debug(logger).Log("msg", "looking for addresses", "inf", fmt.Sprintf("%s", names), "inet6enabled", enableInet6)

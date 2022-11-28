@@ -261,13 +261,15 @@ func TestGetFirstAddressOf(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		addr, err := getFirstAddressOf(tc.names, logger, getMockInterfaceAddresses, tc.enableInet6)
-		if tc.err != nil {
-			require.Equal(t, tc.err, err)
-		} else {
-			require.NoError(t, err)
-		}
-		require.Equal(t, tc.addr, addr)
+		t.Run(fmt.Sprintf("%s", tc.names), func(t *testing.T) {
+			addr, err := getFirstAddressOf(tc.names, logger, getMockInterfaceAddresses, tc.enableInet6)
+			if tc.err != nil {
+				require.Equal(t, tc.err, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.addr, addr)
+		})
 	}
 }
 

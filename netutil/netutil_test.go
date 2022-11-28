@@ -194,11 +194,21 @@ func TestGetFirstAddressOf(t *testing.T) {
 		},
 		{
 			names: []string{"em0"},
-			addr:  "fc99::9a",
+			err:   fmt.Errorf("no useable address found for interfaces [em0]"),
+		},
+		{
+			names:       []string{"em0"},
+			addr:        "fc99::9a",
+			enableInet6: true,
 		},
 		{
 			names: []string{"lo1"},
-			addr:  "fe80::ec62:ed39:f931:bf6d",
+			err:   fmt.Errorf("no useable address found for interfaces [lo1]"),
+		},
+		{
+			names:       []string{"lo1"},
+			addr:        "fe80::ec62:ed39:f931:bf6d",
+			enableInet6: true,
 		},
 		{
 			names: []string{"lo2"},
@@ -218,11 +228,12 @@ func TestGetFirstAddressOf(t *testing.T) {
 		},
 		{
 			names: []string{"lo1", "lo2", "enp0s31f7"},
-			addr:  "2001::1111",
+			addr:  "169.254.1.1",
 		},
 		{
-			names: []string{"lo1", "lo2", "enp0s31f7", "enp0s31f6"},
-			addr:  "2001::1111",
+			names:       []string{"lo1", "lo2", "enp0s31f7", "enp0s31f6"},
+			addr:        "2001::1111",
+			enableInet6: true,
 		},
 		{
 			names: []string{"lo1", "lo2", "enp0s31f6", "enp0s31f7"},
@@ -334,7 +345,7 @@ func TestFilterBestIP(t *testing.T) {
 				toAddr("fc99::1"),
 				toAddr("fe80::1"),
 			},
-			addr: "fc99::1",
+			addr: "invalid IP", // inet6 is not enabled
 		},
 		{
 			addrs: []netip.Addr{

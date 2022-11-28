@@ -160,7 +160,7 @@ func getInterfaceAddresses(name string) ([]netip.Addr, error) {
 // otherwise IPv6 addresses are guaranteed to not be returned from this function.
 // Loopback addresses are never selected.
 func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
-	var invalid, inetAddr, inet6Addr netip.Addr
+	var invalid, inet4Addr, inet6Addr netip.Addr
 
 	for _, addr := range addrs {
 		if addr.IsLoopback() || !addr.IsValid() {
@@ -170,13 +170,13 @@ func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
 		if addr.IsValid() {
 			if addr.Is4() {
 				// If we have already been set, can we improve on the quality?
-				if inetAddr.IsValid() {
-					if inetAddr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
-						inetAddr = addr
+				if inet4Addr.IsValid() {
+					if inet4Addr.IsLinkLocalUnicast() && !addr.IsLinkLocalUnicast() {
+						inet4Addr = addr
 					}
 					continue
 				}
-				inetAddr = addr
+				inet4Addr = addr
 			}
 			if enableInet6 {
 				if addr.Is6() {
@@ -194,21 +194,21 @@ func filterBestIP(addrs []netip.Addr, enableInet6 bool) netip.Addr {
 	}
 
 	// If both address families have been set, compare.
-	if inetAddr.IsValid() && inet6Addr.IsValid() {
-		if inetAddr.IsLinkLocalUnicast() && !inet6Addr.IsLinkLocalUnicast() {
+	if inet4Addr.IsValid() && inet6Addr.IsValid() {
+		if inet4Addr.IsLinkLocalUnicast() && !inet6Addr.IsLinkLocalUnicast() {
 			return inet6Addr
 		}
-		if inet6Addr.IsLinkLocalUnicast() && !inetAddr.IsLinkLocalUnicast() {
-			return inetAddr
+		if inet6Addr.IsLinkLocalUnicast() && !inet4Addr.IsLinkLocalUnicast() {
+			return inet4Addr
 		}
 		if enableInet6 {
 			return inet6Addr
 		}
-		return inetAddr
+		return inet4Addr
 	}
 
-	if inetAddr.IsValid() {
-		return inetAddr
+	if inet4Addr.IsValid() {
+		return inet4Addr
 	}
 
 	if enableInet6 {

@@ -70,6 +70,7 @@
 * [ENHANCEMENT] Concurrency: Add LimitedConcurrencySingleFlight to run jobs concurrently and with in-flight deduplication. #214
 * [ENHANCEMENT] Add the ability to define custom gRPC health checks. #227
 * [ENHANCEMENT] Import Bytes type, DeleteAll function and DNS package from Thanos. #228
+* [ENHANCEMENT] Execute health checks in ring client pool concurrently. #237
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

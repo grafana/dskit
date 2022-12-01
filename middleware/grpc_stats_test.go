@@ -90,7 +90,7 @@ func TestGrpcStats(t *testing.T) {
 			received_payload_bytes_bucket{method="gRPC", route="/grpc.health.v1.Health/Check",le="1.048576e+08"} 2
 			received_payload_bytes_bucket{method="gRPC", route="/grpc.health.v1.Health/Check",le="2.62144e+08"} 2
 			received_payload_bytes_bucket{method="gRPC", route="/grpc.health.v1.Health/Check",le="+Inf"} 2
-			received_payload_bytes_sum{method="gRPC", route="/grpc.health.v1.Health/Check"} 8.388613e+06
+			received_payload_bytes_sum{method="gRPC", route="/grpc.health.v1.Health/Check"} 8.388623e+06
 			received_payload_bytes_count{method="gRPC", route="/grpc.health.v1.Health/Check"} 2
 
 			# HELP sent_payload_bytes Size of sent gRPC
@@ -211,7 +211,7 @@ func TestGrpcStatsStreaming(t *testing.T) {
 			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.048576e+08"} 5
 			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.62144e+08"} 5
 			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="+Inf"} 5
-			received_payload_bytes_sum{method="gRPC",route="/middleware.EchoServer/Process"} 1.5728664e+07
+			received_payload_bytes_sum{method="gRPC",route="/middleware.EchoServer/Process"} 1.5728689e+07
 			received_payload_bytes_count{method="gRPC",route="/middleware.EchoServer/Process"} 5
 
 			# HELP sent_payload_bytes Size of sent gRPC

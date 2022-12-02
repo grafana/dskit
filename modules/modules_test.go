@@ -17,6 +17,13 @@ import (
 
 func mockInitFunc() (services.Service, error) { return services.NewIdleService(nil, nil), nil }
 
+func mockStoppingFunc(id string, stopChan chan string) services.StoppingFn {
+	return func(_ error) error {
+		stopChan <- id
+		return nil
+	}
+}
+
 func mockInitFuncFail() (services.Service, error) { return nil, errors.New("Error") }
 
 func TestDependencies(t *testing.T) {
@@ -277,13 +284,15 @@ func TestManager_inverseDependenciesForModule(t *testing.T) {
 func TestModuleWaitsForAllDependencies(t *testing.T) {
 	var serviceA services.Service
 
+	stopChanOrder := make(chan string, 2)
+
 	initA := func() (services.Service, error) {
 		serviceA = services.NewIdleService(func(serviceContext context.Context) error {
 			// Slow-starting service. Delay is here to verify that service for C is not started before this service
 			// has finished starting.
 			time.Sleep(1 * time.Second)
 			return nil
-		}, nil)
+		}, mockStoppingFunc("a", stopChanOrder))
 
 		return serviceA, nil
 	}
@@ -295,7 +304,7 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 				return fmt.Errorf("serviceA has invalid state: %v", s)
 			}
 			return nil
-		}, nil), nil
+		}, mockStoppingFunc("c", stopChanOrder)), nil
 	}
 
 	m := NewManager(log.NewNopLogger())
@@ -320,6 +329,12 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 	require.NoError(t, err)
 	assert.NoError(t, services.StartManagerAndAwaitHealthy(context.Background(), servManager))
 	assert.NoError(t, services.StopManagerAndAwaitStopped(context.Background(), servManager))
+
+	expectedStopOrder := []string{"c", "a"}
+
+	for i, stopID := range <-stopChanOrder {
+		assert.Equal(t, expectedStopOrder[i], string(stopID))
+	}
 }
 
 func getStopDependenciesForModule(module string, services map[string]services.Service) []string {

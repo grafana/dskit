@@ -39,7 +39,7 @@ func TestForEachUser_ShouldContinueOnErrorButReturnIt(t *testing.T) {
 	input := []string{"a", "b", "c"}
 
 	err := ForEachUser(context.Background(), input, 2, func(ctx context.Context, user string) error {
-		if processed.CAS(0, 1) {
+		if processed.CompareAndSwap(0, 1) {
 			return errors.New("the first request is failing")
 		}
 
@@ -84,7 +84,7 @@ func TestForEachJob_ShouldBreakOnFirstError_ContextCancellationHandled(t *testin
 	var processed atomic.Int32
 
 	err := ForEachJob(context.Background(), 3, 2, func(ctx context.Context, idx int) error {
-		if processed.CAS(0, 1) {
+		if processed.CompareAndSwap(0, 1) {
 			return errors.New("the first request is failing")
 		}
 
@@ -117,7 +117,7 @@ func TestForEachJob_ShouldBreakOnFirstError_ContextCancellationUnhandled(t *test
 	err := ForEachJob(context.Background(), 3, 2, func(ctx context.Context, idx int) error {
 		wg.Done()
 
-		if processed.CAS(0, 1) {
+		if processed.CompareAndSwap(0, 1) {
 			// wait till two jobs have been started
 			wg.Wait()
 			return errors.New("the first request is failing")
@@ -177,7 +177,7 @@ func TestForEach_ShouldBreakOnFirstError_ContextCancellationHandled(t *testing.T
 	)
 
 	err := ForEach(ctx, []interface{}{"a", "b", "c"}, 2, func(ctx context.Context, job interface{}) error {
-		if processed.CAS(0, 1) {
+		if processed.CompareAndSwap(0, 1) {
 			return errors.New("the first request is failing")
 		}
 
@@ -210,7 +210,7 @@ func TestForEach_ShouldBreakOnFirstError_ContextCancellationUnhandled(t *testing
 	err := ForEach(context.Background(), []interface{}{"a", "b", "c"}, 2, func(ctx context.Context, job interface{}) error {
 		wg.Done()
 
-		if processed.CAS(0, 1) {
+		if processed.CompareAndSwap(0, 1) {
 			// wait till two jobs have been started
 			wg.Wait()
 			return errors.New("the first request is failing")

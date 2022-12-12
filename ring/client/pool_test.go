@@ -49,7 +49,7 @@ func TestHealthCheck(t *testing.T) {
 		{mockClient{happy: false, status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}, true},
 	}
 	for _, tc := range tcs {
-		err := healthCheck(tc.client, 50*time.Millisecond)
+		err := healthCheck(context.Background(), tc.client, 50*time.Millisecond)
 		hasError := err != nil
 		if hasError != tc.hasError {
 			t.Errorf("Expected error: %t, error: %v", tc.hasError, err)
@@ -120,28 +120,43 @@ func TestPoolCache(t *testing.T) {
 }
 
 func TestCleanUnhealthy(t *testing.T) {
-	goodAddrs := []string{"good1", "good2"}
-	badAddrs := []string{"bad1", "bad2"}
-	clients := map[string]PoolClient{}
-	for _, addr := range goodAddrs {
-		clients[addr] = mockClient{happy: true, status: grpc_health_v1.HealthCheckResponse_SERVING}
+	tcs := []struct {
+		maxConcurrent int
+	}{
+		{maxConcurrent: 0}, // if not set, defaults to 16
+		{maxConcurrent: 1},
 	}
-	for _, addr := range badAddrs {
-		clients[addr] = mockClient{happy: false, status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}
-	}
-	pool := &Pool{
-		clients: clients,
-		logger:  log.NewNopLogger(),
-	}
-	pool.cleanUnhealthy()
-	for _, addr := range badAddrs {
-		if _, ok := pool.clients[addr]; ok {
-			t.Errorf("Found bad client after clean: %s\n", addr)
-		}
-	}
-	for _, addr := range goodAddrs {
-		if _, ok := pool.clients[addr]; !ok {
-			t.Errorf("Could not find good client after clean: %s\n", addr)
-		}
+	for _, tc := range tcs {
+		t.Run(fmt.Sprintf("max concurrent %d", tc.maxConcurrent), func(t *testing.T) {
+			goodAddrs := []string{"good1", "good2"}
+			badAddrs := []string{"bad1", "bad2"}
+			clients := map[string]PoolClient{}
+			for _, addr := range goodAddrs {
+				clients[addr] = mockClient{happy: true, status: grpc_health_v1.HealthCheckResponse_SERVING}
+			}
+			for _, addr := range badAddrs {
+				clients[addr] = mockClient{happy: false, status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}
+			}
+
+			cfg := PoolConfig{
+				MaxConcurrentHealthChecks: tc.maxConcurrent,
+				CheckInterval:             1 * time.Second,
+				HealthCheckTimeout:        5 * time.Millisecond,
+			}
+			pool := NewPool("test", cfg, nil, nil, nil, log.NewNopLogger())
+			pool.clients = clients
+			pool.cleanUnhealthy()
+
+			for _, addr := range badAddrs {
+				if _, ok := pool.clients[addr]; ok {
+					t.Errorf("Found bad client after clean: %s\n", addr)
+				}
+			}
+			for _, addr := range goodAddrs {
+				if _, ok := pool.clients[addr]; !ok {
+					t.Errorf("Could not find good client after clean: %s\n", addr)
+				}
+			}
+		})
 	}
 }

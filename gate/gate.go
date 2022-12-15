@@ -48,7 +48,7 @@ func (noopGate) Done()                       {}
 // It can be called several times but not with the same registerer otherwise it
 // will panic when trying to register the same metric multiple times.
 func New(reg prometheus.Registerer, maxConcurrent int) Gate {
-	return NewInstrumented(reg, maxConcurrent, newGate(maxConcurrent))
+	return NewInstrumented(reg, maxConcurrent, NewBlocking(maxConcurrent))
 }
 
 // NewInstrumented wraps a Gate implementation with one that records max number of inflight
@@ -152,38 +152,6 @@ func (g *blockingGate) Start(ctx context.Context) error {
 }
 
 func (g *blockingGate) Done() {
-	select {
-	case <-g.ch:
-	default:
-		panic("gate.Done: more operations done than started")
-	}
-}
-
-// A gate controls the maximum number of concurrently running and waiting queries.
-type gate struct {
-	ch chan struct{}
-}
-
-// newGate returns a query gate that limits the number of queries
-// being concurrently executed.
-func newGate(length int) *gate {
-	return &gate{
-		ch: make(chan struct{}, length),
-	}
-}
-
-// Start blocks until the gate has a free spot or the context is done.
-func (g *gate) Start(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case g.ch <- struct{}{}:
-		return nil
-	}
-}
-
-// Done releases a single spot in the gate.
-func (g *gate) Done() {
 	select {
 	case <-g.ch:
 	default:

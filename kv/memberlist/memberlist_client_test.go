@@ -1439,8 +1439,6 @@ func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 	codec := dataCodec{}
 
 	cfg := KVConfig{}
-	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
-	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
 
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())

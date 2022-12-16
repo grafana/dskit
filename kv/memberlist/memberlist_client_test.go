@@ -1435,6 +1435,49 @@ func TestFastJoin(t *testing.T) {
 	require.Equal(t, JOINING, val.(*data).Members[memberKey].State)
 }
 
+func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
+	codec := dataCodec{}
+
+	cfg := KVConfig{}
+	cfg.Codecs = append(cfg.Codecs, codec)
+
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+
+	// Make sure we can call delegate methods on unstarted service, and they don't crash nor block.
+	kv.LocalState(true)
+	kv.MergeRemoteState(nil, true)
+	kv.GetBroadcasts(100, 100)
+
+	now := time.Now()
+	msg := &data{
+		Members: map[string]member{
+			"a": {Timestamp: now.Unix() - 5, State: ACTIVE, Tokens: []uint32{}},
+			"b": {Timestamp: now.Unix() + 5, State: ACTIVE, Tokens: []uint32{1, 2, 3}},
+			"c": {Timestamp: now.Unix(), State: ACTIVE, Tokens: []uint32{}},
+		}}
+
+	kv.NotifyMsg(marshalKeyValuePair(t, key, codec, msg))
+
+	// Verify that message was not added to KV.
+	time.Sleep(time.Millisecond * 100)
+	val, err := kv.Get(key, codec)
+	require.NoError(t, err)
+	require.Nil(t, val)
+
+	// Now start the service, and try NotifyMsg again
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
+	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
+
+	kv.NotifyMsg(marshalKeyValuePair(t, key, codec, msg))
+
+	// Wait until processing finished, and check the message again.
+	time.Sleep(time.Millisecond * 100)
+
+	val, err = kv.Get(key, codec)
+	require.NoError(t, err)
+	assert.Equal(t, msg, val)
+}
+
 func decodeDataFromMarshalledKeyValuePair(t *testing.T, marshalledKVP []byte, key string, codec dataCodec) *data {
 	kvp := KeyValuePair{}
 	require.NoError(t, kvp.Unmarshal(marshalledKVP))

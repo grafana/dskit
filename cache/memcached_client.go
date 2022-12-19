@@ -20,19 +20,6 @@ import (
 	"github.com/grafana/dskit/gate"
 )
 
-const (
-	opSet                 = "set"
-	opGetMulti            = "getmulti"
-	opDelete              = "delete"
-	reasonMaxItemSize     = "max-item-size"
-	reasonAsyncBufferFull = "async-buffer-full"
-	reasonMalformedKey    = "malformed-key"
-	reasonTimeout         = "timeout"
-	reasonServerError     = "server-error"
-	reasonNetworkError    = "network-error"
-	reasonOther           = "other"
-)
-
 var (
 	errMemcachedConfigNoAddrs                  = errors.New("no memcached addresses provided")
 	errMemcachedDNSUpdateIntervalNotPositive   = errors.New("DNS provider update interval must be positive")
@@ -171,11 +158,7 @@ type memcachedClient struct {
 
 	// Tracked metrics.
 	clientInfo prometheus.GaugeFunc
-	operations *prometheus.CounterVec
-	failures   *prometheus.CounterVec
-	skipped    *prometheus.CounterVec
-	duration   *prometheus.HistogramVec
-	dataSize   *prometheus.HistogramVec
+	metrics    *clientMetrics
 }
 
 // AddressProvider performs node address resolution given a list of clusters.
@@ -256,54 +239,9 @@ func newMemcachedClient(
 		func() float64 { return 1 },
 	)
 
-	c.operations = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "memcached_operations_total",
-		Help: "Total number of operations against memcached.",
-	}, []string{"operation"})
-	c.operations.WithLabelValues(opGetMulti)
-	c.operations.WithLabelValues(opSet)
-	c.operations.WithLabelValues(opDelete)
-
-	c.failures = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "memcached_operation_failures_total",
-		Help: "Total number of operations against memcached that failed.",
-	}, []string{"operation", "reason"})
-	for _, op := range []string{opGetMulti, opSet, opDelete} {
-		c.failures.WithLabelValues(op, reasonTimeout)
-		c.failures.WithLabelValues(op, reasonMalformedKey)
-		c.failures.WithLabelValues(op, reasonServerError)
-		c.failures.WithLabelValues(op, reasonNetworkError)
-		c.failures.WithLabelValues(op, reasonOther)
-	}
-
-	c.skipped = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "memcached_operation_skipped_total",
-		Help: "Total number of operations against memcached that have been skipped.",
-	}, []string{"operation", "reason"})
-	c.skipped.WithLabelValues(opGetMulti, reasonMaxItemSize)
-	c.skipped.WithLabelValues(opSet, reasonMaxItemSize)
-	c.skipped.WithLabelValues(opSet, reasonAsyncBufferFull)
-
-	c.duration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "memcached_operation_duration_seconds",
-		Help:    "Duration of operations against memcached.",
-		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 3, 6, 10},
-	}, []string{"operation"})
-	c.duration.WithLabelValues(opGetMulti)
-	c.duration.WithLabelValues(opSet)
-	c.duration.WithLabelValues(opDelete)
-
-	c.dataSize = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name: "memcached_operation_data_size_bytes",
-		Help: "Tracks the size of the data stored in and fetched from memcached.",
-		Buckets: []float64{
-			32, 256, 512, 1024, 32 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 32 * 1024 * 1024, 256 * 1024 * 1024, 512 * 1024 * 1024,
-		},
-	},
-		[]string{"operation"},
+	c.metrics = newClientMetrics(
+		prometheus.WrapRegistererWithPrefix("memcached_", reg),
 	)
-	c.dataSize.WithLabelValues(opGetMulti)
-	c.dataSize.WithLabelValues(opSet)
 
 	// As soon as the client is created it must ensure that memcached server
 	// addresses are resolved, so we're going to trigger an initial addresses
@@ -328,13 +266,13 @@ func (c *memcachedClient) Stop() {
 func (c *memcachedClient) SetAsync(_ context.Context, key string, value []byte, ttl time.Duration) error {
 	// Skip hitting memcached at all if the item is bigger than the max allowed size.
 	if c.config.MaxItemSize > 0 && uint64(len(value)) > uint64(c.config.MaxItemSize) {
-		c.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
+		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
 		return nil
 	}
 
 	err := c.asyncQueue.run(func() {
 		start := time.Now()
-		c.operations.WithLabelValues(opSet).Inc()
+		c.metrics.operations.WithLabelValues(opSet).Inc()
 
 		err := c.client.Set(&memcache.Item{
 			Key:        key,
@@ -356,12 +294,12 @@ func (c *memcachedClient) SetAsync(_ context.Context, key string, value []byte, 
 			return
 		}
 
-		c.dataSize.WithLabelValues(opSet).Observe(float64(len(value)))
-		c.duration.WithLabelValues(opSet).Observe(time.Since(start).Seconds())
+		c.metrics.dataSize.WithLabelValues(opSet).Observe(float64(len(value)))
+		c.metrics.duration.WithLabelValues(opSet).Observe(time.Since(start).Seconds())
 	})
 
 	if errors.Is(err, errAsyncQueueFull) {
-		c.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
+		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
 		level.Debug(c.logger).Log("msg", "failed to store item to memcached because the async buffer is full", "err", err, "size", c.asyncQueue.length())
 		return nil
 	}
@@ -401,7 +339,7 @@ func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 
 	enqueueErr := c.asyncQueue.run(func() {
 		start := time.Now()
-		c.operations.WithLabelValues(opDelete).Inc()
+		c.metrics.operations.WithLabelValues(opDelete).Inc()
 
 		var err error
 		select {
@@ -419,13 +357,13 @@ func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 			)
 			c.trackError(opDelete, err)
 		} else {
-			c.duration.WithLabelValues(opDelete).Observe(time.Since(start).Seconds())
+			c.metrics.duration.WithLabelValues(opDelete).Observe(time.Since(start).Seconds())
 		}
 		errCh <- err
 	})
 
 	if errors.Is(enqueueErr, errAsyncQueueFull) {
-		c.skipped.WithLabelValues(opDelete, reasonAsyncBufferFull).Inc()
+		c.metrics.skipped.WithLabelValues(opDelete, reasonAsyncBufferFull).Inc()
 		level.Debug(c.logger).Log("msg", "failed to delete memcached item because the async buffer is full", "err", enqueueErr, "size", c.asyncQueue.length())
 		return enqueueErr
 	}
@@ -514,7 +452,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([
 
 func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string) (items map[string]*memcache.Item, err error) {
 	start := time.Now()
-	c.operations.WithLabelValues(opGetMulti).Inc()
+	c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 
 	select {
 	case <-ctx.Done():
@@ -533,8 +471,8 @@ func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string) (it
 		for _, it := range items {
 			total += len(it.Value)
 		}
-		c.dataSize.WithLabelValues(opGetMulti).Observe(float64(total))
-		c.duration.WithLabelValues(opGetMulti).Observe(time.Since(start).Seconds())
+		c.metrics.dataSize.WithLabelValues(opGetMulti).Observe(float64(total))
+		c.metrics.duration.WithLabelValues(opGetMulti).Observe(time.Since(start).Seconds())
 	}
 
 	return items, err
@@ -574,19 +512,19 @@ func (c *memcachedClient) trackError(op string, err error) {
 	var netErr net.Error
 	switch {
 	case errors.As(err, &connErr):
-		c.failures.WithLabelValues(op, reasonTimeout).Inc()
+		c.metrics.failures.WithLabelValues(op, reasonTimeout).Inc()
 	case errors.As(err, &netErr):
 		if netErr.Timeout() {
-			c.failures.WithLabelValues(op, reasonTimeout).Inc()
+			c.metrics.failures.WithLabelValues(op, reasonTimeout).Inc()
 		} else {
-			c.failures.WithLabelValues(op, reasonNetworkError).Inc()
+			c.metrics.failures.WithLabelValues(op, reasonNetworkError).Inc()
 		}
 	case errors.Is(err, memcache.ErrMalformedKey):
-		c.failures.WithLabelValues(op, reasonMalformedKey).Inc()
+		c.metrics.failures.WithLabelValues(op, reasonMalformedKey).Inc()
 	case errors.Is(err, memcache.ErrServerError):
-		c.failures.WithLabelValues(op, reasonServerError).Inc()
+		c.metrics.failures.WithLabelValues(op, reasonServerError).Inc()
 	default:
-		c.failures.WithLabelValues(op, reasonOther).Inc()
+		c.metrics.failures.WithLabelValues(op, reasonOther).Inc()
 	}
 }
 

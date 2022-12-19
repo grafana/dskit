@@ -12,11 +12,11 @@ func TestAsyncQueue_SequentialRun(t *testing.T) {
 	defer q.stop()
 
 	var i int
-	_ = q.run(func() { i += 1 })
-	_ = q.run(func() { i -= 1 })
-	_ = q.run(func() { i += 1 })
-	_ = q.run(func() { i -= 1 })
-	_ = q.run(func() { i += 1 })
+	_ = q.run(func() { i++ })
+	_ = q.run(func() { i-- })
+	_ = q.run(func() { i++ })
+	_ = q.run(func() { i-- })
+	_ = q.run(func() { i++ })
 
 	// Wait for all operations to finish.
 	time.Sleep(100 * time.Millisecond)

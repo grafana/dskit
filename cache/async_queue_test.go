@@ -4,28 +4,30 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/stretchr/testify/require"
 )
 
-func TestAsyncQueue_SequentialRun(t *testing.T) {
+func TestAsyncQueue_Run(t *testing.T) {
 	q := newAsyncQueue(10, 10)
 	defer q.stop()
 
-	var i int
-	_ = q.run(func() { i++ })
-	_ = q.run(func() { i-- })
-	_ = q.run(func() { i++ })
-	_ = q.run(func() { i-- })
-	_ = q.run(func() { i++ })
+	var i atomic.Int32
+	_ = q.run(func() { i.Add(1) })
+	_ = q.run(func() { i.Add(-1) })
+	_ = q.run(func() { i.Add(1) })
+	_ = q.run(func() { i.Add(-1) })
+	_ = q.run(func() { i.Add(1) })
 
 	// Wait for all operations to finish.
 	time.Sleep(100 * time.Millisecond)
 
-	require.Equal(t, 1, i)
+	require.Equal(t, int32(1), i.Load())
 }
 
 func TestAsyncQueue_QueueFullError(t *testing.T) {
-	const queueLength = 2
+	const queueLength = 10
 
 	q := newAsyncQueue(queueLength, 1)
 	defer q.stop()

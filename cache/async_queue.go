@@ -29,7 +29,7 @@ func newAsyncQueue(length, maxConcurrency int) *asyncQueue {
 	return q
 }
 
-func (q *asyncQueue) run(op func()) error {
+func (q *asyncQueue) submit(op func()) error {
 	select {
 	case q.queueCh <- op:
 		return nil
@@ -41,10 +41,6 @@ func (q *asyncQueue) run(op func()) error {
 func (q *asyncQueue) stop() {
 	close(q.stopCh)
 	q.workers.Wait()
-}
-
-func (q *asyncQueue) length() int {
-	return cap(q.queueCh)
 }
 
 func (q *asyncQueue) asyncQueueProcessLoop() {

@@ -270,7 +270,7 @@ func (c *memcachedClient) SetAsync(_ context.Context, key string, value []byte, 
 		return nil
 	}
 
-	err := c.asyncQueue.run(func() {
+	err := c.asyncQueue.submit(func() {
 		start := time.Now()
 		c.metrics.operations.WithLabelValues(opSet).Inc()
 
@@ -300,7 +300,7 @@ func (c *memcachedClient) SetAsync(_ context.Context, key string, value []byte, 
 
 	if errors.Is(err, errAsyncQueueFull) {
 		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to store item to memcached because the async buffer is full", "err", err, "size", c.asyncQueue.length())
+		level.Debug(c.logger).Log("msg", "failed to store item to memcached because the async buffer is full", "err", err, "size", c.config.MaxAsyncBufferSize)
 		return nil
 	}
 	return err
@@ -337,7 +337,7 @@ func (c *memcachedClient) GetMulti(ctx context.Context, keys []string) map[strin
 func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 	errCh := make(chan error, 1)
 
-	enqueueErr := c.asyncQueue.run(func() {
+	enqueueErr := c.asyncQueue.submit(func() {
 		start := time.Now()
 		c.metrics.operations.WithLabelValues(opDelete).Inc()
 
@@ -364,7 +364,7 @@ func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 
 	if errors.Is(enqueueErr, errAsyncQueueFull) {
 		c.metrics.skipped.WithLabelValues(opDelete, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to delete memcached item because the async buffer is full", "err", enqueueErr, "size", c.asyncQueue.length())
+		level.Debug(c.logger).Log("msg", "failed to delete memcached item because the async buffer is full", "err", enqueueErr, "size", c.config.MaxAsyncBufferSize)
 		return enqueueErr
 	}
 	// Wait for the delete operation to complete.

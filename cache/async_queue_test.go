@@ -14,11 +14,11 @@ func TestAsyncQueue_Run(t *testing.T) {
 	defer q.stop()
 
 	var i atomic.Int32
-	_ = q.run(func() { i.Add(1) })
-	_ = q.run(func() { i.Add(-1) })
-	_ = q.run(func() { i.Add(1) })
-	_ = q.run(func() { i.Add(-1) })
-	_ = q.run(func() { i.Add(1) })
+	_ = q.submit(func() { i.Add(1) })
+	_ = q.submit(func() { i.Add(-1) })
+	_ = q.submit(func() { i.Add(1) })
+	_ = q.submit(func() { i.Add(-1) })
+	_ = q.submit(func() { i.Add(1) })
 
 	// Wait for all operations to finish.
 	time.Sleep(100 * time.Millisecond)
@@ -38,14 +38,14 @@ func TestAsyncQueue_QueueFullError(t *testing.T) {
 	}()
 
 	// Keep worker busy.
-	_ = q.run(func() {
+	_ = q.submit(func() {
 		<-doneCh
 	})
 	time.Sleep(100 * time.Millisecond)
 
 	// Fill the queue.
 	for i := 0; i < queueLength; i++ {
-		require.NoError(t, q.run(func() {}))
+		require.NoError(t, q.submit(func() {}))
 	}
-	require.Equal(t, errAsyncQueueFull, q.run(func() {}))
+	require.Equal(t, errAsyncQueueFull, q.submit(func() {}))
 }

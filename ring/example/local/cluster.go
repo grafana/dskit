@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
@@ -22,6 +23,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 var (
@@ -52,7 +54,7 @@ func New(cfg *Config) (*Server, error) {
 	s := &Server{}
 	ctx := context.Background()
 
-	lfc, err := ring.NewLifecycler(cfg.Lifecycler, s, "cluster", "ring", true, log.NewNopLogger(), prometheus.DefaultRegisterer)
+	lfc, err := ring.NewLifecycler(cfg.Lifecycler, s, "cluster", "ring", true, log.NewLogfmtLogger(os.Stdout), prometheus.DefaultRegisterer)
 	if err != nil {
 		return nil, fmt.Errorf("error creating lifecycler %w", err)
 	}
@@ -85,8 +87,9 @@ func main() {
 		})
 	}
 
+	lf, kv := defaultConfig(bindaddr, bindport, joinmemberslice)
 	cfg := &Config{
-		Lifecycler: defaultConfig(bindaddr, bindport, joinmemberslice),
+		Lifecycler: lf,
 	}
 
 	svr, err := New(cfg)
@@ -102,10 +105,15 @@ func main() {
 	}
 
 	fmt.Println("listening on ", listener.Addr())
-	panic(http.Serve(listener, svr.lifecycler))
+
+	mux := http.NewServeMux()
+	mux.Handle("/ring", svr.lifecycler)
+	mux.Handle("/kv", kv)
+
+	panic(http.Serve(listener, mux))
 }
 
-func defaultConfig(bindaddr string, bindport int, joinmembers []string) ring.LifecyclerConfig {
+func defaultConfig(bindaddr string, bindport int, joinmembers []string) (ring.LifecyclerConfig, *memberlist.KVInitService) {
 	lc := ring.LifecyclerConfig{}
 	flagext.DefaultValues(&lc)
 
@@ -118,14 +126,20 @@ func defaultConfig(bindaddr string, bindport int, joinmembers []string) ring.Lif
 			BindPort:  bindport,
 			BindAddrs: []string{bindaddr},
 		},
-		JoinMembers: joinmembers,
-		NodeName:    bindaddr,
+		JoinMembers:   joinmembers,
+		NodeName:      bindaddr,
+		StreamTimeout: 5 * time.Second, // make it configurable?
 		// ClusterLabelVerificationDisabled: true,
 	}
 	// flagext.DefaultValues(&kvconfig)
 
-	dnsProvider := dns.NewProvider(log.NewLogfmtLogger(os.Stdout), nil, dns.GolangResolverType)
-	MemberlistKV := memberlist.NewKVInitService(&kvconfig, log.NewLogfmtLogger(os.Stdout), dnsProvider, nil)
+	lc.ID = bindaddr
+
+	logger := log.NewLogfmtLogger(os.Stdout)
+	logger = log.With(logger, level.AllowDebug())
+
+	dnsProvider := dns.NewProvider(log.With(logger, "component", "dns"), nil, dns.GolangResolverType)
+	MemberlistKV := memberlist.NewKVInitService(&kvconfig, log.With(logger, "component", "memberlist"), dnsProvider, nil)
 
 	kv := kv.Config{Store: "memberlist"}
 	kv.StoreConfig.MemberlistKV = MemberlistKV.GetMemberlistKV
@@ -141,5 +155,5 @@ func defaultConfig(bindaddr string, bindport int, joinmembers []string) ring.Lif
 
 	fmt.Printf("%+v\n", string(data))
 
-	return lc
+	return lc, MemberlistKV
 }

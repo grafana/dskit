@@ -48,6 +48,7 @@
 * [ENHANCEMENT] Add spanlogger package. #42
 * [ENHANCEMENT] Add runutil.CloseWithLogOnErr function. #58
 * [ENHANCEMENT] Add cache, gate and stringsutil packages. #239
+* [ENHANCEMENT] Cache: add Redis support. #245
 * [ENHANCEMENT] Optimise memberlist receive path when used as a backing store for rings with a large number of members. #76 #77 #84 #91 #93
 * [ENHANCEMENT] Memberlist: prepare the data to send on the write before starting counting the elapsed time for `-memberlist.packet-write-timeout`, in order to reduce chances we hit the timeout when sending a packet to other node. #89
 * [ENHANCEMENT] Memberlist: parallelize processing of messages received by memberlist. #110

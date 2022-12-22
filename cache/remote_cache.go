@@ -16,13 +16,30 @@ type MemcachedCache struct {
 }
 
 // NewMemcachedCache makes a new MemcachedCache.
-func NewMemcachedCache(name string, logger log.Logger, remoteClient RemoteCacheClient, reg prometheus.Registerer) *MemcachedCache {
+func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCacheClient, reg prometheus.Registerer) *MemcachedCache {
 	return &MemcachedCache{
 		remoteCache: newRemoteCache(
 			name,
 			logger,
-			remoteClient,
+			memcachedClient,
 			prometheus.WrapRegistererWithPrefix("cache_memcached_", reg),
+		),
+	}
+}
+
+// RedisCache is a Redis-based cache.
+type RedisCache struct {
+	*remoteCache
+}
+
+// NewRedisCache makes a new RedisCache.
+func NewRedisCache(name string, logger log.Logger, redisClient RemoteCacheClient, reg prometheus.Registerer) *RedisCache {
+	return &RedisCache{
+		remoteCache: newRemoteCache(
+			name,
+			logger,
+			redisClient,
+			prometheus.WrapRegistererWithPrefix("cache_redis_", reg),
 		),
 	}
 }

@@ -203,12 +203,15 @@ func (c *redisClient) GetMulti(ctx context.Context, keys []string) map[string][]
 	if len(keys) == 0 {
 		return nil
 	}
-	start := time.Now()
-	results := make(map[string][]byte, len(keys))
 	var mu sync.Mutex
-	var cacheHitBytes int
+	results := make(map[string][]byte, len(keys))
 
 	err := doWithBatch(ctx, len(keys), c.config.GetMultiBatchSize, c.getMultiGate, func(startIndex, endIndex int) error {
+		start := time.Now()
+		c.metrics.operations.WithLabelValues(opGetMulti).Inc()
+
+		var cacheHitBytes int
+
 		currentKeys := keys[startIndex:endIndex]
 		resp, err := c.MGet(ctx, currentKeys...).Result()
 		if err != nil {

@@ -13,6 +13,9 @@ import (
 var (
 	_ RemoteCacheClient = (*memcachedClient)(nil)
 	_ RemoteCacheClient = (*redisClient)(nil)
+
+	_ Cache = (*MemcachedCache)(nil)
+	_ Cache = (*RedisCache)(nil)
 )
 
 // RemoteCacheClient is a high level client to interact with remote cache.

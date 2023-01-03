@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/gomemcache/memcache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -30,7 +30,7 @@ type MemcachedClient = RemoteCacheClient
 
 // memcachedClientBackend is an interface used to mock the underlying client in tests.
 type memcachedClientBackend interface {
-	GetMulti(keys []string) (map[string]*memcache.Item, error)
+	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 	Delete(key string) error
 }

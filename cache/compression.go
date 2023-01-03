@@ -12,7 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 
-	"github.com/grafana/dskit/util/stringsutil"
+	"github.com/grafana/dskit/internal/slices"
 )
 
 const (
@@ -35,9 +35,10 @@ func (cfg *CompressionConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 }
 
 func (cfg *CompressionConfig) Validate() error {
-	if cfg.Compression != "" && !stringsutil.SliceContains(supportedCompressions, cfg.Compression) {
+	if cfg.Compression != "" && !slices.Contains(supportedCompressions, cfg.Compression) {
 		return errUnsupportedCompression
 	}
+
 	return nil
 }
 

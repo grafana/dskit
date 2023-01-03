@@ -23,12 +23,12 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/internal/slices"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring/shard"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/grafana/dskit/util/stringsutil"
 )
 
 const (
@@ -1280,7 +1280,7 @@ func TestRing_ShuffleShard_Shuffling(t *testing.T) {
 
 			numMatching := 0
 			for _, c := range currShard {
-				if stringsutil.SliceContains(otherShard, c) {
+				if slices.Contains(otherShard, c) {
 					numMatching++
 				}
 			}
@@ -2218,7 +2218,7 @@ func TestRingUpdates(t *testing.T) {
 
 				// Ensure there's no instance in an excluded zone.
 				if len(testData.excludedZones) > 0 {
-					assert.False(t, stringsutil.SliceContains(testData.excludedZones, ing.Zone))
+					assert.False(t, slices.Contains(testData.excludedZones, ing.Zone))
 				}
 			}
 

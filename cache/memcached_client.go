@@ -23,6 +23,8 @@ var (
 	errMemcachedConfigNoAddrs                  = errors.New("no memcached addresses provided")
 	errMemcachedDNSUpdateIntervalNotPositive   = errors.New("DNS provider update interval must be positive")
 	errMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
+
+	_ RemoteCacheClient = (*memcachedClient)(nil)
 )
 
 // MemcachedClient for compatible.
@@ -249,7 +251,13 @@ func (c *memcachedClient) GetMulti(ctx context.Context, keys []string) map[strin
 		return nil
 	}
 
-	batches, err := c.getMultiBatched(ctx, keys)
+	alloc := GetAllocator(ctx)
+	var opts []memcache.Option
+	if alloc != nil {
+		opts = append(opts, memcache.WithAllocator(alloc))
+	}
+
+	batches, err := c.getMultiBatched(ctx, keys, opts...)
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "failed to fetch items from memcached", "numKeys", len(keys), "firstKey", keys[0], "err", err)
 
@@ -285,7 +293,7 @@ func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 	})
 }
 
-func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([]map[string]*memcache.Item, error) {
+func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
 	// Do not batch if the input keys are less than the max batch size.
 	if (c.config.MaxGetMultiBatchSize <= 0) || (len(keys) <= c.config.MaxGetMultiBatchSize) {
 		// Even if we're not splitting the input into batches, make sure that our single request
@@ -298,7 +306,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([
 			defer c.getMultiGate.Done()
 		}
 
-		items, err := c.getMultiSingle(ctx, keys)
+		items, err := c.getMultiSingle(ctx, keys, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -340,7 +348,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([
 		batchKeys := sortedKeys[startIndex:endIndex]
 
 		res := &memcachedGetMultiResult{}
-		res.items, res.err = c.getMultiSingle(ctx, batchKeys)
+		res.items, res.err = c.getMultiSingle(ctx, batchKeys, opts...)
 
 		results <- res
 		return nil
@@ -364,7 +372,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([
 	return items, lastErr
 }
 
-func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string) (items map[string]*memcache.Item, err error) {
+func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string, opts ...memcache.Option) (items map[string]*memcache.Item, err error) {
 	start := time.Now()
 	c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 
@@ -374,7 +382,7 @@ func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string) (it
 		// cache client backend.
 		return nil, ctx.Err()
 	default:
-		items, err = c.client.GetMulti(keys)
+		items, err = c.client.GetMulti(keys, opts...)
 	}
 
 	if err != nil {

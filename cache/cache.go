@@ -10,12 +10,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
-	_ RemoteCacheClient = (*memcachedClient)(nil)
-	_ RemoteCacheClient = (*redisClient)(nil)
+type contextKey int
 
-	_ Cache = (*MemcachedCache)(nil)
-	_ Cache = (*RedisCache)(nil)
+const (
+	contextKeyAllocator contextKey = 0
 )
 
 // RemoteCacheClient is a high level client to interact with remote cache.
@@ -50,6 +48,35 @@ type Cache interface {
 	Fetch(ctx context.Context, keys []string) map[string][]byte
 
 	Name() string
+}
+
+// WithAllocator returns a Context that makes use of a specific memory Allocator
+// for result values loaded by a cache.
+func WithAllocator(ctx context.Context, alloc Allocator) context.Context {
+	return context.WithValue(ctx, contextKeyAllocator, alloc)
+}
+
+// GetAllocator returns the Allocator set for this particular context, if any.
+func GetAllocator(ctx context.Context) Allocator {
+	val := ctx.Value(contextKeyAllocator)
+	if val != nil {
+		return val.(Allocator)
+	}
+
+	return nil
+}
+
+// Allocator allows memory for cache result values to be managed by callers instead of by
+// a cache client itself. For example, this can be used by callers to implement arena-style
+// memory management if a workload tends to be request-centric.
+type Allocator interface {
+	// Get returns a byte slice with at least sz capacity. Length of the slice is
+	// not guaranteed and so must be asserted by callers (cache clients).
+	Get(sz int) *[]byte
+	// Put returns the byte slice to the underlying allocator. The cache clients
+	// will only call this method during error handling when allocated values are
+	// not returned to the caller as cache results.
+	Put(b *[]byte)
 }
 
 const (

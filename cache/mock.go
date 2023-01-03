@@ -8,6 +8,11 @@ import (
 	"go.uber.org/atomic"
 )
 
+var (
+	_ Cache = (*MockCache)(nil)
+	_ Cache = (*InstrumentedMockCache)(nil)
+)
+
 type MockCache struct {
 	mu    sync.Mutex
 	cache map[string]Item

@@ -10,6 +10,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+var (
+	_ Cache = (*MemcachedCache)(nil)
+	_ Cache = (*RedisCache)(nil)
+)
+
 // MemcachedCache is a memcached-based cache.
 type MemcachedCache struct {
 	*remoteCache

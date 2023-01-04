@@ -40,6 +40,7 @@
 * [CHANGE] Runtimeconfig: Listener channels created by Manager no longer receive current value on every reload period, but only if any configuration file has changed. #218
 * [CHANGE] Services: `FailureWatcher.WatchService()` and `FailureWatcher.WatchManager()` now panic if `FailureWatcher` is `nil`. #219
 * [CHANGE] Memberlist: cluster label verification feature (`-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled`) is now marked as stable. #222
+* [CHANGE] Cache: Switch Memcached backend to use `github.com/grafana/gomemcache` repository instead of `github.com/bradfitz/gomemcache`. #248
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41

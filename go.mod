@@ -6,7 +6,6 @@ require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/alicebob/miniredis v2.5.0+incompatible
 	github.com/armon/go-metrics v0.3.10
-	github.com/bradfitz/gomemcache v0.0.0-20221031212613-62deef7fc822
 	github.com/cespare/xxhash v1.1.0
 	github.com/cristalhq/hedgedhttp v0.7.0
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
@@ -15,6 +14,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.0
 	github.com/golang/snappy v0.0.4
+	github.com/grafana/gomemcache v0.0.0-20230104170548-c1cca813817a
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2

@@ -5,12 +5,10 @@ import (
 	"net"
 	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/gomemcache/memcache"
 	"github.com/pkg/errors"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )

@@ -76,7 +76,7 @@ func (m *mockMemcachedClientBackend) GetMulti(keys []string, opts ...memcache.Op
 	}
 
 	if options.Alloc != nil {
-		m.allocations += 1
+		m.allocations++
 	}
 
 	out := make(map[string]*memcache.Item)

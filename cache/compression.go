@@ -23,6 +23,8 @@ const (
 var (
 	supportedCompressions     = []string{CompressionSnappy}
 	errUnsupportedCompression = errors.New("unsupported compression")
+
+	_ Cache = (*snappyCache)(nil)
 )
 
 type CompressionConfig struct {
@@ -76,8 +78,8 @@ func (s *snappyCache) Store(ctx context.Context, data map[string][]byte, ttl tim
 }
 
 // Fetch implements Cache.
-func (s *snappyCache) Fetch(ctx context.Context, keys []string) map[string][]byte {
-	found := s.next.Fetch(ctx, keys)
+func (s *snappyCache) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	found := s.next.Fetch(ctx, keys, opts...)
 	decoded := make(map[string][]byte, len(found))
 
 	for key, encodedValue := range found {

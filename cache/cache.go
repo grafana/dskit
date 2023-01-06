@@ -10,17 +10,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type contextKey int
-
-const (
-	contextKeyAllocator contextKey = 0
-)
-
 // RemoteCacheClient is a high level client to interact with remote cache.
 type RemoteCacheClient interface {
 	// GetMulti fetches multiple keys at once from remoteCache. In case of error,
-	// an empty map is returned and the error tracked/logged.
-	GetMulti(ctx context.Context, keys []string) map[string][]byte
+	// an empty map is returned and the error tracked/logged. One or more Option
+	// instances may be passed to modify the behavior of this GetMulti call.
+	GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
 	// SetAsync enqueues an asynchronous operation to store a key into memcached.
 	// Returns an error in case it fails to enqueue the operation. In case the
@@ -44,26 +39,30 @@ type Cache interface {
 	Store(ctx context.Context, data map[string][]byte, ttl time.Duration)
 
 	// Fetch multiple keys from cache. Returns map of input keys to data.
-	// If key isn't in the map, data for given key was not found.
-	Fetch(ctx context.Context, keys []string) map[string][]byte
+	// If key isn't in the map, data for given key was not found. One or more
+	// Option instances may be passed to modify the behavior of this Fetch call.
+	Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
 	Name() string
 }
 
-// WithAllocator returns a Context that makes use of a specific memory Allocator
-// for result values loaded by a cache.
-func WithAllocator(ctx context.Context, alloc Allocator) context.Context {
-	return context.WithValue(ctx, contextKeyAllocator, alloc)
+// Options are used to modify the behavior of an individual call to get results
+// from a cache backend. They are constructed by applying Option callbacks passed
+// to a client method to a default Options instance.
+type Options struct {
+	Alloc Allocator
 }
 
-// GetAllocator returns the Allocator set for this particular context, if any.
-func GetAllocator(ctx context.Context) Allocator {
-	val := ctx.Value(contextKeyAllocator)
-	if val != nil {
-		return val.(Allocator)
-	}
+// Option is a callback used to modify the Options that a particular client
+// method uses.
+type Option func(opts *Options)
 
-	return nil
+// WithAllocator creates a new Option that makes use of a specific memory Allocator
+// for cache result values.
+func WithAllocator(alloc Allocator) Option {
+	return func(opts *Options) {
+		opts.Alloc = alloc
+	}
 }
 
 // Allocator allows memory for cache result values to be managed by callers instead of by

@@ -246,18 +246,27 @@ func (c *memcachedClient) SetAsync(ctx context.Context, key string, value []byte
 	})
 }
 
-func (c *memcachedClient) GetMulti(ctx context.Context, keys []string) map[string][]byte {
+func toMemcacheOptions(opts ...Option) []memcache.Option {
+	base := &Options{}
+	for _, opt := range opts {
+		opt(base)
+	}
+
+	var out []memcache.Option
+	if base.Alloc != nil {
+		out = append(out, memcache.WithAllocator(base.Alloc))
+	}
+
+	return out
+}
+
+func (c *memcachedClient) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	if len(keys) == 0 {
 		return nil
 	}
 
-	alloc := GetAllocator(ctx)
-	var opts []memcache.Option
-	if alloc != nil {
-		opts = append(opts, memcache.WithAllocator(alloc))
-	}
-
-	batches, err := c.getMultiBatched(ctx, keys, opts...)
+	options := toMemcacheOptions(opts...)
+	batches, err := c.getMultiBatched(ctx, keys, options...)
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "failed to fetch items from memcached", "numKeys", len(keys), "firstKey", keys[0], "err", err)
 

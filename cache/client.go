@@ -147,8 +147,8 @@ func (c *baseClient) setAsync(ctx context.Context, key string, value []byte, ttl
 	return err
 }
 
-// wait submits an async task and blocks until it completes. This can be used during tests
-// to ensure that async "sets" have completed before attempting to read them.
+// wait submits an async task and blocks until it completes. This can be used during
+// tests to ensure that async "sets" have completed before attempting to read them.
 func (c *baseClient) wait() error {
 	var wg sync.WaitGroup
 

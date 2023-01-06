@@ -51,8 +51,7 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 		require.NoError(t, client.SetAsync(context.Background(), "foo", []byte("bar"), 10*time.Second))
 		require.NoError(t, client.wait())
 
-		ctx := WithAllocator(context.Background(), &nopAllocator{})
-		res := client.GetMulti(ctx, []string{"foo"})
+		res := client.GetMulti(context.Background(), []string{"foo"}, WithAllocator(&nopAllocator{}))
 		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
 		require.Equal(t, 1, backend.allocations)
 	})
@@ -115,5 +114,5 @@ func (m mockServerSelector) Each(f func(net.Addr) error) error {
 
 type nopAllocator struct{}
 
-func (n nopAllocator) Get(sz int) *[]byte { return nil }
-func (n nopAllocator) Put(b *[]byte)      {}
+func (n nopAllocator) Get(_ int) *[]byte { return nil }
+func (n nopAllocator) Put(_ *[]byte)     {}

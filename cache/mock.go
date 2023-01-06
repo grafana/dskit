@@ -34,7 +34,7 @@ func (m *MockCache) Store(_ context.Context, data map[string][]byte, ttl time.Du
 	}
 }
 
-func (m *MockCache) Fetch(_ context.Context, keys []string) map[string][]byte {
+func (m *MockCache) Fetch(_ context.Context, keys []string, _ ...Option) map[string][]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -101,9 +101,9 @@ func (m *InstrumentedMockCache) Store(ctx context.Context, data map[string][]byt
 	m.cache.Store(ctx, data, ttl)
 }
 
-func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string) map[string][]byte {
+func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	m.fetchCount.Inc()
-	return m.cache.Fetch(ctx, keys)
+	return m.cache.Fetch(ctx, keys, opts...)
 }
 
 func (m *InstrumentedMockCache) Name() string {

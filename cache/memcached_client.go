@@ -247,6 +247,10 @@ func (c *memcachedClient) SetAsync(ctx context.Context, key string, value []byte
 }
 
 func toMemcacheOptions(opts ...Option) []memcache.Option {
+	if len(opts) == 0 {
+		return nil
+	}
+
 	base := &Options{}
 	for _, opt := range opts {
 		opt(base)

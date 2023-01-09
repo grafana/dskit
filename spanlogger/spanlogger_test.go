@@ -106,3 +106,14 @@ func (r fakeResolver) TenantIDs(ctx context.Context) ([]string, error) {
 
 	return []string{id}, nil
 }
+
+// Using a no-op logger and no tracing provider, measure the overhead of a small log call.
+func BenchmarkSpanLogger(b *testing.B) {
+	logger := log.NewNopLogger()
+	resolver := fakeResolver{}
+	sl, _ := New(context.Background(), logger, "test", resolver, "bar")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = sl.Log("msg", "foo", "more", "data")
+	}
+}

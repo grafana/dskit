@@ -14,7 +14,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.0
 	github.com/golang/snappy v0.0.4
-	github.com/grafana/gomemcache v0.0.0-20230104170548-c1cca813817a
+	github.com/grafana/gomemcache v0.0.0-20230105173749-11f792309e1f
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2

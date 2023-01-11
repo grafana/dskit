@@ -77,6 +77,9 @@ type ReadRing interface {
 
 	// CleanupShuffleShardCache should delete cached shuffle-shard subrings for given identifier.
 	CleanupShuffleShardCache(identifier string)
+
+	// GetTokens returns ring instance tokens.
+	GetTokens(ctx context.Context) Tokens
 }
 
 var (
@@ -400,6 +403,14 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		Instances: healthyInstances,
 		MaxErrors: maxFailure,
 	}, nil
+}
+
+// GetTokens implement ReadRing.
+func (r *Ring) GetTokens(ctx context.Context) Tokens {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	return r.ringTokens
 }
 
 // GetAllHealthy implements ReadRing.

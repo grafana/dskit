@@ -59,6 +59,10 @@ func (r *RingMock) ShuffleShardWithLookback(identifier string, size int, lookbac
 	return args.Get(0).(ReadRing)
 }
 
+func (r *RingMock) GetTokens(ctx context.Context) Tokens {
+	return Tokens{}
+}
+
 func (r *RingMock) HasInstance(instanceID string) bool {
 	return true
 }

@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Change `WaitRingStability` and `WaitInstanceState` methods signature to rely on `ReadRing` instead. #251
 * [CHANGE] Added new `-consul.cas-retry-delay` flag. It has a default value of `1s`, while previously there was no delay between retries. #178
 * [CHANGE] Flagext: `DayValue` now always uses UTC when parsing or displaying dates. #71
 * [CHANGE] Closer: remove the closer package since it's trivial to just copy/paste. #70

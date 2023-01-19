@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
@@ -128,7 +129,7 @@ func TestDefaultAddresses(t *testing.T) {
 	go server.Run()
 	defer server.Shutdown()
 
-	conn, err := grpc.Dial("localhost:9095", grpc.WithInsecure())
+	conn, err := grpc.Dial("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	defer conn.Close()
 	require.NoError(t, err)
 
@@ -169,7 +170,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 
 	go server.Run()
 
-	conn, err := grpc.Dial("localhost:1234", grpc.WithInsecure())
+	conn, err := grpc.Dial("localhost:1234", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	defer conn.Close()
 	require.NoError(t, err)
 

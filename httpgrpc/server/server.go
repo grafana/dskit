@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
 
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
@@ -70,12 +69,8 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 
 // Client is a http.Handler that forwards the request over gRPC.
 type Client struct {
-	mtx       sync.RWMutex
-	service   string
-	namespace string
-	port      string
-	client    httpgrpc.HTTPClient
-	conn      *grpc.ClientConn
+	client httpgrpc.HTTPClient
+	conn   *grpc.ClientConn
 }
 
 // ParseURL deals with direct:// style URLs, as well as kubernetes:// urls.

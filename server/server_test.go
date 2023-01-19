@@ -130,8 +130,8 @@ func TestDefaultAddresses(t *testing.T) {
 	defer server.Shutdown()
 
 	conn, err := grpc.Dial("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()))
-	defer conn.Close()
 	require.NoError(t, err)
+	defer conn.Close()
 
 	empty := google_protobuf.Empty{}
 	client := NewFakeServerClient(conn)
@@ -171,8 +171,8 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	go server.Run()
 
 	conn, err := grpc.Dial("localhost:1234", grpc.WithTransportCredentials(insecure.NewCredentials()))
-	defer conn.Close()
 	require.NoError(t, err)
+	defer conn.Close()
 
 	empty := google_protobuf.Empty{}
 	client := NewFakeServerClient(conn)
@@ -584,8 +584,8 @@ func TestTLSServer(t *testing.T) {
 	require.Equal(t, expected, body)
 
 	conn, err := grpc.Dial("localhost:9194", grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
-	defer conn.Close()
 	require.NoError(t, err)
+	defer conn.Close()
 
 	empty := google_protobuf.Empty{}
 	grpcClient := NewFakeServerClient(conn)

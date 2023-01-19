@@ -507,7 +507,8 @@ func TestMiddlewareLogging(t *testing.T) {
 
 	req, err := http.NewRequest("GET", "http://127.0.0.1:9192/error500", nil)
 	require.NoError(t, err)
-	http.DefaultClient.Do(req)
+	_, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
 }
 
 func TestTLSServer(t *testing.T) {
@@ -651,7 +652,8 @@ func TestLogSourceIPs(t *testing.T) {
 
 	req, err := http.NewRequest("GET", "http://127.0.0.1:9195/error500", nil)
 	require.NoError(t, err)
-	http.DefaultClient.Do(req)
+	_, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
 
 	require.Equal(t, fake.sourceIPs, "127.0.0.1")
 }

@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	opentracing "github.com/opentracing/opentracing-go"
@@ -92,19 +91,21 @@ func TestParseURL(t *testing.T) {
 	for _, tc := range []struct {
 		input    string
 		expected string
-		err      error
+		err      string
 	}{
-		{"direct://foo", "foo", nil},
-		{"kubernetes://foo:123", "kubernetes:///foo:123", nil},
-		{"querier.cortex:995", "kubernetes:///querier.cortex:995", nil},
-		{"foo.bar.svc.local:995", "kubernetes:///foo.bar.svc.local:995", nil},
-		{"kubernetes:///foo:123", "kubernetes:///foo:123", nil},
-		{"dns:///foo.bar.svc.local:995", "dns:///foo.bar.svc.local:995", nil},
-		{"monster://foo:995", "", fmt.Errorf("unrecognised scheme: monster")},
+		{"direct://foo", "foo", ""},
+		{"kubernetes://foo:123", "kubernetes:///foo:123", ""},
+		{"querier.cortex:995", "kubernetes:///querier.cortex:995", ""},
+		{"foo.bar.svc.local:995", "kubernetes:///foo.bar.svc.local:995", ""},
+		{"kubernetes:///foo:123", "kubernetes:///foo:123", ""},
+		{"dns:///foo.bar.svc.local:995", "dns:///foo.bar.svc.local:995", ""},
+		{"monster://foo:995", "", "unrecognised scheme: monster"},
 	} {
 		got, err := ParseURL(tc.input)
-		if !reflect.DeepEqual(tc.err, err) {
-			t.Fatalf("Got: %v, expected: %v", err, tc.err)
+		if tc.err == "" {
+			require.NoError(t, err)
+		} else {
+			require.EqualError(t, err, tc.err)
 		}
 		assert.Equal(t, tc.expected, got)
 	}

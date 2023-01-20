@@ -109,7 +109,7 @@ func (cfg *BackendConfig) Validate() error {
 	return nil
 }
 
-func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (DeletableCache, error) {
+func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (Cache, error) {
 	switch cfg.Backend {
 	case "":
 		// No caching.
@@ -132,4 +132,17 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}
+}
+
+func CreateClientWithDelete(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (DeletableCache, error) {
+	client, err := CreateClient(cacheName, cfg, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+
+	clientCacheWithDelete, ok := client.(DeletableCache)
+	if !ok {
+		return nil, fmt.Errorf("client is not DeletableCache type")
+	}
+	return clientCacheWithDelete, nil
 }

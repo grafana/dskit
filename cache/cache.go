@@ -46,6 +46,13 @@ type Cache interface {
 	Name() string
 }
 
+// DeletableCache is cache that can delete its key.
+type DeletableCache interface {
+	Cache
+	// Delete cache entry with the given key if it exists.
+	Delete(ctx context.Context, key string) error
+}
+
 // Options are used to modify the behavior of an individual call to get results
 // from a cache backend. They are constructed by applying Option callbacks passed
 // to a client method to a default Options instance.
@@ -84,8 +91,9 @@ const (
 )
 
 type BackendConfig struct {
-	Backend   string          `yaml:"backend"`
-	Memcached MemcachedConfig `yaml:"memcached"`
+	Backend   string            `yaml:"backend"`
+	Memcached MemcachedConfig   `yaml:"memcached"`
+	Redis     RedisClientConfig `yaml:"redis" category:"experimental"`
 }
 
 // Validate the config.
@@ -101,7 +109,7 @@ func (cfg *BackendConfig) Validate() error {
 	return nil
 }
 
-func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (Cache, error) {
+func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (DeletableCache, error) {
 	switch cfg.Backend {
 	case "":
 		// No caching.
@@ -113,6 +121,13 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
 		return NewMemcachedCache(cacheName, logger, client, reg), nil
+
+	case BackendRedis:
+		client, err := NewRedisClient(logger, cacheName, cfg.Redis, reg)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create redis client")
+		}
+		return NewRedisCache(cacheName, logger, client, reg), nil
 
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)

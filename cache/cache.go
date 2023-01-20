@@ -43,10 +43,10 @@ type Cache interface {
 	// Option instances may be passed to modify the behavior of this Fetch call.
 	Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
+	Name() string
+
 	// Delete cache entry with the given key if it exists.
 	Delete(ctx context.Context, key string) error
-
-	Name() string
 }
 
 // Options are used to modify the behavior of an individual call to get results

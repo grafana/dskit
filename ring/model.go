@@ -2,6 +2,7 @@ package ring
 
 import (
 	"container/heap"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -115,6 +116,24 @@ func (d *Desc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
 	return nil
 }
 
+func (d *Desc) IsReadyZoneAware(now time.Time, heartbeatTimeout time.Duration, zone string) error {
+	numTokens := 0
+	for _, instance := range d.Ingesters {
+		if err := instance.IsReady(now, heartbeatTimeout); err != nil {
+			if errors.As(err, &StateError{}) && zone == instance.Zone {
+				continue
+			}
+			return err
+		}
+		numTokens += len(instance.Tokens)
+	}
+
+	if numTokens == 0 {
+		return fmt.Errorf("no tokens in ring")
+	}
+	return nil
+}
+
 // TokensFor return all ring tokens and tokens for the input provided ID.
 // Returned tokens are guaranteed to be sorted.
 func (d *Desc) TokensFor(id string) (myTokens, allTokens Tokens) {
@@ -151,12 +170,28 @@ func (i *InstanceDesc) IsHeartbeatHealthy(heartbeatTimeout time.Duration, now ti
 // IsReady returns no error if the instance is ACTIVE and healthy.
 func (i *InstanceDesc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
 	if !i.IsHeartbeatHealthy(heartbeatTimeout, now) {
-		return fmt.Errorf("instance %s past heartbeat timeout", i.Addr)
+		return HeartbeatError{err: fmt.Errorf("instance %s past heartbeat timeout", i.Addr)}
 	}
 	if i.State != ACTIVE {
-		return fmt.Errorf("instance %s in state %v", i.Addr, i.State)
+		return StateError{err: fmt.Errorf("instance %s in state %v", i.Addr, i.State)}
 	}
 	return nil
+}
+
+type HeartbeatError struct {
+	err error
+}
+
+func (he HeartbeatError) Error() string {
+	return he.err.Error()
+}
+
+type StateError struct {
+	err error
+}
+
+func (se StateError) Error() string {
+	return se.err.Error()
 }
 
 // Merge merges other ring into this one. Returns sub-ring that represents the change,

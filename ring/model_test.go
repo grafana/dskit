@@ -171,6 +171,109 @@ func TestDesc_Ready(t *testing.T) {
 	}
 }
 
+func TestDesc_ReadyZone(t *testing.T) {
+	now := time.Now()
+
+	r := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"ing1": {
+				Tokens:    []uint32{100, 200, 300},
+				State:     ACTIVE,
+				Timestamp: now.Unix(),
+				Zone:      "a",
+			},
+		},
+	}
+
+	expectedZone := "a"
+
+	if err := r.IsReadyZoneAware(now, 10*time.Second, expectedZone); err != nil {
+		t.Fatal("expected ready, got", err)
+	}
+
+	if err := r.IsReadyZoneAware(now, 0, expectedZone); err != nil {
+		t.Fatal("expected ready, got", err)
+	}
+
+	if err := r.IsReadyZoneAware(now.Add(5*time.Minute), 10*time.Second, expectedZone); err == nil {
+		t.Fatal("expected !ready (no heartbeat from active ingester), but got no error")
+	}
+
+	if err := r.IsReadyZoneAware(now.Add(5*time.Minute), 0, expectedZone); err != nil {
+		t.Fatal("expected ready (no heartbeat but timeout disabled), got", err)
+	}
+
+	r = &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"ing1": {
+				State:     ACTIVE,
+				Timestamp: now.Unix(),
+				Zone:      "a",
+			},
+		},
+	}
+
+	if err := r.IsReadyZoneAware(now, 10*time.Second, expectedZone); err == nil {
+		t.Fatal("expected !ready (no tokens), but got no error")
+	}
+
+	r.Ingesters["some ingester"] = InstanceDesc{
+		Tokens:    []uint32{12345},
+		Timestamp: now.Unix(),
+		Zone:      "b",
+	}
+
+	if err := r.IsReadyZoneAware(now, 10*time.Second, expectedZone); err != nil {
+		t.Fatal("expected ready, got", err)
+	}
+
+	// An inactive ingester in the same zone is still valid
+	r.Ingesters["some inactive ingester"] = InstanceDesc{
+		Tokens:    []uint32{12345},
+		Timestamp: now.Unix(),
+		Zone:      "a",
+		State:     LEAVING,
+	}
+
+	if err := r.IsReadyZoneAware(now, 10*time.Second, expectedZone); err != nil {
+		t.Fatal("expected ready, got", err)
+	}
+
+	// An inactive ingester in a different zone is invalid
+	r.Ingesters["some inactive ingester different zone"] = InstanceDesc{
+		Tokens:    []uint32{12345},
+		Timestamp: now.Unix(),
+		Zone:      "b",
+		State:     LEAVING,
+	}
+
+	if err := r.IsReadyZoneAware(now, 10*time.Second, expectedZone); err == nil {
+		t.Fatal("expected !ready (inactive ingester in different zone), but got no error")
+	}
+
+	r = &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"ing1": {
+				State:     ACTIVE,
+				Timestamp: now.Unix(),
+				Zone:      "a",
+			},
+		},
+	}
+
+	// An inactive ingester in a same zone due to heartbeat is invalid
+	r.Ingesters["some inactive ingester heartbeat"] = InstanceDesc{
+		Tokens:    []uint32{12345},
+		Timestamp: now.Unix() - 11*int64(time.Second),
+		Zone:      "a",
+		State:     ACTIVE,
+	}
+
+	if err := r.IsReadyZoneAware(now, 10*time.Second, expectedZone); err == nil {
+		t.Fatal("expected !ready (heartbeat error), but got no error", err)
+	}
+}
+
 func TestDesc_getTokensByZone(t *testing.T) {
 	tests := map[string]struct {
 		desc     *Desc

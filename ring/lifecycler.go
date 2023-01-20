@@ -237,6 +237,15 @@ func (i *Lifecycler) checkRingHealthForReadiness(ctx context.Context) error {
 	}
 
 	if i.cfg.ReadinessCheckRingHealth {
+		if i.Zone != "" {
+			if err := ringDesc.IsReadyZoneAware(time.Now(), i.cfg.RingConfig.HeartbeatTimeout, i.Zone); err != nil {
+				level.Warn(i.logger).Log("msg", "found an existing instance(s) not in the expected zone with a problem in the ring, "+
+					"this instance cannot become ready until this problem is resolved. "+
+					"The /ring http endpoint on the distributor (or single binary) provides visibility into the ring.",
+					"ring", i.RingName, "err", err, "expectedZone", i.Zone)
+				return err
+			}
+		}
 		if err := ringDesc.IsReady(time.Now(), i.cfg.RingConfig.HeartbeatTimeout); err != nil {
 			level.Warn(i.logger).Log("msg", "found an existing instance(s) with a problem in the ring, "+
 				"this instance cannot become ready until this problem is resolved. "+

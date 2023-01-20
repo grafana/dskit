@@ -25,12 +25,12 @@ func TestMultiError_Is(t *testing.T) {
 			is:           true,
 		},
 		"adding wrapped context cancellations doesn't lose the information": {
-			sourceErrors: []error{errors.New("some error"), errors.Wrap(context.Canceled, "some mesasge")},
+			sourceErrors: []error{errors.New("some error"), errors.Wrap(context.Canceled, "some message")},
 			target:       context.Canceled,
 			is:           true,
 		},
 		"adding a nil error doesn't lose the information": {
-			sourceErrors: []error{errors.New("some error"), errors.Wrap(context.Canceled, "some mesasge"), nil},
+			sourceErrors: []error{errors.New("some error"), errors.Wrap(context.Canceled, "some message"), nil},
 			target:       context.Canceled,
 			is:           true,
 		},

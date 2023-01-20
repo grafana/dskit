@@ -116,6 +116,11 @@ func (c *remoteCache) Fetch(ctx context.Context, keys []string, opts ...Option) 
 	return results
 }
 
+// Delete data with the given key from cache.
+func (c *remoteCache) Delete(ctx context.Context, key string) error {
+	return c.remoteClient.Delete(ctx, key)
+}
+
 func (c *remoteCache) Name() string {
 	return c.name
 }

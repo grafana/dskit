@@ -43,14 +43,10 @@ type Cache interface {
 	// Option instances may be passed to modify the behavior of this Fetch call.
 	Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
-	Name() string
-}
-
-// DeletableCache is cache that can delete its key.
-type DeletableCache interface {
-	Cache
 	// Delete cache entry with the given key if it exists.
 	Delete(ctx context.Context, key string) error
+
+	Name() string
 }
 
 // Options are used to modify the behavior of an individual call to get results
@@ -132,17 +128,4 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}
-}
-
-func CreateClientWithDelete(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (DeletableCache, error) {
-	client, err := CreateClient(cacheName, cfg, logger, reg)
-	if err != nil {
-		return nil, err
-	}
-
-	clientCacheWithDelete, ok := client.(DeletableCache)
-	if !ok {
-		return nil, fmt.Errorf("client is not DeletableCache type")
-	}
-	return clientCacheWithDelete, nil
 }

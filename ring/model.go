@@ -14,6 +14,11 @@ import (
 	"github.com/grafana/dskit/kv/memberlist"
 )
 
+var (
+	ErrHeartbeat = errors.New("heartbeat error")
+	ErrState     = errors.New("state error")
+)
+
 // ByAddr is a sortable list of InstanceDesc.
 type ByAddr []InstanceDesc
 
@@ -120,7 +125,7 @@ func (d *Desc) IsReadyZoneAware(now time.Time, heartbeatTimeout time.Duration, z
 	numTokens := 0
 	for _, instance := range d.Ingesters {
 		if err := instance.IsReady(now, heartbeatTimeout); err != nil {
-			if errors.As(err, &StateError{}) && zone == instance.Zone {
+			if errors.Is(err, ErrState) && zone == instance.Zone {
 				continue
 			}
 			return err
@@ -170,28 +175,12 @@ func (i *InstanceDesc) IsHeartbeatHealthy(heartbeatTimeout time.Duration, now ti
 // IsReady returns no error if the instance is ACTIVE and healthy.
 func (i *InstanceDesc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
 	if !i.IsHeartbeatHealthy(heartbeatTimeout, now) {
-		return HeartbeatError{err: fmt.Errorf("instance %s past heartbeat timeout", i.Addr)}
+		return fmt.Errorf("%w: instance %s past heartbeat timeout", ErrHeartbeat, i.Addr)
 	}
 	if i.State != ACTIVE {
-		return StateError{err: fmt.Errorf("instance %s in state %v", i.Addr, i.State)}
+		return fmt.Errorf("%w: instance %s in state %v", ErrState, i.Addr, i.State)
 	}
 	return nil
-}
-
-type HeartbeatError struct {
-	err error
-}
-
-func (he HeartbeatError) Error() string {
-	return he.err.Error()
-}
-
-type StateError struct {
-	err error
-}
-
-func (se StateError) Error() string {
-	return se.err.Error()
 }
 
 // Merge merges other ring into this one. Returns sub-ring that represents the change,

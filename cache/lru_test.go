@@ -56,6 +56,11 @@ func TestLRUCache_StoreFetch(t *testing.T) {
 		# TYPE cache_memory_requests_total counter
 		cache_memory_requests_total{name="test"} 4
 	`)))
+
+	lru.Delete(context.Background(), "buzz")
+	value, ok := lru.lru.Get("buzz")
+	require.False(t, ok)
+	require.Equal(t, nil, value)
 }
 
 func TestLRUCache_Evictions(t *testing.T) {

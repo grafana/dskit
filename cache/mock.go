@@ -111,9 +111,8 @@ func (m *InstrumentedMockCache) Name() string {
 	return m.cache.Name()
 }
 
-func (m *InstrumentedMockCache) Delete(_ context.Context, _ string) error {
-	// no-op
-	return nil
+func (m *InstrumentedMockCache) Delete(ctx context.Context, key string) error {
+	return m.cache.Delete(ctx, key)
 }
 
 func (m *InstrumentedMockCache) CountStoreCalls() int {

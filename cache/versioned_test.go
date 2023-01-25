@@ -9,13 +9,16 @@ import (
 )
 
 func TestVersioned(t *testing.T) {
-	t.Run("happy case: can store and retrieve", func(t *testing.T) {
+	t.Run("happy case: can store, retrieve and delete", func(t *testing.T) {
 		cache := NewMockCache()
 		v1 := NewVersioned(cache, 1)
 		data := map[string][]byte{"hit": []byte(`data`)}
 		v1.Store(context.Background(), data, time.Minute)
 		res := v1.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, data, res)
+		v1.Delete(context.Background(), "hit")
+		res = v1.Fetch(context.Background(), []string{"hit", "miss"})
+		assert.Equal(t, map[string][]uint8{}, res)
 	})
 
 	t.Run("different versions use different datasets", func(t *testing.T) {
@@ -31,5 +34,12 @@ func TestVersioned(t *testing.T) {
 		assert.Equal(t, v1Data, resV1)
 		resV2 := v2.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, v2Data, resV2)
+
+		v1.Delete(context.Background(), "hit")
+		resV1 = v1.Fetch(context.Background(), []string{"hit", "miss"})
+		assert.Equal(t, map[string][]uint8{}, resV1)
+		v2.Delete(context.Background(), "hit")
+		resV2 = v2.Fetch(context.Background(), []string{"hit", "miss"})
+		assert.Equal(t, map[string][]uint8{}, resV2)
 	})
 }

@@ -59,9 +59,8 @@ func TestLRUCache_StoreFetch(t *testing.T) {
 
 	err = lru.Delete(context.Background(), "buzz")
 	require.NoError(t, err)
-	value, ok := lru.lru.Get("buzz")
-	require.False(t, ok)
-	require.Equal(t, nil, value)
+	value := lru.Fetch(context.Background(), []string{"buzz"})
+	require.Equal(t, map[string][]uint8{}, value)
 }
 
 func TestLRUCache_Evictions(t *testing.T) {

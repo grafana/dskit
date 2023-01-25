@@ -57,7 +57,8 @@ func TestLRUCache_StoreFetch(t *testing.T) {
 		cache_memory_requests_total{name="test"} 4
 	`)))
 
-	lru.Delete(context.Background(), "buzz")
+	err = lru.Delete(context.Background(), "buzz")
+	require.NoError(t, err)
 	value, ok := lru.lru.Get("buzz")
 	require.False(t, ok)
 	require.Equal(t, nil, value)

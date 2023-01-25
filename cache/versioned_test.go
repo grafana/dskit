@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,7 +18,8 @@ func TestVersioned(t *testing.T) {
 		v1.Store(context.Background(), data, time.Minute)
 		res := v1.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, data, res)
-		v1.Delete(context.Background(), "hit")
+		err := v1.Delete(context.Background(), "hit")
+		require.NoError(t, err)
 		res = v1.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, map[string][]uint8{}, res)
 	})
@@ -35,10 +38,12 @@ func TestVersioned(t *testing.T) {
 		resV2 := v2.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, v2Data, resV2)
 
-		v1.Delete(context.Background(), "hit")
+		err := v1.Delete(context.Background(), "hit")
+		require.NoError(t, err)
 		resV1 = v1.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, map[string][]uint8{}, resV1)
-		v2.Delete(context.Background(), "hit")
+		err = v2.Delete(context.Background(), "hit")
+		require.NoError(t, err)
 		resV2 = v2.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, map[string][]uint8{}, resV2)
 	})

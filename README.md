@@ -5,10 +5,17 @@ services.
 
 ## Current state
 
-This library is still in development. During the first stage we plan to move over
-utilities from the [Cortex] project.
+This library is still in development. Continuously moving utilities from the all the Grafana database-related projects.
 
-[Cortex]: https://github.com/cortexproject/cortex
+- [Mimir]
+- [Loki]
+- [Tempo]
+- [Phlare]
+
+[Mimir]: https://github.com/grafana/mimir
+[Loki]: https://github.com/grafana/loki
+[Tempo]: https://github.com/grafana/tempo
+[Phlare]: https://github.com/grafana/phlare
 
 ## Go version compatibility
 

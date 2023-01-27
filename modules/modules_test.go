@@ -332,6 +332,8 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 
 	expectedStopOrder := []string{"c", "a"}
 
+	close(stopChanOrder)
+
 	for i, stopID := range <-stopChanOrder {
 		assert.Equal(t, expectedStopOrder[i], string(stopID))
 	}

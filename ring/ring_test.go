@@ -2185,7 +2185,7 @@ func TestRingUpdates(t *testing.T) {
 				ExcludedZones:     flagext.StringSliceCSV(testData.excludedZones),
 			}
 
-			ring, err := New(cfg, "test", "test", log.NewNopLogger(), nil)
+			ring, err := NewWithStrategy(cfg, "test", "test", NewDefaultReplicationStrategy(), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ring))
 			t.Cleanup(func() {
@@ -2281,7 +2281,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 		ZoneAwarenessEnabled: true,
 	}
 
-	ring, err := New(cfg, "test", "test", log.NewNopLogger(), nil)
+	ring, err := NewWithStrategy(cfg, "test", "test", NewDefaultReplicationStrategy(), log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ring))
 	t.Cleanup(func() {

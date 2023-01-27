@@ -77,6 +77,7 @@
 * [ENHANCEMENT] Import Bytes type, DeleteAll function and DNS package from Thanos. #228
 * [ENHANCEMENT] Execute health checks in ring client pool concurrently. #237
 * [ENHANCEMENT] Cache: Add the ability to use a custom memory allocator for cache results. #249
+* [ENHANCEMENT] Ring: Allow for specifying a custom replication strategy while keeping the same KV client suffix #TBD
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

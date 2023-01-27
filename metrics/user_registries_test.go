@@ -1,13 +1,9 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/metrics_helper_test.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
-package util
+package metrics
 
 import (
 	"bytes"
 	"fmt"
+	"github.com/go-kit/log"
 	"math/rand"
 	"strconv"
 	"testing"
@@ -58,7 +54,7 @@ func TestCounterValue(t *testing.T) {
 	require.Equal(t, float64(0), counterValue(nil))
 	require.Equal(t, float64(0), counterValue(&dto.Metric{}))
 	require.Equal(t, float64(0), counterValue(&dto.Metric{Counter: &dto.Counter{}}))
-	require.Equal(t, float64(543857.12837), counterValue(&dto.Metric{Counter: &dto.Counter{Value: proto.Float64(543857.12837)}}))
+	require.Equal(t, 543857.12837, counterValue(&dto.Metric{Counter: &dto.Counter{Value: proto.Float64(543857.12837)}}))
 }
 
 func TestGetMetricsWithLabelNames(t *testing.T) {
@@ -163,7 +159,7 @@ func TestSendSumOfGaugesPerUserWithLabels(t *testing.T) {
 	user2Metric.WithLabelValues("a", "b").Set(60)
 	user2Metric.WithLabelValues("a", "c").Set(40)
 
-	regs := NewUserRegistries()
+	regs := NewUserRegistries(log.NewNopLogger())
 	regs.AddUserRegistry("user-1", user1Reg)
 	regs.AddUserRegistry("user-2", user2Reg)
 	mf := regs.BuildMetricFamiliesPerUser()
@@ -213,7 +209,7 @@ func TestSendMaxOfGauges(t *testing.T) {
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
 	desc := prometheus.NewDesc("test_metric", "", nil, nil)
-	regs := NewUserRegistries()
+	regs := NewUserRegistries(log.NewNopLogger())
 	regs.AddUserRegistry("user-1", user1Reg)
 	regs.AddUserRegistry("user-2", user2Reg)
 
@@ -254,7 +250,7 @@ func TestSendSumOfHistogramsWithLabels(t *testing.T) {
 	user2Metric.WithLabelValues("a", "b").Observe(3)
 	user2Metric.WithLabelValues("a", "c").Observe(4)
 
-	regs := NewUserRegistries()
+	regs := NewUserRegistries(log.NewNopLogger())
 	regs.AddUserRegistry("user-1", user1Reg)
 	regs.AddUserRegistry("user-2", user2Reg)
 	mf := regs.BuildMetricFamiliesPerUser()
@@ -331,7 +327,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	user3Metric.WithLabelValues("a", "b").Add(0)
 	user3Metric.WithLabelValues("a", "c").Add(0)
 
-	regs := NewUserRegistries()
+	regs := NewUserRegistries(log.NewNopLogger())
 	regs.AddUserRegistry("user-1", user1Reg)
 	regs.AddUserRegistry("user-2", user2Reg)
 	regs.AddUserRegistry("user-3", user3Reg)
@@ -434,7 +430,7 @@ func TestSendSumOfSummariesPerUser(t *testing.T) {
 	user2Metric.Observe(50)
 	user2Metric.Observe(76)
 
-	regs := NewUserRegistries()
+	regs := NewUserRegistries(log.NewNopLogger())
 	regs.AddUserRegistry("user-1", user1Reg)
 	regs.AddUserRegistry("user-2", user2Reg)
 	mf := regs.BuildMetricFamiliesPerUser()
@@ -505,7 +501,7 @@ func TestFloat64PrecisionStability(t *testing.T) {
 	t.Log("random generator seed:", seed)
 
 	// Generate a large number of registries with different metrics each.
-	registries := NewUserRegistries()
+	registries := NewUserRegistries(log.NewNopLogger())
 	for userID := 1; userID <= numRegistries; userID++ {
 		reg := prometheus.NewRegistry()
 		labelNames := []string{"label_one", "label_two"}
@@ -952,7 +948,7 @@ func TestUserRegistries_AddUserRegistry_ReplaceRegistry(t *testing.T) {
 }
 
 func TestUserRegistries_GetRegistryForUser(t *testing.T) {
-	regs := NewUserRegistries()
+	regs := NewUserRegistries(log.NewNopLogger())
 
 	assert.Nil(t, regs.GetRegistryForUser("test"))
 
@@ -1039,7 +1035,7 @@ type testMetrics struct {
 
 func newTestMetrics() *testMetrics {
 	return &testMetrics{
-		regs: NewUserRegistries(),
+		regs: NewUserRegistries(log.NewNopLogger()),
 
 		gauge:             prometheus.NewDesc("gauge", "help", nil, nil),
 		gaugePerUser:      prometheus.NewDesc("gauge_user", "help", []string{"user"}, nil),

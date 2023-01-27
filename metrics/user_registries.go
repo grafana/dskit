@@ -1,9 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/metrics_helper.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
-package util
+package metrics
 
 import (
 	"bytes"
@@ -12,12 +7,11 @@ import (
 	"math"
 	"sync"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var (
@@ -584,13 +578,17 @@ type UserRegistry struct {
 // UserRegistries holds Prometheus registries for multiple users, guaranteeing
 // multi-thread safety and stable ordering.
 type UserRegistries struct {
+	logger log.Logger
+
 	regsMu sync.Mutex
 	regs   []UserRegistry
 }
 
 // NewUserRegistries makes new UserRegistries.
-func NewUserRegistries() *UserRegistries {
-	return &UserRegistries{}
+func NewUserRegistries(logger log.Logger) *UserRegistries {
+	return &UserRegistries{
+		logger: logger,
+	}
 }
 
 // AddUserRegistry adds an user registry. If user already has a registry,
@@ -649,7 +647,7 @@ func (r *UserRegistries) RemoveUserRegistry(user string, hard bool) {
 func (r *UserRegistries) softRemoveUserRegistry(ur *UserRegistry) bool {
 	last, err := ur.reg.Gather()
 	if err != nil {
-		level.Warn(util_log.Logger).Log("msg", "failed to gather metrics from registry", "user", ur.user, "err", err)
+		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "user", ur.user, "err", err)
 		return false
 	}
 
@@ -671,7 +669,7 @@ func (r *UserRegistries) softRemoveUserRegistry(ur *UserRegistry) bool {
 
 	ur.lastGather, err = NewMetricFamilyMap(last)
 	if err != nil {
-		level.Warn(util_log.Logger).Log("msg", "failed to gather metrics from registry", "user", ur.user, "err", err)
+		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "user", ur.user, "err", err)
 		return false
 	}
 
@@ -737,7 +735,7 @@ func (r *UserRegistries) BuildMetricFamiliesPerUser() MetricFamiliesPerUser {
 		}
 
 		if err != nil {
-			level.Warn(util_log.Logger).Log("msg", "failed to gather metrics from registry", "user", entry.user, "err", err)
+			level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "user", entry.user, "err", err)
 			continue
 		}
 	}

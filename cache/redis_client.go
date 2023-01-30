@@ -200,7 +200,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 
 	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "redis_client_info",
-		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
+		Help: "A metric with a constant '1' value labeled by configuration options from which redis client was configured.",
 		ConstLabels: prometheus.Labels{
 			"dial_timeout":              config.DialTimeout.String(),
 			"read_timeout":              config.ReadTimeout.String(),

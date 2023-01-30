@@ -26,7 +26,7 @@ var (
 		MinIdleConnections:     10,
 		IdleTimeout:            time.Minute * 5,
 		MaxGetMultiConcurrency: 100,
-		GetMultiBatchSize:      100,
+		MaxGetMultiBatchSize:   100,
 		MaxItemSize:            16 * 1024 * 1024,
 		MaxAsyncConcurrency:    50,
 		MaxAsyncBufferSize:     25000,
@@ -110,22 +110,22 @@ func TestRedisClient(t *testing.T) {
 		redisConfig func() RedisClientConfig
 	}{
 		{
-			name: "MaxConcurrency and GetMultiBatchSize set to a value > 0",
+			name: "MaxConcurrency and MaxGetMultiBatchSize set to a value > 0",
 			redisConfig: func() RedisClientConfig {
 				cfg := defaultRedisClientConfig
 				cfg.Endpoint = flagext.StringSliceCSV{s.Addr()}
 				cfg.MaxGetMultiConcurrency = 2
-				cfg.GetMultiBatchSize = 2
+				cfg.MaxGetMultiBatchSize = 2
 				return cfg
 			},
 		},
 		{
-			name: "MaxConcurrency and GetMultiBatchSize set to 0",
+			name: "MaxConcurrency and MaxGetMultiBatchSize set to 0",
 			redisConfig: func() RedisClientConfig {
 				cfg := defaultRedisClientConfig
 				cfg.Endpoint = flagext.StringSliceCSV{s.Addr()}
 				cfg.MaxGetMultiConcurrency = 0
-				cfg.GetMultiBatchSize = 0
+				cfg.MaxGetMultiBatchSize = 0
 				return cfg
 			},
 		},

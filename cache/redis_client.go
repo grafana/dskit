@@ -89,8 +89,8 @@ type RedisClientConfig struct {
 	// If set to 0, concurrency is unlimited.
 	MaxGetMultiConcurrency int `yaml:"max_get_multi_concurrency" category:"advanced"`
 
-	// GetMultiBatchSize specifies the maximum size per batch for mget.
-	GetMultiBatchSize int `yaml:"get_multi_batch_size" category:"advanced"`
+	// MaxGetMultiBatchSize specifies the maximum size per batch for mget.
+	MaxGetMultiBatchSize int `yaml:"max_get_multi_batch_size" category:"advanced"`
 
 	// TLSEnabled enable TLS for Redis connection.
 	TLSEnabled bool `yaml:"tls_enabled" category:"advanced"`
@@ -117,7 +117,7 @@ func (c *RedisClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.IntVar(&c.MaxAsyncConcurrency, prefix+".max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
 	f.IntVar(&c.MaxAsyncBufferSize, prefix+".max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")
 	f.IntVar(&c.MaxGetMultiConcurrency, prefix+".max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
-	f.IntVar(&c.GetMultiBatchSize, prefix+".max-get-multi-batch-size", 100, "The maximum size per batch for mget operations.")
+	f.IntVar(&c.MaxGetMultiBatchSize, prefix+".max-get-multi-batch-size", 100, "The maximum size per batch for mget operations.")
 	f.IntVar(&c.MaxItemSize, prefix+".max-item-size", 16*1024*1024, "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 
 	f.BoolVar(&c.TLSEnabled, prefix+".tls-enabled", false, "Enable connecting to Redis with TLS.")
@@ -208,7 +208,7 @@ func (c *redisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) 
 	var mu sync.Mutex
 	results := make(map[string][]byte, len(keys))
 
-	err := doWithBatch(ctx, len(keys), c.config.GetMultiBatchSize, c.getMultiGate, func(startIndex, endIndex int) error {
+	err := doWithBatch(ctx, len(keys), c.config.MaxGetMultiBatchSize, c.getMultiGate, func(startIndex, endIndex int) error {
 		start := time.Now()
 		c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 

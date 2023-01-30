@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gogo/status"
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -639,8 +638,7 @@ func (cfg *grpcConfig) DialOption() ([]grpc.DialOption, error) {
 	return append(
 		opts,
 		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
-		grpc.WithUnaryInterceptor(grpc_middleware.ChainUnaryClient(unaryClientInterceptors...)),
-		grpc.WithStreamInterceptor(grpc_middleware.ChainStreamClient()),
+		grpc.WithChainUnaryInterceptor(unaryClientInterceptors...),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                time.Second * 20,
 			Timeout:             time.Second * 10,

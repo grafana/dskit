@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	dstls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
@@ -145,6 +147,9 @@ type redisClient struct {
 	getMultiGate gate.Gate
 
 	logger log.Logger
+
+	// Tracked metrics.
+	clientInfo prometheus.GaugeFunc
 }
 
 // NewRedisClient makes a new RedisClient.
@@ -172,11 +177,14 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 		opts.TLSConfig = tlsClientConfig
 	}
 
-	reg = prometheus.WrapRegistererWith(prometheus.Labels{"name": name}, reg)
+	if reg != nil {
+		reg = prometheus.WrapRegistererWith(
+			prometheus.Labels{labelName: name, labelBackend: backendRedis},
+			prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
+	}
 
-	metrics := newClientMetrics(
-		prometheus.WrapRegistererWithPrefix("redis_", reg),
-	)
+	metrics := newClientMetrics(reg)
+
 	c := &redisClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
 		UniversalClient: redis.NewUniversalClient(opts),
@@ -185,10 +193,29 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	}
 	if config.MaxGetMultiConcurrency > 0 {
 		c.getMultiGate = gate.New(
-			prometheus.WrapRegistererWithPrefix("redis_getmulti_", reg),
+			prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
 			config.MaxGetMultiConcurrency,
 		)
 	}
+
+	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "redis_client_info",
+		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
+		ConstLabels: prometheus.Labels{
+			"dial_timeout":              config.DialTimeout.String(),
+			"read_timeout":              config.ReadTimeout.String(),
+			"write_timeout":             config.WriteTimeout.String(),
+			"connection_pool_size":      strconv.Itoa(config.ConnectionPoolSize),
+			"max_async_concurrency":     strconv.Itoa(config.MaxAsyncConcurrency),
+			"max_async_buffer_size":     strconv.Itoa(config.MaxAsyncBufferSize),
+			"max_item_size":             strconv.FormatUint(uint64(config.MaxItemSize), 10),
+			"max_get_multi_concurrency": strconv.Itoa(config.MaxGetMultiConcurrency),
+			"max_get_multi_batch_size":  strconv.Itoa(config.MaxGetMultiBatchSize),
+		},
+	},
+		func() float64 { return 1 },
+	)
+
 	return c, nil
 }
 

@@ -175,6 +175,11 @@ func (om *Manager) loadConfig() error {
 
 	if sameHashes {
 		// No need to rebuild runtime config.
+
+		// NOTE: Need to set load success metric to 1 because there can be the case where
+		// success metric was set to 0 during bad config and may never set back to 1 if bad config
+		// was fixed with good config with same hash as before.
+		om.configLoadSuccess.Set(1)
 		return nil
 	}
 

@@ -438,6 +438,83 @@ func TestManager_ShouldFastFailOnInvalidConfigAtStartup(t *testing.T) {
 	require.Error(t, services.StartAndAwaitRunning(context.Background(), m))
 }
 
+func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
+	// NOTE: This is to assert whether `runtime_config_last_reload_successful` is set back to 1
+	// after recovery from bad config, provided that after recovery the config hash is exactly same as before bad config failure.
+
+	// Create a valid runtime config file
+	tempFile, err := os.CreateTemp("", "valid-config")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.Remove(tempFile.Name()))
+	})
+
+	validConfig := []byte(`overrides:
+    user1:
+        limit2: 150
+`)
+
+	err = os.WriteFile(tempFile.Name(), validConfig, 0600)
+	require.NoError(t, err)
+
+	managerConfig := Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{tempFile.Name()},
+		Loader:       testLoadOverrides,
+	}
+
+	reg := prometheus.NewPedanticRegistry()
+
+	manager, err := New(managerConfig, reg, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+
+	validConfigSha256 := sha256.Sum256(validConfig)
+
+	// Now success metric should be 1
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
+					# TYPE runtime_config_hash gauge
+					runtime_config_hash{sha256="%s"} 1
+					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+					# TYPE runtime_config_last_reload_successful gauge
+					runtime_config_last_reload_successful 1
+				`, fmt.Sprintf("%x", validConfigSha256)))))
+
+	// Make config invalid. Now metrics should be 0
+
+	invalidConfig := []byte("invalid")
+	err = os.WriteFile(tempFile.Name(), invalidConfig, 0600)
+	require.NoError(t, err)
+
+	time.Sleep(1 * time.Second)
+
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
+					# TYPE runtime_config_hash gauge
+					runtime_config_hash{sha256="%s"} 1
+					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+					# TYPE runtime_config_last_reload_successful gauge
+					runtime_config_last_reload_successful 0
+				`, fmt.Sprintf("%x", validConfigSha256)))))
+
+	// Revert config to good state. Make sure it has same hash as before.
+	err = os.WriteFile(tempFile.Name(), validConfig, 0600)
+	require.NoError(t, err)
+
+	time.Sleep(1 * time.Second)
+
+	// Now success metric should be back to 1.
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
+					# TYPE runtime_config_hash gauge
+					runtime_config_hash{sha256="%s"} 1
+					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+					# TYPE runtime_config_last_reload_successful gauge
+					runtime_config_last_reload_successful 1
+				`, fmt.Sprintf("%x", validConfigSha256)))))
+}
+
 func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
 	loadCounter := atomic.NewInt32(0)
 

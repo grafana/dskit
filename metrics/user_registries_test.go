@@ -3,12 +3,12 @@ package metrics
 import (
 	"bytes"
 	"fmt"
-	"github.com/go-kit/log"
 	"math/rand"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"

@@ -206,10 +206,10 @@ func TestGetEmptyListWhenThereIsNoUserVisibleModule(t *testing.T) {
 
 func TestIsUserVisibleModule(t *testing.T) {
 	userVisibleModName := "userVisible"
-	internalModName := "invisible"
+	invisibleModName := "invisible"
 	sut := NewManager(log.NewNopLogger())
 	sut.RegisterModule(userVisibleModName, mockInitFunc)
-	sut.RegisterModule(internalModName, mockInitFunc, UserInvisibleModule)
+	sut.RegisterModule(invisibleModName, mockInitFunc, UserInvisibleModule)
 
 	var result = sut.IsUserVisibleModule(userVisibleModName)
 	assert.True(t, result, "module '%v' should be user visible", userVisibleModName)
@@ -217,11 +217,11 @@ func TestIsUserVisibleModule(t *testing.T) {
 	result = sut.IsTargetableModule(userVisibleModName)
 	assert.True(t, result, "module '%v' should be targetable", userVisibleModName)
 
-	result = sut.IsUserVisibleModule(internalModName)
-	assert.False(t, result, "module '%v' should be invisible", internalModName)
+	result = sut.IsUserVisibleModule(invisibleModName)
+	assert.False(t, result, "module '%v' should be invisible", invisibleModName)
 
-	result = sut.IsTargetableModule(internalModName)
-	assert.False(t, result, "module '%v' should not be targetable", internalModName)
+	result = sut.IsTargetableModule(invisibleModName)
+	assert.False(t, result, "module '%v' should not be targetable", invisibleModName)
 
 	result = sut.IsUserVisibleModule("ghost")
 	assert.False(t, result, "expects result be false when module does not exist")

@@ -16,13 +16,12 @@ var (
 )
 
 const (
-	labelName                 = "name"
-	labelBackend              = "backend"
-	backendRedis              = "redis"
-	backendMemcached          = "memcached"
-	cachePrefix               = "cache_"
-	memcachedDeprecatedPrefix = "memcached_"
-	getMultiPrefix            = "getMulti_"
+	labelName        = "name"
+	labelBackend     = "backend"
+	backendRedis     = "redis"
+	backendMemcached = "memcached"
+	cachePrefix      = "cache_"
+	getMultiPrefix   = "getMulti_"
 )
 
 // MemcachedCache is a memcached-based cache.

@@ -5,10 +5,11 @@ package dns
 
 import (
 	"context"
-	"github.com/prometheus/client_golang/prometheus"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus/testutil"

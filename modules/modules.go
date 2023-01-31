@@ -20,6 +20,9 @@ type module struct {
 
 	// is this module user visible (i.e. intended to be passed to `InitModuleServices`)
 	userVisible bool
+
+	// is the module allowed to be selected as a target
+	targetable bool
 }
 
 // Manager is a component that initialises modules of the application
@@ -32,6 +35,15 @@ type Manager struct {
 // UserInvisibleModule is an option for `RegisterModule` that marks module not visible to user. Modules are user visible by default.
 func UserInvisibleModule(m *module) {
 	m.userVisible = false
+
+	// by default invisible modules should not be targetable.
+	m.targetable = false
+}
+
+// TargetableModule is an option for `RegisterModule` that marks module targetable.
+// Modules are targetable by default, except those that are user invisible.
+func TargetableModule(m *module) {
+	m.targetable = true
 }
 
 // NewManager creates a new Manager
@@ -49,6 +61,7 @@ func (m *Manager) RegisterModule(name string, initFn func() (services.Service, e
 	m.modules[name] = &module{
 		initFn:      initFn,
 		userVisible: true,
+		targetable:  true,
 	}
 
 	for _, o := range options {
@@ -161,6 +174,18 @@ func (m *Manager) IsUserVisibleModule(mod string) bool {
 
 	if ok {
 		return val.userVisible
+	}
+
+	return false
+}
+
+// IsTargetableModule check if given module is targetable or not. Returns true
+// if and only if the given module is registered and is target.
+func (m *Manager) IsTargetableModule(mod string) bool {
+	val, ok := m.modules[mod]
+
+	if ok {
+		return val.targetable
 	}
 
 	return false

@@ -206,7 +206,7 @@ func TestGetEmptyListWhenThereIsNoUserVisibleModule(t *testing.T) {
 
 func TestIsUserVisibleModule(t *testing.T) {
 	userVisibleModName := "userVisible"
-	internalModName := "internal"
+	internalModName := "invisible"
 	sut := NewManager(log.NewNopLogger())
 	sut.RegisterModule(userVisibleModName, mockInitFunc)
 	sut.RegisterModule(internalModName, mockInitFunc, UserInvisibleModule)
@@ -214,10 +214,39 @@ func TestIsUserVisibleModule(t *testing.T) {
 	var result = sut.IsUserVisibleModule(userVisibleModName)
 	assert.True(t, result, "module '%v' should be user visible", userVisibleModName)
 
+	result = sut.IsTargetableModule(userVisibleModName)
+	assert.True(t, result, "module '%v' should be targetable", userVisibleModName)
+
 	result = sut.IsUserVisibleModule(internalModName)
-	assert.False(t, result, "module '%v' should be internal", internalModName)
+	assert.False(t, result, "module '%v' should be invisible", internalModName)
+
+	result = sut.IsTargetableModule(internalModName)
+	assert.False(t, result, "module '%v' should not be targetable", internalModName)
 
 	result = sut.IsUserVisibleModule("ghost")
+	assert.False(t, result, "expects result be false when module does not exist")
+}
+
+func TestIsTargetableModule(t *testing.T) {
+	defaultModName := "userVisible"
+	invisibleModName := "invisible"
+	sut := NewManager(log.NewNopLogger())
+	sut.RegisterModule(defaultModName, mockInitFunc)
+	sut.RegisterModule(invisibleModName, mockInitFunc, UserInvisibleModule, TargetableModule)
+
+	var result = sut.IsUserVisibleModule(defaultModName)
+	assert.True(t, result, "module '%v' should be user visible", defaultModName)
+
+	result = sut.IsTargetableModule(defaultModName)
+	assert.True(t, result, "module '%v' should be targetable", defaultModName)
+
+	result = sut.IsUserVisibleModule(invisibleModName)
+	assert.False(t, result, "module '%v' should be invisible", invisibleModName)
+
+	result = sut.IsTargetableModule(invisibleModName)
+	assert.True(t, result, "module '%v' should be targetable", invisibleModName)
+
+	result = sut.IsTargetableModule("ghost")
 	assert.False(t, result, "expects result be false when module does not exist")
 }
 

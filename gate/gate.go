@@ -72,35 +72,32 @@ func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Ga
 // requests, currently inflight requests, and the duration of calls to the Start method. The constructor accept multiple
 // prometheus Registerer.
 func NewInstrumentedWithRegisterers(regs []prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	max := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "gate_queries_concurrent_max",
-		Help: "Number of maximum concurrent queries allowed.",
-	})
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	inflight := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "gate_queries_in_flight",
-		Help: "Number of queries that are currently in flight.",
-	})
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	duration := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "gate_duration_seconds",
-		Help:    "How many seconds it took for queries to wait at the gate.",
-		Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
-	})
+	g := &instrumentedGate{
+		gate: gate,
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		max: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "gate_queries_concurrent_max",
+			Help: "Number of maximum concurrent queries allowed.",
+		}),
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		inflight: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "gate_queries_in_flight",
+			Help: "Number of queries that are currently in flight.",
+		}),
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		duration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "gate_duration_seconds",
+			Help:    "How many seconds it took for queries to wait at the gate.",
+			Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
+		}),
+	}
+	g.max.Set(float64(maxConcurrent))
+
 	for _, reg := range regs {
 		if reg != nil {
-			reg.MustRegister(max, inflight, duration)
+			reg.MustRegister(g.max, g.inflight, g.duration)
 		}
 	}
-	g := &instrumentedGate{
-		gate:     gate,
-		max:      max,
-		inflight: inflight,
-		duration: duration,
-	}
-
-	g.max.Set(float64(maxConcurrent))
 	return g
 }
 

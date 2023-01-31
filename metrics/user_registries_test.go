@@ -147,9 +147,9 @@ func makeLabels(namesAndValues ...string) []*dto.LabelPair {
 	return out
 }
 
-// TestSendSumOfGaugesPerUserWithLabels tests to ensure multiple metrics for the same user with a matching label are
-// summed correctly
-func TestSendSumOfGaugesPerUserWithLabels(t *testing.T) {
+// TestSendSumOfGaugesPerTenantWithLabels tests to ensure multiple metrics for the same tenant with a matching label are
+// summed correctly.
+func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
 	user1Metric := promauto.With(user1Reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
@@ -159,15 +159,15 @@ func TestSendSumOfGaugesPerUserWithLabels(t *testing.T) {
 	user2Metric.WithLabelValues("a", "b").Set(60)
 	user2Metric.WithLabelValues("a", "c").Set(40)
 
-	regs := NewUserRegistries(log.NewNopLogger())
-	regs.AddUserRegistry("user-1", user1Reg)
-	regs.AddUserRegistry("user-2", user2Reg)
-	mf := regs.BuildMetricFamiliesPerUser()
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
 
 	{
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfGaugesPerUserWithLabels(out, desc, "test_metric", "label_one")
+			mf.SendSumOfGaugesPerTenantWithLabels(out, desc, "test_metric", "label_one")
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(180)}},
@@ -179,7 +179,7 @@ func TestSendSumOfGaugesPerUserWithLabels(t *testing.T) {
 	{
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfGaugesPerUserWithLabels(out, desc, "test_metric", "label_two")
+			mf.SendSumOfGaugesPerTenantWithLabels(out, desc, "test_metric", "label_two")
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_two", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
@@ -193,7 +193,7 @@ func TestSendSumOfGaugesPerUserWithLabels(t *testing.T) {
 	{
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfGaugesPerUserWithLabels(out, desc, "test_metric", "label_one", "label_two")
+			mf.SendSumOfGaugesPerTenantWithLabels(out, desc, "test_metric", "label_one", "label_two")
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
@@ -209,12 +209,12 @@ func TestSendMaxOfGauges(t *testing.T) {
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
 	desc := prometheus.NewDesc("test_metric", "", nil, nil)
-	regs := NewUserRegistries(log.NewNopLogger())
-	regs.AddUserRegistry("user-1", user1Reg)
-	regs.AddUserRegistry("user-2", user2Reg)
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
 
 	// No matching metric.
-	mf := regs.BuildMetricFamiliesPerUser()
+	mf := regs.BuildMetricFamiliesPerTenant()
 	actual := collectMetrics(t, func(out chan prometheus.Metric) {
 		mf.SendMaxOfGauges(out, desc, "test_metric")
 	})
@@ -228,7 +228,7 @@ func TestSendMaxOfGauges(t *testing.T) {
 	user2Metric := promauto.With(user2Reg).NewGauge(prometheus.GaugeOpts{Name: "test_metric"})
 	user1Metric.Set(100)
 	user2Metric.Set(80)
-	mf = regs.BuildMetricFamiliesPerUser()
+	mf = regs.BuildMetricFamiliesPerTenant()
 
 	actual = collectMetrics(t, func(out chan prometheus.Metric) {
 		mf.SendMaxOfGauges(out, desc, "test_metric")
@@ -250,10 +250,10 @@ func TestSendSumOfHistogramsWithLabels(t *testing.T) {
 	user2Metric.WithLabelValues("a", "b").Observe(3)
 	user2Metric.WithLabelValues("a", "c").Observe(4)
 
-	regs := NewUserRegistries(log.NewNopLogger())
-	regs.AddUserRegistry("user-1", user1Reg)
-	regs.AddUserRegistry("user-2", user2Reg)
-	mf := regs.BuildMetricFamiliesPerUser()
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
 
 	{
 		desc := prometheus.NewDesc("test_metric", "", []string{"label_one"}, nil)
@@ -311,9 +311,9 @@ func TestSendSumOfHistogramsWithLabels(t *testing.T) {
 	}
 }
 
-// TestSendSumOfCountersPerUser_WithLabels tests to ensure multiple metrics for the same user with a matching label are
+// TestSendSumOfCountersPerTenant_WithLabels tests to ensure multiple metrics for the same user with a matching label are
 // summed correctly
-func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
+func TestSendSumOfCountersPerTenant_WithLabels(t *testing.T) {
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
 	user3Reg := prometheus.NewRegistry()
@@ -327,16 +327,16 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	user3Metric.WithLabelValues("a", "b").Add(0)
 	user3Metric.WithLabelValues("a", "c").Add(0)
 
-	regs := NewUserRegistries(log.NewNopLogger())
-	regs.AddUserRegistry("user-1", user1Reg)
-	regs.AddUserRegistry("user-2", user2Reg)
-	regs.AddUserRegistry("user-3", user3Reg)
-	mf := regs.BuildMetricFamiliesPerUser()
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	regs.AddTenantRegistry("user-3", user3Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
 
 	t.Run("group metrics by user and label_one", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one"))
+			mf.SendSumOfCountersPerTenant(out, desc, "test_metric", WithLabels("label_one"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(180)}},
@@ -349,7 +349,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_one, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one"), WithSkipZeroValueMetrics)
+			mf.SendSumOfCountersPerTenant(out, desc, "test_metric", WithLabels("label_one"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(180)}},
@@ -361,7 +361,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_two", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_two"))
+			mf.SendSumOfCountersPerTenant(out, desc, "test_metric", WithLabels("label_two"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
@@ -377,7 +377,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	t.Run("group metrics by user and label_two, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_two"), WithSkipZeroValueMetrics)
+			mf.SendSumOfCountersPerTenant(out, desc, "test_metric", WithLabels("label_two"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
@@ -390,7 +390,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	t.Run("group metrics by user, label_one and label_two", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one", "label_two"))
+			mf.SendSumOfCountersPerTenant(out, desc, "test_metric", WithLabels("label_one", "label_two"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
@@ -406,7 +406,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	t.Run("group metrics by user, label_one and label_two, and skip zero value metrics", func(t *testing.T) {
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfCountersPerUser(out, desc, "test_metric", WithLabels("label_one", "label_two"), WithSkipZeroValueMetrics)
+			mf.SendSumOfCountersPerTenant(out, desc, "test_metric", WithLabels("label_one", "label_two"), WithSkipZeroValueMetrics)
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Counter: &dto.Counter{Value: proto.Float64(100)}},
@@ -417,7 +417,7 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 	})
 }
 
-func TestSendSumOfSummariesPerUser(t *testing.T) {
+func TestSendSumOfSummariesPerTenant(t *testing.T) {
 	objectives := map[float64]float64{0.25: 25, 0.5: 50, 0.75: 75}
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
@@ -430,15 +430,15 @@ func TestSendSumOfSummariesPerUser(t *testing.T) {
 	user2Metric.Observe(50)
 	user2Metric.Observe(76)
 
-	regs := NewUserRegistries(log.NewNopLogger())
-	regs.AddUserRegistry("user-1", user1Reg)
-	regs.AddUserRegistry("user-2", user2Reg)
-	mf := regs.BuildMetricFamiliesPerUser()
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
 
 	{
 		desc := prometheus.NewDesc("test_metric", "", []string{"user"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfSummariesPerUser(out, desc, "test_metric")
+			mf.SendSumOfSummariesPerTenant(out, desc, "test_metric")
 		})
 		expected := []*dto.Metric{
 			{
@@ -501,7 +501,7 @@ func TestFloat64PrecisionStability(t *testing.T) {
 	t.Log("random generator seed:", seed)
 
 	// Generate a large number of registries with different metrics each.
-	registries := NewUserRegistries(log.NewNopLogger())
+	registries := NewTenantRegistries(log.NewNopLogger())
 	for userID := 1; userID <= numRegistries; userID++ {
 		reg := prometheus.NewRegistry()
 		labelNames := []string{"label_one", "label_two"}
@@ -526,14 +526,14 @@ func TestFloat64PrecisionStability(t *testing.T) {
 			s.WithLabelValues("a", strconv.Itoa(i)).Observe(rand.Float64())
 		}
 
-		registries.AddUserRegistry(strconv.Itoa(userID), reg)
+		registries.AddTenantRegistry(strconv.Itoa(userID), reg)
 	}
 
 	// Ensure multiple runs always return the same exact results.
 	expected := map[string][]*dto.Metric{}
 
 	for run := 0; run < numRuns; run++ {
-		mf := registries.BuildMetricFamiliesPerUser()
+		mf := registries.BuildMetricFamiliesPerTenant()
 
 		gauge := collectMetrics(t, func(out chan prometheus.Metric) {
 			mf.SendSumOfGauges(out, prometheus.NewDesc("test_gauge", "", nil, nil), "test_gauge")
@@ -590,7 +590,7 @@ func TestFloat64PrecisionStability(t *testing.T) {
 
 // This test is a baseline for following tests, that remove or replace a registry.
 // It shows output for metrics from setupTestMetrics before doing any modifications.
-func TestUserRegistries_RemoveBaseline(t *testing.T) {
+func TestTenantRegistries_RemoveBaseline(t *testing.T) {
 	mainRegistry := prometheus.NewPedanticRegistry()
 	mainRegistry.MustRegister(setupTestMetrics())
 
@@ -670,14 +670,14 @@ func TestUserRegistries_RemoveBaseline(t *testing.T) {
 	`)))
 }
 
-func TestUserRegistries_RemoveUserRegistry_SoftRemoval(t *testing.T) {
+func TestTenantRegistries_RemoveTenantRegistry_SoftRemoval(t *testing.T) {
 	tm := setupTestMetrics()
 
 	mainRegistry := prometheus.NewPedanticRegistry()
 	mainRegistry.MustRegister(tm)
 
 	// Soft-remove single registry.
-	tm.regs.RemoveUserRegistry(strconv.Itoa(3), false)
+	tm.regs.RemoveTenantRegistry(strconv.Itoa(3), false)
 
 	require.NoError(t, testutil.GatherAndCompare(mainRegistry, bytes.NewBufferString(`
 			# HELP counter help
@@ -761,14 +761,14 @@ func TestUserRegistries_RemoveUserRegistry_SoftRemoval(t *testing.T) {
 			summary_user_count{user="5"} 5
 	`)))
 }
-func TestUserRegistries_RemoveUserRegistry_HardRemoval(t *testing.T) {
+func TestTenantRegistries_RemoveTenantRegistry_HardRemoval(t *testing.T) {
 	tm := setupTestMetrics()
 
 	mainRegistry := prometheus.NewPedanticRegistry()
 	mainRegistry.MustRegister(tm)
 
 	// Hard-remove single registry.
-	tm.regs.RemoveUserRegistry(strconv.Itoa(3), true)
+	tm.regs.RemoveTenantRegistry(strconv.Itoa(3), true)
 
 	require.NoError(t, testutil.GatherAndCompare(mainRegistry, bytes.NewBufferString(`
 			# HELP counter help
@@ -853,14 +853,14 @@ func TestUserRegistries_RemoveUserRegistry_HardRemoval(t *testing.T) {
 	`)))
 }
 
-func TestUserRegistries_AddUserRegistry_ReplaceRegistry(t *testing.T) {
+func TestTenantRegistries_AddUserRegistry_ReplaceRegistry(t *testing.T) {
 	tm := setupTestMetrics()
 
 	mainRegistry := prometheus.NewPedanticRegistry()
 	mainRegistry.MustRegister(tm)
 
 	// Replace registry for user 5 with empty registry. Replacement does soft-delete previous registry.
-	tm.regs.AddUserRegistry(strconv.Itoa(5), prometheus.NewRegistry())
+	tm.regs.AddTenantRegistry(strconv.Itoa(5), prometheus.NewRegistry())
 
 	require.NoError(t, testutil.GatherAndCompare(mainRegistry, bytes.NewBufferString(`
 			# HELP counter help
@@ -947,38 +947,38 @@ func TestUserRegistries_AddUserRegistry_ReplaceRegistry(t *testing.T) {
 	`)))
 }
 
-func TestUserRegistries_GetRegistryForUser(t *testing.T) {
-	regs := NewUserRegistries(log.NewNopLogger())
+func TestTenantRegistries_GetRegistryForTenant(t *testing.T) {
+	regs := NewTenantRegistries(log.NewNopLogger())
 
-	assert.Nil(t, regs.GetRegistryForUser("test"))
+	assert.Nil(t, regs.GetRegistryForTenant("test"))
 
 	reg1 := prometheus.NewRegistry()
-	regs.AddUserRegistry("test", reg1)
+	regs.AddTenantRegistry("test", reg1)
 
 	// Not using assert.Equal, as it compares values that pointers point to.
-	assert.True(t, reg1 == regs.GetRegistryForUser("test"))
+	assert.True(t, reg1 == regs.GetRegistryForTenant("test"))
 
-	regs.RemoveUserRegistry("test", false)
-	assert.Nil(t, regs.GetRegistryForUser("test"))
+	regs.RemoveTenantRegistry("test", false)
+	assert.Nil(t, regs.GetRegistryForTenant("test"))
 
 	reg2 := prometheus.NewRegistry()
-	regs.AddUserRegistry("test", reg2)
-	assert.True(t, reg2 == regs.GetRegistryForUser("test"))
-	assert.False(t, reg1 == regs.GetRegistryForUser("test"))
+	regs.AddTenantRegistry("test", reg2)
+	assert.True(t, reg2 == regs.GetRegistryForTenant("test"))
+	assert.False(t, reg1 == regs.GetRegistryForTenant("test"))
 
-	regs.RemoveUserRegistry("test", true)
-	assert.Nil(t, regs.GetRegistryForUser("test"))
+	regs.RemoveTenantRegistry("test", true)
+	assert.Nil(t, regs.GetRegistryForTenant("test"))
 
 	reg3 := prometheus.NewRegistry()
 	promauto.With(reg3).NewCounter(prometheus.CounterOpts{Name: "test", Help: "test"}).Add(100)
-	regs.AddUserRegistry("test", reg3)
+	regs.AddTenantRegistry("test", reg3)
 
 	reg4 := prometheus.NewRegistry()
-	regs.AddUserRegistry("test", reg4) // replaces reg3, which is soft-deleted.
-	assert.True(t, reg4 == regs.GetRegistryForUser("test"))
-	assert.False(t, reg3 == regs.GetRegistryForUser("test"))
-	assert.False(t, reg2 == regs.GetRegistryForUser("test"))
-	assert.False(t, reg1 == regs.GetRegistryForUser("test"))
+	regs.AddTenantRegistry("test", reg4) // replaces reg3, which is soft-deleted.
+	assert.True(t, reg4 == regs.GetRegistryForTenant("test"))
+	assert.False(t, reg3 == regs.GetRegistryForTenant("test"))
+	assert.False(t, reg2 == regs.GetRegistryForTenant("test"))
+	assert.False(t, reg1 == regs.GetRegistryForTenant("test"))
 }
 
 func setupTestMetrics() *testMetrics {
@@ -1012,72 +1012,72 @@ func setupTestMetrics() *testMetrics {
 			s.WithLabelValues("a", strconv.Itoa(i)).Observe(float64(userID))
 		}
 
-		tm.regs.AddUserRegistry(strconv.Itoa(userID), reg)
+		tm.regs.AddTenantRegistry(strconv.Itoa(userID), reg)
 	}
 	return tm
 }
 
 type testMetrics struct {
-	regs *UserRegistries
+	regs *TenantRegistries
 
 	gauge             *prometheus.Desc
-	gaugePerUser      *prometheus.Desc
+	gaugePerTenant    *prometheus.Desc
 	gaugeWithLabels   *prometheus.Desc
 	counter           *prometheus.Desc
-	counterPerUser    *prometheus.Desc
+	counterPerTenant  *prometheus.Desc
 	counterWithLabels *prometheus.Desc
 	histogram         *prometheus.Desc
 	histogramLabels   *prometheus.Desc
 	summary           *prometheus.Desc
-	summaryPerUser    *prometheus.Desc
+	summaryPerTenant  *prometheus.Desc
 	summaryLabels     *prometheus.Desc
 }
 
 func newTestMetrics() *testMetrics {
 	return &testMetrics{
-		regs: NewUserRegistries(log.NewNopLogger()),
+		regs: NewTenantRegistries(log.NewNopLogger()),
 
 		gauge:             prometheus.NewDesc("gauge", "help", nil, nil),
-		gaugePerUser:      prometheus.NewDesc("gauge_user", "help", []string{"user"}, nil),
+		gaugePerTenant:    prometheus.NewDesc("gauge_user", "help", []string{"user"}, nil),
 		gaugeWithLabels:   prometheus.NewDesc("gauge_labels", "help", []string{"label_one"}, nil),
 		counter:           prometheus.NewDesc("counter", "help", nil, nil),
-		counterPerUser:    prometheus.NewDesc("counter_user", "help", []string{"user"}, nil),
+		counterPerTenant:  prometheus.NewDesc("counter_user", "help", []string{"user"}, nil),
 		counterWithLabels: prometheus.NewDesc("counter_labels", "help", []string{"label_one"}, nil),
 		histogram:         prometheus.NewDesc("histogram", "help", nil, nil),
 		histogramLabels:   prometheus.NewDesc("histogram_labels", "help", []string{"label_one"}, nil),
 		summary:           prometheus.NewDesc("summary", "help", nil, nil),
-		summaryPerUser:    prometheus.NewDesc("summary_user", "help", []string{"user"}, nil),
+		summaryPerTenant:  prometheus.NewDesc("summary_user", "help", []string{"user"}, nil),
 		summaryLabels:     prometheus.NewDesc("summary_labels", "help", []string{"label_one"}, nil),
 	}
 }
 
 func (tm *testMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- tm.gauge
-	out <- tm.gaugePerUser
+	out <- tm.gaugePerTenant
 	out <- tm.gaugeWithLabels
 	out <- tm.counter
-	out <- tm.counterPerUser
+	out <- tm.counterPerTenant
 	out <- tm.counterWithLabels
 	out <- tm.histogram
 	out <- tm.histogramLabels
 	out <- tm.summary
-	out <- tm.summaryPerUser
+	out <- tm.summaryPerTenant
 	out <- tm.summaryLabels
 }
 
 func (tm *testMetrics) Collect(out chan<- prometheus.Metric) {
-	data := tm.regs.BuildMetricFamiliesPerUser()
+	data := tm.regs.BuildMetricFamiliesPerTenant()
 
 	data.SendSumOfGauges(out, tm.gauge, "test_gauge")
-	data.SendSumOfGaugesPerUser(out, tm.gaugePerUser, "test_gauge")
+	data.SendSumOfGaugesPerTenant(out, tm.gaugePerTenant, "test_gauge")
 	data.SendSumOfGaugesWithLabels(out, tm.gaugeWithLabels, "test_gauge", "label_one")
 	data.SendSumOfCounters(out, tm.counter, "test_counter")
-	data.SendSumOfCountersPerUser(out, tm.counterPerUser, "test_counter")
+	data.SendSumOfCountersPerTenant(out, tm.counterPerTenant, "test_counter")
 	data.SendSumOfCountersWithLabels(out, tm.counterWithLabels, "test_counter", "label_one")
 	data.SendSumOfHistograms(out, tm.histogram, "test_histogram")
 	data.SendSumOfHistogramsWithLabels(out, tm.histogramLabels, "test_histogram", "label_one")
 	data.SendSumOfSummaries(out, tm.summary, "test_summary")
-	data.SendSumOfSummariesPerUser(out, tm.summaryPerUser, "test_summary")
+	data.SendSumOfSummariesPerTenant(out, tm.summaryPerTenant, "test_summary")
 	data.SendSumOfSummariesWithLabels(out, tm.summaryLabels, "test_summary", "label_one")
 }
 

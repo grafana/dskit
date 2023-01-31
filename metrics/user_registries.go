@@ -41,9 +41,9 @@ func (m singleValueWithLabelsMap) aggregateFn(labelsKey string, labelValues []st
 	m[labelsKey] = r
 }
 
-func (m singleValueWithLabelsMap) prependUserLabelValue(user string) {
+func (m singleValueWithLabelsMap) prependTenantLabelValue(tenant string) {
 	for key, mlv := range m {
-		mlv.LabelValues = append([]string{user}, mlv.LabelValues...)
+		mlv.LabelValues = append([]string{tenant}, mlv.LabelValues...)
 		m[key] = mlv
 	}
 }
@@ -142,93 +142,95 @@ func (mfm MetricFamilyMap) sumOfSingleValuesWithLabels(metric string, labelNames
 	}
 }
 
-// MetricFamiliesPerUser is a collection of metrics gathered via calling Gatherer.Gather() method on different
-// gatherers, one per user.
-type MetricFamiliesPerUser []struct {
-	user    string
+// MetricFamiliesPerTenant is a collection of metrics gathered via calling Gatherer.Gather() method on different
+// gatherers, one per tenant.
+type MetricFamiliesPerTenant []struct {
+	tenant  string
 	metrics MetricFamilyMap
 }
 
-func (d MetricFamiliesPerUser) GetSumOfCounters(counter string) float64 {
+func (d MetricFamiliesPerTenant) GetSumOfCounters(counter string) float64 {
 	result := float64(0)
-	for _, userEntry := range d {
-		result += userEntry.metrics.SumCounters(counter)
+	for _, tenantEntry := range d {
+		result += tenantEntry.metrics.SumCounters(counter)
 	}
 	return result
 }
 
-func (d MetricFamiliesPerUser) SendSumOfCounters(out chan<- prometheus.Metric, desc *prometheus.Desc, counter string) {
+func (d MetricFamiliesPerTenant) SendSumOfCounters(out chan<- prometheus.Metric, desc *prometheus.Desc, counter string) {
 	out <- prometheus.MustNewConstMetric(desc, prometheus.CounterValue, d.GetSumOfCounters(counter))
 }
 
-func (d MetricFamiliesPerUser) SendSumOfCountersWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, counter string, labelNames ...string) {
+func (d MetricFamiliesPerTenant) SendSumOfCountersWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, counter string, labelNames ...string) {
 	d.sumOfSingleValuesWithLabels(counter, counterValue, labelNames, false).WriteToMetricChannel(out, desc, prometheus.CounterValue)
 }
 
-// SendSumOfCountersPerUser provides metrics on a per-user basis, with additional and optional label names.
-// This function assumes that `user` is the first label on the provided metric Desc.
-func (d MetricFamiliesPerUser) SendSumOfCountersPerUser(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, options ...MetricOption) {
+// SendSumOfCountersPerTenant provides metrics on a per-tenant basis, with additional and optional label names.
+// This function assumes that `tenant` is the first label on the provided metric Desc.
+func (d MetricFamiliesPerTenant) SendSumOfCountersPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, options ...MetricOption) {
 	opts := applyMetricOptions(options...)
 
-	for _, userEntry := range d {
-		if userEntry.user == "" {
+	for _, tenantEntry := range d {
+		if tenantEntry.tenant == "" {
 			continue
 		}
 
 		result := singleValueWithLabelsMap{}
-		userEntry.metrics.sumOfSingleValuesWithLabels(metric, opts.labelNames, counterValue, result.aggregateFn, opts.skipZeroValueMetrics)
-		result.prependUserLabelValue(userEntry.user)
+		tenantEntry.metrics.sumOfSingleValuesWithLabels(metric, opts.labelNames, counterValue, result.aggregateFn, opts.skipZeroValueMetrics)
+		result.prependTenantLabelValue(tenantEntry.tenant)
 		result.WriteToMetricChannel(out, desc, prometheus.CounterValue)
 	}
 }
 
-func (d MetricFamiliesPerUser) GetSumOfGauges(gauge string) float64 {
+func (d MetricFamiliesPerTenant) GetSumOfGauges(gauge string) float64 {
 	result := float64(0)
-	for _, userEntry := range d {
-		result += userEntry.metrics.SumGauges(gauge)
+	for _, tenantEntry := range d {
+		result += tenantEntry.metrics.SumGauges(gauge)
 	}
 	return result
 }
 
-func (d MetricFamiliesPerUser) SendSumOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+func (d MetricFamiliesPerTenant) SendSumOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
 	out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, d.GetSumOfGauges(gauge))
 }
 
-func (d MetricFamiliesPerUser) SendSumOfGaugesWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string, labelNames ...string) {
+func (d MetricFamiliesPerTenant) SendSumOfGaugesWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string, labelNames ...string) {
 	d.sumOfSingleValuesWithLabels(gauge, gaugeValue, labelNames, false).WriteToMetricChannel(out, desc, prometheus.GaugeValue)
 }
 
-func (d MetricFamiliesPerUser) SendSumOfGaugesPerUser(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
-	d.SendSumOfGaugesPerUserWithLabels(out, desc, gauge)
+// SendSumOfGaugesPerTenant provides metrics on a per-tenant basis.
+// This function assumes that `tenant` is the first label on the provided metric Desc.
+func (d MetricFamiliesPerTenant) SendSumOfGaugesPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+	d.SendSumOfGaugesPerTenantWithLabels(out, desc, gauge)
 }
 
-// SendSumOfGaugesPerUserWithLabels provides metrics with the provided label names on a per-user basis. This function assumes that `user` is the
+// SendSumOfGaugesPerTenantWithLabels provides metrics with the provided label names on a per-tenant basis. This function assumes that `tenant` is the
 // first label on the provided metric Desc
-func (d MetricFamiliesPerUser) SendSumOfGaugesPerUserWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames ...string) {
-	for _, userEntry := range d {
-		if userEntry.user == "" {
+func (d MetricFamiliesPerTenant) SendSumOfGaugesPerTenantWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames ...string) {
+	for _, tenantEntry := range d {
+		if tenantEntry.tenant == "" {
 			continue
 		}
 
 		result := singleValueWithLabelsMap{}
-		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, gaugeValue, result.aggregateFn, false)
-		result.prependUserLabelValue(userEntry.user)
+		tenantEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, gaugeValue, result.aggregateFn, false)
+		result.prependTenantLabelValue(tenantEntry.tenant)
 		result.WriteToMetricChannel(out, desc, prometheus.GaugeValue)
 	}
 }
 
-func (d MetricFamiliesPerUser) sumOfSingleValuesWithLabels(metric string, fn func(*dto.Metric) float64, labelNames []string, skipZeroValue bool) singleValueWithLabelsMap {
+func (d MetricFamiliesPerTenant) sumOfSingleValuesWithLabels(metric string, fn func(*dto.Metric) float64, labelNames []string, skipZeroValue bool) singleValueWithLabelsMap {
 	result := singleValueWithLabelsMap{}
-	for _, userEntry := range d {
-		userEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, fn, result.aggregateFn, skipZeroValue)
+	for _, tenantEntry := range d {
+		tenantEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, fn, result.aggregateFn, skipZeroValue)
 	}
 	return result
 }
 
-func (d MetricFamiliesPerUser) SendMaxOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+func (d MetricFamiliesPerTenant) SendMaxOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
 	result := math.NaN()
-	for _, userEntry := range d {
-		if value := userEntry.metrics.MaxGauges(gauge); math.IsNaN(result) || value > result {
+	for _, tenantEntry := range d {
+		if value := tenantEntry.metrics.MaxGauges(gauge); math.IsNaN(result) || value > result {
 			result = value
 		}
 	}
@@ -241,26 +243,26 @@ func (d MetricFamiliesPerUser) SendMaxOfGauges(out chan<- prometheus.Metric, des
 	out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result)
 }
 
-func (d MetricFamiliesPerUser) SendMaxOfGaugesPerUser(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
-	for _, userEntry := range d {
-		if userEntry.user == "" {
+func (d MetricFamiliesPerTenant) SendMaxOfGaugesPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+	for _, tenantEntry := range d {
+		if tenantEntry.tenant == "" {
 			continue
 		}
 
-		result := userEntry.metrics.MaxGauges(gauge)
-		out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result, userEntry.user)
+		result := tenantEntry.metrics.MaxGauges(gauge)
+		out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result, tenantEntry.tenant)
 	}
 }
 
-func (d MetricFamiliesPerUser) SendSumOfSummaries(out chan<- prometheus.Metric, desc *prometheus.Desc, summaryName string) {
+func (d MetricFamiliesPerTenant) SendSumOfSummaries(out chan<- prometheus.Metric, desc *prometheus.Desc, summaryName string) {
 	summaryData := SummaryData{}
-	for _, userEntry := range d {
-		userEntry.metrics.SumSummariesTo(summaryName, &summaryData)
+	for _, tenantEntry := range d {
+		tenantEntry.metrics.SumSummariesTo(summaryName, &summaryData)
 	}
 	out <- summaryData.Metric(desc)
 }
 
-func (d MetricFamiliesPerUser) SendSumOfSummariesWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, summaryName string, labelNames ...string) {
+func (d MetricFamiliesPerTenant) SendSumOfSummariesWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, summaryName string, labelNames ...string) {
 	type summaryResult struct {
 		data        SummaryData
 		labelValues []string
@@ -289,26 +291,26 @@ func (d MetricFamiliesPerUser) SendSumOfSummariesWithLabels(out chan<- prometheu
 	}
 }
 
-func (d MetricFamiliesPerUser) SendSumOfSummariesPerUser(out chan<- prometheus.Metric, desc *prometheus.Desc, summaryName string) {
-	for _, userEntry := range d {
-		if userEntry.user == "" {
+func (d MetricFamiliesPerTenant) SendSumOfSummariesPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, summaryName string) {
+	for _, tenantEntry := range d {
+		if tenantEntry.tenant == "" {
 			continue
 		}
 
-		data := userEntry.metrics.SumSummaries(summaryName)
-		out <- data.Metric(desc, userEntry.user)
+		data := tenantEntry.metrics.SumSummaries(summaryName)
+		out <- data.Metric(desc, tenantEntry.tenant)
 	}
 }
 
-func (d MetricFamiliesPerUser) SendSumOfHistograms(out chan<- prometheus.Metric, desc *prometheus.Desc, histogramName string) {
+func (d MetricFamiliesPerTenant) SendSumOfHistograms(out chan<- prometheus.Metric, desc *prometheus.Desc, histogramName string) {
 	hd := HistogramData{}
-	for _, userEntry := range d {
-		userEntry.metrics.SumHistogramsTo(histogramName, &hd)
+	for _, tenantEntry := range d {
+		tenantEntry.metrics.SumHistogramsTo(histogramName, &hd)
 	}
 	out <- hd.Metric(desc)
 }
 
-func (d MetricFamiliesPerUser) SendSumOfHistogramsWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, histogramName string, labelNames ...string) {
+func (d MetricFamiliesPerTenant) SendSumOfHistogramsWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, histogramName string, labelNames ...string) {
 	type histogramResult struct {
 		data        HistogramData
 		labelValues []string
@@ -565,46 +567,46 @@ func (h *HistogramDataCollector) Add(hd HistogramData) {
 	h.data.AddHistogramData(hd)
 }
 
-// UserRegistry holds a Prometheus registry associated to a specific user.
-type UserRegistry struct {
-	user string               // Set to "" when registry is soft-removed.
-	reg  *prometheus.Registry // Set to nil, when registry is soft-removed.
+// TenantRegistry holds a Prometheus registry associated to a specific tenant.
+type TenantRegistry struct {
+	tenant string               // Set to "" when registry is soft-removed.
+	reg    *prometheus.Registry // Set to nil, when registry is soft-removed.
 
 	// Set to last result of Gather() call when removing registry.
 	lastGather MetricFamilyMap
 }
 
-// UserRegistries holds Prometheus registries for multiple users, guaranteeing
+// TenantRegistries holds Prometheus registries for multiple tenants, guaranteeing
 // multi-thread safety and stable ordering.
-type UserRegistries struct {
+type TenantRegistries struct {
 	logger log.Logger
 
 	regsMu sync.Mutex
-	regs   []UserRegistry
+	regs   []TenantRegistry
 }
 
-// NewUserRegistries makes new UserRegistries.
-func NewUserRegistries(logger log.Logger) *UserRegistries {
-	return &UserRegistries{
+// NewTenantRegistries makes new TenantRegistries.
+func NewTenantRegistries(logger log.Logger) *TenantRegistries {
+	return &TenantRegistries{
 		logger: logger,
 	}
 }
 
-// AddUserRegistry adds an user registry. If user already has a registry,
+// AddTenantRegistry adds a tenant registry. If tenant already has a registry,
 // previous registry is removed, but latest metric values are preserved
 // in order to avoid counter resets.
-func (r *UserRegistries) AddUserRegistry(user string, reg *prometheus.Registry) {
+func (r *TenantRegistries) AddTenantRegistry(tenant string, reg *prometheus.Registry) {
 	r.regsMu.Lock()
 	defer r.regsMu.Unlock()
 
-	// Soft-remove user registry, if user has one already.
+	// Soft-remove tenant registry, if tenant has one already.
 	for idx := 0; idx < len(r.regs); {
-		if r.regs[idx].user != user {
+		if r.regs[idx].tenant != tenant {
 			idx++
 			continue
 		}
 
-		if r.softRemoveUserRegistry(&r.regs[idx]) {
+		if r.softRemoveTenantRegistry(&r.regs[idx]) {
 			// Keep it.
 			idx++
 		} else {
@@ -614,26 +616,26 @@ func (r *UserRegistries) AddUserRegistry(user string, reg *prometheus.Registry) 
 	}
 
 	// New registries must be added to the end of the list, to guarantee stability.
-	r.regs = append(r.regs, UserRegistry{
-		user: user,
-		reg:  reg,
+	r.regs = append(r.regs, TenantRegistry{
+		tenant: tenant,
+		reg:    reg,
 	})
 }
 
-// RemoveUserRegistry removes all Prometheus registries for a given user.
+// RemoveTenantRegistry removes all Prometheus registries for a given tenant.
 // If hard is true, registry is removed completely.
-// If hard is false, latest registry values are preserved for future aggregations.
-func (r *UserRegistries) RemoveUserRegistry(user string, hard bool) {
+// If hard is false, the latest registry values are preserved for future aggregations.
+func (r *TenantRegistries) RemoveTenantRegistry(tenant string, hard bool) {
 	r.regsMu.Lock()
 	defer r.regsMu.Unlock()
 
 	for idx := 0; idx < len(r.regs); {
-		if user != r.regs[idx].user {
+		if tenant != r.regs[idx].tenant {
 			idx++
 			continue
 		}
 
-		if !hard && r.softRemoveUserRegistry(&r.regs[idx]) {
+		if !hard && r.softRemoveTenantRegistry(&r.regs[idx]) {
 			idx++ // keep it
 		} else {
 			r.regs = append(r.regs[:idx], r.regs[idx+1:]...) // remove it.
@@ -643,10 +645,10 @@ func (r *UserRegistries) RemoveUserRegistry(user string, hard bool) {
 
 // Returns true, if we should keep latest metrics. Returns false if we failed to gather latest metrics,
 // and this can be removed completely.
-func (r *UserRegistries) softRemoveUserRegistry(ur *UserRegistry) bool {
+func (r *TenantRegistries) softRemoveTenantRegistry(ur *TenantRegistry) bool {
 	last, err := ur.reg.Gather()
 	if err != nil {
-		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "user", ur.user, "err", err)
+		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "tenant", ur.tenant, "err", err)
 		return false
 	}
 
@@ -668,33 +670,33 @@ func (r *UserRegistries) softRemoveUserRegistry(ur *UserRegistry) bool {
 
 	ur.lastGather, err = NewMetricFamilyMap(last)
 	if err != nil {
-		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "user", ur.user, "err", err)
+		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "tenant", ur.tenant, "err", err)
 		return false
 	}
 
-	ur.user = ""
+	ur.tenant = ""
 	ur.reg = nil
 	return true
 }
 
-// Registries returns a copy of the user registries list.
-func (r *UserRegistries) Registries() []UserRegistry {
+// Registries returns a copy of the tenant registries list.
+func (r *TenantRegistries) Registries() []TenantRegistry {
 	r.regsMu.Lock()
 	defer r.regsMu.Unlock()
 
-	out := make([]UserRegistry, 0, len(r.regs))
+	out := make([]TenantRegistry, 0, len(r.regs))
 	out = append(out, r.regs...)
 
 	return out
 }
 
-// GetRegistryForUser returns currently active registry for given user, or nil, if there is no such registry.
-func (r *UserRegistries) GetRegistryForUser(user string) *prometheus.Registry {
+// GetRegistryForTenant returns currently active registry for given tenant, or nil, if there is no such registry.
+func (r *TenantRegistries) GetRegistryForTenant(tenant string) *prometheus.Registry {
 	r.regsMu.Lock()
 	defer r.regsMu.Unlock()
 
 	for idx := 0; idx < len(r.regs); idx++ {
-		if user != r.regs[idx].user {
+		if tenant != r.regs[idx].tenant {
 			continue
 		}
 
@@ -703,16 +705,16 @@ func (r *UserRegistries) GetRegistryForUser(user string) *prometheus.Registry {
 	return nil
 }
 
-func (r *UserRegistries) BuildMetricFamiliesPerUser() MetricFamiliesPerUser {
-	data := MetricFamiliesPerUser{}
+func (r *TenantRegistries) BuildMetricFamiliesPerTenant() MetricFamiliesPerTenant {
+	data := MetricFamiliesPerTenant{}
 	for _, entry := range r.Registries() {
-		// Set for removed users.
+		// Set for removed tenants.
 		if entry.reg == nil {
 			if entry.lastGather != nil {
 				data = append(data, struct {
-					user    string
+					tenant  string
 					metrics MetricFamilyMap
-				}{user: "", metrics: entry.lastGather})
+				}{tenant: "", metrics: entry.lastGather})
 			}
 
 			continue
@@ -724,17 +726,17 @@ func (r *UserRegistries) BuildMetricFamiliesPerUser() MetricFamiliesPerUser {
 			mfm, err = NewMetricFamilyMap(m)
 			if err == nil {
 				data = append(data, struct {
-					user    string
+					tenant  string
 					metrics MetricFamilyMap
 				}{
-					user:    entry.user,
+					tenant:  entry.tenant,
 					metrics: mfm,
 				})
 			}
 		}
 
 		if err != nil {
-			level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "user", entry.user, "err", err)
+			level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "tenant", entry.tenant, "err", err)
 			continue
 		}
 	}

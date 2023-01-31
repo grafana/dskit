@@ -35,6 +35,7 @@ type clientMetrics struct {
 }
 
 func newClientMetrics(regs []prometheus.Registerer) *clientMetrics {
+	//lint:ignore faillint need to apply the metric to multiple registerer
 	operations := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "operations_total",
 		Help: "Total number of operations against cache.",
@@ -43,6 +44,7 @@ func newClientMetrics(regs []prometheus.Registerer) *clientMetrics {
 	operations.WithLabelValues(opSet)
 	operations.WithLabelValues(opDelete)
 
+	//lint:ignore faillint need to apply the metric to multiple registerer
 	failures := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "operation_failures_total",
 		Help: "Total number of operations against cache that failed.",
@@ -55,6 +57,7 @@ func newClientMetrics(regs []prometheus.Registerer) *clientMetrics {
 		failures.WithLabelValues(op, reasonOther)
 	}
 
+	//lint:ignore faillint need to apply the metric to multiple registerer
 	skipped := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "operation_skipped_total",
 		Help: "Total number of operations against cache that have been skipped.",
@@ -63,6 +66,7 @@ func newClientMetrics(regs []prometheus.Registerer) *clientMetrics {
 	skipped.WithLabelValues(opSet, reasonMaxItemSize)
 	skipped.WithLabelValues(opSet, reasonAsyncBufferFull)
 
+	//lint:ignore faillint need to apply the metric to multiple registerer
 	duration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "operation_duration_seconds",
 		Help:    "Duration of operations against cache.",
@@ -72,6 +76,7 @@ func newClientMetrics(regs []prometheus.Registerer) *clientMetrics {
 	duration.WithLabelValues(opSet)
 	duration.WithLabelValues(opDelete)
 
+	//lint:ignore faillint need to apply the metric to multiple registerer
 	dataSize := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "operation_data_size_bytes",
 		Help: "Tracks the size of the data stored in and fetched from cache.",

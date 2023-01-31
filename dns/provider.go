@@ -12,12 +12,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
 	"github.com/grafana/dskit/dns/godns"
 	"github.com/grafana/dskit/dns/miekgdns"
 	"github.com/grafana/dskit/multierror"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Provider is a stateful cache for asynchronous DNS resolutions. It provides a way to resolve addresses and obtain them.
@@ -74,30 +72,26 @@ func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType Reso
 }
 
 func newProvider(logger log.Logger, regs []prometheus.Registerer, resolverType ResolverType) *Provider {
-	var resolverLookupCount prometheus.Counter
-	var resolverFailureCount prometheus.Counter
-
-	for _, reg := range regs {
-		resolverLookupCount = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "dns_lookups_total",
-			Help: "The number of DNS lookups resolutions attempts",
-		})
-		resolverFailureCount = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "dns_failures_total",
-			Help: "The number of DNS lookup failures",
-		})
-	}
 	p := &Provider{
 		resolver: NewResolver(resolverType.ToResolver(logger), logger),
 		resolved: make(map[string][]string),
 		logger:   logger,
+		//lint:ignore faillint need to apply the metric to multiple registerer
 		resolverAddrsDesc: prometheus.NewDesc(
 			"dns_provider_results",
 			"The number of resolved endpoints for each configured address",
 			[]string{"addr"},
 			nil),
-		resolverLookupsCount:  resolverLookupCount,
-		resolverFailuresCount: resolverFailureCount,
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		resolverLookupsCount: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dns_lookups_total",
+			Help: "The number of DNS lookups resolutions attempts",
+		}),
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		resolverFailuresCount: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dns_failures_total",
+			Help: "The number of DNS lookup failures",
+		}),
 	}
 
 	for _, reg := range regs {

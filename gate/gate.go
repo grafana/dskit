@@ -72,14 +72,17 @@ func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Ga
 // requests, currently inflight requests, and the duration of calls to the Start method. The constructor accept multiple
 // prometheus Registerer.
 func NewInstrumentedWithRegisterers(regs []prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
+	//lint:ignore faillint need to apply the metric to multiple registerer
 	max := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "gate_queries_concurrent_max",
 		Help: "Number of maximum concurrent queries allowed.",
 	})
+	//lint:ignore faillint need to apply the metric to multiple registerer
 	inflight := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "gate_queries_in_flight",
 		Help: "Number of queries that are currently in flight.",
 	})
+	//lint:ignore faillint need to apply the metric to multiple registerer
 	duration := prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "gate_duration_seconds",
 		Help:    "How many seconds it took for queries to wait at the gate.",

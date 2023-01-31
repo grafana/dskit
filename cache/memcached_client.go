@@ -181,6 +181,7 @@ func newMemcachedClient(
 	newRegisterer := prometheus.WrapRegistererWith(
 		prometheus.Labels{labelBackend: backendMemcached},
 		prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
+	reg = prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 
 	backwardCompatibleRegs := []prometheus.Registerer{reg, newRegisterer}
 
@@ -202,7 +203,7 @@ func newMemcachedClient(
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.NewWithRegisterers(
 			[]prometheus.Registerer{
-				prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
+				prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix+getMultiPrefix, reg),
 				prometheus.WrapRegistererWithPrefix(getMultiPrefix, newRegisterer),
 			},
 			config.MaxGetMultiConcurrency,

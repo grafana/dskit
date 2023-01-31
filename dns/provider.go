@@ -94,7 +94,7 @@ func newProvider(logger log.Logger, regs []prometheus.Registerer, resolverType R
 
 	for _, reg := range regs {
 		if reg != nil {
-			reg.MustRegister(p.resolverLookupsCount, p.resolverFailuresCount)
+			reg.MustRegister(p, p.resolverLookupsCount, p.resolverFailuresCount)
 		}
 	}
 

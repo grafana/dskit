@@ -179,7 +179,7 @@ func newMemcachedClient(
 	name string,
 ) (*memcachedClient, error) {
 	newRegisterer := prometheus.WrapRegistererWith(
-		prometheus.Labels{labelName: name, labelBackend: backendMemcached},
+		prometheus.Labels{labelBackend: backendMemcached},
 		prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
 
 	backwardCompatibleRegs := []prometheus.Registerer{reg, newRegisterer}

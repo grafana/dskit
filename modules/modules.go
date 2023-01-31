@@ -180,7 +180,7 @@ func (m *Manager) IsUserVisibleModule(mod string) bool {
 }
 
 // IsTargetableModule check if given module is targetable or not. Returns true
-// if and only if the given module is registered and is target.
+// if and only if the given module is registered and is targetable.
 func (m *Manager) IsTargetableModule(mod string) bool {
 	val, ok := m.modules[mod]
 

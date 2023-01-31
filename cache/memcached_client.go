@@ -164,6 +164,10 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	client.Timeout = config.Timeout
 	client.MaxIdleConns = config.MaxIdleConnections
 
+	if reg != nil {
+		reg = prometheus.WrapRegistererWith(prometheus.Labels{labelName: name}, reg)
+	}
+
 	return newMemcachedClient(logger, client, selector, config, reg, name)
 }
 
@@ -175,19 +179,19 @@ func newMemcachedClient(
 	reg prometheus.Registerer,
 	name string,
 ) (*memcachedClient, error) {
-	if reg != nil {
-		reg = prometheus.WrapRegistererWith(
-			prometheus.Labels{labelName: name, labelBackend: backendMemcached},
-			prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
-	}
+	newRegisterer := prometheus.WrapRegistererWith(
+		prometheus.Labels{labelName: name, labelBackend: backendMemcached},
+		prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
 
-	addressProvider := dns.NewProvider(
+	backwardCompatibleRegs := []prometheus.Registerer{reg, newRegisterer}
+
+	addressProvider := dns.NewProviderWithRegisterers(
 		logger,
-		reg,
+		backwardCompatibleRegs,
 		dns.MiekgdnsResolverType,
 	)
 
-	metrics := newClientMetrics(reg)
+	metrics := newClientMetrics(backwardCompatibleRegs)
 
 	c := &memcachedClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
@@ -197,28 +201,33 @@ func newMemcachedClient(
 		selector:        selector,
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
-		getMultiGate: gate.New(
-			prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
+		getMultiGate: gate.NewWithRegisterers(
+			[]prometheus.Registerer{
+				prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
+				prometheus.WrapRegistererWithPrefix(getMultiPrefix, newRegisterer),
+			},
 			config.MaxGetMultiConcurrency,
 		),
 	}
 
-	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "memcached_client_info",
-		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
-		ConstLabels: prometheus.Labels{
-			"timeout":                      config.Timeout.String(),
-			"max_idle_connections":         strconv.Itoa(config.MaxIdleConnections),
-			"max_async_concurrency":        strconv.Itoa(config.MaxAsyncConcurrency),
-			"max_async_buffer_size":        strconv.Itoa(config.MaxAsyncBufferSize),
-			"max_item_size":                strconv.FormatUint(uint64(config.MaxItemSize), 10),
-			"max_get_multi_concurrency":    strconv.Itoa(config.MaxGetMultiConcurrency),
-			"max_get_multi_batch_size":     strconv.Itoa(config.MaxGetMultiBatchSize),
-			"dns_provider_update_interval": config.DNSProviderUpdateInterval.String(),
+	for _, reg := range backwardCompatibleRegs {
+		c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "memcached_client_info",
+			Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
+			ConstLabels: prometheus.Labels{
+				"timeout":                      config.Timeout.String(),
+				"max_idle_connections":         strconv.Itoa(config.MaxIdleConnections),
+				"max_async_concurrency":        strconv.Itoa(config.MaxAsyncConcurrency),
+				"max_async_buffer_size":        strconv.Itoa(config.MaxAsyncBufferSize),
+				"max_item_size":                strconv.FormatUint(uint64(config.MaxItemSize), 10),
+				"max_get_multi_concurrency":    strconv.Itoa(config.MaxGetMultiConcurrency),
+				"max_get_multi_batch_size":     strconv.Itoa(config.MaxGetMultiBatchSize),
+				"dns_provider_update_interval": config.DNSProviderUpdateInterval.String(),
+			},
 		},
-	},
-		func() float64 { return 1 },
-	)
+			func() float64 { return 1 },
+		)
+	}
 
 	// As soon as the client is created it must ensure that memcached server
 	// addresses are resolved, so we're going to trigger an initial addresses

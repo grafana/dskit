@@ -5,6 +5,7 @@ package dns
 
 import (
 	"context"
+	"github.com/prometheus/client_golang/prometheus"
 	"sort"
 	"strings"
 	"testing"
@@ -23,84 +24,88 @@ func TestProvider(t *testing.T) {
 		"127.0.0.5:19095",
 	}
 
-	prv := NewProvider(log.NewNopLogger(), nil, "")
-	prv.resolver = &mockResolver{
-		res: map[string][]string{
-			"a": ips[:2],
-			"b": ips[2:4],
-			"c": {ips[4]},
-		},
-	}
-	ctx := context.TODO()
-
-	checkMetrics := func(metrics string) {
-		const metadata = `
+	regs := []prometheus.Registerer{prometheus.NewPedanticRegistry(), prometheus.NewPedanticRegistry()}
+	prv1 := NewProvider(log.NewNopLogger(), nil, "")
+	prv2 := NewProviderWithRegisterers(log.NewNopLogger(), regs, "")
+	providers := []*Provider{prv1, prv2}
+	for _, prv := range providers {
+		prv.resolver = &mockResolver{
+			res: map[string][]string{
+				"a": ips[:2],
+				"b": ips[2:4],
+				"c": {ips[4]},
+			},
+		}
+		ctx := context.TODO()
+		checkMetrics := func(metrics string) {
+			const metadata = `
 		# HELP dns_provider_results The number of resolved endpoints for each configured address
 		# TYPE dns_provider_results gauge
 		`
-		expected := strings.NewReader(metadata + metrics + "\n")
-		assert.NoError(t, testutil.CollectAndCompare(prv, expected))
-	}
-	err := prv.Resolve(ctx, []string{"any+x"})
-	assert.NoError(t, err)
-	result := prv.Addresses()
-	sort.Strings(result)
-	assert.Equal(t, []string(nil), result)
-	checkMetrics(`dns_provider_results{addr="any+x"} 0`)
+			expected := strings.NewReader(metadata + metrics + "\n")
+			assert.NoError(t, testutil.CollectAndCompare(prv, expected))
+		}
+		err := prv.Resolve(ctx, []string{"any+x"})
+		assert.NoError(t, err)
+		result := prv.Addresses()
+		sort.Strings(result)
+		assert.Equal(t, []string(nil), result)
+		checkMetrics(`dns_provider_results{addr="any+x"} 0`)
 
-	err = prv.Resolve(ctx, []string{"any+a", "any+b", "any+c"})
-	assert.NoError(t, err)
-	result = prv.Addresses()
-	sort.Strings(result)
-	assert.Equal(t, ips, result)
-	checkMetrics(`
+		err = prv.Resolve(ctx, []string{"any+a", "any+b", "any+c"})
+		assert.NoError(t, err)
+		result = prv.Addresses()
+		sort.Strings(result)
+		assert.Equal(t, ips, result)
+		checkMetrics(`
 		dns_provider_results{addr="any+a"} 2
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="any+c"} 1`)
 
-	err = prv.Resolve(ctx, []string{"any+b", "any+c"})
-	assert.NoError(t, err)
-	result = prv.Addresses()
-	sort.Strings(result)
-	assert.Equal(t, ips[2:], result)
-	checkMetrics(`
+		err = prv.Resolve(ctx, []string{"any+b", "any+c"})
+		assert.NoError(t, err)
+		result = prv.Addresses()
+		sort.Strings(result)
+		assert.Equal(t, ips[2:], result)
+		checkMetrics(`
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="any+c"} 1`)
 
-	err = prv.Resolve(ctx, []string{"any+x"})
-	assert.NoError(t, err)
-	result = prv.Addresses()
-	sort.Strings(result)
-	assert.Equal(t, []string(nil), result)
-	checkMetrics(`dns_provider_results{addr="any+x"} 0`)
+		err = prv.Resolve(ctx, []string{"any+x"})
+		assert.NoError(t, err)
+		result = prv.Addresses()
+		sort.Strings(result)
+		assert.Equal(t, []string(nil), result)
+		checkMetrics(`dns_provider_results{addr="any+x"} 0`)
 
-	err = prv.Resolve(ctx, []string{"any+a", "any+b", "any+c"})
-	assert.NoError(t, err)
-	result = prv.Addresses()
-	sort.Strings(result)
-	assert.Equal(t, ips, result)
-	checkMetrics(`
+		err = prv.Resolve(ctx, []string{"any+a", "any+b", "any+c"})
+		assert.NoError(t, err)
+		result = prv.Addresses()
+		sort.Strings(result)
+		assert.Equal(t, ips, result)
+		checkMetrics(`
 		dns_provider_results{addr="any+a"} 2
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="any+c"} 1`)
 
-	err = prv.Resolve(ctx, []string{"any+b", "example.com:90", "any+c"})
-	assert.NoError(t, err)
-	result = prv.Addresses()
-	sort.Strings(result)
-	assert.Equal(t, append(ips[2:], "example.com:90"), result)
-	checkMetrics(`
+		err = prv.Resolve(ctx, []string{"any+b", "example.com:90", "any+c"})
+		assert.NoError(t, err)
+		result = prv.Addresses()
+		sort.Strings(result)
+		assert.Equal(t, append(ips[2:], "example.com:90"), result)
+		checkMetrics(`
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="example.com:90"} 1
 		dns_provider_results{addr="any+c"} 1`)
-	err = prv.Resolve(ctx, []string{"any+b", "any+c"})
-	assert.NoError(t, err)
-	result = prv.Addresses()
-	sort.Strings(result)
-	assert.Equal(t, ips[2:], result)
-	checkMetrics(`
+		err = prv.Resolve(ctx, []string{"any+b", "any+c"})
+		assert.NoError(t, err)
+		result = prv.Addresses()
+		sort.Strings(result)
+		assert.Equal(t, ips[2:], result)
+		checkMetrics(`
 		dns_provider_results{addr="any+b"} 2
 		dns_provider_results{addr="any+c"} 1`)
+	}
 }
 
 type mockResolver struct {

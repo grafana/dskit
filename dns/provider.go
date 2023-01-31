@@ -54,9 +54,39 @@ func (t ResolverType) ToResolver(logger log.Logger) ipLookupResolver {
 	return r
 }
 
+// NewProviderWithRegisterers returns a new empty provider with a given resolver type.
+// If empty resolver type is net.DefaultResolver. This accepts multiple prometheus Registerers.
+func NewProviderWithRegisterers(logger log.Logger, regs []prometheus.Registerer, resolverType ResolverType) *Provider {
+	if len(regs) == 0 {
+		regs = []prometheus.Registerer{prometheus.DefaultRegisterer}
+	}
+	if len(regs) == 1 {
+		return newProvider(logger, []prometheus.Registerer{regs[0]}, resolverType)
+	}
+
+	return newProvider(logger, regs, resolverType)
+}
+
 // NewProvider returns a new empty provider with a given resolver type.
 // If empty resolver type is net.DefaultResolver.
 func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType ResolverType) *Provider {
+	return newProvider(logger, []prometheus.Registerer{reg}, resolverType)
+}
+
+func newProvider(logger log.Logger, regs []prometheus.Registerer, resolverType ResolverType) *Provider {
+	var resolverLookupCount prometheus.Counter
+	var resolverFailureCount prometheus.Counter
+
+	for _, reg := range regs {
+		resolverLookupCount = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "dns_lookups_total",
+			Help: "The number of DNS lookups resolutions attempts",
+		})
+		resolverFailureCount = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "dns_failures_total",
+			Help: "The number of DNS lookup failures",
+		})
+	}
 	p := &Provider{
 		resolver: NewResolver(resolverType.ToResolver(logger), logger),
 		resolved: make(map[string][]string),
@@ -66,17 +96,14 @@ func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType Reso
 			"The number of resolved endpoints for each configured address",
 			[]string{"addr"},
 			nil),
-		resolverLookupsCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "dns_lookups_total",
-			Help: "The number of DNS lookups resolutions attempts",
-		}),
-		resolverFailuresCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "dns_failures_total",
-			Help: "The number of DNS lookup failures",
-		}),
+		resolverLookupsCount:  resolverLookupCount,
+		resolverFailuresCount: resolverFailureCount,
 	}
-	if reg != nil {
-		reg.MustRegister(p)
+
+	for _, reg := range regs {
+		if reg != nil {
+			reg.MustRegister(p)
+		}
 	}
 
 	return p

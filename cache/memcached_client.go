@@ -9,14 +9,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/gomemcache/memcache"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/gomemcache/memcache"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -210,23 +208,26 @@ func newMemcachedClient(
 		),
 	}
 
-	for _, reg := range backwardCompatibleRegs {
-		c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "memcached_client_info",
-			Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
-			ConstLabels: prometheus.Labels{
-				"timeout":                      config.Timeout.String(),
-				"max_idle_connections":         strconv.Itoa(config.MaxIdleConnections),
-				"max_async_concurrency":        strconv.Itoa(config.MaxAsyncConcurrency),
-				"max_async_buffer_size":        strconv.Itoa(config.MaxAsyncBufferSize),
-				"max_item_size":                strconv.FormatUint(uint64(config.MaxItemSize), 10),
-				"max_get_multi_concurrency":    strconv.Itoa(config.MaxGetMultiConcurrency),
-				"max_get_multi_batch_size":     strconv.Itoa(config.MaxGetMultiBatchSize),
-				"dns_provider_update_interval": config.DNSProviderUpdateInterval.String(),
-			},
+	//lint:ignore faillint need to apply the metric to multiple registerer
+	c.clientInfo = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "memcached_client_info",
+		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
+		ConstLabels: prometheus.Labels{
+			"timeout":                      config.Timeout.String(),
+			"max_idle_connections":         strconv.Itoa(config.MaxIdleConnections),
+			"max_async_concurrency":        strconv.Itoa(config.MaxAsyncConcurrency),
+			"max_async_buffer_size":        strconv.Itoa(config.MaxAsyncBufferSize),
+			"max_item_size":                strconv.FormatUint(uint64(config.MaxItemSize), 10),
+			"max_get_multi_concurrency":    strconv.Itoa(config.MaxGetMultiConcurrency),
+			"max_get_multi_batch_size":     strconv.Itoa(config.MaxGetMultiBatchSize),
+			"dns_provider_update_interval": config.DNSProviderUpdateInterval.String(),
 		},
-			func() float64 { return 1 },
-		)
+	},
+		func() float64 { return 1 },
+	)
+
+	for _, reg := range backwardCompatibleRegs {
+		reg.MustRegister(c.clientInfo)
 	}
 
 	// As soon as the client is created it must ensure that memcached server

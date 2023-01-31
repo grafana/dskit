@@ -9,12 +9,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/gomemcache/memcache"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (

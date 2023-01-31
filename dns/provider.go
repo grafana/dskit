@@ -12,10 +12,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/grafana/dskit/dns/godns"
 	"github.com/grafana/dskit/dns/miekgdns"
 	"github.com/grafana/dskit/multierror"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Provider is a stateful cache for asynchronous DNS resolutions. It provides a way to resolve addresses and obtain them.

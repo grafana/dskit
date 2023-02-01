@@ -65,46 +65,36 @@ func TestBlockingGate(t *testing.T) {
 	})
 }
 
-func TestInstrumentedGateWithRegisterers(t *testing.T) {
+func TestInstrumentedGate(t *testing.T) {
 	t.Run("max concurrency", func(t *testing.T) {
 		concurrency := 1
 		reg := prometheus.NewPedanticRegistry()
-		newReg := prometheus.NewPedanticRegistry()
-		_ = NewInstrumentedWithRegisterers([]prometheus.Registerer{reg, newReg}, concurrency, NewNoop())
+		_ = NewInstrumented(reg, concurrency, NewNoop())
 
-		regs := []*prometheus.Registry{reg, newReg}
-		for _, reg := range regs {
-			require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 			# HELP gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE gate_queries_concurrent_max gauge
 			gate_queries_concurrent_max 1
 		`), "gate_queries_concurrent_max"))
-		}
 	})
 
 	t.Run("inflight requests", func(t *testing.T) {
 		concurrency := 1
 		reg := prometheus.NewPedanticRegistry()
-		newReg := prometheus.NewPedanticRegistry()
-		g := NewInstrumentedWithRegisterers([]prometheus.Registerer{reg, newReg}, concurrency, NewNoop())
+		g := NewInstrumented(reg, concurrency, NewNoop())
 
-		regs := []*prometheus.Registry{reg, newReg}
-		for _, reg := range regs {
-			require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 			# HELP gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE gate_queries_in_flight gauge
 			gate_queries_in_flight 0
 		`), "gate_queries_in_flight"))
-		}
 
 		require.NoError(t, g.Start(context.Background()))
 
-		for _, reg := range regs {
-			require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 			# HELP gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE gate_queries_in_flight gauge
 			gate_queries_in_flight 1
 		`), "gate_queries_in_flight"))
-		}
 	})
 }

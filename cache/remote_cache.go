@@ -39,14 +39,14 @@ func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCac
 			name,
 			logger,
 			memcachedClient,
-			promregistry.TeeRegisterer{
-				Regs: []prometheus.Registerer{
+			promregistry.TeeRegisterer(
+				[]prometheus.Registerer{
 					prometheus.WrapRegistererWithPrefix(cachePrefix+legacyMemcachedPrefix, reg),
 					prometheus.WrapRegistererWith(
 						prometheus.Labels{labelBackend: backendMemcached},
 						prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
 				},
-			},
+			),
 		),
 	}
 }
@@ -63,13 +63,13 @@ func NewRedisCache(name string, logger log.Logger, redisClient RemoteCacheClient
 			name,
 			logger,
 			redisClient,
-			promregistry.TeeRegisterer{
-				Regs: []prometheus.Registerer{
+			promregistry.TeeRegisterer(
+				[]prometheus.Registerer{
 					prometheus.WrapRegistererWith(
 						prometheus.Labels{labelBackend: backendRedis},
 						prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
 				},
-			},
+			),
 		),
 	}
 }

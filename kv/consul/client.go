@@ -252,6 +252,7 @@ func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) b
 		}
 
 		if kvp == nil {
+			level.Debug(c.logger).Log("msg", "value is nil", "key", key, "index", index)
 			continue
 		}
 

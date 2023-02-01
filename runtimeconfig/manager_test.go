@@ -438,6 +438,72 @@ func TestManager_ShouldFastFailOnInvalidConfigAtStartup(t *testing.T) {
 	require.Error(t, services.StartAndAwaitRunning(context.Background(), m))
 }
 
+func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
+	// NOTE: This is to assert whether `runtime_config_last_reload_successful` is set back to 1
+	// after recovery from bad config, provided that after recovery the config hash is exactly same as before bad config failure.
+
+	// Create a valid runtime config file
+	tempFile, err := os.CreateTemp("", "valid-config")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.Remove(tempFile.Name()))
+	})
+
+	validConfig := []byte(`overrides:
+    user1:
+        limit2: 150
+`)
+
+	err = os.WriteFile(tempFile.Name(), validConfig, 0600)
+	require.NoError(t, err)
+
+	reloadPeriod := 100 * time.Millisecond
+
+	managerConfig := Config{
+		ReloadPeriod: reloadPeriod,
+		LoadPath:     []string{tempFile.Name()},
+		Loader:       testLoadOverrides,
+	}
+
+	reg := prometheus.NewPedanticRegistry()
+
+	manager, err := New(managerConfig, reg, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+
+	assertHashAndSuccessMetric := func(config []byte, lastSuccessful int) {
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
+					# TYPE runtime_config_hash gauge
+					runtime_config_hash{sha256="%s"} 1
+					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+					# TYPE runtime_config_last_reload_successful gauge
+					runtime_config_last_reload_successful %d
+				`, fmt.Sprintf("%x", sha256.Sum256(config)), lastSuccessful))))
+
+	}
+
+	// Now success metric should be 1
+	assertHashAndSuccessMetric(validConfig, 1)
+
+	// Make config invalid. Now metrics should be 0
+	invalidConfig := []byte("invalid")
+	err = os.WriteFile(tempFile.Name(), invalidConfig, 0600)
+	require.NoError(t, err)
+
+	time.Sleep(2 * reloadPeriod)
+	assertHashAndSuccessMetric(validConfig, 0)
+
+	// Revert config to good state. Make sure it has same hash as before.
+	err = os.WriteFile(tempFile.Name(), validConfig, 0600)
+	require.NoError(t, err)
+
+	time.Sleep(2 * reloadPeriod)
+
+	// Now success metric should be back to 1.
+	assertHashAndSuccessMetric(validConfig, 1)
+}
+
 func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
 	loadCounter := atomic.NewInt32(0)
 

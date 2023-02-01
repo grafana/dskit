@@ -90,3 +90,4 @@
 * [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #215
 * [BUGFIX] Ring status page: display 100% ownership as "100%", rather than "1e+02%". #231
 * [BUGFIX] Memberlist: fix crash when methods from `memberlist.Delegate` interface are called on `*memberlist.KV` before the service is fully started. #244
+* [BUGFIX] runtimeconfig: Fix `runtime_config_last_reload_successful` metric after recovery from bad config with exact same config hash as before. #262

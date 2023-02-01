@@ -18,7 +18,7 @@ type module struct {
 	// initFn for this module (can return nil)
 	initFn func() (services.Service, error)
 
-	// is this module user visible (i.e. intended to be passed to `InitModuleServices`)
+	// is this module user visible
 	userVisible bool
 
 	// is the module allowed to be selected as a target
@@ -40,9 +40,12 @@ func UserInvisibleModule(m *module) {
 	m.targetable = false
 }
 
-// TargetableModule is an option for `RegisterModule` that marks module targetable.
-// Modules are targetable by default, except those that are user invisible.
-func TargetableModule(m *module) {
+// UserInvisibleTargetableModule is an option for `RegisterModule` that marks module not visible to user, but still keeps it targetable.
+// Modules are visible and targetable by default.
+func UserInvisibleTargetableModule(m *module) {
+	m.userVisible = false
+
+	// ensure that the module is still targetable.
 	m.targetable = true
 }
 

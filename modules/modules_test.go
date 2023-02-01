@@ -232,7 +232,7 @@ func TestIsTargetableModule(t *testing.T) {
 	invisibleModName := "invisible"
 	sut := NewManager(log.NewNopLogger())
 	sut.RegisterModule(defaultModName, mockInitFunc)
-	sut.RegisterModule(invisibleModName, mockInitFunc, UserInvisibleModule, TargetableModule)
+	sut.RegisterModule(invisibleModName, mockInitFunc, UserInvisibleTargetableModule)
 
 	var result = sut.IsUserVisibleModule(defaultModName)
 	assert.True(t, result, "module '%v' should be user visible", defaultModName)

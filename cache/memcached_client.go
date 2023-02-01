@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/gomemcache/memcache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
@@ -214,8 +215,7 @@ func newMemcachedClient(
 		),
 	}
 
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	c.clientInfo = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "client_info",
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
@@ -231,10 +231,6 @@ func newMemcachedClient(
 	},
 		func() float64 { return 1 },
 	)
-
-	for _, reg := range backwardCompatibleRegs {
-		reg.MustRegister(c.clientInfo)
-	}
 
 	// As soon as the client is created it must ensure that memcached server
 	// addresses are resolved, so we're going to trigger an initial addresses

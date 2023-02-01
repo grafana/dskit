@@ -1,6 +1,5 @@
 ## Changelog
 
-* [BUGFIX] runtimeconfig: Fix `runtime_config_last_reload_successful` metric after recovery from bad config with exact same config hash as before. #262
 * [CHANGE] Change `WaitRingStability` and `WaitInstanceState` methods signature to rely on `ReadRing` instead. #251
 * [CHANGE] Added new `-consul.cas-retry-delay` flag. It has a default value of `1s`, while previously there was no delay between retries. #178
 * [CHANGE] Flagext: `DayValue` now always uses UTC when parsing or displaying dates. #71
@@ -91,3 +90,4 @@
 * [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #215
 * [BUGFIX] Ring status page: display 100% ownership as "100%", rather than "1e+02%". #231
 * [BUGFIX] Memberlist: fix crash when methods from `memberlist.Delegate` interface are called on `*memberlist.KV` before the service is fully started. #244
+* [BUGFIX] runtimeconfig: Fix `runtime_config_last_reload_successful` metric after recovery from bad config with exact same config hash as before. #262

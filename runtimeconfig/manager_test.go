@@ -471,7 +471,7 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 
-	assertHashAndSuccessMetric := func(config []byte, successCount int) {
+	assertHashAndSuccessMetric := func(config []byte, lastSuccessful int) {
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
@@ -479,7 +479,7 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful %d
-				`, fmt.Sprintf("%x", sha256.Sum256(config)), successCount))))
+				`, fmt.Sprintf("%x", sha256.Sum256(config)), lastSuccessful))))
 
 	}
 

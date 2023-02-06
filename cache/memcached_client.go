@@ -184,16 +184,15 @@ func newMemcachedClient(
 		prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
 	reg = prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 
-	backwardCompatibleRegs := []prometheus.Registerer{reg, newRegisterer}
-	teeRegisterer := promregistry.TeeRegisterer(backwardCompatibleRegs)
+	backwardCompatibleRegs := promregistry.TeeRegisterer{reg, newRegisterer}
 
 	addressProvider := dns.NewProvider(
 		logger,
-		teeRegisterer,
+		backwardCompatibleRegs,
 		dns.MiekgdnsResolverType,
 	)
 
-	metrics := newClientMetrics(teeRegisterer)
+	metrics := newClientMetrics(backwardCompatibleRegs)
 
 	c := &memcachedClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
@@ -204,12 +203,10 @@ func newMemcachedClient(
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
-			promregistry.TeeRegisterer(
-				[]prometheus.Registerer{
-					prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
-					prometheus.WrapRegistererWithPrefix(getMultiPrefix, newRegisterer),
-				},
-			),
+			promregistry.TeeRegisterer{
+				prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
+				prometheus.WrapRegistererWithPrefix(getMultiPrefix, newRegisterer),
+			},
 			config.MaxGetMultiConcurrency,
 		),
 	}

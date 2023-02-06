@@ -166,7 +166,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	client.MaxIdleConns = config.MaxIdleConnections
 
 	if reg != nil {
-		reg = prometheus.WrapRegistererWith(prometheus.Labels{labelName: name}, reg)
+		reg = prometheus.WrapRegistererWith(prometheus.Labels{labelCacheName: name}, reg)
 	}
 	return newMemcachedClient(logger, client, selector, config, reg, name)
 }
@@ -180,7 +180,7 @@ func newMemcachedClient(
 	name string,
 ) (*memcachedClient, error) {
 	newRegisterer := prometheus.WrapRegistererWith(
-		prometheus.Labels{labelBackend: backendMemcached},
+		prometheus.Labels{labelCacheBackend: backendMemcached},
 		prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
 	reg = prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 

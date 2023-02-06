@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLRUCache_StoreFetch(t *testing.T) {
+func TestLRUCache_StoreFetchDelete(t *testing.T) {
 	var (
 		mock = NewMockCache()
 		ctx  = context.Background()
@@ -61,6 +61,18 @@ func TestLRUCache_StoreFetch(t *testing.T) {
 	require.NoError(t, err)
 	value := lru.Fetch(context.Background(), []string{"buzz"})
 	require.Equal(t, map[string][]uint8{}, value)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cache_memory_items_count Total number of items currently in the in-memory cache.
+		# TYPE cache_memory_items_count gauge
+		cache_memory_items_count{name="test"} 2
+		# HELP cache_memory_hits_total Total number of requests to the in-memory cache that were a hit.
+		# TYPE cache_memory_hits_total counter
+		cache_memory_hits_total{name="test"} 2
+		# HELP cache_memory_requests_total Total number of requests to the in-memory cache.
+		# TYPE cache_memory_requests_total counter
+		cache_memory_requests_total{name="test"} 5
+	`)))
 }
 
 func TestLRUCache_Evictions(t *testing.T) {

@@ -35,7 +35,7 @@ const (
 )
 
 const zeroZeroZeroZero = "0.0.0.0"
-const colonColonZero = "[::0]"
+const colonColon = "::"
 
 // TCPTransportConfig is a configuration structure for creating new TCPTransport.
 type TCPTransportConfig struct {
@@ -380,7 +380,7 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 			if advertiseAddr == nil {
 				return nil, 0, fmt.Errorf("failed to parse advertise address %q", ip)
 			}
-		case colonColonZero:
+		case colonColon:
 			inet6Ip, err := netutil.GetFirstAddressOf(nil, t.logger, true)
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to get private inet6 address: %w", err)

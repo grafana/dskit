@@ -181,7 +181,7 @@ func newMemcachedClient(
 ) (*memcachedClient, error) {
 	newRegisterer := prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendMemcached},
-		prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
+		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 	reg = prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 
 	backwardCompatibleRegs := promregistry.TeeRegisterer{reg, newRegisterer}

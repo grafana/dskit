@@ -42,6 +42,8 @@ func TestVersioned(t *testing.T) {
 		require.NoError(t, err)
 		resV1 = v1.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, map[string][]uint8{}, resV1)
+		resV2 = v2.Fetch(context.Background(), []string{"hit", "miss"})
+		assert.Equal(t, v2Data, resV2, "v2 cached data should still retain the data")
 		err = v2.Delete(context.Background(), "hit")
 		require.NoError(t, err)
 		resV2 = v2.Fetch(context.Background(), []string{"hit", "miss"})

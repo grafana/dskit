@@ -23,7 +23,7 @@ const (
 	backendRedis          = "redis"
 	backendMemcached      = "memcached"
 	cacheMetricNamePrefix = "cache_"
-	getMultiPrefix        = "getMulti_"
+	getMultiPrefix        = "getmulti_"
 	legacyMemcachedPrefix = "memcached_"
 )
 

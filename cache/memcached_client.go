@@ -176,15 +176,15 @@ func newMemcachedClient(
 	client memcachedClientBackend,
 	selector updatableServerSelector,
 	config MemcachedClientConfig,
-	reg prometheus.Registerer,
+	legacyRegister prometheus.Registerer,
 	name string,
 ) (*memcachedClient, error) {
-	newRegisterer := prometheus.WrapRegistererWith(
+	reg := prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendMemcached},
-		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
-	reg = prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
+		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, legacyRegister))
+	legacyRegister = prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, legacyRegister)
 
-	backwardCompatibleRegs := promregistry.TeeRegisterer{reg, newRegisterer}
+	backwardCompatibleRegs := promregistry.TeeRegisterer{legacyRegister, reg}
 
 	addressProvider := dns.NewProvider(
 		logger,
@@ -204,14 +204,14 @@ func newMemcachedClient(
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
 			promregistry.TeeRegisterer{
+				prometheus.WrapRegistererWithPrefix(getMultiPrefix, legacyRegister),
 				prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
-				prometheus.WrapRegistererWithPrefix(getMultiPrefix, newRegisterer),
 			},
 			config.MaxGetMultiConcurrency,
 		),
 	}
 
-	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+	c.clientInfo = promauto.With(legacyRegister).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "client_info",
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{

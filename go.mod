@@ -15,7 +15,6 @@ require (
 	github.com/gogo/status v1.1.0
 	github.com/golang/snappy v0.0.4
 	github.com/grafana/gomemcache v0.0.0-20230105173749-11f792309e1f
-	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-sockaddr v1.0.2
@@ -29,7 +28,7 @@ require (
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.37.0
 	github.com/stretchr/testify v1.8.1
-	github.com/weaveworks/common v0.0.0-20221201103051-7c2720a9024d
+	github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63
 	go.etcd.io/etcd/api/v3 v3.5.0
 	go.etcd.io/etcd/client/pkg/v3 v3.5.0
 	go.etcd.io/etcd/client/v3 v3.5.0

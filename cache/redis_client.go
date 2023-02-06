@@ -177,11 +177,9 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 		opts.TLSConfig = tlsClientConfig
 	}
 
-	if reg != nil {
-		reg = prometheus.WrapRegistererWith(
-			prometheus.Labels{labelCacheName: name, labelCacheBackend: backendRedis},
-			prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
-	}
+	reg = prometheus.WrapRegistererWith(
+		prometheus.Labels{labelCacheName: name, labelCacheBackend: backendRedis},
+		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
 	metrics := newClientMetrics(reg)
 

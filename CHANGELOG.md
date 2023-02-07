@@ -80,6 +80,26 @@
 * [ENHANCEMENT] Add the metrics package to support per tenant metric aggregation. #258
 * [ENHANCEMENT] Cache: Add Delete method to cache.Cache interface. #255
 * [ENHANCEMENT] Cache: Add backward compatible metrics exposition for cache. #255
+  * `<prefix>_cache_client_info{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_dns_failures_total{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_dns_lookups_total{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_dns_provider_results{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_getmulti_gate_duration_seconds_bucket{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_getmulti_gate_duration_seconds_count{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_getmulti_gate_duration_seconds_sum{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_getmulti_gate_queries_concurrent_max{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_getmulti_gate_queries_in_flight{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_hits_total{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operation_data_size_bytes_bucket{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operation_data_size_bytes_count{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operation_data_size_bytes_sum{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operation_duration_seconds_bucket{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operation_duration_seconds_count{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operation_duration_seconds_sum{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operation_failures_total{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operation_skipped_total{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_operations_total{backend="[memcached|redis]",...}`
+  * `<prefix>_cache_requests_total{backend="[memcached|redis]",...}`
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

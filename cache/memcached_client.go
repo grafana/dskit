@@ -204,15 +204,15 @@ func newMemcachedClient(
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
 			promregistry.TeeRegisterer{
-				prometheus.WrapRegistererWithPrefix(getMultiPrefix, legacyRegister),
-				prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
+				prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, legacyRegister),
+				prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
 			},
 			config.MaxGetMultiConcurrency,
 		),
 	}
 
-	c.clientInfo = promauto.With(legacyRegister).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "client_info",
+	c.clientInfo = promauto.With(backwardCompatibleRegs).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: clientInfoMetricName,
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
 			"timeout":                      config.Timeout.String(),

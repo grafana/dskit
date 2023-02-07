@@ -24,7 +24,7 @@ func TestURLEscaped(t *testing.T) {
 	flags := flag.NewFlagSet("test", flag.ExitOnError)
 	flags.Var(&v, "v", "some secret credentials")
 	err = flags.Parse([]string{"-v", testS3URL})
-
+	require.NoError(t, err)
 	assert.Equal(t, v.String(), expected.String())
 
 	// yaml
@@ -32,7 +32,7 @@ func TestURLEscaped(t *testing.T) {
 		S3 URLEscaped `yaml:"s3"`
 	}{}
 	err = yaml.Unmarshal([]byte(fmt.Sprintf("s3: %s", testS3URL)), &yv)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, yv.S3.String(), expected.String())
 
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+
 	"github.com/weaveworks/common/logging"
 )
 
@@ -93,6 +94,61 @@ func TestLoggingRequestsAtInfoLevel(t *testing.T) {
 		for _, content := range tc.logContains {
 			require.True(t, bytes.Contains(buf.Bytes(), []byte(content)))
 		}
+	}
+}
+
+func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
+	defaultHeaders := []string{"Authorization", "Cookie", "X-Csrf-Token"}
+	for _, tc := range []struct {
+		name              string
+		setHeaderList     []string
+		excludeHeaderList []string
+		mustNotContain    []string
+	}{
+		{
+			name:           "Default excluded headers are excluded",
+			setHeaderList:  defaultHeaders,
+			mustNotContain: defaultHeaders,
+		},
+		{
+			name:              "Extra configured header is also excluded",
+			setHeaderList:     append(defaultHeaders, "X-Secret-Header"),
+			excludeHeaderList: []string{"X-Secret-Header"},
+			mustNotContain:    append(defaultHeaders, "X-Secret-Header"),
+		},
+		{
+			name:              "Multiple extra configured headers are also excluded",
+			setHeaderList:     append(defaultHeaders, "X-Secret-Header", "X-Secret-Header-2"),
+			excludeHeaderList: []string{"X-Secret-Header", "X-Secret-Header-2"},
+			mustNotContain:    append(defaultHeaders, "X-Secret-Header", "X-Secret-Header-2"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := bytes.NewBuffer(nil)
+			logrusLogger := logrus.New()
+			logrusLogger.Out = buf
+			logrusLogger.Level = logrus.DebugLevel
+
+			loggingMiddleware := NewLogMiddleware(logging.Logrus(logrusLogger), true, false, nil, tc.excludeHeaderList)
+
+			handler := func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, "<html><body>Hello world!</body></html>")
+			}
+			loggingHandler := loggingMiddleware.Wrap(http.HandlerFunc(handler))
+
+			req := httptest.NewRequest("GET", "http://example.com/foo", nil)
+			for _, header := range tc.setHeaderList {
+				req.Header.Set(header, header)
+			}
+
+			recorder := httptest.NewRecorder()
+			loggingHandler.ServeHTTP(recorder, req)
+
+			output := buf.String()
+			for _, header := range tc.mustNotContain {
+				require.NotContains(t, output, header)
+			}
+		})
 	}
 }
 

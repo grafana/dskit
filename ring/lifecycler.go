@@ -4,9 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sort"
+	strconv "strconv"
 	"sync"
 	"time"
 
@@ -169,7 +171,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		cfg:                   cfg,
 		flushTransferer:       flushTransferer,
 		KVStore:               store,
-		Addr:                  fmt.Sprintf("%s:%d", addr, port),
+		Addr:                  net.JoinHostPort(addr, strconv.Itoa(port)),
 		ID:                    cfg.ID,
 		RingName:              ringName,
 		RingKey:               ringKey,

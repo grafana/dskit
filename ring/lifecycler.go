@@ -128,10 +128,10 @@ type Lifecycler struct {
 	readySince time.Time
 
 	// Keeps stats updated at every heartbeat period
-	countersLock          sync.RWMutex
-	healthyInstancesCount int
-	instancesInZoneCount  int
-	zonesCount            int
+	countersLock                sync.RWMutex
+	healthyInstancesCount       int
+	healthyInstancesInZoneCount int
+	zonesCount                  int
 
 	lifecyclerMetrics *LifecyclerMetrics
 	logger            log.Logger
@@ -384,13 +384,13 @@ func (i *Lifecycler) HealthyInstancesCount() int {
 	return i.healthyInstancesCount
 }
 
-// InstancesInZoneCount returns the number of instances in the ring that are registered in
+// HealthyInstancesInZoneCount returns the number of instances in the ring that are registered in
 // this lifecycler's zone, updated during the last heartbeat period.
-func (i *Lifecycler) InstancesInZoneCount() int {
+func (i *Lifecycler) HealthyInstancesInZoneCount() int {
 	i.countersLock.RLock()
 	defer i.countersLock.RUnlock()
 
-	return i.instancesInZoneCount
+	return i.healthyInstancesInZoneCount
 }
 
 // ZonesCount returns the number of zones for which there's at least 1 instance registered
@@ -811,11 +811,14 @@ func (i *Lifecycler) updateCounters(ringDesc *Desc) {
 		now := time.Now()
 
 		for _, ingester := range ringDesc.Ingesters {
-			zones[ingester.Zone]++
+			if _, ok := zones[ingester.Zone]; !ok {
+				zones[ingester.Zone] = 0
+			}
 
 			// Count the number of healthy instances for Write operation.
 			if ingester.IsHealthy(Write, i.cfg.RingConfig.HeartbeatTimeout, now) {
 				healthyInstancesCount++
+				zones[ingester.Zone]++
 			}
 		}
 	}
@@ -823,7 +826,7 @@ func (i *Lifecycler) updateCounters(ringDesc *Desc) {
 	// Update counters
 	i.countersLock.Lock()
 	i.healthyInstancesCount = healthyInstancesCount
-	i.instancesInZoneCount = zones[i.cfg.Zone]
+	i.healthyInstancesInZoneCount = zones[i.cfg.Zone]
 	i.zonesCount = len(zones)
 	i.countersLock.Unlock()
 }

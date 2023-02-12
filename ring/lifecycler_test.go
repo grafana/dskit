@@ -106,39 +106,102 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = ringStore
 
-	events := []struct {
-		zone                         string
-		expectedInstancesInZoneCount int
+	instances := []struct {
+		zone                                string
+		healthy                             bool
+		expectedHealthyInstancesInZoneCount int
+		expectedHealthyInstancesCount       int
 	}{
-		{"zone-a", 1},
-		{"zone-b", 1},
-		{"zone-a", 2},
-		{"zone-c", 1},
-		{"zone-b", 2},
+		{
+			zone:    "zone-a",
+			healthy: true,
+			// after adding a healthy instance in zone-a, expectedHealthyInstancesInZoneCount in zone-a becomes 1
+			expectedHealthyInstancesInZoneCount: 1,
+			// after adding a healthy instance in zone-a, expectedHealthyInstancesCount is 1
+			expectedHealthyInstancesCount: 1,
+		},
+		{
+			zone:    "zone-a",
+			healthy: false,
+			// after adding an unhealthy instance in zone-a, expectedHealthyInstancesInZoneCount in zone-a remains 1
+			expectedHealthyInstancesInZoneCount: 1,
+			// zone-a was already added, so expectedHealthyInstancesCount remains 1
+			expectedHealthyInstancesCount: 1,
+		},
+		{
+			zone:    "zone-a",
+			healthy: true,
+			// after adding a healthy instance in zone-a, expectedHealthyInstancesInZoneCount in zone-a becomes 2
+			expectedHealthyInstancesInZoneCount: 2,
+			// zone-a was already added, so expectedHealthyInstancesCount remains 1
+			expectedHealthyInstancesCount: 1,
+		},
+		{
+			zone:    "zone-b",
+			healthy: true,
+			// after adding a healthy instance in zone-b, expectedHealthyInstancesInZoneCount in zone-b becomes 1
+			expectedHealthyInstancesInZoneCount: 1,
+			// after adding a healthy instance in zone-b, expectedHealthyInstancesCount becomes 2
+			expectedHealthyInstancesCount: 2,
+		},
+		{
+			zone:    "zone-c",
+			healthy: false,
+			// after adding an unhealthy instance in zone-c, expectedHealthyInstancesInZoneCount in zone-c remains 0
+			expectedHealthyInstancesInZoneCount: 0,
+			// after adding an unhealthy instance in zone-c, expectedHealthyInstancesCount becomes 3
+			expectedHealthyInstancesCount: 3,
+		},
+		{
+			zone:    "zone-c",
+			healthy: true,
+			// after adding a healthy instance in zone-c, expectedHealthyInstancesInZoneCount in zone-c becomes 1
+			expectedHealthyInstancesInZoneCount: 1,
+			// zone-c was already added, so expectedHealthyInstancesCount remains 3
+			expectedHealthyInstancesCount: 3,
+		},
+		{
+			zone:    "zone-b",
+			healthy: true,
+			// after adding a healthy instance in zone-b, expectedHealthyInstancesInZoneCount in zone-b becomes 2
+			expectedHealthyInstancesInZoneCount: 2,
+			// zone-b was already added, so expectedHealthyInstancesCount remains 3
+			expectedHealthyInstancesCount: 3,
+		},
 	}
 
-	for idx, event := range events {
+	expectedHealthInstancesCounter := 0
+	for idx, instance := range instances {
 		ctx := context.Background()
 
-		// Register an ingester to the ring.
+		// Register an instance to the ring.
 		cfg := testLifecyclerConfig(ringConfig, fmt.Sprintf("instance-%d", idx))
 		cfg.HeartbeatPeriod = 100 * time.Millisecond
-		cfg.JoinAfter = 100 * time.Millisecond
-		cfg.Zone = event.zone
+		joinTimeoutMs := 1000
+		// unhealthy instances join after 2000ms, which exceeds the 1000ms timeout
+		joinAfterMs := 2000
+		if instance.healthy {
+			expectedHealthInstancesCounter++
+			// healthy instances join after 100ms, which is within the 1000ms timeout
+			joinAfterMs = 100
+		}
+		cfg.JoinAfter = time.Duration(joinAfterMs) * time.Millisecond
+		cfg.Zone = instance.zone
 
-		lifecycler, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		lifecycler, err := NewLifecycler(cfg, &nopFlushTransferer{}, "instance", ringKey, true, log.NewNopLogger(), nil)
 		require.NoError(t, err)
-		assert.Equal(t, 0, lifecycler.InstancesInZoneCount())
+		assert.Equal(t, 0, lifecycler.HealthyInstancesInZoneCount())
 
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
 		defer services.StopAndAwaitTerminated(ctx, lifecycler) // nolint:errcheck
 
 		// Wait until joined.
-		test.Poll(t, time.Second, idx+1, func() interface{} {
+		test.Poll(t, time.Duration(joinTimeoutMs)*time.Millisecond, expectedHealthInstancesCounter, func() interface{} {
 			return lifecycler.HealthyInstancesCount()
 		})
 
-		require.Equal(t, event.expectedInstancesInZoneCount, lifecycler.InstancesInZoneCount())
+		require.Equal(t, instance.expectedHealthyInstancesInZoneCount, lifecycler.HealthyInstancesInZoneCount())
+		require.Equal(t, instance.expectedHealthyInstancesCount, lifecycler.ZonesCount())
 	}
 }
 

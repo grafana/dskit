@@ -100,7 +100,7 @@
   * `<prefix>_cache_operation_skipped_total{backend="[memcached|redis]",...}`
   * `<prefix>_cache_operations_total{backend="[memcached|redis]",...}`
   * `<prefix>_cache_requests_total{backend="[memcached|redis]",...}`
-* [ENHANCEMENT] Lifecycler: Added `InstancesInZoneCount` method returning the number of instances in the ring that are registered in lifecycler's zone, updated during the last heartbeat period. #266
+* [ENHANCEMENT] Lifecycler: Added `HealthyInstancesInZoneCount` method returning the number of healthy instances in the ring that are registered in lifecycler's zone, updated during the last heartbeat period. #266
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

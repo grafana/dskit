@@ -21,10 +21,9 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 			backend,
 			&mockServerSelector{},
 			MemcachedClientConfig{
-				Addresses:                 []string{"localhost"},
-				MaxAsyncConcurrency:       1,
-				MaxAsyncBufferSize:        10,
-				DNSProviderUpdateInterval: 10 * time.Second,
+				Addresses:           []string{"localhost"},
+				MaxAsyncConcurrency: 1,
+				MaxAsyncBufferSize:  10,
 			},
 			prometheus.NewPedanticRegistry(),
 			"test",

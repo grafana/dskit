@@ -17,14 +17,23 @@ func (v URLEscaped) String() string {
 }
 
 // Set implements flag.Value
-// Set make sure given URL string is escaped.
+// Set make sure given URL string is saved as escaped.
 func (v *URLEscaped) Set(s string) error {
+	// if given s is already escaped
+	// NOTE: unescaping already unescaped URL is no-op.
+	s, err := url.QueryUnescape(s)
+	if err != nil {
+		return err
+	}
+
+	// now we know for sure `s` is unescaped.
 	s = url.QueryEscape(s)
 
 	u, err := url.Parse(s)
 	if err != nil {
 		return err
 	}
+
 	v.URL = u
 	return nil
 }

@@ -36,6 +36,7 @@ type memcachedClientBackend interface {
 	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 	Delete(key string) error
+	Close()
 }
 
 // updatableServerSelector extends the interface used for picking a memcached server
@@ -251,6 +252,9 @@ func (c *memcachedClient) Stop() {
 
 	// Stop running async operations.
 	c.asyncQueue.stop()
+
+	// Stop the underlying client.
+	c.client.Close()
 }
 
 func (c *memcachedClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {

@@ -98,6 +98,8 @@ func (m *mockMemcachedClientBackend) Delete(key string) error {
 	return nil
 }
 
+func (m *mockMemcachedClientBackend) Close() {}
+
 type mockServerSelector struct{}
 
 func (m mockServerSelector) SetServers(_ ...string) error {

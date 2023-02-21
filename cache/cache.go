@@ -87,8 +87,9 @@ const (
 )
 
 type BackendConfig struct {
-	Backend   string          `yaml:"backend"`
-	Memcached MemcachedConfig `yaml:"memcached"`
+	Backend   string                `yaml:"backend"`
+	Memcached MemcachedClientConfig `yaml:"memcached"`
+	Redis     RedisClientConfig     `yaml:"redis"`
 }
 
 // Validate the config.
@@ -100,6 +101,8 @@ func (cfg *BackendConfig) Validate() error {
 	switch cfg.Backend {
 	case BackendMemcached:
 		return cfg.Memcached.Validate()
+	case BackendRedis:
+		return cfg.Redis.Validate()
 	}
 	return nil
 }
@@ -111,12 +114,17 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		return nil, nil
 
 	case BackendMemcached:
-		client, err := NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached.ToMemcachedClientConfig(), reg)
+		client, err := NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached, reg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
 		return NewMemcachedCache(cacheName, logger, client, reg), nil
-
+	case BackendRedis:
+		client, err := NewRedisClient(logger, cacheName, cfg.Redis, reg)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create redis client")
+		}
+		return NewRedisCache(cacheName, logger, client, reg), nil
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}

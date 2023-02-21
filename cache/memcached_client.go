@@ -70,7 +70,7 @@ type MemcachedClientConfig struct {
 	// MinIdleConnectionsHeadroomPercentage specifies the minimum number of idle connections
 	// to keep open as a percentage of the number of recently used idle connections.
 	// If negative, idle connections are kept open indefinitely.
-	MinIdleConnectionsHeadroomPercentage float64 `yaml:"min_idle_connections_headroom_percentage"`
+	MinIdleConnectionsHeadroomPercentage float64 `yaml:"min_idle_connections_headroom_percentage" category:"advanced"`
 
 	// MaxIdleConnections specifies the maximum number of idle connections that
 	// will be maintained per address. For better performances, this should be

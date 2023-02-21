@@ -107,64 +107,94 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 	ringConfig.KVStore.Mock = ringStore
 
 	instances := []struct {
-		zone                                string
-		healthy                             bool
-		expectedHealthyInstancesInZoneCount int
-		expectedZonesCount                  int
+		zone                          string
+		healthy                       bool
+		expectedInstancesInZoneCount  int
+		expectedInstancesCount        int
+		expectedHealthyInstancesCount int
+		expectedZonesCount            int
 	}{
 		{
 			zone:    "zone-a",
 			healthy: true,
-			// after adding a healthy instance in zone-a, expectedHealthyInstancesInZoneCount in zone-a becomes 1
-			expectedHealthyInstancesInZoneCount: 1,
+			// after adding a healthy instance in zone-a, expectedInstancesInZoneCount in zone-a becomes 1
+			expectedInstancesInZoneCount: 1,
+			// after adding a healthy instance in zone-a, expectedInstancesCount becomes 1
+			expectedInstancesCount: 1,
+			// after adding a healthy instance in zone-a, expectedHealthyInstancesCount becomes 1
+			expectedHealthyInstancesCount: 1,
 			// after adding a healthy instance in zone-a, expectedZonesCount is 1
 			expectedZonesCount: 1,
 		},
 		{
 			zone:    "zone-a",
 			healthy: false,
-			// after adding an unhealthy instance in zone-a, expectedHealthyInstancesInZoneCount in zone-a remains 1
-			expectedHealthyInstancesInZoneCount: 1,
+			// after adding an unhealthy instance in zone-a, expectedInstancesInZoneCount in zone-a becomes 2
+			expectedInstancesInZoneCount: 2,
+			// after adding an unhealthy instance in zone-a, expectedInstancesCount becomes 2
+			expectedInstancesCount: 2,
+			// after adding an unhealthy instance in zone-a, expectedHealthyInstancesCount remains 1
+			expectedHealthyInstancesCount: 1,
 			// zone-a was already added, so expectedZonesCount remains 1
 			expectedZonesCount: 1,
 		},
 		{
 			zone:    "zone-a",
 			healthy: true,
-			// after adding a healthy instance in zone-a, expectedHealthyInstancesInZoneCount in zone-a becomes 2
-			expectedHealthyInstancesInZoneCount: 2,
+			// after adding a healthy instance in zone-a, expectedInstancesInZoneCount in zone-a becomes 3
+			expectedInstancesInZoneCount: 3,
+			// after adding a healthy instance in zone-a, expectedInstancesCount becomes 3
+			expectedInstancesCount: 3,
+			// after adding a healthy instance in zone-a, expectedHealthyInstancesCount becomes 2
+			expectedHealthyInstancesCount: 2,
 			// zone-a was already added, so expectedZonesCount remains 1
 			expectedZonesCount: 1,
 		},
 		{
 			zone:    "zone-b",
 			healthy: true,
-			// after adding a healthy instance in zone-b, expectedHealthyInstancesInZoneCount in zone-b becomes 1
-			expectedHealthyInstancesInZoneCount: 1,
+			// after adding a healthy instance in zone-b, expectedInstancesInZoneCount in zone-b becomes 1
+			expectedInstancesInZoneCount: 1,
+			// after adding a healthy instance in zone-b, expectedInstancesCount becomes 4
+			expectedInstancesCount: 4,
+			// after adding a healthy instance in zone-b, expectedHealthyInstancesCount becomes 3
+			expectedHealthyInstancesCount: 3,
 			// after adding a healthy instance in zone-b, expectedZonesCount becomes 2
 			expectedZonesCount: 2,
 		},
 		{
 			zone:    "zone-c",
 			healthy: false,
-			// after adding an unhealthy instance in zone-c, expectedHealthyInstancesInZoneCount in zone-c remains 0
-			expectedHealthyInstancesInZoneCount: 0,
+			// after adding an unhealthy instance in zone-c, expectedInstancesInZoneCount in zone-c becomes 1
+			expectedInstancesInZoneCount: 1,
+			// after adding an unhealthy instance in zone-c, expectedInstancesCount becomes 5
+			expectedInstancesCount: 5,
+			// after adding an unhealthy instance in zone-c, expectedHealthyInstancesCount remains 3
+			expectedHealthyInstancesCount: 3,
 			// after adding an unhealthy instance in zone-c, expectedZonesCount becomes 3
 			expectedZonesCount: 3,
 		},
 		{
 			zone:    "zone-c",
 			healthy: true,
-			// after adding a healthy instance in zone-c, expectedHealthyInstancesInZoneCount in zone-c becomes 1
-			expectedHealthyInstancesInZoneCount: 1,
+			// after adding a healthy instance in zone-c, expectedInstancesInZoneCount in zone-c becomes 2
+			expectedInstancesInZoneCount: 2,
+			// after adding a healthy instance in zone-c, expectedInstancesCount becomes 6
+			expectedInstancesCount: 6,
+			// after adding a healthy instance in zone-c, expectedHealthyInstancesCount becomes 4
+			expectedHealthyInstancesCount: 4,
 			// zone-c was already added, so expectedZonesCount remains 3
 			expectedZonesCount: 3,
 		},
 		{
 			zone:    "zone-b",
 			healthy: true,
-			// after adding a healthy instance in zone-b, expectedHealthyInstancesInZoneCount in zone-b becomes 2
-			expectedHealthyInstancesInZoneCount: 2,
+			// after adding a healthy instance in zone-b, expectedInstancesInZoneCount in zone-b becomes 2
+			expectedInstancesInZoneCount: 2,
+			// after adding a healthy instance in zone-b, expectedInstancesCount becomes 7
+			expectedInstancesCount: 7,
+			// after adding a healthy instance in zone-b, expectedHealthyInstancesCount becomes 5
+			expectedHealthyInstancesCount: 5,
 			// zone-b was already added, so expectedZonesCount remains 3
 			expectedZonesCount: 3,
 		},
@@ -190,7 +220,7 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 
 		lifecycler, err := NewLifecycler(cfg, &nopFlushTransferer{}, "instance", ringKey, true, log.NewNopLogger(), nil)
 		require.NoError(t, err)
-		assert.Equal(t, 0, lifecycler.HealthyInstancesInZoneCount())
+		assert.Equal(t, 0, lifecycler.InstancesInZoneCount())
 
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
 		defer services.StopAndAwaitTerminated(ctx, lifecycler) // nolint:errcheck
@@ -200,7 +230,9 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			return lifecycler.HealthyInstancesCount()
 		})
 
-		require.Equal(t, instance.expectedHealthyInstancesInZoneCount, lifecycler.HealthyInstancesInZoneCount())
+		require.Equal(t, instance.expectedInstancesInZoneCount, lifecycler.InstancesInZoneCount())
+		require.Equal(t, instance.expectedInstancesCount, lifecycler.InstancesCount())
+		require.Equal(t, instance.expectedHealthyInstancesCount, lifecycler.HealthyInstancesCount())
 		require.Equal(t, instance.expectedZonesCount, lifecycler.ZonesCount())
 	}
 }

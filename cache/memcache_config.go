@@ -28,7 +28,7 @@ type MemcachedConfig struct {
 func (cfg *MemcachedConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.Addresses, prefix+"addresses", "", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
 	f.DurationVar(&cfg.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
-	f.Float64Var(&cfg.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
+	f.Float64Var(&cfg.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
 	f.IntVar(&cfg.MaxIdleConnections, prefix+"max-idle-connections", 100, "The maximum number of idle connections that will be maintained per address.")
 	f.IntVar(&cfg.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
 	f.IntVar(&cfg.MaxAsyncBufferSize, prefix+"max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")

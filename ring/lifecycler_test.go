@@ -231,6 +231,8 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 		})
 
 		require.Equal(t, instance.expectedInstancesInZoneCount, lifecycler.InstancesInZoneCount())
+		require.Equal(t, instance.expectedInstancesCount, lifecycler.InstancesCount())
+		require.Equal(t, instance.expectedHealthyInstancesCount, lifecycler.HealthyInstancesCount())
 		require.Equal(t, instance.expectedZonesCount, lifecycler.ZonesCount())
 	}
 }

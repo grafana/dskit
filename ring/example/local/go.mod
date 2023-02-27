@@ -4,9 +4,8 @@ go 1.19
 
 require (
 	github.com/go-kit/log v0.2.1
-	github.com/grafana/dskit v0.0.0-20221214140219-7cb519050741
+	github.com/grafana/dskit v0.0.0-20230227163711-14b8fa2180af
 	github.com/prometheus/client_golang v1.14.0
-	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -23,7 +22,7 @@ require (
 	github.com/gogo/status v1.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/btree v1.0.0 // indirect
+	github.com/google/btree v1.0.1 // indirect
 	github.com/hashicorp/consul/api v1.15.3 // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -51,7 +50,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/uber/jaeger-client-go v2.28.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
-	github.com/weaveworks/common v0.0.0-20221201103051-7c2720a9024d // indirect
+	github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63 // indirect
 	github.com/weaveworks/promrus v1.2.0 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.0 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.0 // indirect

@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v2"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -147,13 +146,6 @@ func defaultConfig(bindaddr string, bindport int, joinmembers []string) (ring.Li
 
 	rc.KVStore = kv
 	lc.RingConfig = rc
-
-	data, err := yaml.Marshal(lc)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("%+v\n", string(data))
 
 	return lc, MemberlistKV
 }

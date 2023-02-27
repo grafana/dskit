@@ -1,0 +1,32 @@
+## Build local cluster using `Ring`
+
+This examples uses `loopback` interface to build a ring of multiple process locally.
+
+### Usage
+
+1. Build
+```
+go build cluster.go
+```
+
+2. Start a peer
+
+```
+./cluster -bindaddr=127.0.0.1
+```
+
+3. Start another peer in different terminal
+
+```
+./cluster -bindaddr=127.0.0.2 -join-members=127.0.0.1
+```
+
+4. You can start as many peers as you want with different loopback bindaddr.
+
+5. Check the ring page
+
+Go to ring page of one of the peer. Each peer's ring page should show all the peers in the ring. Should look something like below.
+
+e.g: http://127.0.0.1:8100/ring
+
+![Ring Status Page](./images/local-ring.png)

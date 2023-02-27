@@ -20,8 +20,8 @@ var (
 const (
 	labelCacheName           = "name"
 	labelCacheBackend        = "backend"
-	backendRedis             = "redis"
-	backendMemcached         = "memcached"
+	backendValueRedis        = "redis"
+	backendValueMemcached    = "memcached"
 	cacheMetricNamePrefix    = "cache_"
 	getMultiMetricNamePrefix = "getmulti_"
 	legacyMemcachedPrefix    = "memcached_"
@@ -43,7 +43,7 @@ func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCac
 			promregistry.TeeRegisterer{
 				prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix+legacyMemcachedPrefix, reg),
 				prometheus.WrapRegistererWith(
-					prometheus.Labels{labelCacheBackend: backendMemcached},
+					prometheus.Labels{labelCacheBackend: backendValueMemcached},
 					prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg)),
 			},
 		),
@@ -63,7 +63,7 @@ func NewRedisCache(name string, logger log.Logger, redisClient RemoteCacheClient
 			logger,
 			redisClient,
 			prometheus.WrapRegistererWith(
-				prometheus.Labels{labelCacheBackend: backendRedis},
+				prometheus.Labels{labelCacheBackend: backendValueRedis},
 				prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg)),
 		),
 	}

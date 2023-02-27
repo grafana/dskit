@@ -176,7 +176,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	}
 
 	reg = prometheus.WrapRegistererWith(
-		prometheus.Labels{labelCacheName: name, labelCacheBackend: backendRedis},
+		prometheus.Labels{labelCacheName: name, labelCacheBackend: backendValueRedis},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
 	metrics := newClientMetrics(reg)

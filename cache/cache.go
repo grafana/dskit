@@ -94,7 +94,7 @@ type BackendConfig struct {
 
 // Validate the config.
 func (cfg *BackendConfig) Validate() error {
-	if cfg.Backend != "" && cfg.Backend != BackendMemcached {
+	if cfg.Backend != "" && cfg.Backend != BackendMemcached && cfg.Backend != BackendRedis {
 		return fmt.Errorf("unsupported cache backend: %s", cfg.Backend)
 	}
 

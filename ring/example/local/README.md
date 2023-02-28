@@ -32,7 +32,10 @@ e.g: http://127.0.0.1:8100/ring
 ![Ring Status Page](./images/local-ring.png)
 
 6. Also check the memberlist status page.
+
 e.g: https://127.0.0.1:8100/kv
+
+![Memberlist Status Page](./images/local-memberlist.png)
 
 7. You can also get the `ring` infomartion as a client.
 

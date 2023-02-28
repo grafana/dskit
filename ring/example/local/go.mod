@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/go-kit/log v0.2.1
-	github.com/grafana/dskit v0.0.0-20230227163711-14b8fa2180af
+	github.com/grafana/dskit v0.0.0-00010101000000-000000000000
 	github.com/prometheus/client_golang v1.14.0
 )
 
@@ -70,3 +70,5 @@ require (
 )
 
 replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
+
+replace github.com/grafana/dskit => ../../../../dskit

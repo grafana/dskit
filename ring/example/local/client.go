@@ -41,14 +41,11 @@ func main() {
 	}
 	defer services.StopAndAwaitTerminated(ctx, ringsvc)
 
-	var rr ring.ReadRing
-	rr = ringsvc
-
 	for {
 
 		time.Sleep(1 * time.Second)
 
-		replicas, err := rr.GetAllHealthy(ring.Read)
+		replicas, err := ringsvc.GetAllHealthy(ring.Read)
 		if err != nil {
 			fmt.Println("error when getting healthy instances", err)
 			continue

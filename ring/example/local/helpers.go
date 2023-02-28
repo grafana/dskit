@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -48,6 +50,9 @@ func SimpleMemberlistKV(bindaddr string, bindport int, joinmembers []string) *me
 	// We use default resolver comes with Go.
 	resolver := dns.NewProvider(log.With(logger, "component", "dns"), prometheus.NewPedanticRegistry(), dns.GolangResolverType)
 
+	config.NodeName = bindaddr
+	config.StreamTimeout = 5 * time.Second
+
 	return memberlist.NewKVInitService(
 		&config,
 		log.With(logger, "component", "memberlist"),
@@ -73,18 +78,25 @@ func SimpleRing(store kv.Client) (*ring.Ring, error) {
 	)
 }
 
-// SimpleRingLifeCycler returns an instance lifecycler for the given `kv.Client`.
+// SimpleRingLifecycler returns an instance lifecycler for the given `kv.Client`.
 // Usually lifecycler will be part of the server side that act as a single peer.
-func SimpleRingLifeCycler(store kv.Client) (*ring.BasicLifecycler, error) {
+func SimpleRingLifecycler(store kv.Client, bindaddr string, bindport int) (*ring.BasicLifecycler, error) {
 	var config ring.BasicLifecyclerConfig
-	flagext.DefaultValues(&config)
+	config.ID = bindaddr
+	config.Addr = fmt.Sprintf("%s:%d", bindaddr, bindport)
+
+	var delegate ring.BasicLifecyclerDelegate
+
+	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, 128)
+	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
+	delegate = ring.NewAutoForgetDelegate(1*time.Minute, delegate, logger)
 
 	return ring.NewBasicLifecycler(
 		config,
 		"local",
 		"collectors/ring",
 		store,
-		nil,
+		delegate,
 		log.With(logger, "component", "lifecycler"),
 		prometheus.NewPedanticRegistry(),
 	)

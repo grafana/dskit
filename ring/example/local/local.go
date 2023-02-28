@@ -1,7 +1,11 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"time"
 
@@ -13,13 +17,138 @@ import (
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
+	mode string
+
+	bindaddr   string
+	bindport   int
+	joinmember string
+
 	// singleton logger we use everywhere
 	logger = log.With(log.NewLogfmtLogger(os.Stdout), level.AllowDebug())
 )
+
+func main() {
+	flag.StringVar(&bindaddr, "bindaddr", "127.0.0.1", "bindaddr for this specific peer")
+	flag.IntVar(&bindport, "bindport", 7946, "bindport for this specific peer")
+	flag.StringVar(&joinmember, "join-member", "", "peer addr that is part of existing cluster")
+	flag.StringVar(&mode, "mode", "cluster", "cluster or client")
+
+	flag.Parse()
+
+	switch mode {
+	case "client":
+		runClient()
+	case "cluster":
+		runCluster()
+	default:
+		fmt.Println("running in invalid-mode")
+		flag.Usage()
+	}
+}
+
+func runCluster() {
+	ctx := context.Background()
+
+	joinmembers := make([]string, 0)
+	if joinmember != "" {
+		joinmembers = append(joinmembers, joinmember)
+	}
+
+	// start memberlist service.
+	memberlistsvc := SimpleMemberlistKV(bindaddr, bindport, joinmembers)
+	if err := services.StartAndAwaitRunning(ctx, memberlistsvc); err != nil {
+		panic(err)
+	}
+	defer services.StopAndAwaitTerminated(ctx, memberlistsvc)
+
+	store, err := memberlistsvc.GetMemberlistKV()
+	if err != nil {
+		panic(err)
+	}
+
+	client, err := memberlist.NewClient(store, ring.GetCodec())
+	if err != nil {
+		panic(err)
+	}
+
+	lfc, err := SimpleRingLifecycler(client, bindaddr, bindport)
+	if err != nil {
+		panic(err)
+	}
+
+	// start lifecycler service
+	if err := services.StartAndAwaitRunning(ctx, lfc); err != nil {
+		panic(err)
+	}
+	defer services.StopAndAwaitTerminated(ctx, lfc)
+
+	listener, err := net.Listen("tcp", bindaddr+":8100")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("listening on ", listener.Addr())
+
+	mux := http.NewServeMux()
+	mux.Handle("/ring", lfc)
+	mux.Handle("/kv", memberlistsvc)
+
+	panic(http.Serve(listener, mux))
+}
+
+func runClient() {
+	ctx := context.Background()
+
+	// start memberlist service.
+	memberlistsvc := SimpleMemberlistKV("127.0.0.3", 0, []string{"127.0.0.1"})
+	if err := services.StartAndAwaitRunning(ctx, memberlistsvc); err != nil {
+		panic(err)
+	}
+	defer services.StopAndAwaitTerminated(ctx, memberlistsvc)
+
+	store, err := memberlistsvc.GetMemberlistKV()
+	if err != nil {
+		panic(err)
+	}
+
+	client, err := memberlist.NewClient(store, ring.GetCodec())
+	if err != nil {
+		panic(err)
+	}
+
+	ringsvc, err := SimpleRing(client)
+	if err != nil {
+		panic(err)
+	}
+
+	// start the ring service
+	if err := services.StartAndAwaitRunning(ctx, ringsvc); err != nil {
+		panic(err)
+	}
+	defer services.StopAndAwaitTerminated(ctx, ringsvc)
+
+	for {
+
+		time.Sleep(1 * time.Second)
+
+		replicas, err := ringsvc.GetAllHealthy(ring.Read)
+		if err != nil {
+			fmt.Println("error when getting healthy instances", err)
+			continue
+		}
+
+		fmt.Println("Peers:")
+		for _, v := range replicas.Instances {
+			fmt.Println("Addr", v.Addr, "Token count", len(v.Tokens))
+		}
+	}
+
+}
 
 // SimpleMemberlistKV returns a memberlist KV as a service. Starting and Stopping the service is upto the caller.
 // Caller can create an instance `kv.Client` from returned service by explicity calling `.GetMemberlistKV()`

@@ -6,19 +6,19 @@ This examples uses `loopback` interface to build a ring of multiple process loca
 
 1. Build
 ```
-go build cluster.go
+go build local.go
 ```
 
 2. Start a peer
 
 ```
-./cluster -bindaddr=127.0.0.1
+./local -bindaddr=127.0.0.1
 ```
 
 3. Start another peer in different terminal
 
 ```
-./cluster -bindaddr=127.0.0.2 -join-members=127.0.0.1
+./local -bindaddr=127.0.0.2 -join-members=127.0.0.1
 ```
 
 4. You can start as many peers as you want with different loopback bindaddr.
@@ -30,3 +30,12 @@ Go to ring page of one of the peer. Each peer's ring page should show all the pe
 e.g: http://127.0.0.1:8100/ring
 
 ![Ring Status Page](./images/local-ring.png)
+
+6. Also check the memberlist status page.
+e.g: https://127.0.0.1:8100/kv
+
+7. You can also get the `ring` infomartion as a client.
+
+```
+./local -mode=client
+```

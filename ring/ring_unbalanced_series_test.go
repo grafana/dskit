@@ -197,18 +197,92 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 		fmt.Println("")
 	*/
 
-	// Simulate if it would be better balanced if the shard size would be set on the actual number of series per tenant.
+	/*
+		// Simulate if it would be better balanced if the shard size would be set on the actual number of series per tenant.
+		realSeriesPerIngester := map[string]float64{}
+		simulatedSeriesPerIngester := map[string]float64{}
+		simulatedTargetSeriesPerIngester := 100000
+
+		for tenantID, numSeries := range datasetSeriesPerUser {
+			// Compute the number of series per ingester, with the real shard size.
+			realShardSize := datasetShardSizePerUser[tenantID]
+
+			// TODO Re-run the query to get shard size using in-memory series and NOT active series
+			if realShardSize == 0 {
+				//fmt.Println("WARN - Missing real shard size of tenant", tenantID, "with", datasetSeriesPerUser[tenantID], "in-memory series")
+				realShardSize = 3
+			}
+
+			shuffleShardKey := tenantID
+
+			realSet, err := ring.ShuffleShard(shuffleShardKey, realShardSize).GetAllHealthy(Read)
+			if err != nil {
+				panic(err)
+			}
+
+			for _, ingester := range realSet.Instances {
+				realSeriesPerIngester[ingester.Addr] += float64(numSeries) / float64(realShardSize)
+			}
+
+			// Compute the number of series per ingester, with the simulated shard size.
+			// - Target each tenant to 100K series / ingester (after replication)
+			// - Round up and ensure it's a multiple of 3 (so that it's multi-zone ready)
+			simulatedShardSize := (numSeries / simulatedTargetSeriesPerIngester) + 3 - ((numSeries / simulatedTargetSeriesPerIngester) % 3)
+			if simulatedShardSize < 3 {
+				simulatedShardSize = 3
+			}
+			if simulatedShardSize > len(desc.Ingesters) {
+				simulatedShardSize = len(desc.Ingesters)
+			}
+
+			simulatedSet, err := ring.ShuffleShard(shuffleShardKey, simulatedShardSize).GetAllHealthy(Read)
+			if err != nil {
+				panic(err)
+			}
+
+			for _, ingester := range simulatedSet.Instances {
+				simulatedSeriesPerIngester[ingester.Addr] += float64(numSeries) / float64(simulatedShardSize)
+			}
+
+			// Log tenants for which the shard size would be different.
+			//if realShardSize != simulatedShardSize {
+			//	fmt.Println(fmt.Sprintf("- %s \tseries: %d \treal shard size: %d \tsimulated shard size: %d", tenantID, numSeries, realShardSize, simulatedShardSize))
+			//}
+		}
+
+		//for ingesterID, realSeries := range realSeriesPerIngester {
+		//	fmt.Println(fmt.Sprintf("- %s \treal: %d \tsimulated:%d", ingesterID, int(realSeries), int(simulatedSeriesPerIngester[ingesterID])))
+		//}
+
+		fmt.Println("SIMULATION")
+		fmt.Println(fmt.Sprintf("Adjust shard size based on the actual number of series, targetting %d series / ingester (after replication)", simulatedTargetSeriesPerIngester))
+		fmt.Println("")
+		min, max, maxVariance := computeMinMaxAndVarianceFloat(realSeriesPerIngester)
+		fmt.Println(fmt.Sprintf("Real:       min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
+		min, max, maxVariance = computeMinMaxAndVarianceFloat(simulatedSeriesPerIngester)
+		fmt.Println(fmt.Sprintf("Simulation: min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
+		fmt.Println("")
+	*/
+
+	for minShardSize := 6; minShardSize <= 15; minShardSize += 3 {
+		simulateMinShardSize(ring, minShardSize)
+	}
+}
+
+// Simulate if it would be better balanced if we would increase the min shard size.
+func simulateMinShardSize(ring Ring, minShardSize int) {
+	fmt.Println("SIMULATION")
+	fmt.Println(fmt.Sprintf("Set min shard size to %d", minShardSize))
+	fmt.Println("")
+
 	realSeriesPerIngester := map[string]float64{}
 	simulatedSeriesPerIngester := map[string]float64{}
-	simulatedTargetSeriesPerIngester := 100000
 
 	for tenantID, numSeries := range datasetSeriesPerUser {
 		// Compute the number of series per ingester, with the real shard size.
 		realShardSize := datasetShardSizePerUser[tenantID]
-
-		// TODO Re-run the query to get shard size using in-memory series and NOT active series
 		if realShardSize == 0 {
-			//fmt.Println("WARN - Missing real shard size of tenant", tenantID, "with", datasetSeriesPerUser[tenantID], "in-memory series")
+			fmt.Println("WARN - Missing real shard size of tenant", tenantID, "with", numSeries, "in-memory series")
 			realShardSize = 3
 		}
 
@@ -224,14 +298,12 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 		}
 
 		// Compute the number of series per ingester, with the simulated shard size.
-		// - Target each tenant to 100K series / ingester (after replication)
-		// - Round up and ensure it's a multiple of 3 (so that it's multi-zone ready)
-		simulatedShardSize := (numSeries / simulatedTargetSeriesPerIngester) + 3 - ((numSeries / simulatedTargetSeriesPerIngester) % 3)
-		if simulatedShardSize < 3 {
-			simulatedShardSize = 3
+		simulatedShardSize := realShardSize
+		if simulatedShardSize < minShardSize {
+			simulatedShardSize = minShardSize
 		}
-		if simulatedShardSize > len(desc.Ingesters) {
-			simulatedShardSize = len(desc.Ingesters)
+		if simulatedShardSize > len(ring.ringDesc.Ingesters) {
+			simulatedShardSize = len(ring.ringDesc.Ingesters)
 		}
 
 		simulatedSet, err := ring.ShuffleShard(shuffleShardKey, simulatedShardSize).GetAllHealthy(Read)
@@ -253,9 +325,6 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 	//	fmt.Println(fmt.Sprintf("- %s \treal: %d \tsimulated:%d", ingesterID, int(realSeries), int(simulatedSeriesPerIngester[ingesterID])))
 	//}
 
-	fmt.Println("SIMULATION")
-	fmt.Println(fmt.Sprintf("Adjust shard size based on the actual number of series, targetting %d series / ingester (after replication)", simulatedTargetSeriesPerIngester))
-	fmt.Println("")
 	min, max, maxVariance := computeMinMaxAndVarianceFloat(realSeriesPerIngester)
 	fmt.Println(fmt.Sprintf("Real:       min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
 	min, max, maxVariance = computeMinMaxAndVarianceFloat(simulatedSeriesPerIngester)

@@ -272,11 +272,14 @@ func TestInvestigateUnbalanceSeriesPerIngester(t *testing.T) {
 // Simulate if it would be better balanced if we would increase the min shard size.
 func simulateMinShardSize(ring Ring, minShardSize int) {
 	fmt.Println("SIMULATION")
-	fmt.Println(fmt.Sprintf("Set min shard size to %d", minShardSize))
+	fmt.Println("==========")
+	fmt.Println(fmt.Sprintf("Simulate the case we increase the min shard size to %d", minShardSize))
 	fmt.Println("")
 
 	realSeriesPerIngester := map[string]float64{}
+	realTenantsPerIngester := map[string]float64{}
 	simulatedSeriesPerIngester := map[string]float64{}
+	simulatedTenantsPerIngester := map[string]float64{}
 
 	for tenantID, numSeries := range datasetSeriesPerUser {
 		// Compute the number of series per ingester, with the real shard size.
@@ -295,6 +298,7 @@ func simulateMinShardSize(ring Ring, minShardSize int) {
 
 		for _, ingester := range realSet.Instances {
 			realSeriesPerIngester[ingester.Addr] += float64(numSeries) / float64(realShardSize)
+			realTenantsPerIngester[ingester.Addr] += 1
 		}
 
 		// Compute the number of series per ingester, with the simulated shard size.
@@ -313,6 +317,7 @@ func simulateMinShardSize(ring Ring, minShardSize int) {
 
 		for _, ingester := range simulatedSet.Instances {
 			simulatedSeriesPerIngester[ingester.Addr] += float64(numSeries) / float64(simulatedShardSize)
+			simulatedTenantsPerIngester[ingester.Addr] += 1
 		}
 
 		// Log tenants for which the shard size would be different.
@@ -325,10 +330,18 @@ func simulateMinShardSize(ring Ring, minShardSize int) {
 	//	fmt.Println(fmt.Sprintf("- %s \treal: %d \tsimulated:%d", ingesterID, int(realSeries), int(simulatedSeriesPerIngester[ingesterID])))
 	//}
 
+	fmt.Println("Number of series per ingester")
 	min, max, maxVariance := computeMinMaxAndVarianceFloat(realSeriesPerIngester)
-	fmt.Println(fmt.Sprintf("Real:       min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
+	fmt.Println(fmt.Sprintf("  Real:       min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
 	min, max, maxVariance = computeMinMaxAndVarianceFloat(simulatedSeriesPerIngester)
-	fmt.Println(fmt.Sprintf("Simulation: min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
+	fmt.Println(fmt.Sprintf("  Simulation: min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
+	fmt.Println("")
+
+	fmt.Println("Number of tenants per ingester")
+	min, max, maxVariance = computeMinMaxAndVarianceFloat(realTenantsPerIngester)
+	fmt.Println(fmt.Sprintf("  Real:       min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
+	min, max, maxVariance = computeMinMaxAndVarianceFloat(simulatedTenantsPerIngester)
+	fmt.Println(fmt.Sprintf("  Simulation: min=%d max=%d max variance=%.2f%%", int(min), int(max), maxVariance))
 	fmt.Println("")
 }
 

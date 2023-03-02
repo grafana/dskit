@@ -8,12 +8,11 @@ import (
 	"os"
 	"strings"
 
-	"google.golang.org/grpc/credentials/insecure"
-
 	"github.com/grafana/dskit/vault"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // ClientConfig is the config for client TLS.

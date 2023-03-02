@@ -109,7 +109,7 @@ func newIntegrationClientServer(
 	grpcHost := fmt.Sprintf("localhost:%d", grpcPort)
 
 	for _, tc := range tcs {
-		tlsClientConfig, err := tc.tlsConfig.GetTLSConfig()
+		tlsClientConfig, err := tc.tlsConfig.GetTLSConfig(nil)
 		require.NoError(t, err)
 
 		// HTTP
@@ -620,7 +620,7 @@ func (cfg *grpcConfig) CallOptions() []grpc.CallOption {
 // DialOption returns the config as a grpc.DialOptions.
 func (cfg *grpcConfig) DialOption() ([]grpc.DialOption, error) {
 	var opts []grpc.DialOption
-	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
+	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled, nil)
 	if err != nil {
 		return nil, err
 	}

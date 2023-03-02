@@ -168,7 +168,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	}
 
 	if config.TLSEnabled {
-		tlsClientConfig, err := config.TLS.GetTLSConfig()
+		tlsClientConfig, err := config.TLS.GetTLSConfig(nil)
 		if err != nil {
 			return nil, err
 		}

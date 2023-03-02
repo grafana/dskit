@@ -127,7 +127,7 @@ func NewTCPTransport(config TCPTransportConfig, logger log.Logger) (*TCPTranspor
 
 	var err error
 	if config.TLSEnabled {
-		t.tlsConfig, err = config.TLS.GetTLSConfig()
+		t.tlsConfig, err = config.TLS.GetTLSConfig(nil)
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to create TLS config")
 		}

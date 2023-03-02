@@ -17,18 +17,18 @@ func TestLRUCache_StoreFetchDelete(t *testing.T) {
 		ctx  = context.Background()
 	)
 	// This entry is only known by our underlying cache.
-	mock.Store(ctx, map[string][]byte{"buzz": []byte("buzz")}, time.Hour)
+	mock.StoreAsync(map[string][]byte{"buzz": []byte("buzz")}, time.Hour)
 
 	reg := prometheus.NewPedanticRegistry()
 	lru, err := WrapWithLRUCache(mock, "test", reg, 10000, 2*time.Hour)
 	require.NoError(t, err)
 
-	lru.Store(ctx, map[string][]byte{
+	lru.StoreAsync(map[string][]byte{
 		"foo": []byte("bar"),
 		"bar": []byte("baz"),
 	}, time.Minute)
 
-	lru.Store(ctx, map[string][]byte{
+	lru.StoreAsync(map[string][]byte{
 		"expired": []byte("expired"),
 	}, -time.Minute)
 
@@ -82,7 +82,7 @@ func TestLRUCache_Evictions(t *testing.T) {
 	lru, err := WrapWithLRUCache(NewMockCache(), "test", reg, maxItems, 2*time.Hour)
 	require.NoError(t, err)
 
-	lru.Store(context.Background(), map[string][]byte{
+	lru.StoreAsync(map[string][]byte{
 		"key_1": []byte("value_1"),
 		"key_2": []byte("value_2"),
 		"key_3": []byte("value_3"),

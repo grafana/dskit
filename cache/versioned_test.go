@@ -15,7 +15,7 @@ func TestVersioned(t *testing.T) {
 		cache := NewMockCache()
 		v1 := NewVersioned(cache, 1)
 		data := map[string][]byte{"hit": []byte(`data`)}
-		v1.Store(context.Background(), data, time.Minute)
+		v1.StoreAsync(data, time.Minute)
 		res := v1.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, data, res)
 		err := v1.Delete(context.Background(), "hit")
@@ -28,10 +28,10 @@ func TestVersioned(t *testing.T) {
 		cache := NewMockCache()
 		v1 := NewVersioned(cache, 1)
 		v1Data := map[string][]byte{"hit": []byte(`first version`)}
-		v1.Store(context.Background(), v1Data, time.Minute)
+		v1.StoreAsync(v1Data, time.Minute)
 		v2 := NewVersioned(cache, 2)
 		v2Data := map[string][]byte{"hit": []byte(`second version`)}
-		v2.Store(context.Background(), v2Data, time.Minute)
+		v2.StoreAsync(v2Data, time.Minute)
 
 		resV1 := v1.Fetch(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, v1Data, resV1)

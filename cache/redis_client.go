@@ -215,9 +215,9 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 }
 
 // SetAsync implement RemoteCacheClient.
-func (c *redisClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(ctx, key, value, ttl, func(ctx context.Context, key string, buf []byte, ttl time.Duration) error {
-		_, err := c.Set(ctx, key, value, ttl).Result()
+func (c *redisClient) SetAsync(key string, value []byte, ttl time.Duration) error {
+	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
+		_, err := c.Set(context.Background(), key, value, ttl).Result()
 		return err
 	})
 }

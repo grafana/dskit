@@ -260,8 +260,8 @@ func (c *memcachedClient) Stop() {
 	c.client.Close()
 }
 
-func (c *memcachedClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(ctx, key, value, ttl, func(ctx context.Context, key string, buf []byte, ttl time.Duration) error {
+func (c *memcachedClient) SetAsync(key string, value []byte, ttl time.Duration) error {
+	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
 		return c.client.Set(&memcache.Item{
 			Key:        key,
 			Value:      value,

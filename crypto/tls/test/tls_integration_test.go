@@ -42,6 +42,12 @@ type grpcHealthCheck struct {
 	healthy bool
 }
 
+type fileReader struct{}
+
+func (f *fileReader) ReadSecret(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
 func (h *grpcHealthCheck) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
 	if !h.healthy {
 		return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}, nil
@@ -183,14 +189,14 @@ func TestServerWithoutTlsEnabled(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{Reader: &fileReader{}},
 				httpExpectError: errorContainsString("http: server gave HTTP response to HTTPS client"),
 				grpcExpectError: nil,
 			},
 			{
 				name:            "tls-enable",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{Reader: &fileReader{}},
 				httpExpectError: errorContainsString("http: server gave HTTP response to HTTPS client"),
 				grpcExpectError: errorContainsString("transport: authentication handshake failed: tls: first record does not look like a TLS handshake"),
 			},
@@ -223,7 +229,7 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{Reader: &fileReader{}},
 				httpExpectError: notTrustedErr,
 				// For GRPC we expect this error as we try to connect without TLS to a TLS enabled server
 				grpcExpectError: unavailableDescErr,
@@ -231,7 +237,7 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:            "grpc-tls-enabled",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{Reader: &fileReader{}},
 				httpExpectError: notTrustedErr,
 				grpcExpectError: notTrustedErr,
 			},
@@ -240,6 +246,7 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 				tlsGrpcEnabled: true,
 				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
+					Reader:             &fileReader{},
 				},
 			},
 			{
@@ -247,6 +254,7 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 				tlsGrpcEnabled: false,
 				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
+					Reader:             &fileReader{},
 				},
 				grpcExpectError: unavailableDescErr,
 			},
@@ -255,6 +263,7 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 				tlsGrpcEnabled: true,
 				tlsConfig: tls.ClientConfig{
 					CAPath: certs.caCertFile,
+					Reader: &fileReader{},
 				},
 			},
 			{
@@ -262,6 +271,7 @@ func TestServerWithLocalhostCertNoClientCertAuth(t *testing.T) {
 				tlsGrpcEnabled: false,
 				tlsConfig: tls.ClientConfig{
 					CAPath: certs.caCertFile,
+					Reader: &fileReader{},
 				},
 				grpcExpectError: unavailableDescErr,
 			},
@@ -293,7 +303,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 		[]tcIntegrationClientServer{
 			{
 				name:            "no-config",
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{Reader: &fileReader{}},
 				httpExpectError: invalidCertErr,
 				// For GRPC we expect this error as we try to connect without TLS to a TLS enabled server
 				grpcExpectError: unavailableDescErr,
@@ -301,7 +311,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 			{
 				name:            "grpc-tls-enabled",
 				tlsGrpcEnabled:  true,
-				tlsConfig:       tls.ClientConfig{},
+				tlsConfig:       tls.ClientConfig{Reader: &fileReader{}},
 				httpExpectError: invalidCertErr,
 				grpcExpectError: invalidCertErr,
 			},
@@ -310,6 +320,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 				tlsGrpcEnabled: true,
 				tlsConfig: tls.ClientConfig{
 					CAPath: certs.caCertFile,
+					Reader: &fileReader{},
 				},
 				httpExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
 				grpcExpectError: errorContainsString("x509: certificate is valid for my-other-name, not localhost"),
@@ -320,6 +331,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 				tlsConfig: tls.ClientConfig{
 					CAPath:     certs.caCertFile,
 					ServerName: "my-other-name",
+					Reader:     &fileReader{},
 				},
 			},
 			{
@@ -327,6 +339,7 @@ func TestServerWithoutLocalhostCertNoClientCertAuth(t *testing.T) {
 				tlsGrpcEnabled: true,
 				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
+					Reader:             &fileReader{},
 				},
 			},
 		},
@@ -364,6 +377,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 				tlsGrpcEnabled: true,
 				tlsConfig: tls.ClientConfig{
 					InsecureSkipVerify: true,
+					Reader:             &fileReader{},
 				},
 				httpExpectError: badCertErr,
 				grpcExpectError: unavailableDescErr,
@@ -373,6 +387,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 				tlsGrpcEnabled: true,
 				tlsConfig: tls.ClientConfig{
 					CAPath: certs.caCertFile,
+					Reader: &fileReader{},
 				},
 				httpExpectError: badCertErr,
 				grpcExpectError: unavailableDescErr,
@@ -384,6 +399,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client1CertFile,
 					KeyPath:  certs.client1KeyFile,
+					Reader:   &fileReader{},
 				},
 			},
 			{
@@ -393,6 +409,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 					InsecureSkipVerify: true,
 					CertPath:           certs.client1CertFile,
 					KeyPath:            certs.client1KeyFile,
+					Reader:             &fileReader{},
 				},
 			},
 			{
@@ -402,6 +419,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client2CertFile,
 					KeyPath:  certs.client2KeyFile,
+					Reader:   &fileReader{},
 				},
 				httpExpectError: badCertErr,
 				grpcExpectError: unavailableDescErr,
@@ -437,6 +455,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client1CertFile,
 					KeyPath:  certs.client1KeyFile,
+					Reader:   &fileReader{},
 				},
 			},
 			{
@@ -446,6 +465,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 					CAPath:   certs.caCertFile,
 					CertPath: certs.client2CertFile,
 					KeyPath:  certs.client2KeyFile,
+					Reader:   &fileReader{},
 				},
 			},
 		},

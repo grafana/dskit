@@ -31,9 +31,15 @@ var (
 		MaxAsyncConcurrency:    50,
 		MaxAsyncBufferSize:     25000,
 		TLSEnabled:             false,
-		TLS:                    dstls.ClientConfig{},
+		TLS:                    dstls.ClientConfig{Reader: &fileReader{}},
 	}
 )
+
+type fileReader struct{}
+
+func (f *fileReader) ReadSecret(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
 
 func TestRedisClient(t *testing.T) {
 	// Init some data to conveniently define test cases later one.
@@ -229,6 +235,7 @@ func TestValidateRedisConfig(t *testing.T) {
 				cfg.TLS = dstls.ClientConfig{
 					CertPath: "cert/client.pem",
 					KeyPath:  "cert/client.key",
+					Reader:   &fileReader{},
 				}
 				return cfg
 			},
@@ -244,6 +251,7 @@ func TestValidateRedisConfig(t *testing.T) {
 				cfg.TLSEnabled = true
 				cfg.TLS = dstls.ClientConfig{
 					CertPath: "cert/client.pem",
+					Reader:   &fileReader{},
 				}
 				return cfg
 			},

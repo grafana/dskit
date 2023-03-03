@@ -98,6 +98,12 @@ func newTestX509Files(t *testing.T, cert, key, ca []byte) x509Paths {
 	return paths
 }
 
+type fileReader struct{}
+
+func (f *fileReader) ReadSecret(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
 func TestGetTLSConfig_ClientCerts(t *testing.T) {
 	paths := newTestX509Files(t, []byte(certPEM), []byte(keyPEM), nil)
 
@@ -105,6 +111,7 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 	c := &ClientConfig{
 		CertPath: paths.cert,
 		KeyPath:  paths.key,
+		Reader:   &fileReader{},
 	}
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
@@ -115,6 +122,7 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 	c = &ClientConfig{
 		CertPath: paths.key,
 		KeyPath:  paths.cert,
+		Reader:   &fileReader{},
 	}
 	_, err = c.GetTLSConfig()
 	assert.Error(t, err)
@@ -123,6 +131,7 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 	// expect error with only key passed along
 	c = &ClientConfig{
 		KeyPath: paths.key,
+		Reader:  &fileReader{},
 	}
 	_, err = c.GetTLSConfig()
 	assert.EqualError(t, err, errCertMissing.Error())
@@ -130,6 +139,7 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 	// expect error with only cert passed along
 	c = &ClientConfig{
 		CertPath: paths.cert,
+		Reader:   &fileReader{},
 	}
 	_, err = c.GetTLSConfig()
 	assert.EqualError(t, err, errKeyMissing.Error())
@@ -141,6 +151,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 	// test single ca passed
 	c := &ClientConfig{
 		CAPath: paths.ca,
+		Reader: &fileReader{},
 	}
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
@@ -151,6 +162,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 	paths = newTestX509Files(t, nil, nil, []byte(certPEM+"\n"+caPEM))
 	c = &ClientConfig{
 		CAPath: paths.ca,
+		Reader: &fileReader{},
 	}
 	tlsConfig, err = c.GetTLSConfig()
 	assert.NoError(t, err)
@@ -160,6 +172,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 	// expect errors to be passed
 	c = &ClientConfig{
 		CAPath: paths.ca + "not-existing",
+		Reader: &fileReader{},
 	}
 	_, err = c.GetTLSConfig()
 	assert.Error(t, err)
@@ -169,6 +182,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 func TestGetTLSConfig_InsecureSkipVerify(t *testing.T) {
 	c := &ClientConfig{
 		InsecureSkipVerify: true,
+		Reader:             &fileReader{},
 	}
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
@@ -178,6 +192,7 @@ func TestGetTLSConfig_InsecureSkipVerify(t *testing.T) {
 func TestGetTLSConfig_ServerName(t *testing.T) {
 	c := &ClientConfig{
 		ServerName: "myserver.com",
+		Reader:     &fileReader{},
 	}
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
@@ -238,6 +253,7 @@ func TestGetTLSConfig_MinVersion(t *testing.T) {
 
 			c := &ClientConfig{
 				MinVersion: tst.MinVersion,
+				Reader:     &fileReader{},
 			}
 
 			tlsConfig, err := c.GetTLSConfig()
@@ -341,6 +357,7 @@ func TestGetTLSConfig_CipherSuites(t *testing.T) {
 
 			c := &ClientConfig{
 				CipherSuites: tst.CipherSuites,
+				Reader:       &fileReader{},
 			}
 
 			tlsConfig, err := c.GetTLSConfig()

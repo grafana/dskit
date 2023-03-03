@@ -106,7 +106,7 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 		CertPath: paths.cert,
 		KeyPath:  paths.key,
 	}
-	tlsConfig, err := c.GetTLSConfig(nil)
+	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, false, tlsConfig.InsecureSkipVerify, "make sure we default to not skip verification")
 	assert.Equal(t, 1, len(tlsConfig.Certificates), "ensure a certificate is returned")
@@ -116,7 +116,7 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 		CertPath: paths.key,
 		KeyPath:  paths.cert,
 	}
-	_, err = c.GetTLSConfig(nil)
+	_, err = c.GetTLSConfig()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to find certificate PEM data in certificate input, but did find a private key")
 
@@ -124,14 +124,14 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 	c = &ClientConfig{
 		KeyPath: paths.key,
 	}
-	_, err = c.GetTLSConfig(nil)
+	_, err = c.GetTLSConfig()
 	assert.EqualError(t, err, errCertMissing.Error())
 
 	// expect error with only cert passed along
 	c = &ClientConfig{
 		CertPath: paths.cert,
 	}
-	_, err = c.GetTLSConfig(nil)
+	_, err = c.GetTLSConfig()
 	assert.EqualError(t, err, errKeyMissing.Error())
 }
 
@@ -142,7 +142,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 	c := &ClientConfig{
 		CAPath: paths.ca,
 	}
-	tlsConfig, err := c.GetTLSConfig(nil)
+	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(tlsConfig.RootCAs.Subjects()), "ensure one CA is returned") //nolint:staticcheck
 	assert.Equal(t, false, tlsConfig.InsecureSkipVerify, "make sure we default to not skip verification")
@@ -152,7 +152,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 	c = &ClientConfig{
 		CAPath: paths.ca,
 	}
-	tlsConfig, err = c.GetTLSConfig(nil)
+	tlsConfig, err = c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(tlsConfig.RootCAs.Subjects()), "ensure two CAs are returned") //nolint:staticcheck
 	assert.False(t, tlsConfig.InsecureSkipVerify, "make sure we default to not skip verification")
@@ -161,7 +161,7 @@ func TestGetTLSConfig_CA(t *testing.T) {
 	c = &ClientConfig{
 		CAPath: paths.ca + "not-existing",
 	}
-	_, err = c.GetTLSConfig(nil)
+	_, err = c.GetTLSConfig()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "error loading ca cert")
 }
@@ -170,7 +170,7 @@ func TestGetTLSConfig_InsecureSkipVerify(t *testing.T) {
 	c := &ClientConfig{
 		InsecureSkipVerify: true,
 	}
-	tlsConfig, err := c.GetTLSConfig(nil)
+	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.True(t, tlsConfig.InsecureSkipVerify)
 }
@@ -179,7 +179,7 @@ func TestGetTLSConfig_ServerName(t *testing.T) {
 	c := &ClientConfig{
 		ServerName: "myserver.com",
 	}
-	tlsConfig, err := c.GetTLSConfig(nil)
+	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, "myserver.com", tlsConfig.ServerName)
 }
@@ -240,7 +240,7 @@ func TestGetTLSConfig_MinVersion(t *testing.T) {
 				MinVersion: tst.MinVersion,
 			}
 
-			tlsConfig, err := c.GetTLSConfig(nil)
+			tlsConfig, err := c.GetTLSConfig()
 
 			if tst.RequireError {
 				assert.Error(t, err)
@@ -343,7 +343,7 @@ func TestGetTLSConfig_CipherSuites(t *testing.T) {
 				CipherSuites: tst.CipherSuites,
 			}
 
-			tlsConfig, err := c.GetTLSConfig(nil)
+			tlsConfig, err := c.GetTLSConfig()
 
 			if tst.RequireError {
 				assert.Error(t, err)

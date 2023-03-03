@@ -5,16 +5,17 @@ import (
 	"crypto/x509"
 	"flag"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-
-	"github.com/grafana/dskit/vault"
 )
+
+type SecretReader interface {
+	ReadSecret(path string) ([]byte, error)
+}
 
 // ClientConfig is the config for client TLS.
 type ClientConfig struct {
@@ -25,6 +26,8 @@ type ClientConfig struct {
 	InsecureSkipVerify bool   `yaml:"tls_insecure_skip_verify" category:"advanced"`
 	CipherSuites       string `yaml:"tls_cipher_suites" category:"advanced" doc:"description_method=GetTLSCipherSuitesLongDescription"`
 	MinVersion         string `yaml:"tls_min_version" category:"advanced"`
+
+	Reader SecretReader `yaml:"-"`
 }
 
 var (
@@ -74,7 +77,7 @@ func (cfg *ClientConfig) GetTLSCipherSuitesLongDescription() string {
 }
 
 // GetTLSConfig initialises tls.Config from config options
-func (cfg *ClientConfig) GetTLSConfig(vault *vault.Vault) (*tls.Config, error) {
+func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 	config := &tls.Config{
 		InsecureSkipVerify: cfg.InsecureSkipVerify,
 		ServerName:         cfg.ServerName,
@@ -83,22 +86,10 @@ func (cfg *ClientConfig) GetTLSConfig(vault *vault.Vault) (*tls.Config, error) {
 	// Read CA Certificates
 	if cfg.CAPath != "" {
 		var caCertPool *x509.CertPool
-		var caCert []byte
-
-		if vault != nil {
-			secret, err := vault.GetSecret(cfg.CAPath)
-			if err != nil {
-				return nil, errors.Wrapf(err, "error loading ca cert from vault: %s", cfg.CAPath)
-			}
-			caCert = []byte(secret.Data["value"].(string))
-		} else {
-			var err error
-			caCert, err = os.ReadFile(cfg.CAPath)
-			if err != nil {
-				return nil, errors.Wrapf(err, "error loading ca cert: %s", cfg.CAPath)
-			}
+		caCert, err := cfg.Reader.ReadSecret(cfg.CAPath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error loading ca cert: %s", cfg.CAPath)
 		}
-
 		caCertPool = x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)
 
@@ -114,29 +105,18 @@ func (cfg *ClientConfig) GetTLSConfig(vault *vault.Vault) (*tls.Config, error) {
 			return nil, errKeyMissing
 		}
 
-		var clientCert tls.Certificate
-		if vault != nil {
-			certSecret, err := vault.GetSecret(cfg.CertPath)
-			if err != nil {
-				return nil, errors.Wrapf(err, "error loading cert from vault: %s", cfg.CertPath)
-			}
-			keySecret, err := vault.GetSecret(cfg.KeyPath)
-			if err != nil {
-				return nil, errors.Wrapf(err, "error loading key from vault: %s", cfg.KeyPath)
-			}
-			cert := []byte(certSecret.Data["value"].(string))
-			key := []byte(keySecret.Data["value"].(string))
+		cert, err := cfg.Reader.ReadSecret(cfg.CertPath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error loading client cert: %s", cfg.CertPath)
+		}
+		key, err := cfg.Reader.ReadSecret(cfg.KeyPath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error loading client key: %s", cfg.KeyPath)
+		}
 
-			clientCert, err = tls.X509KeyPair(cert, key)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to load TLS certificate %s,%s", cfg.CertPath, cfg.KeyPath)
-			}
-		} else {
-			var err error
-			clientCert, err = tls.LoadX509KeyPair(cfg.CertPath, cfg.KeyPath)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to load TLS certificate %s,%s", cfg.CertPath, cfg.KeyPath)
-			}
+		clientCert, err := tls.X509KeyPair(cert, key)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to load TLS certificate %s,%s", cfg.CertPath, cfg.KeyPath)
 		}
 		config.Certificates = []tls.Certificate{clientCert}
 	}
@@ -163,12 +143,12 @@ func (cfg *ClientConfig) GetTLSConfig(vault *vault.Vault) (*tls.Config, error) {
 }
 
 // GetGRPCDialOptions creates GRPC DialOptions for TLS
-func (cfg *ClientConfig) GetGRPCDialOptions(enabled bool, vault *vault.Vault) ([]grpc.DialOption, error) {
+func (cfg *ClientConfig) GetGRPCDialOptions(enabled bool) ([]grpc.DialOption, error) {
 	if !enabled {
 		return []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, nil
 	}
 
-	tlsConfig, err := cfg.GetTLSConfig(vault)
+	tlsConfig, err := cfg.GetTLSConfig()
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating grpc dial options")
 	}

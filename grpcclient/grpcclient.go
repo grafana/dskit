@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcencoding/snappy"
-	"github.com/grafana/dskit/vault"
 )
 
 // Config for a gRPC client.
@@ -73,9 +72,9 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 }
 
 // DialOption returns the config as a grpc.DialOptions.
-func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, vault *vault.Vault) ([]grpc.DialOption, error) {
+func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor) ([]grpc.DialOption, error) {
 	var opts []grpc.DialOption
-	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled, vault)
+	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
 		return nil, err
 	}

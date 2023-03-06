@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -15,6 +16,12 @@ import (
 
 type SecretReader interface {
 	ReadSecret(path string) ([]byte, error)
+}
+
+type fileReader struct{}
+
+func (f *fileReader) ReadSecret(path string) ([]byte, error) {
+	return os.ReadFile(path)
 }
 
 // ClientConfig is the config for client TLS.
@@ -81,6 +88,11 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 	config := &tls.Config{
 		InsecureSkipVerify: cfg.InsecureSkipVerify,
 		ServerName:         cfg.ServerName,
+	}
+
+	// If Reader interface not provided, default to reading from File
+	if cfg.Reader == nil {
+		cfg.Reader = &fileReader{}
 	}
 
 	// Read CA Certificates

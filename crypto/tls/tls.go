@@ -91,14 +91,15 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 	}
 
 	// If Reader interface not provided, default to reading from File
-	if cfg.Reader == nil {
-		cfg.Reader = &fileReader{}
+	reader := cfg.Reader
+	if reader == nil {
+		reader = &fileReader{}
 	}
 
 	// Read CA Certificates
 	if cfg.CAPath != "" {
 		var caCertPool *x509.CertPool
-		caCert, err := cfg.Reader.ReadSecret(cfg.CAPath)
+		caCert, err := reader.ReadSecret(cfg.CAPath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "error loading ca cert: %s", cfg.CAPath)
 		}
@@ -117,11 +118,11 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 			return nil, errKeyMissing
 		}
 
-		cert, err := cfg.Reader.ReadSecret(cfg.CertPath)
+		cert, err := reader.ReadSecret(cfg.CertPath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "error loading client cert: %s", cfg.CertPath)
 		}
-		key, err := cfg.Reader.ReadSecret(cfg.KeyPath)
+		key, err := reader.ReadSecret(cfg.KeyPath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "error loading client key: %s", cfg.KeyPath)
 		}

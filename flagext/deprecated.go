@@ -1,7 +1,6 @@
 package flagext
 
 import (
-	"encoding"
 	"flag"
 	"time"
 
@@ -167,18 +166,6 @@ func DeprecatedFloat64Var(f *flag.FlagSet, val *float64, name string, defaultVal
 func DeprecatedStringVar(f *flag.FlagSet, val *string, name string, defaultVal string, usage string, logger log.Logger) {
 	delegateSet := flag.NewFlagSet(name, flag.ContinueOnError)
 	delegateSet.StringVar(val, name, defaultVal, usage)
-	f.Var(deprecatedFlag{
-		name:     name,
-		logger:   logger,
-		delegate: delegateSet,
-	}, name, usage)
-}
-
-// DeprecatedTextVar registers a flag the same as its stdlib flag counterpart. If the flag is set, DeprecatedTextVar will
-// log the usage as a warning on the provided logger and will increment DeprecatedFlagsUsed.
-func DeprecatedTextVar(f *flag.FlagSet, val encoding.TextUnmarshaler, name string, defaultVal encoding.TextMarshaler, usage string, logger log.Logger) {
-	delegateSet := flag.NewFlagSet(name, flag.ContinueOnError)
-	delegateSet.TextVar(val, name, defaultVal, usage)
 	f.Var(deprecatedFlag{
 		name:     name,
 		logger:   logger,

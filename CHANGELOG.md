@@ -105,6 +105,7 @@
   * `<prefix>_cache_requests_total{backend="[memcached|redis]",...}`
 * [ENHANCEMENT] Lifecycler: Added `InstancesInZoneCount` and `InstancesCount` functions returning respectively the total number of instances in the ring and the number of instances in the ring that are registered in lifecycler's zone, updated during the last heartbeat period. #270
 * [ENHANCEMENT] Memcached: add `MinIdleConnectionsHeadroomPercentage` support. It configures the minimum number of idle connections to keep open as a percentage of the number of recently used idle connections. If negative (default), idle connections are kept open indefinitely. #269
+* [ENHANCEMENT] flag: add `DeprecatedVar` functions for registering flags that are deprecated, but can still be used as usual. Add `DisabledFlag` function. Deprecate `DeprecatedFlag` function, which is actually registering a disabled flag. #277
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

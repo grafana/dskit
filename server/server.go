@@ -60,7 +60,13 @@ type TLSConfig struct {
 
 // Config for a Server
 type Config struct {
-	MetricsNamespace  string `yaml:"-"`
+	MetricsNamespace string `yaml:"-"`
+	// Set to > 1 to add native histograms to requestDuration.
+	// See documentation for NativeHistogramBucketFactor in
+	// https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#HistogramOpts
+	// for details. A generally useful value is 1.1.
+	MetricsNativeHistogramFactor float64 `yaml:"-"`
+
 	HTTPListenNetwork string `yaml:"http_listen_network"`
 	HTTPListenAddress string `yaml:"http_listen_address"`
 	HTTPListenPort    int    `yaml:"http_listen_port"`
@@ -292,10 +298,13 @@ func New(cfg Config) (*Server, error) {
 
 	// Prometheus histograms for requests.
 	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: cfg.MetricsNamespace,
-		Name:      "request_duration_seconds",
-		Help:      "Time (in seconds) spent serving HTTP requests.",
-		Buckets:   instrument.DefBuckets,
+		Namespace:                       cfg.MetricsNamespace,
+		Name:                            "request_duration_seconds",
+		Help:                            "Time (in seconds) spent serving HTTP requests.",
+		Buckets:                         instrument.DefBuckets,
+		NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
 	}, []string{"method", "route", "status_code", "ws"})
 	reg.MustRegister(requestDuration)
 

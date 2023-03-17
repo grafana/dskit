@@ -45,6 +45,7 @@
 * [CHANGE] Multierror: Implement `Is(error) bool`. This allows to use `multierror.MultiError` with `errors.Is()`. `MultiError` will in turn call `errors.Is()` on every error value. #254
 * [CHANGE] Cache: Remove the `context.Context` argument from the `Cache.Store` method and rename the method to `Cache.StoreAsync`. #273
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
+* [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45

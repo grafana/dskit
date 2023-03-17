@@ -195,7 +195,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	if config.TLSEnabled {
 		cfg, err := config.TLS.GetTLSConfig()
 		if err != nil {
-			return nil, errors.Wrapf(err, "tls configuration")
+			return nil, errors.Wrapf(err, "TLS configuration")
 		}
 
 		client.DialTimeout = func(network, address string, timeout time.Duration) (net.Conn, error) {

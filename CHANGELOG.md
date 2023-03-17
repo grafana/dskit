@@ -1,5 +1,6 @@
 ## Changelog
 
+* [ENHANCEMENT] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [CHANGE] Change `WaitRingStability` and `WaitInstanceState` methods signature to rely on `ReadRing` instead. #251
 * [CHANGE] Added new `-consul.cas-retry-delay` flag. It has a default value of `1s`, while previously there was no delay between retries. #178
 * [CHANGE] Flagext: `DayValue` now always uses UTC when parsing or displaying dates. #71

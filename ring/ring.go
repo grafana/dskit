@@ -798,7 +798,7 @@ func mergeTokenGroups(groupsByName map[string][]uint32) []uint32 {
 		}
 
 		merged = append(merged, lowestToken)
-		nextIndex[lowestTokenGroupIndex] += 1
+		nextIndex[lowestTokenGroupIndex]++
 	}
 
 	return merged

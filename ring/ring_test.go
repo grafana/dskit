@@ -2004,6 +2004,18 @@ func BenchmarkRing_ShuffleShard_512Tokens(b *testing.B) {
 	benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
 }
 
+func BenchmarkRing_ShuffleShard_512Tokens_100Instances_3Zones(b *testing.B) {
+	const (
+		numInstances = 300 // = 100 per zone
+		numZones     = 3
+		numTokens    = 512
+		shardSize    = 270 // = 90 per zone
+		cacheEnabled = false
+	)
+
+	benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
+}
+
 func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, shardSize int, cache bool) {
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, numTokens)}

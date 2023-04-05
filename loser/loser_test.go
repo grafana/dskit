@@ -64,6 +64,16 @@ var testCases = []struct {
 		args: [][]uint64{{1, 3}, {2, 4}, {5}},
 		want: []uint64{1, 2, 3, 4, 5},
 	},
+	{
+		name: "two lists, largest value equal to one less than maximum",
+		args: [][]uint64{{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 3}, {(math.MaxUint64 / 4) * 2, math.MaxUint64 - 1}},
+		want: []uint64{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 2, (math.MaxUint64 / 4) * 3, math.MaxUint64 - 1},
+	},
+	{
+		name: "two lists, largest value equal to maximum",
+		args: [][]uint64{{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 3}, {(math.MaxUint64 / 4) * 2, math.MaxUint64}},
+		want: []uint64{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 2, (math.MaxUint64 / 4) * 3, math.MaxUint64},
+	},
 }
 
 func TestMerge(t *testing.T) {

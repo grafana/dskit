@@ -591,54 +591,21 @@ func GetOrCreateRingDesc(d interface{}) *Desc {
 	return d.(*Desc)
 }
 
-type tokenList struct {
-	list []uint32
-	cur  uint32
-}
-
-func newTokenList(list ...uint32) *tokenList {
-	return &tokenList{list: list}
-}
-
-func (it *tokenList) At() uint32 {
-	return it.cur
-}
-
-func (it *tokenList) Next() bool {
-	if len(it.list) > 0 {
-		it.cur = it.list[0]
-		it.list = it.list[1:]
-		return true
-	}
-	it.cur = 0
-	return false
-}
-
 // MergeTokens takes in input multiple lists of tokens and returns a single list
 // containing all tokens merged and sorted. Each input single list is required
 // to have tokens already sorted.
 func MergeTokens(instances [][]uint32) []uint32 {
 	numTokens := 0
-	lists := make([]*tokenList, len(instances))
 
-	for i, tokens := range instances {
-		if len(tokens) == 0 {
-			continue
-		}
-
+	for _, tokens := range instances {
 		numTokens += len(tokens)
-		lists[i] = newTokenList(tokens...)
 	}
 
-	at := func(s *tokenList) uint32 { return s.At() }
-	less := func(a, b uint32) bool { return a < b }
-	close := func(s *tokenList) {}
-	tree := loser.New(lists, math.MaxUint32, at, less, close)
-
+	tree := loser.New(instances, math.MaxUint32)
 	out := make([]uint32, 0, numTokens)
 
 	for tree.Next() {
-		out = append(out, tree.Winner().At())
+		out = append(out, tree.Winner())
 	}
 
 	return out

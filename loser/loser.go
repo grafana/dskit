@@ -2,73 +2,55 @@
 
 package loser
 
-type Sequence interface {
-	Next() bool // Advances and returns true if there is a value at this new position.
-}
+import "golang.org/x/exp/constraints"
 
-func New[E any, S Sequence](sequences []S, maxVal E, at func(S) E, less func(E, E) bool, close func(S)) *Tree[E, S] {
-	nSequences := len(sequences)
-	t := Tree[E, S]{
+func New[E constraints.Ordered](lists [][]E, maxVal E) *Tree[E] {
+	nLists := len(lists)
+	t := Tree[E]{
 		maxVal: maxVal,
-		at:     at,
-		less:   less,
-		close:  close,
-		nodes:  make([]node[E, S], nSequences*2),
+		nodes:  make([]node[E], nLists*2),
 	}
-	for i, s := range sequences {
-		t.nodes[i+nSequences].items = s
-		t.moveNext(i + nSequences) // Must call Next on each item so that At() has a value.
+	for i, s := range lists {
+		t.nodes[i+nLists].items = s
+		t.moveNext(i + nLists) // Must call Next on each item so that At() has a value.
 	}
-	if nSequences > 0 {
+	if nLists > 0 {
 		t.nodes[0].index = -1 // flag to be initialized on first call to Next().
 	}
 	return &t
 }
 
-// Call the close function on all sequences that are still open.
-func (t *Tree[E, S]) Close() {
-	for _, e := range t.nodes[len(t.nodes)/2 : len(t.nodes)] {
-		if e.index == -1 {
-			continue
-		}
-		t.close(e.items)
-	}
-}
-
 // A loser tree is a binary tree laid out such that nodes N and N+1 have parent N/2.
 // We store M leaf nodes in positions M...2M-1, and M-1 internal nodes in positions 1..M-1.
 // Node 0 is a special node, containing the winner of the contest.
-type Tree[E any, S Sequence] struct {
+type Tree[E constraints.Ordered] struct {
 	maxVal E
-	at     func(S) E
-	less   func(E, E) bool
-	close  func(S) // Called when Next() returns false.
-	nodes  []node[E, S]
+	nodes  []node[E]
 }
 
-type node[E any, S Sequence] struct {
+type node[E constraints.Ordered] struct {
 	index int // This is the loser for all nodes except the 0th, where it is the winner.
 	value E   // Value copied from the loser node, or winner for node 0.
-	items S   // Only populated for leaf nodes.
+	items []E // Only populated for leaf nodes.
 }
 
-func (t *Tree[E, S]) moveNext(index int) bool {
+func (t *Tree[E]) moveNext(index int) bool {
 	n := &t.nodes[index]
-	if n.items.Next() {
-		n.value = t.at(n.items)
+	if len(n.items) > 0 {
+		n.value = n.items[0]
+		n.items = n.items[1:]
 		return true
 	}
-	t.close(n.items) // Next() returned false; close it and mark as finished.
 	n.value = t.maxVal
 	n.index = -1
 	return false
 }
 
-func (t *Tree[E, S]) Winner() S {
-	return t.nodes[t.nodes[0].index].items
+func (t *Tree[E]) Winner() E {
+	return t.nodes[t.nodes[0].index].value
 }
 
-func (t *Tree[E, S]) Next() bool {
+func (t *Tree[E]) Next() bool {
 	if len(t.nodes) == 0 {
 		return false
 	}
@@ -84,7 +66,7 @@ func (t *Tree[E, S]) Next() bool {
 	return t.nodes[t.nodes[0].index].index != -1
 }
 
-func (t *Tree[E, S]) initialize() {
+func (t *Tree[E]) initialize() {
 	winners := make([]int, len(t.nodes))
 	// Initialize leaf nodes as winners to start.
 	for i := len(t.nodes) / 2; i < len(t.nodes); i++ {
@@ -103,11 +85,11 @@ func (t *Tree[E, S]) initialize() {
 }
 
 // Starting at pos, re-consider all values up to the root.
-func (t *Tree[E, S]) replayGames(pos int) {
+func (t *Tree[E]) replayGames(pos int) {
 	// At the start, pos is a leaf node, and is the winner at that level.
 	n := parent(pos)
 	for n != 0 {
-		if t.less(t.nodes[n].value, t.nodes[pos].value) {
+		if t.nodes[n].value < t.nodes[pos].value {
 			loser := pos
 			// Record pos as the loser here, and the old loser is the new winner.
 			pos = t.nodes[n].index
@@ -121,8 +103,8 @@ func (t *Tree[E, S]) replayGames(pos int) {
 	t.nodes[0].value = t.nodes[pos].value
 }
 
-func (t *Tree[E, S]) playGame(a, b int) (loser, winner int) {
-	if t.less(t.nodes[a].value, t.nodes[b].value) {
+func (t *Tree[E]) playGame(a, b int) (loser, winner int) {
+	if t.nodes[a].value < t.nodes[b].value {
 		return b, a
 	}
 	return a, b
@@ -130,13 +112,13 @@ func (t *Tree[E, S]) playGame(a, b int) (loser, winner int) {
 
 func parent(i int) int { return i / 2 }
 
-// Add a new sequence to the merge set
-func (t *Tree[E, S]) Push(sequence S) {
+// Add a new list to the merge set
+func (t *Tree[E]) Push(list []E) {
 	// First, see if we can replace one that was previously finished.
 	for newPos := len(t.nodes) / 2; newPos < len(t.nodes); newPos++ {
 		if t.nodes[newPos].index == -1 {
 			t.nodes[newPos].index = newPos
-			t.nodes[newPos].items = sequence
+			t.nodes[newPos].items = list
 			t.moveNext(newPos)
 			t.nodes[0].index = -1 // flag for re-initialize on next call to Next()
 			return
@@ -147,7 +129,7 @@ func (t *Tree[E, S]) Push(sequence S) {
 	for ; size <= len(t.nodes)/2; size *= 2 {
 	}
 	newPos := size + len(t.nodes)/2
-	newNodes := make([]node[E, S], size*2)
+	newNodes := make([]node[E], size*2)
 	// Copy data over and fix up the indexes.
 	for i, n := range t.nodes[len(t.nodes)/2:] {
 		newNodes[i+size] = n
@@ -155,7 +137,7 @@ func (t *Tree[E, S]) Push(sequence S) {
 	}
 	t.nodes = newNodes
 	t.nodes[newPos].index = newPos
-	t.nodes[newPos].items = sequence
+	t.nodes[newPos].items = list
 	// Mark all the empty nodes we have added as finished.
 	for i := newPos + 1; i < len(t.nodes); i++ {
 		t.nodes[i].index = -1

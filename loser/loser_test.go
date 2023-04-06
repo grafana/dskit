@@ -1,15 +1,18 @@
 package loser_test
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/slices"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/grafana/dskit/loser"
 )
 
-func checkTreeEqual[E constraints.Ordered](t *testing.T, tree *loser.Tree[E], expected []E) {
+func checkTreeEqual[E constraints.Ordered](t *testing.T, tree *loser.Tree[E], expected []E, msg ...interface{}) {
 	t.Helper()
 	actual := []E{}
 
@@ -17,7 +20,7 @@ func checkTreeEqual[E constraints.Ordered](t *testing.T, tree *loser.Tree[E], ex
 		actual = append(actual, tree.Winner())
 	}
 
-	require.Equal(t, expected, actual)
+	require.Equal(t, expected, actual, msg...)
 }
 
 var testCases = []struct {
@@ -70,9 +73,19 @@ var testCases = []struct {
 		want: []uint64{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 2, (math.MaxUint64 / 4) * 3, math.MaxUint64 - 1},
 	},
 	{
-		name: "two lists, largest value equal to maximum",
+		name: "two lists, largest value in first list equal to maximum",
+		args: [][]uint64{{math.MaxUint64 / 4, math.MaxUint64}, {(math.MaxUint64 / 4) * 2, (math.MaxUint64 / 4) * 3}},
+		want: []uint64{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 2, (math.MaxUint64 / 4) * 3, math.MaxUint64},
+	},
+	{
+		name: "two lists, largest value in second list equal to maximum",
 		args: [][]uint64{{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 3}, {(math.MaxUint64 / 4) * 2, math.MaxUint64}},
 		want: []uint64{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 2, (math.MaxUint64 / 4) * 3, math.MaxUint64},
+	},
+	{
+		name: "two lists, largest value in both lists equal to maximum",
+		args: [][]uint64{{math.MaxUint64 / 4, math.MaxUint64}, {(math.MaxUint64 / 4) * 2, math.MaxUint64}},
+		want: []uint64{math.MaxUint64 / 4, (math.MaxUint64 / 4) * 2, math.MaxUint64, math.MaxUint64},
 	},
 }
 
@@ -83,6 +96,32 @@ func TestMerge(t *testing.T) {
 			checkTreeEqual(t, lt, tt.want)
 		})
 	}
+}
+
+func FuzzMerge(f *testing.F) {
+	f.Fuzz(func(t *testing.T, seed int64) {
+		r := rand.New(rand.NewSource(seed))
+		listCount := r.Intn(9) + 1
+		lists := make([][]uint64, listCount)
+		allElements := []uint64{}
+
+		for listIdx := 0; listIdx < listCount; listIdx++ {
+			elementCount := r.Intn(5)
+			list := make([]uint64, elementCount)
+
+			for elementIdx := 0; elementIdx < elementCount; elementIdx++ {
+				list[elementIdx] = r.Uint64()
+			}
+
+			slices.Sort(list)
+			allElements = append(allElements, list...)
+			lists[listIdx] = list
+		}
+
+		lt := loser.New(lists, math.MaxUint64)
+		slices.Sort(allElements)
+		checkTreeEqual(t, lt, allElements, fmt.Sprintf("merging %v", lists))
+	})
 }
 
 func TestPush(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
 	google_protobuf "github.com/golang/protobuf/ptypes/empty"
@@ -128,9 +129,9 @@ func TestDefaultAddresses(t *testing.T) {
 	go server.Run()
 	defer server.Shutdown()
 
-	conn, err := grpc.Dial("localhost:9095", grpc.WithInsecure())
-	defer conn.Close()
+	conn, err := grpc.Dial("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
+	defer conn.Close()
 
 	empty := google_protobuf.Empty{}
 	client := NewFakeServerClient(conn)
@@ -169,9 +170,9 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 
 	go server.Run()
 
-	conn, err := grpc.Dial("localhost:1234", grpc.WithInsecure())
-	defer conn.Close()
+	conn, err := grpc.Dial("localhost:1234", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
+	defer conn.Close()
 
 	empty := google_protobuf.Empty{}
 	client := NewFakeServerClient(conn)
@@ -506,7 +507,8 @@ func TestMiddlewareLogging(t *testing.T) {
 
 	req, err := http.NewRequest("GET", "http://127.0.0.1:9192/error500", nil)
 	require.NoError(t, err)
-	http.DefaultClient.Do(req)
+	_, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
 }
 
 func TestTLSServer(t *testing.T) {
@@ -582,8 +584,8 @@ func TestTLSServer(t *testing.T) {
 	require.Equal(t, expected, body)
 
 	conn, err := grpc.Dial("localhost:9194", grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
-	defer conn.Close()
 	require.NoError(t, err)
+	defer conn.Close()
 
 	empty := google_protobuf.Empty{}
 	grpcClient := NewFakeServerClient(conn)
@@ -650,7 +652,8 @@ func TestLogSourceIPs(t *testing.T) {
 
 	req, err := http.NewRequest("GET", "http://127.0.0.1:9195/error500", nil)
 	require.NoError(t, err)
-	http.DefaultClient.Do(req)
+	_, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
 
 	require.Equal(t, fake.sourceIPs, "127.0.0.1")
 }

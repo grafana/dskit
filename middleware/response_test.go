@@ -34,7 +34,7 @@ func TestBadResponseLoggingWriter(t *testing.T) {
 		if wrapped.getStatusCode() != tc.statusCode {
 			t.Errorf("Wrong status code: have %d want %d", wrapped.getStatusCode(), tc.statusCode)
 		}
-		data := string(buf.Bytes())
+		data := buf.String()
 		if data != tc.expected {
 			t.Errorf("Wrong data: have %q want %q", data, tc.expected)
 		}

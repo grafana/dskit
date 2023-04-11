@@ -421,7 +421,7 @@ func New(cfg Config) (*Server, error) {
 			InflightRequests: inflightRequests,
 		},
 	}
-	httpMiddleware := []middleware.Interface{}
+	var httpMiddleware []middleware.Interface
 	if cfg.DoNotAddDefaultHTTPMiddleware {
 		httpMiddleware = cfg.HTTPMiddleware
 	} else {

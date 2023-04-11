@@ -2004,7 +2004,7 @@ func BenchmarkRing_ShuffleShard_512Tokens(b *testing.B) {
 	benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
 }
 
-func BenchmarkRing_ShuffleShard_512Tokens_100Instances_3Zones(b *testing.B) {
+func BenchmarkRing_ShuffleShard_LargeShardSize(b *testing.B) {
 	const (
 		numInstances = 300 // = 100 per zone
 		numZones     = 3

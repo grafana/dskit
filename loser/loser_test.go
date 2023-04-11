@@ -78,8 +78,18 @@ var testCases = []struct {
 		want: []uint64{1, 2, 3, math.MaxUint64},
 	},
 	{
+		name: "two lists, first straddles second and has largest value equal to maximum",
+		args: [][]uint64{{1, 3, math.MaxUint64}, {2}},
+		want: []uint64{1, 2, 3, math.MaxUint64},
+	},
+	{
 		name: "two lists, largest value in second list equal to maximum",
 		args: [][]uint64{{1, 3}, {2, math.MaxUint64}},
+		want: []uint64{1, 2, 3, math.MaxUint64},
+	},
+	{
+		name: "two lists, second straddles first and has largest value equal to maximum",
+		args: [][]uint64{{2}, {1, 3, math.MaxUint64}},
 		want: []uint64{1, 2, 3, math.MaxUint64},
 	},
 	{

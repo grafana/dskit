@@ -2,11 +2,12 @@ package ring
 
 import (
 	"fmt"
-	"github.com/grafana/dskit/loser"
 	"math"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/grafana/dskit/loser"
 
 	"github.com/gogo/protobuf/proto"
 

@@ -2,12 +2,13 @@ package loser_test
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/constraints"
-	"golang.org/x/exp/slices"
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/dskit/loser"
 )

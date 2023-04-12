@@ -2004,6 +2004,18 @@ func BenchmarkRing_ShuffleShard_512Tokens(b *testing.B) {
 	benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
 }
 
+func BenchmarkRing_ShuffleShard_LargeShardSize(b *testing.B) {
+	const (
+		numInstances = 300 // = 100 per zone
+		numZones     = 3
+		numTokens    = 512
+		shardSize    = 270 // = 90 per zone
+		cacheEnabled = false
+	)
+
+	benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
+}
+
 func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, shardSize int, cache bool) {
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, numTokens)}
@@ -2504,4 +2516,76 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_tokens_total{name="test"} 2
 	`))
 	assert.NoError(t, err)
+}
+
+func TestMergeTokenGroups(t *testing.T) {
+	scenarios := map[string]struct {
+		groups   map[string][]uint32
+		expected []uint32
+	}{
+		"no groups": {
+			groups:   map[string][]uint32{},
+			expected: []uint32{},
+		},
+		"empty group": {
+			groups: map[string][]uint32{
+				"group-1": {},
+			},
+			expected: []uint32{},
+		},
+		"single group with one value": {
+			groups: map[string][]uint32{
+				"group-1": {1},
+			},
+			expected: []uint32{1},
+		},
+		"single group with many values": {
+			groups: map[string][]uint32{
+				"group-1": {1, 2, 3},
+			},
+			expected: []uint32{1, 2, 3},
+		},
+		"single group with repeated value": {
+			groups: map[string][]uint32{
+				"group-1": {1, 2, 2},
+			},
+			expected: []uint32{1, 2, 2},
+		},
+		"two groups with one value each": {
+			groups: map[string][]uint32{
+				"group-1": {1},
+				"group-2": {2},
+			},
+			expected: []uint32{1, 2},
+		},
+		"two groups with many values": {
+			groups: map[string][]uint32{
+				"group-1": {1, 3, 4, 7},
+				"group-2": {2, 5, 6},
+			},
+			expected: []uint32{1, 2, 3, 4, 5, 6, 7},
+		},
+		"two groups with common values": {
+			groups: map[string][]uint32{
+				"group-1": {1, 4, 6},
+				"group-2": {2, 4, 5},
+			},
+			expected: []uint32{1, 2, 4, 4, 5, 6},
+		},
+		"many groups": {
+			groups: map[string][]uint32{
+				"group-1": {1, 4, 7},
+				"group-2": {2, 5, 8},
+				"group-3": {3, 6, 9},
+			},
+			expected: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			actual := mergeTokenGroups(scenario.groups)
+			require.Equal(t, scenario.expected, actual)
+		})
+	}
 }

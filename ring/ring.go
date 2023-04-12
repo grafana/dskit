@@ -788,9 +788,8 @@ func mergeTokenGroups(groupsByName map[string][]uint32) []uint32 {
 			if group[nextIndexInGroup] < lowestToken || !haveSeenGroupWithRemainingToken {
 				lowestToken = group[nextIndexInGroup]
 				lowestTokenGroupIndex = groupIndex
+				haveSeenGroupWithRemainingToken = true
 			}
-
-			haveSeenGroupWithRemainingToken = true
 		}
 
 		if !haveSeenGroupWithRemainingToken {

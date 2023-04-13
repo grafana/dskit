@@ -185,7 +185,8 @@ type Ring struct {
 
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
 	// If set to nil, no caching is done (used by tests, and subrings).
-	shuffledSubringCache map[subringCacheKey]*Ring
+	shuffledSubringCache             map[subringCacheKey]*Ring
+	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback
 
 	numMembersGaugeVec      *prometheus.GaugeVec
 	totalTokensGauge        prometheus.Gauge
@@ -197,6 +198,12 @@ type Ring struct {
 type subringCacheKey struct {
 	identifier string
 	shardSize  int
+}
+
+type cachedSubringWithLookback struct {
+	subring               *Ring
+	validForLookbackFrom  int64
+	validForLookbackUntil int64
 }
 
 // New creates a new Ring. Being a service, Ring needs to be started to do anything.
@@ -222,12 +229,13 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 	}
 
 	r := &Ring{
-		key:                  key,
-		cfg:                  cfg,
-		KVClient:             store,
-		strategy:             strategy,
-		ringDesc:             &Desc{},
-		shuffledSubringCache: map[subringCacheKey]*Ring{},
+		key:                              key,
+		cfg:                              cfg,
+		KVClient:                         store,
+		strategy:                         strategy,
+		ringDesc:                         &Desc{},
+		shuffledSubringCache:             map[subringCacheKey]*Ring{},
+		shuffledSubringWithLookbackCache: map[subringCacheKey]cachedSubringWithLookback{},
 		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
@@ -325,10 +333,15 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.ringZones = ringZones
 	r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
 	r.lastTopologyChange = now
+
+	// Invalidate all cached subrings.
 	if r.shuffledSubringCache != nil {
-		// Invalidate all cached subrings.
 		r.shuffledSubringCache = make(map[subringCacheKey]*Ring)
 	}
+	if r.shuffledSubringWithLookbackCache != nil {
+		r.shuffledSubringWithLookbackCache = make(map[subringCacheKey]cachedSubringWithLookback)
+	}
+
 	r.updateRingMetrics(rc)
 }
 
@@ -623,14 +636,25 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 // The returned subring may be unbalanced with regard to zones and should never be used for write
 // operations (read only).
 //
-// This function doesn't support caching.
+// This function supports caching, but the cache will only be effective if successive calls for the
+// same identifier are for increasing values of (now-lookbackPeriod).
 func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
 	// Nothing to do if the shard size is not smaller then the actual ring.
 	if size <= 0 || r.InstancesCount() <= size {
 		return r
 	}
 
-	return r.shuffleShard(identifier, size, lookbackPeriod, now)
+	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
+		return cached
+	}
+
+	result := r.shuffleShard(identifier, size, lookbackPeriod, now)
+
+	if result != r {
+		r.setCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now, result)
+	}
+
+	return result
 }
 
 func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) *Ring {
@@ -877,6 +901,85 @@ func (r *Ring) setCachedShuffledSubring(identifier string, size int, subring *Ri
 	}
 }
 
+func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) *Ring {
+	if r.cfg.SubringCacheDisabled {
+		return nil
+	}
+
+	cached, ok := r.shuffledSubringWithLookbackCache[subringCacheKey{identifier: identifier, shardSize: size}]
+	if !ok {
+		return nil
+	}
+
+	lookbackStart := now.Add(-lookbackPeriod).Unix()
+	if lookbackStart < cached.validForLookbackFrom || lookbackStart > cached.validForLookbackUntil {
+		return nil
+	}
+
+	cachedSubring := cached.subring
+	if r == cachedSubring {
+		return cachedSubring
+	}
+
+	cachedSubring.mtx.Lock()
+	defer cachedSubring.mtx.Unlock()
+
+	// Update instance states and timestamps. We know that the topology is the same,
+	// so zones and tokens are equal.
+	for name, cachedIng := range cachedSubring.ringDesc.Ingesters {
+		ing := r.ringDesc.Ingesters[name]
+		cachedIng.State = ing.State
+		cachedIng.Timestamp = ing.Timestamp
+		cachedSubring.ringDesc.Ingesters[name] = cachedIng
+	}
+
+	return cachedSubring
+}
+
+func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time, subring *Ring) {
+	if subring == nil || r.cfg.SubringCacheDisabled {
+		return
+	}
+
+	lookbackStart := now.Add(-lookbackPeriod).Unix()
+	validForLookbackUntil := int64(math.MaxInt64)
+
+	for _, instance := range subring.ringDesc.Ingesters {
+		registeredDuringLookbackWindow := instance.RegisteredTimestamp >= lookbackStart
+
+		if registeredDuringLookbackWindow && instance.RegisteredTimestamp < validForLookbackUntil {
+			validForLookbackUntil = instance.RegisteredTimestamp
+		}
+	}
+
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	// Only cache if *this* ring hasn't changed since computing result
+	// (which can happen between releasing the read lock and getting read-write lock).
+	// Note that shuffledSubringCache can be only nil when set by test.
+	if r.shuffledSubringWithLookbackCache == nil {
+		return
+	}
+
+	if !r.lastTopologyChange.Equal(subring.lastTopologyChange) {
+		return
+	}
+
+	// Only update cache if subring's lookback window starts later than the previously cached subring for this identifier,
+	// if there is one. This prevents cache thrashing due to different calls competing if their lookback windows start
+	// before and after the time of an instance registering.
+	key := subringCacheKey{identifier: identifier, shardSize: size}
+
+	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackFrom < lookbackStart {
+		r.shuffledSubringWithLookbackCache[key] = cachedSubringWithLookback{
+			subring:               subring,
+			validForLookbackFrom:  lookbackStart,
+			validForLookbackUntil: validForLookbackUntil,
+		}
+	}
+}
+
 func (r *Ring) CleanupShuffleShardCache(identifier string) {
 	if r.cfg.SubringCacheDisabled {
 		return
@@ -888,6 +991,12 @@ func (r *Ring) CleanupShuffleShardCache(identifier string) {
 	for k := range r.shuffledSubringCache {
 		if k.identifier == identifier {
 			delete(r.shuffledSubringCache, k)
+		}
+	}
+
+	for k := range r.shuffledSubringWithLookbackCache {
+		if k.identifier == identifier {
+			delete(r.shuffledSubringWithLookbackCache, k)
 		}
 	}
 }

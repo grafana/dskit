@@ -2637,7 +2637,7 @@ func TestCountTokens(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expected, testData.ring.countTokens())
+			assert.Equal(t, testData.expected, testData.ring.CountTokens())
 		})
 	}
 

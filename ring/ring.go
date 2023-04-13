@@ -506,8 +506,8 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	}, nil
 }
 
-// countTokens returns the number tokens within the range for each instance.
-func (r *Desc) countTokens() map[string]uint32 {
+// CountTokens returns the number tokens within the range for each instance.
+func (r *Desc) CountTokens() map[string]uint32 {
 	var (
 		owned               = make(map[string]uint32, len(r.Ingesters))
 		ringTokens          = r.GetTokens()

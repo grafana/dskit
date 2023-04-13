@@ -2589,3 +2589,56 @@ func TestMergeTokenGroups(t *testing.T) {
 		})
 	}
 }
+
+func TestCountTokens(t *testing.T) {
+	tests := map[string]struct {
+		ring     *Desc
+		expected map[string]uint32
+	}{
+		"empty ring": {
+			ring:     &Desc{},
+			expected: map[string]uint32{},
+		},
+		"1 instance with 1 token in the ring": {
+			ring: &Desc{
+				Ingesters: map[string]InstanceDesc{
+					"ingester-1": {Tokens: []uint32{1000000}},
+				},
+			},
+			expected: map[string]uint32{
+				"ingester-1": math.MaxUint32,
+			},
+		},
+		"1 instance with multiple tokens in the ring": {
+			ring: &Desc{
+				Ingesters: map[string]InstanceDesc{
+					"ingester-1": {Tokens: []uint32{1000000, 2000000, 3000000}},
+				},
+			},
+			expected: map[string]uint32{
+				"ingester-1": math.MaxUint32,
+			},
+		},
+		"multiple instances with multiple tokens in the ring": {
+			ring: &Desc{
+				Ingesters: map[string]InstanceDesc{
+					"ingester-1": {Tokens: []uint32{1000000, 3000000, 6000000}},
+					"ingester-2": {Tokens: []uint32{2000000, 4000000, 8000000}},
+					"ingester-3": {Tokens: []uint32{5000000, 9000000}},
+				},
+			},
+			expected: map[string]uint32{
+				"ingester-1": 3000000 + (math.MaxUint32 - 9000000),
+				"ingester-2": 4000000,
+				"ingester-3": 2000000,
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, testData.ring.countTokens())
+		})
+	}
+
+}

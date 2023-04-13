@@ -2279,7 +2279,7 @@ func startLifecycler(t *testing.T, cfg Config, heartbeat time.Duration, lifecycl
 
 // This test checks if shuffle-sharded ring can be reused, and whether it receives
 // updates from "main" ring.
-func TestShuffleShardWithCaching(t *testing.T) {
+func TestRing_ShuffleShard_Caching(t *testing.T) {
 	inmem, closer := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
 		MaxCasRetries: 20,
 		CasRetryDelay: 500 * time.Millisecond,

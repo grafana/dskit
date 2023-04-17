@@ -108,6 +108,7 @@
 * [ENHANCEMENT] Memcached: add `MinIdleConnectionsHeadroomPercentage` support. It configures the minimum number of idle connections to keep open as a percentage of the number of recently used idle connections. If negative (default), idle connections are kept open indefinitely. #269
 * [ENHANCEMENT] Memcached: Add support for using TLS or mTLS with Memcached based caching. #278
 * [ENHANCEMENT] Ring: improve performance of shuffle sharding computation. #281
+* [ENHANCEMENT] Add option to enable IPv6 address detection in ring and memberlist handling. #185
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

@@ -2205,6 +2205,32 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, laterReplicationSet.GetAddresses())
 			},
 		},
+		"different lookback windows": {
+			instances: []InstanceDesc{
+				generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-1*time.Hour)),
+				generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
+				generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
+				generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
+				generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
+				generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
+			},
+			test: func(t *testing.T, ring *Ring) {
+				first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
+				second := ring.ShuffleShardWithLookback(userID, subringSize, 45*time.Minute, now)
+				require.NotSame(t, first, second)
+
+				third := ring.ShuffleShardWithLookback(userID, subringSize, time.Minute, now)
+				require.Same(t, second, third)
+
+				firstReplicationSet, err := first.GetAllHealthy(Read)
+				require.NoError(t, err)
+				require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
+
+				secondReplicationSet, err := second.GetAllHealthy(Read)
+				require.NoError(t, err)
+				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
+			},
+		},
 	}
 
 	for name, scenario := range scenarios {

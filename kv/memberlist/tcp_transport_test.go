@@ -59,3 +59,38 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 		})
 	}
 }
+
+func TestFinalAdvertiseAddr(t *testing.T) {
+	tests := map[string]struct {
+		advertiseAddr string
+		bindAddrs     []string
+		bindPort      int
+	}{
+		"should not fail with local address specified": {
+			advertiseAddr: "127.0.0.1",
+			bindAddrs:     []string{"localhost"},
+			bindPort:      0,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
+
+			cfg := TCPTransportConfig{}
+			flagext.DefaultValues(&cfg)
+			cfg.BindAddrs = testData.bindAddrs
+			cfg.BindPort = testData.bindPort
+
+			transport, err := NewTCPTransport(cfg, logger)
+			require.NoError(t, err)
+
+			ip, port, err := transport.FinalAdvertiseAddr(testData.advertiseAddr, testData.bindPort)
+			require.NoError(t, err)
+			require.Equal(t, testData.advertiseAddr, ip.String())
+			require.Equal(t, testData.bindPort, port)
+
+		})
+	}
+}

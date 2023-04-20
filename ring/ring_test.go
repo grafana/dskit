@@ -2215,20 +2215,26 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
 			},
 			test: func(t *testing.T, ring *Ring) {
-				first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-				second := ring.ShuffleShardWithLookback(userID, subringSize, 45*time.Minute, now)
-				require.NotSame(t, first, second)
+				firstHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
+				firstHalfHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, 30*time.Minute, now)
+				require.NotSame(t, firstHourWindow, firstHalfHourWindow, "should not reuse subring for different lookback windows when results are not equivalent")
 
-				third := ring.ShuffleShardWithLookback(userID, subringSize, time.Minute, now)
-				require.Same(t, second, third)
+				secondHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
+				require.Same(t, firstHourWindow, secondHourWindow, "should reuse subring for identical request")
 
-				firstReplicationSet, err := first.GetAllHealthy(Read)
+				secondHalfHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, 30*time.Minute, now)
+				require.Same(t, firstHalfHourWindow, secondHalfHourWindow, "should separately cache rings for different lookback windows")
+
+				hourReplicationSet, err := firstHourWindow.GetAllHealthy(Read)
 				require.NoError(t, err)
-				require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
+				require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, hourReplicationSet.GetAddresses())
 
-				secondReplicationSet, err := second.GetAllHealthy(Read)
+				halfHourReplicationSet, err := firstHalfHourWindow.GetAllHealthy(Read)
 				require.NoError(t, err)
-				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
+				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, halfHourReplicationSet.GetAddresses())
+
+				twentyMinuteWindow := ring.ShuffleShardWithLookback(userID, subringSize, 20*time.Minute, now)
+				require.NotSame(t, firstHalfHourWindow, twentyMinuteWindow, "should not reuse subring for different lookback windows even if results are currently equivalent")
 			},
 		},
 	}

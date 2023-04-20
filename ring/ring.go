@@ -195,8 +195,9 @@ type Ring struct {
 }
 
 type subringCacheKey struct {
-	identifier string
-	shardSize  int
+	identifier     string
+	shardSize      int
+	lookbackPeriod time.Duration
 }
 
 type cachedSubringWithLookback struct {
@@ -906,7 +907,7 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 		return nil
 	}
 
-	cached, ok := r.shuffledSubringWithLookbackCache[subringCacheKey{identifier: identifier, shardSize: size}]
+	cached, ok := r.shuffledSubringWithLookbackCache[subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}]
 	if !ok {
 		return nil
 	}
@@ -969,7 +970,7 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 	// Only update cache if subring's lookback window starts later than the previously cached subring for this identifier,
 	// if there is one. This prevents cache thrashing due to different calls competing if their lookback windows start
 	// before and after the time of an instance registering.
-	key := subringCacheKey{identifier: identifier, shardSize: size}
+	key := subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}
 
 	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackWindowsStartingAt < lookbackStart {
 		r.shuffledSubringWithLookbackCache[key] = cachedSubringWithLookback{

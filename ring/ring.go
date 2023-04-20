@@ -200,9 +200,9 @@ type subringCacheKey struct {
 }
 
 type cachedSubringWithLookback struct {
-	subring               *Ring
-	validForLookbackFrom  int64
-	validForLookbackUntil int64
+	subring                             *Ring
+	validForLookbackWindowsStartingAt   int64 // if the lookback window is from T to S, validForLookbackWindowsStartingAt is the earliest value of T this cache entry is valid for
+	validUntilLookbackWindowsStartingAt int64 // if the lookback window is from T to S, validUntilLookbackWindowsStartingAt is the latest value of T this cache entry is valid for
 }
 
 // New creates a new Ring. Being a service, Ring needs to be started to do anything.
@@ -912,7 +912,7 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 	}
 
 	lookbackStart := now.Add(-lookbackPeriod).Unix()
-	if lookbackStart < cached.validForLookbackFrom || lookbackStart > cached.validForLookbackUntil {
+	if lookbackStart < cached.validForLookbackWindowsStartingAt || lookbackStart > cached.validUntilLookbackWindowsStartingAt {
 		return nil
 	}
 
@@ -971,11 +971,11 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 	// before and after the time of an instance registering.
 	key := subringCacheKey{identifier: identifier, shardSize: size}
 
-	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackFrom < lookbackStart {
+	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackWindowsStartingAt < lookbackStart {
 		r.shuffledSubringWithLookbackCache[key] = cachedSubringWithLookback{
-			subring:               subring,
-			validForLookbackFrom:  lookbackStart,
-			validForLookbackUntil: validForLookbackUntil,
+			subring:                             subring,
+			validForLookbackWindowsStartingAt:   lookbackStart,
+			validUntilLookbackWindowsStartingAt: validForLookbackUntil,
 		}
 	}
 }

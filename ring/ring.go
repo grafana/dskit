@@ -352,7 +352,7 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		distinctHosts = bufHosts[:0]
 		distinctZones = bufZones[:0]
 	)
-	for i := start; len(distinctHosts) < maxInstances && len(distinctZones) < maxZones && len(distinctHosts) < n && iterations < len(r.ringTokens); i++ {
+	for i := start; len(distinctHosts) < dsmath.Min(maxInstances, n) && len(distinctZones) < maxZones && iterations < len(r.ringTokens); i++ {
 		iterations++
 		// Wrap i around in the ring.
 		i %= len(r.ringTokens)

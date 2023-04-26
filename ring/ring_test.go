@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/flagext"
-	math2 "github.com/grafana/dskit/internal/math"
+	dsmath "github.com/grafana/dskit/internal/math"
 	"github.com/grafana/dskit/internal/slices"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -2090,9 +2090,9 @@ func BenchmarkRing_Get(b *testing.B) {
 		buf, bufHosts, bufZones := MakeBuffersForGet()
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-		expectedInstances := math2.Min(benchCase.numInstances, benchCase.replicationFactor)
+		expectedInstances := dsmath.Min(benchCase.numInstances, benchCase.replicationFactor)
 		if ring.cfg.ZoneAwarenessEnabled {
-			expectedInstances = math2.Min(benchCase.numZones, benchCase.replicationFactor)
+			expectedInstances = dsmath.Min(benchCase.numZones, benchCase.replicationFactor)
 		}
 
 		b.Run(benchName, func(b *testing.B) {

@@ -2032,7 +2032,7 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 			},
 			test: func(t *testing.T, ring *Ring) {
 				first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-				second := ring.ShuffleShardWithLookback(userID, subringSize*2, time.Hour, now)
+				second := ring.ShuffleShardWithLookback(userID, subringSize+1, time.Hour, now)
 				require.NotSame(t, first, second)
 
 				firstReplicationSet, err := first.GetAllHealthy(Read)

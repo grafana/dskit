@@ -201,9 +201,9 @@ type subringCacheKey struct {
 }
 
 type cachedSubringWithLookback struct {
-	subring                             *Ring
-	validForLookbackWindowsStartingAt   int64 // if the lookback window is from T to S, validForLookbackWindowsStartingAt is the earliest value of T this cache entry is valid for
-	validUntilLookbackWindowsStartingAt int64 // if the lookback window is from T to S, validUntilLookbackWindowsStartingAt is the latest value of T this cache entry is valid for
+	subring                               *Ring
+	validForLookbackWindowsStartingAfter  int64 // if the lookback window is from T to S, validForLookbackWindowsStartingAfter is the earliest value of T this cache entry is valid for
+	validForLookbackWindowsStartingBefore int64 // if the lookback window is from T to S, validForLookbackWindowsStartingBefore is the latest value of T this cache entry is valid for
 }
 
 // New creates a new Ring. Being a service, Ring needs to be started to do anything.
@@ -912,12 +912,15 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 		return nil
 	}
 
-	lookbackStart := now.Add(-lookbackPeriod).Unix()
-	if lookbackStart < cached.validForLookbackWindowsStartingAt || lookbackStart > cached.validUntilLookbackWindowsStartingAt {
+	lookbackWindowStart := now.Add(-lookbackPeriod).Unix()
+	if lookbackWindowStart < cached.validForLookbackWindowsStartingAfter || lookbackWindowStart > cached.validForLookbackWindowsStartingBefore {
+		// The cached subring is not valid for the lookback window that has been requested.
 		return nil
 	}
 
 	cachedSubring := cached.subring
+
+	// No need to update the cached subring if it is the original ring itself.
 	if r == cachedSubring {
 		return cachedSubring
 	}
@@ -942,14 +945,14 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 		return
 	}
 
-	lookbackStart := now.Add(-lookbackPeriod).Unix()
-	validForLookbackUntil := int64(math.MaxInt64)
+	lookbackWindowStart := now.Add(-lookbackPeriod).Unix()
+	validForLookbackWindowsStartingBefore := int64(math.MaxInt64)
 
 	for _, instance := range subring.ringDesc.Ingesters {
-		registeredDuringLookbackWindow := instance.RegisteredTimestamp >= lookbackStart
+		registeredDuringLookbackWindow := instance.RegisteredTimestamp >= lookbackWindowStart
 
-		if registeredDuringLookbackWindow && instance.RegisteredTimestamp < validForLookbackUntil {
-			validForLookbackUntil = instance.RegisteredTimestamp
+		if registeredDuringLookbackWindow && instance.RegisteredTimestamp < validForLookbackWindowsStartingBefore {
+			validForLookbackWindowsStartingBefore = instance.RegisteredTimestamp
 		}
 	}
 
@@ -958,7 +961,7 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 
 	// Only cache if *this* ring hasn't changed since computing result
 	// (which can happen between releasing the read lock and getting read-write lock).
-	// Note that shuffledSubringCache can be only nil when set by test.
+	// Note that shuffledSubringWithLookbackCache can be only nil when set by test.
 	if r.shuffledSubringWithLookbackCache == nil {
 		return
 	}
@@ -972,11 +975,11 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 	// before and after the time of an instance registering.
 	key := subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}
 
-	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackWindowsStartingAt < lookbackStart {
+	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackWindowsStartingAfter < lookbackWindowStart {
 		r.shuffledSubringWithLookbackCache[key] = cachedSubringWithLookback{
-			subring:                             subring,
-			validForLookbackWindowsStartingAt:   lookbackStart,
-			validUntilLookbackWindowsStartingAt: validForLookbackUntil,
+			subring:                               subring,
+			validForLookbackWindowsStartingAfter:  lookbackWindowStart,
+			validForLookbackWindowsStartingBefore: validForLookbackWindowsStartingBefore,
 		}
 	}
 }

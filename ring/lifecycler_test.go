@@ -439,7 +439,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRingAndTokensFromFileNot
 	lifecyclerConfig.HeartbeatPeriod = 0
 	lifecyclerConfig.NumTokens = 64
 	f, _ := os.Create(filepath.Join(tokenDir, "/tokens"))
-	_, err = f.WriteString(GenerateTokenJSONFile(128))
+	_, _ = f.WriteString(GenerateTokenJSONFile(128))
 	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
 
 	// Simulate ingester with 128 tokens left the ring in LEAVING state

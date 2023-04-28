@@ -378,8 +378,8 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRingAndTokensFromFileNot
 	// Make sure changes are applied instantly
 	lifecyclerConfig.HeartbeatPeriod = 0
 	lifecyclerConfig.NumTokens = 128
-	f, err := os.Create(filepath.Join(tokenDir, "/tokens"))
-	f.WriteString(GenerateTokenJsonFile(64))
+	f, _ := os.Create(filepath.Join(tokenDir, "/tokens"))
+	_, _ = f.WriteString(GenerateTokenJSONFile(64))
 	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
 
 	// Simulate ingester with 64 tokens left the ring in LEAVING state
@@ -438,8 +438,8 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRingAndTokensFromFileNot
 	// Make sure changes are applied instantly
 	lifecyclerConfig.HeartbeatPeriod = 0
 	lifecyclerConfig.NumTokens = 64
-	f, err := os.Create(filepath.Join(tokenDir, "/tokens"))
-	f.WriteString(GenerateTokenJsonFile(128))
+	f, _ := os.Create(filepath.Join(tokenDir, "/tokens"))
+	_, err = f.WriteString(GenerateTokenJSONFile(128))
 	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
 
 	// Simulate ingester with 128 tokens left the ring in LEAVING state
@@ -1405,7 +1405,7 @@ func TestDefaultFinalSleepValue(t *testing.T) {
 }
 
 // GenerateTokenJsonFile generates a temp jsonTokenFile with given number of tokens upto 128
-func GenerateTokenJsonFile(tokens int) string {
+func GenerateTokenJSONFile(tokens int) string {
 	type TokenFile struct {
 		Tokens []int32 `json:"tokens"`
 	}

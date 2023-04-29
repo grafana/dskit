@@ -621,7 +621,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 		// 1. Generate tokens if number of new tokens is more than old tokens.
 		// 2. Assign tokens to old token count if old tokens are more in number than number of new tokens.
 		// 3. Assign a subset of tokens from instanceDesc if token file is empty.
-		// After we have assigned the desginated tokens we need to set the state of ingester to active.
+		// After we have assigned the designated tokens we need to set the state of ingester to active.
 		if instanceDesc.State == LEAVING {
 			var tokens Tokens = instanceDesc.Tokens // way of forcing tokens to be of type Tokens instead of []uint32.
 			setIsActive := true

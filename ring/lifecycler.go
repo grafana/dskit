@@ -616,11 +616,49 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			return ringDesc, true, nil
 		}
 
-		// If the ingester failed to clean its ring entry up in can leave its state in LEAVING
-		// OR unregister_on_shutdown=false
-		// Move it into ACTIVE to ensure the ingester joins the ring.
-		if instanceDesc.State == LEAVING && len(instanceDesc.Tokens) == i.cfg.NumTokens {
-			instanceDesc.State = ACTIVE
+		if instanceDesc.State == LEAVING {
+			var tokens Tokens = instanceDesc.Tokens // way of forcing tokens to be of type Tokens instead of []uint32.
+			setIsActive := true
+			if len(instanceDesc.Tokens) != i.cfg.NumTokens {
+				level.Debug(i.logger).Log("msg", "existing entry has different number of tokens", "existingTokens", len(instanceDesc.Tokens), "newTokens", i.cfg.NumTokens)
+				if len(tokensFromFile) > 0 {
+					level.Debug(i.logger).Log("msg", "adding tokens from file", "tokens", len(tokensFromFile))
+					if len(tokensFromFile) > i.cfg.NumTokens {
+						tokens = tokensFromFile
+					} else {
+						needTokens := i.cfg.NumTokens - len(tokensFromFile)
+						newTokens := GenerateTokens(needTokens, ringDesc.GetTokens())
+						tokens = append(instanceDesc.Tokens, newTokens...)
+						sort.Sort(tokens)
+					}
+				} else if i.cfg.NumTokens > len(instanceDesc.Tokens) {
+					needTokens := i.cfg.NumTokens - len(instanceDesc.Tokens)
+					level.Debug(i.logger).Log("msg", "no tokens in file, generating new ones in addition to those of existing instance", "newTokens", needTokens)
+					newTokens := GenerateTokens(needTokens, ringDesc.GetTokens())
+					tokens = append(instanceDesc.Tokens, newTokens...)
+					sort.Sort(tokens)
+				} else {
+					level.Debug(i.logger).Log("msg", "no tokens in file, adopting a subset of existing instance's tokens", "numTokens", i.cfg.NumTokens)
+					tokens = instanceDesc.Tokens[0:i.cfg.NumTokens]
+				}
+			} else {
+				level.Debug(i.logger).Log("msg", "adopting tokens of existing instance")
+			}
+
+			if setIsActive {
+				level.Debug(i.logger).Log("msg", "switching state to active")
+				i.setState(ACTIVE)
+			} else {
+				level.Debug(i.logger).Log("msg", "not switching state to active", "state", i.GetState())
+			}
+
+			i.setTokens(tokens)
+			instanceDesc.State = i.GetState()
+			instanceDesc.Tokens = tokens
+		} else {
+			// We exist in the ring and not in leaving state, so assume the ring is right and copy tokens & state out of there.
+			i.setState(instanceDesc.State)
+			i.setTokens(instanceDesc.Tokens)
 		}
 
 		// We're taking over this entry, update instanceDesc with our values

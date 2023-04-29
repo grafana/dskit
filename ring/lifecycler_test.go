@@ -2,8 +2,11 @@ package ring
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -235,6 +238,242 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 		require.Equal(t, instance.expectedHealthyInstancesCount, lifecycler.HealthyInstancesCount())
 		require.Equal(t, instance.expectedZonesCount, lifecycler.ZonesCount())
 	}
+}
+
+// Test Lifecycler when increasing tokens and instance is already in the ring in leaving state.
+func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
+	ctx := context.Background()
+
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+	})
+
+	tokenDir := t.TempDir()
+	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
+	// Make sure changes are applied instantly
+	lifecyclerConfig.HeartbeatPeriod = 0
+	lifecyclerConfig.NumTokens = 128
+	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
+
+	// Simulate ingester with 64 tokens left the ring in LEAVING state
+	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc := NewDesc()
+		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
+		if err != nil {
+			return nil, false, err
+		}
+
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, GenerateTokens(64, nil), LEAVING, time.Now())
+		return ringDesc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Start ingester with increased number of tokens
+	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, l))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, l))
+	})
+
+	// Verify ingester joined, is active, and has 128 tokens
+	test.Poll(t, time.Second, true, func() interface{} {
+		d, err := r.KVClient.Get(ctx, ringKey)
+		require.NoError(t, err)
+
+		desc, ok := d.(*Desc)
+		require.True(t, ok)
+		ingDesc := desc.Ingesters["ing1"]
+		t.Log("Polling for new ingester to have become active with 128 tokens", "state", ingDesc.State, "tokens", len(ingDesc.Tokens))
+		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == 128
+	})
+}
+
+// Test Lifecycler when decreasing tokens and instance is already in the ring in leaving state.
+func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
+	ctx := context.Background()
+
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+	})
+
+	tokenDir := t.TempDir()
+	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
+	// Make sure changes are applied instantly
+	lifecyclerConfig.HeartbeatPeriod = 0
+	lifecyclerConfig.NumTokens = 64
+	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
+
+	// Simulate ingester with 128 tokens left the ring in LEAVING state
+	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc := NewDesc()
+		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
+		if err != nil {
+			return nil, false, err
+		}
+
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, GenerateTokens(128, nil), LEAVING, time.Now())
+		return ringDesc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Start ingester with decreased number of tokens
+	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, l))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, l))
+	})
+
+	// Verify ingester joined, is active, and has 64 tokens
+	test.Poll(t, time.Second, true, func() interface{} {
+		d, err := r.KVClient.Get(ctx, ringKey)
+		require.NoError(t, err)
+
+		desc, ok := d.(*Desc)
+		require.True(t, ok)
+		ingDesc := desc.Ingesters["ing1"]
+		t.Log("Polling for new ingester to have become active with 64 tokens", "state", ingDesc.State, "tokens", len(ingDesc.Tokens))
+		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == 64
+	})
+}
+
+// Test Lifecycler when increasing tokens and instance is already in the ring in leaving state and tokensFromFile is not empty.
+func TestLifecycler_IncreasingTokensLeavingInstanceInTheRingAndTokensFromFileNotEmpty(t *testing.T) {
+	ctx := context.Background()
+
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+	})
+
+	tokenDir := t.TempDir()
+	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
+	// Make sure changes are applied instantly
+	lifecyclerConfig.HeartbeatPeriod = 0
+	lifecyclerConfig.NumTokens = 128
+	f, _ := os.Create(filepath.Join(tokenDir, "/tokens"))
+	_, _ = f.WriteString(GenerateTokenJSONFile(64))
+	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
+
+	// Simulate ingester with 64 tokens left the ring in LEAVING state
+	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc := NewDesc()
+		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
+		if err != nil {
+			return nil, false, err
+		}
+
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, GenerateTokens(64, nil), LEAVING, time.Now())
+		return ringDesc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Start ingester with increased number of tokens
+	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, l))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, l))
+	})
+
+	// Verify ingester joined, is active, and has 128 tokens
+	test.Poll(t, time.Second, true, func() interface{} {
+		d, err := r.KVClient.Get(ctx, ringKey)
+		require.NoError(t, err)
+
+		desc, ok := d.(*Desc)
+		require.True(t, ok)
+		ingDesc := desc.Ingesters["ing1"]
+		t.Log("Polling for new ingester to have become active with 128 tokens", "state", ingDesc.State, "tokens", len(ingDesc.Tokens))
+		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == 128
+	})
+}
+
+// Test Lifecycler when decreasing tokens and instance is already in the ring in leaving state.
+func TestLifecycler_DecreasingTokensLeavingInstanceInTheRingAndTokensFromFileNotEmpty(t *testing.T) {
+	ctx := context.Background()
+
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+	})
+
+	tokenDir := t.TempDir()
+	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
+	// Make sure changes are applied instantly
+	lifecyclerConfig.HeartbeatPeriod = 0
+	lifecyclerConfig.NumTokens = 64
+	f, _ := os.Create(filepath.Join(tokenDir, "/tokens"))
+	_, _ = f.WriteString(GenerateTokenJSONFile(128))
+	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
+
+	// Simulate ingester with 128 tokens left the ring in LEAVING state
+	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc := NewDesc()
+		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
+		if err != nil {
+			return nil, false, err
+		}
+
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, GenerateTokens(64, nil), LEAVING, time.Now())
+		return ringDesc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Start ingester with decreased number of tokens
+	l, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, l))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, l))
+	})
+
+	// Verify ingester joined, is active, and has 64 tokens
+	test.Poll(t, time.Second, true, func() interface{} {
+		d, err := r.KVClient.Get(ctx, ringKey)
+		require.NoError(t, err)
+
+		desc, ok := d.(*Desc)
+		require.True(t, ok)
+		ingDesc := desc.Ingesters["ing1"]
+		t.Log("Polling for new ingester to have become active with 64 tokens", "state", ingDesc.State, "tokens", len(ingDesc.Tokens))
+		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == 64
+	})
 }
 
 func TestLifecycler_ZonesCount(t *testing.T) {
@@ -1163,4 +1402,26 @@ func TestDefaultFinalSleepValue(t *testing.T) {
 		flagext.DefaultValues(cfg)
 		assert.Equal(t, time.Minute, cfg.FinalSleep)
 	})
+}
+
+// GenerateTokenJsonFile generates a temp jsonTokenFile with given number of tokens upto 128
+func GenerateTokenJSONFile(tokens int) string {
+	type TokenFile struct {
+		Tokens []int32 `json:"tokens"`
+	}
+	if tokens < 0 {
+		tokens = 0
+	}
+	if tokens > 128 {
+		tokens = 128
+	}
+	var tokenFile TokenFile
+	for tokens >= 1 {
+		tokenFile = TokenFile{
+			Tokens: append(tokenFile.Tokens, rand.Int31()),
+		}
+		tokens--
+	}
+	tokenFileJSON, _ := json.Marshal(&tokenFile)
+	return string(tokenFileJSON)
 }

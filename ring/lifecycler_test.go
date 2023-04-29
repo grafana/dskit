@@ -1422,6 +1422,6 @@ func GenerateTokenJSONFile(tokens int) string {
 		}
 		tokens--
 	}
-	token, _ := json.Marshal(&tokenFile)
-	return string(token)
+	tokenFileJSON, _ := json.Marshal(&tokenFile)
+	return string(tokenFileJSON)
 }

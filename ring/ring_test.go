@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/flagext"
+	dsmath "github.com/grafana/dskit/internal/math"
 	"github.com/grafana/dskit/internal/slices"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -2444,36 +2445,68 @@ func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, s
 }
 
 func BenchmarkRing_Get(b *testing.B) {
-	const (
-		numInstances      = 100
-		numZones          = 3
-		replicationFactor = 3
-	)
-
-	// Initialise the ring.
-	ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, numTokens)}
-	ring := Ring{
-		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: true, ReplicationFactor: replicationFactor},
-		ringDesc:             ringDesc,
-		ringTokens:           ringDesc.GetTokens(),
-		ringTokensByZone:     ringDesc.getTokensByZone(),
-		ringInstanceByToken:  ringDesc.getTokensInfo(),
-		ringZones:            getZones(ringDesc.getTokensByZone()),
-		shuffledSubringCache: map[subringCacheKey]*Ring{},
-		strategy:             NewDefaultReplicationStrategy(),
-		lastTopologyChange:   time.Now(),
+	benchCases := map[string]struct {
+		numInstances      int
+		numZones          int
+		replicationFactor int
+	}{
+		"with zone awareness": {
+			numInstances:      99,
+			numZones:          3,
+			replicationFactor: 3,
+		},
+		"one excluded zone": {
+			numInstances:      66,
+			numZones:          2,
+			replicationFactor: 3,
+		},
+		"without zone awareness": {
+			numInstances:      3,
+			numZones:          1,
+			replicationFactor: 3,
+		},
+		"without zone awareness, not enough instances": {
+			numInstances:      2,
+			numZones:          1,
+			replicationFactor: 3,
+		},
 	}
 
-	buf, bufHosts, bufZones := MakeBuffersForGet()
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		set, err := ring.Get(r.Uint32(), Write, buf, bufHosts, bufZones)
-		if err != nil || len(set.Instances) != replicationFactor {
-			b.Fatal()
+	for benchName, benchCase := range benchCases {
+		// Initialise the ring.
+		ringDesc := &Desc{Ingesters: generateRingInstances(benchCase.numInstances, benchCase.numZones, numTokens)}
+		ring := Ring{
+			cfg: Config{
+				HeartbeatTimeout:     time.Hour,
+				ZoneAwarenessEnabled: benchCase.numZones > 1,
+				SubringCacheDisabled: true,
+				ReplicationFactor:    benchCase.replicationFactor,
+			},
+			ringDesc:             ringDesc,
+			ringTokens:           ringDesc.GetTokens(),
+			ringTokensByZone:     ringDesc.getTokensByZone(),
+			ringInstanceByToken:  ringDesc.getTokensInfo(),
+			ringZones:            getZones(ringDesc.getTokensByZone()),
+			shuffledSubringCache: map[subringCacheKey]*Ring{},
+			strategy:             NewDefaultReplicationStrategy(),
+			lastTopologyChange:   time.Now(),
 		}
+
+		buf, bufHosts, bufZones := MakeBuffersForGet()
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+		expectedInstances := dsmath.Min(benchCase.numInstances, benchCase.replicationFactor)
+		if ring.cfg.ZoneAwarenessEnabled {
+			expectedInstances = dsmath.Min(benchCase.numZones, benchCase.replicationFactor)
+		}
+
+		b.Run(benchName, func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				set, err := ring.Get(r.Uint32(), Write, buf, bufHosts, bufZones)
+				assert.NoError(b, err)
+				assert.Equal(b, expectedInstances, len(set.Instances))
+			}
+		})
 	}
 }
 

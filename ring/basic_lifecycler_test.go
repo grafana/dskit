@@ -197,6 +197,7 @@ func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 
 	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
 	require.NoError(t, err)
+	require.Equal(t, cfg.KeepInstanceInTheRingOnShutdown, lifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
 		return ACTIVE, Tokens{1, 2, 3, 4, 5}
@@ -228,6 +229,49 @@ func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 	assert.Equal(t, LEAVING, inst.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, Tokens(inst.GetTokens()))
 	assert.Equal(t, cfg.Zone, inst.GetZone())
+}
+
+func TestBasicLifecycler_UnregisterFromTheRingOnStop(t *testing.T) {
+	ctx := context.Background()
+	cfg := prepareBasicLifecyclerConfig()
+	cfg.KeepInstanceInTheRingOnShutdown = true
+
+	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+	require.Equal(t, cfg.KeepInstanceInTheRingOnShutdown, lifecycler.ShouldKeepInstanceInTheRingOnShutdown())
+
+	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
+		return ACTIVE, Tokens{1, 2, 3, 4, 5}
+	}
+	delegate.onStopping = func(lifecycler *BasicLifecycler) {
+		require.NoError(t, lifecycler.changeState(context.Background(), LEAVING))
+	}
+
+	// check that after StartAndAwaitRunning the instance is up and running
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+	assert.Equal(t, ACTIVE, lifecycler.GetState())
+	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
+	assert.True(t, lifecycler.IsRegistered())
+	assert.NotZero(t, lifecycler.GetRegisteredAt())
+	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
+	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+
+	// set instance to be unregsitered on StopAndAwaitTerminated
+	lifecycler.SetKeepInstanceInTheRingOnShutdown(false)
+
+	// check that after StopAndAwaitTerminated the instance is unregistered
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
+	assert.NotEqual(t, ACTIVE, lifecycler.GetState())
+	assert.NotEqual(t, LEAVING, lifecycler.GetState())
+	assert.Equal(t, Tokens{}, lifecycler.GetTokens())
+	assert.False(t, lifecycler.IsRegistered())
+	assert.Zero(t, lifecycler.GetRegisteredAt())
+	assert.Equal(t, 0.0, testutil.ToFloat64(lifecycler.metrics.tokensOwned))
+	assert.Equal(t, 0.0, testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+
+	// Assert on the instance is in the ring.
+	_, ok := getInstanceFromStore(t, store, testInstanceID)
+	assert.False(t, ok)
 }
 
 func TestBasicLifecycler_HeartbeatWhileRunning(t *testing.T) {

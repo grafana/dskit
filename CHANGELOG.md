@@ -110,7 +110,7 @@
 * [ENHANCEMENT] Ring: improve performance of shuffle sharding computation. #281
 * [ENHANCEMENT] Add option to enable IPv6 address detection in ring and memberlist handling. #185
 * [ENHANCEMENT] Ring: cache results of shuffle sharding with lookback where possible. #283 
-* [ENHANCEMENT] BasicLifecycler: functions `ShouldKeepInstanceInTheRingOnShutdown` and `SetKeepInstanceInTheRingOnShutdown` for checking and setting whether instances should be kept in the ring or unregistered on shutdown have been added.
+* [ENHANCEMENT] BasicLifecycler: functions `ShouldKeepInstanceInTheRingOnShutdown` and `SetKeepInstanceInTheRingOnShutdown` for checking and setting whether instances should be kept in the ring or unregistered on shutdown have been added. #290
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

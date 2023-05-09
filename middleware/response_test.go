@@ -78,3 +78,13 @@ func TestBadResponseLoggingWriter_WithAndWithoutFlusher(t *testing.T) {
 		t.Errorf("Flush should have worked but did not")
 	}
 }
+
+type responseWriterWithUnwrap interface {
+	http.ResponseWriter
+	Unwrap() http.ResponseWriter
+}
+
+// Verify that custom http.ResponseWriter implementations implement Unwrap() method, used by http.ResponseContoller.
+var _ responseWriterWithUnwrap = &nonFlushingBadResponseLoggingWriter{}
+var _ responseWriterWithUnwrap = &flushingBadResponseLoggingWriter{}
+var _ responseWriterWithUnwrap = &errorInterceptor{}

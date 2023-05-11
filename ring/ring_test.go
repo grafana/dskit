@@ -2374,6 +2374,53 @@ func TestRing_ShuffleShardWithLookback_CachingAfterHeartbeatOrStateChange(t *tes
 	}
 }
 
+func TestRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
+	const (
+		numWorkers           = 10
+		numRequestsPerWorker = 1000
+	)
+
+	now := time.Now()
+	cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+	registry := prometheus.NewRegistry()
+	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
+	require.NoError(t, err)
+
+	// Add some instances to the ring.
+	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{
+		"instance-1": generateRingInstanceWithInfo("instance-1", "zone-a", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-2": generateRingInstanceWithInfo("instance-2", "zone-a", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-3": generateRingInstanceWithInfo("instance-3", "zone-b", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-4": generateRingInstanceWithInfo("instance-4", "zone-b", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-5": generateRingInstanceWithInfo("instance-5", "zone-c", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-6": generateRingInstanceWithInfo("instance-6", "zone-c", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+	}}
+
+	ring.updateRingState(ringDesc)
+
+	// Start the workers.
+	wg := sync.WaitGroup{}
+	wg.Add(numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func(workerID int) {
+			defer wg.Done()
+
+			// Get the subring once. This is the one expected from subsequent requests.
+			userID := fmt.Sprintf("user-%d", workerID)
+			expected := ring.ShuffleShardWithLookback(userID, 3, time.Hour, now)
+
+			for r := 0; r < numRequestsPerWorker; r++ {
+				actual := ring.ShuffleShardWithLookback(userID, 3, time.Hour, now)
+				require.Equal(t, expected, actual)
+			}
+		}(w)
+	}
+
+	// Wait until all workers have done.
+	wg.Done()
+}
+
 func BenchmarkRing_ShuffleShard(b *testing.B) {
 	for _, numInstances := range []int{50, 100, 1000} {
 		for _, numZones := range []int{1, 3} {

@@ -184,6 +184,7 @@ type Ring struct {
 
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
 	// If set to nil, no caching is done (used by tests, and subrings).
+	// Both maps are protected by mtx.
 	shuffledSubringCache             map[subringCacheKey]*Ring
 	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback
 
@@ -908,6 +909,9 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 	if r.cfg.SubringCacheDisabled {
 		return nil
 	}
+
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
 
 	cached, ok := r.shuffledSubringWithLookbackCache[subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}]
 	if !ok {

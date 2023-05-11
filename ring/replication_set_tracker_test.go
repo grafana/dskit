@@ -187,6 +187,11 @@ func TestDefaultResultTracker_ContextHandling(t *testing.T) {
 	for _, ctx := range []context.Context{instance2Ctx, instance3Ctx, instance4Ctx} {
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
 	}
+
+	tracker.cancelAllContexts()
+	for _, ctx := range []context.Context{instance1Ctx, instance2Ctx, instance3Ctx, instance4Ctx} {
+		require.Equal(t, context.Canceled, ctx.Err(), "context for instance should be cancelled after cancelling all contexts")
+	}
 }
 
 func TestZoneAwareResultTracker(t *testing.T) {
@@ -398,5 +403,10 @@ func TestZoneAwareResultTracker_ContextHandling(t *testing.T) {
 	require.Equal(t, context.Canceled, instance2Ctx.Err(), "context for instance in same zone as cancelled instance should also be cancelled")
 	for _, ctx := range []context.Context{instance3Ctx, instance4Ctx, instance5Ctx, instance6Ctx} {
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
+	}
+
+	tracker.cancelAllContexts()
+	for _, ctx := range []context.Context{instance1Ctx, instance2Ctx, instance3Ctx, instance4Ctx, instance5Ctx, instance6Ctx} {
+		require.Equal(t, context.Canceled, ctx.Err(), "context for instance should be cancelled after cancelling all contexts")
 	}
 }

@@ -155,13 +155,6 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.
 		}(instance)
 	}
 
-	cancelAllContexts := func() {
-		for i := range r.Instances {
-			instance := &r.Instances[i]
-			tracker.cancelContextFor(instance)
-		}
-	}
-
 	resultsMap := make(map[*InstanceDesc]T, len(r.Instances))
 	cleanupResultsAlreadyReceived := func() {
 		for _, result := range resultsMap {
@@ -183,7 +176,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.
 			if result.err == nil {
 				resultsMap[result.instance] = result.result
 			} else if tracker.failed() {
-				cancelAllContexts()
+				tracker.cancelAllContexts()
 				cleanupResultsAlreadyReceived()
 				return nil, result.err
 			}

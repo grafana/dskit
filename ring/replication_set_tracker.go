@@ -28,6 +28,9 @@ type replicationSetResultTracker interface {
 	// This method may cancel the context for other instances if those other instances are part of
 	// the same zone and this tracker is zone-aware.
 	cancelContextFor(instance *InstanceDesc)
+
+	// Cancels all contexts previously obtained with contextFor.
+	cancelAllContexts()
 }
 
 type defaultResultTracker struct {
@@ -80,6 +83,12 @@ func (t *defaultResultTracker) contextFor(instance *InstanceDesc) context.Contex
 
 func (t *defaultResultTracker) cancelContextFor(instance *InstanceDesc) {
 	t.instanceContextCancelFuncs[instance]()
+}
+
+func (t *defaultResultTracker) cancelAllContexts() {
+	for _, cancel := range t.instanceContextCancelFuncs {
+		cancel()
+	}
 }
 
 // zoneAwareResultTracker tracks the results per zone.
@@ -155,4 +164,10 @@ func (t *zoneAwareResultTracker) contextFor(instance *InstanceDesc) context.Cont
 
 func (t *zoneAwareResultTracker) cancelContextFor(instance *InstanceDesc) {
 	t.zoneContextCancelFuncs[instance.Zone]()
+}
+
+func (t *zoneAwareResultTracker) cancelAllContexts() {
+	for _, cancel := range t.zoneContextCancelFuncs {
+		cancel()
+	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 
 	"github.com/grafana/dskit/internal/slices"
 )
@@ -438,6 +439,8 @@ func TestDoUntilQuorum(t *testing.T) {
 	for name, testCase := range testCases {
 		testCase := testCase
 		t.Run(name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
 			ctx := context.Background()
 			cleanupTracker := newCleanupTracker(t, len(testCase.expectedCleanup))
 
@@ -457,6 +460,8 @@ func TestDoUntilQuorum(t *testing.T) {
 }
 
 func TestDoUntilQuorum_RunsCallsInParallel(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
 	ctx := context.Background()
 	replicationSet := ReplicationSet{
 		Instances: []InstanceDesc{
@@ -488,6 +493,8 @@ func TestDoUntilQuorum_RunsCallsInParallel(t *testing.T) {
 }
 
 func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
 	instances := []InstanceDesc{
 		{
 			Addr: "zone-a-replica-1",
@@ -566,6 +573,8 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *test
 }
 
 func TestDoUntilQuorum_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
 	instances := []InstanceDesc{
 		{
 			Addr: "zone-a-replica-1",
@@ -656,6 +665,8 @@ func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
 	for name, testCase := range testCases {
 		testCase := testCase
 		t.Run(name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
 			ctx := context.Background()
 			waitChan := make(chan struct{})
 			cleanupTracker := newCleanupTracker(t, len(testCase.expectedCleanup))
@@ -687,6 +698,8 @@ func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
 }
 
 func TestDoUntilQuorum_ParentContextHandling(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
 	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
 
 	replicationSet := ReplicationSet{

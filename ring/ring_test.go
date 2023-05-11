@@ -2418,7 +2418,7 @@ func TestRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
 	}
 
 	// Wait until all workers have done.
-	wg.Done()
+	wg.Wait()
 }
 
 func BenchmarkRing_ShuffleShard(b *testing.B) {

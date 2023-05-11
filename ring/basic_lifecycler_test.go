@@ -413,6 +413,7 @@ func TestBasicLifecycler_TokensObservePeriod(t *testing.T) {
 
 	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
 	require.NoError(t, err)
+	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
 		return ACTIVE, Tokens{1, 2, 3, 4, 5}

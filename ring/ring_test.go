@@ -2735,7 +2735,7 @@ func TestRing_ShuffleShard_Caching(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ring))
 	t.Cleanup(func() {
-		_ = services.StartAndAwaitRunning(context.Background(), ring)
+		_ = services.StopAndAwaitTerminated(context.Background(), ring)
 	})
 
 	// We will stop <number of zones> instances later, to see that subring is recomputed.

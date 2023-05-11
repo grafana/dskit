@@ -363,6 +363,7 @@ func TestLifecycler_ShouldHandleInstanceAbruptlyRestarted(t *testing.T) {
 	l1, err := NewLifecycler(lifecyclerConfig1, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
+	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
 
 	// Check this ingester joined, is active, and has one token.
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
@@ -382,6 +383,7 @@ func TestLifecycler_ShouldHandleInstanceAbruptlyRestarted(t *testing.T) {
 	l2, err := NewLifecycler(lifecyclerConfig1, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l2))
+	defer services.StopAndAwaitTerminated(context.Background(), l2) //nolint:errcheck
 
 	// Check the new ingester picked up the same tokens and registered timestamp.
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
@@ -695,6 +697,7 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
 	// poll function waits for a condition and returning actual state of the ingesters after the condition succeed.
 	poll := func(condition func(*Desc) bool) map[string]InstanceDesc {
@@ -998,6 +1001,7 @@ func TestJoinInLeavingState(t *testing.T) {
 	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
+	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
 
 	// Check that the lifecycler was able to join after coming up in LEAVING
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
@@ -1056,6 +1060,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
+	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
 
 	// Check that the lifecycler was able to join after coming up in JOINING
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
@@ -1115,6 +1120,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
+	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
 
 	// Check that the lifecycler was able to reset the zone value to the expected setting
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {

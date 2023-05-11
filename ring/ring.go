@@ -184,7 +184,6 @@ type Ring struct {
 
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
 	// If set to nil, no caching is done (used by tests, and subrings).
-	// Both maps are protected by mtx.
 	shuffledSubringCache             map[subringCacheKey]*Ring
 	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback
 

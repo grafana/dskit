@@ -2413,6 +2413,10 @@ func TestRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
 			for r := 0; r < numRequestsPerWorker; r++ {
 				actual := ring.ShuffleShardWithLookback(userID, 3, time.Hour, now)
 				require.Equal(t, expected, actual)
+
+				// Get the subring for a new user each time too, in order to stress the setter too
+				// (if we only read from the cache there's no read/write concurrent access).
+				ring.ShuffleShardWithLookback(fmt.Sprintf("stress-%d", r), 3, time.Hour, now)
 			}
 		}(w)
 	}

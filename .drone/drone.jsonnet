@@ -15,6 +15,8 @@ local pipeline = {
   },
 };
 
+local depends_on(step) = { depends_on+: [step] };
+
 local step = {
   make(target, commands=[]):: {
     name: 'make-%s' % target,
@@ -26,7 +28,7 @@ local step = {
     name: 'make-test (go %s)' % golang_version,
     image: images.golang(golang_version),
     commands: ['make test'],
-  },
+  } + depends_on('make-lint'),
 };
 
 local test_steps = [step.test(v) for v in supported_golang_versions];
@@ -36,7 +38,7 @@ local test_steps = [step.test(v) for v in supported_golang_versions];
     steps:
       [
         step.make('mod-check'),
-        step.make('lint'),
+        step.make('lint') + depends_on('make-mod-check'),
       ] +
       test_steps +
       [
@@ -46,7 +48,7 @@ local test_steps = [step.test(v) for v in supported_golang_versions];
             'apt-get update && apt-get -y install unzip',
             'go mod vendor',
           ]
-        ),
+        ) + depends_on('make-mod-check'),
       ],
   },
 ]

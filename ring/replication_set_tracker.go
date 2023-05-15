@@ -70,8 +70,6 @@ func (t *defaultResultTracker) failed() bool {
 }
 
 func (t *defaultResultTracker) shouldIncludeResultFrom(_ *InstanceDesc) bool {
-	// This method should only be called for instances that succeeded, and immediately
-	// after we've returned succeeded()==true for the first time.
 	return true
 }
 

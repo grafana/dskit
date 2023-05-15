@@ -98,13 +98,13 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 // DoUntilQuorum runs function f in parallel for all replicas in r.
 //
 // If r.MaxUnavailableZones is greater than zero:
-//   - DoUntilQuorum returns an error if calls to f for instances in r.MaxUnavailableZones zones return errors
+//   - DoUntilQuorum returns an error if calls to f for instances in more than r.MaxUnavailableZones zones return errors
 //   - Otherwise, DoUntilQuorum returns all results from all replicas in the first zones for which f succeeds
 //     for every instance in that zone (eg. if there are 3 zones and r.MaxUnavailableZones is 1, DoUntilQuorum will
 //     return the results from all instances in 2 zones, even if all calls to f succeed).
 //
 // Otherwise:
-//   - DoUntilQuorum returns an error if r.MaxErrors calls to f return errors
+//   - DoUntilQuorum returns an error if more than r.MaxErrors calls to f return errors
 //   - Otherwise, DoUntilQuorum returns all results from the first len(r.Instances) - r.MaxErrors instances
 //     (eg. if there are 6 replicas and r.MaxErrors is 2, DoUntilQuorum will return the results from the first 4
 //     successful calls to f, even if all 6 calls to f succeed).
@@ -116,7 +116,7 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 // DoUntilQuorum cancels the context.Context passed to each invocation of f if the result of that invocation of
 // f will not be returned. If the result of that invocation of f will be returned, the context.Context passed
 // to that invocation of f will not be cancelled by DoUntilQuorum, but the context.Context is a child of ctx
-// and so will be cancelled if ctx is cancelled.
+// passed to DoUntilQuorum and so will be cancelled if ctx is cancelled.
 func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
 	resultsRemaining := len(r.Instances)

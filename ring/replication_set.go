@@ -24,12 +24,6 @@ type ReplicationSet struct {
 // MaxErrors and returning early otherwise.
 // Return a slice of all results from f, or nil if an error occurred.
 func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(context.Context, *InstanceDesc) (interface{}, error)) ([]interface{}, error) {
-	type instanceResult struct {
-		res      interface{}
-		err      error
-		instance *InstanceDesc
-	}
-
 	// Initialise the result tracker, which is use to keep track of successes and failures.
 	var tracker replicationSetResultTracker
 	if r.MaxUnavailableZones > 0 {
@@ -39,7 +33,7 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	}
 
 	var (
-		ch         = make(chan instanceResult, len(r.Instances))
+		ch         = make(chan instanceResult[any], len(r.Instances))
 		forceStart = make(chan struct{}, r.MaxErrors)
 	)
 	ctx, cancel := context.WithCancel(ctx)
@@ -60,8 +54,8 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 				}
 			}
 			result, err := f(ctx, ing)
-			ch <- instanceResult{
-				res:      result,
+			ch <- instanceResult[any]{
+				result:   result,
 				err:      err,
 				instance: ing,
 			}
@@ -84,7 +78,7 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 					forceStart <- struct{}{}
 				}
 			} else {
-				results = append(results, res.res)
+				results = append(results, res.result)
 			}
 
 		case <-ctx.Done():

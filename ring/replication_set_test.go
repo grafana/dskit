@@ -947,3 +947,32 @@ func TestReplicationSet_ZoneCount(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkReplicationSetZoneCount(b *testing.B) {
+	for _, instancesPerZone := range []int{1, 2, 5, 10, 100, 300} {
+		for _, zones := range []int{1, 2, 3} {
+			instances := make([]InstanceDesc, 0, instancesPerZone*zones)
+
+			for zoneIdx := 0; zoneIdx < zones; zoneIdx++ {
+				zoneName := fmt.Sprintf("zone-%v", string(rune('a'+zoneIdx)))
+
+				for instanceIdx := 0; instanceIdx < instancesPerZone; instanceIdx++ {
+					instance := InstanceDesc{
+						Addr: fmt.Sprintf("%v-instance-%v", zoneName, instanceIdx+1),
+						Zone: zoneName,
+					}
+
+					instances = append(instances, instance)
+				}
+			}
+
+			r := ReplicationSet{Instances: instances}
+
+			b.Run(fmt.Sprintf("%v instances per zone, %v zones", instancesPerZone, zones), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					r.ZoneCount()
+				}
+			})
+		}
+	}
+}

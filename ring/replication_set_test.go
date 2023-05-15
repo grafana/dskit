@@ -257,7 +257,7 @@ func TestDoUntilQuorum(t *testing.T) {
 		return "", fmt.Errorf("this is the error for %v", desc.Addr)
 	}
 
-	oneFailingInstance := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+	failingZoneBReplica2 := func(ctx context.Context, desc *InstanceDesc) (string, error) {
 		if desc.Addr == "zone-b-replica-2" {
 			return "", fmt.Errorf("this is the error for %v", desc.Addr)
 		}
@@ -395,7 +395,7 @@ func TestDoUntilQuorum(t *testing.T) {
 				},
 				MaxUnavailableZones: 1,
 			},
-			f:               oneFailingInstance,
+			f:               failingZoneBReplica2,
 			expectedResults: []string{"zone-a-replica-1", "zone-a-replica-2", "zone-c-replica-1", "zone-c-replica-2"},
 			expectedError:   nil,
 			expectedCleanup: []string{"zone-b-replica-1"},

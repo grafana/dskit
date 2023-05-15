@@ -243,6 +243,17 @@ func (r ReplicationSet) GetAddressesWithout(exclude string) []string {
 	return addrs
 }
 
+// ZoneCount returns the number of unique zones represented by instances within this replication set.
+func (r *ReplicationSet) ZoneCount() int {
+	zones := map[string]struct{}{}
+
+	for _, i := range r.Instances {
+		zones[i.Zone] = struct{}{}
+	}
+
+	return len(zones)
+}
+
 // HasReplicationSetChanged returns true if two replications sets are the same (with possibly different timestamps),
 // false if they differ in any way (number of instances, instance states, tokens, zones, ...).
 func HasReplicationSetChanged(before, after ReplicationSet) bool {

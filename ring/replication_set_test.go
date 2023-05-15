@@ -876,3 +876,74 @@ func TestHasReplicationSetChangedWithoutState_IgnoresTimeStampAndState(t *testin
 		})
 	}
 }
+
+func TestReplicationSet_ZoneCount(t *testing.T) {
+	testCases := map[string]struct {
+		instances         []InstanceDesc
+		expectedZoneCount int
+	}{
+		"empty ring": {
+			instances:         []InstanceDesc{},
+			expectedZoneCount: 0,
+		},
+		"ring with single instance without a zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1"},
+			},
+			expectedZoneCount: 1,
+		},
+		"ring with many instances without a zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1"},
+				{Addr: "instance-2"},
+				{Addr: "instance-3"},
+			},
+			expectedZoneCount: 1,
+		},
+		"ring with single instance with a zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1", Zone: "zone-a"},
+			},
+			expectedZoneCount: 1,
+		},
+		"ring with many instances in one zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1", Zone: "zone-a"},
+				{Addr: "instance-2", Zone: "zone-a"},
+				{Addr: "instance-3", Zone: "zone-a"},
+			},
+			expectedZoneCount: 1,
+		},
+		"ring with many instances, each in their own zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1", Zone: "zone-a"},
+				{Addr: "instance-2", Zone: "zone-b"},
+				{Addr: "instance-3", Zone: "zone-c"},
+			},
+			expectedZoneCount: 3,
+		},
+		"ring with many instances in each zone": {
+			instances: []InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a"},
+				{Addr: "zone-a-instance-2", Zone: "zone-a"},
+				{Addr: "zone-a-instance-3", Zone: "zone-a"},
+				{Addr: "zone-b-instance-1", Zone: "zone-b"},
+				{Addr: "zone-b-instance-2", Zone: "zone-b"},
+				{Addr: "zone-b-instance-3", Zone: "zone-b"},
+				{Addr: "zone-c-instance-1", Zone: "zone-c"},
+				{Addr: "zone-c-instance-2", Zone: "zone-c"},
+				{Addr: "zone-c-instance-3", Zone: "zone-c"},
+			},
+			expectedZoneCount: 3,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			r := ReplicationSet{Instances: testCase.instances}
+
+			actual := r.ZoneCount()
+			require.Equal(t, testCase.expectedZoneCount, actual)
+		})
+	}
+}

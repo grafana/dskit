@@ -245,10 +245,22 @@ func (r ReplicationSet) GetAddressesWithout(exclude string) []string {
 
 // ZoneCount returns the number of unique zones represented by instances within this replication set.
 func (r *ReplicationSet) ZoneCount() int {
-	zones := map[string]struct{}{}
+	// Why not use a map here? Using a slice is faster for the small number of zones we expect to typically use.
+	zones := []string{}
 
 	for _, i := range r.Instances {
-		zones[i.Zone] = struct{}{}
+		sawZone := false
+
+		for _, z := range zones {
+			if z == i.Zone {
+				sawZone = true
+				break
+			}
+		}
+
+		if !sawZone {
+			zones = append(zones, i.Zone)
+		}
 	}
 
 	return len(zones)

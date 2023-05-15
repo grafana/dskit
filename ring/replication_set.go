@@ -33,9 +33,9 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	// Initialise the result tracker, which is use to keep track of successes and failures.
 	var tracker replicationSetResultTracker
 	if r.MaxUnavailableZones > 0 {
-		tracker = newZoneAwareResultTracker(ctx, r.Instances, r.MaxUnavailableZones)
+		tracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones)
 	} else {
-		tracker = newDefaultResultTracker(ctx, r.Instances, r.MaxErrors)
+		tracker = newDefaultResultTracker(r.Instances, r.MaxErrors)
 	}
 
 	var (
@@ -134,16 +134,19 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.
 		}()
 	}()
 
-	var tracker replicationSetResultTracker
+	var resultTracker replicationSetResultTracker
+	var contextTracker replicationSetContextTracker
 	if r.MaxUnavailableZones > 0 {
-		tracker = newZoneAwareResultTracker(ctx, r.Instances, r.MaxUnavailableZones)
+		resultTracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones)
+		contextTracker = newZoneAwareContextTracker(ctx, r.Instances)
 	} else {
-		tracker = newDefaultResultTracker(ctx, r.Instances, r.MaxErrors)
+		resultTracker = newDefaultResultTracker(r.Instances, r.MaxErrors)
+		contextTracker = newDefaultContextTracker(ctx, r.Instances)
 	}
 
 	for i := range r.Instances {
 		instance := &r.Instances[i]
-		instanceCtx := tracker.contextFor(instance)
+		instanceCtx := contextTracker.contextFor(instance)
 
 		go func(desc *InstanceDesc) {
 			result, err := f(instanceCtx, desc)
@@ -162,7 +165,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.
 		}
 	}
 
-	for !tracker.succeeded() {
+	for !resultTracker.succeeded() {
 		select {
 		case <-ctx.Done():
 			// No need to cancel individual instance contexts, as they inherit the cancellation from ctx.
@@ -171,12 +174,12 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.
 			return nil, ctx.Err()
 		case result := <-resultsChan:
 			resultsRemaining--
-			tracker.done(result.instance, result.err)
+			resultTracker.done(result.instance, result.err)
 
 			if result.err == nil {
 				resultsMap[result.instance] = result.result
-			} else if tracker.failed() {
-				tracker.cancelAllContexts()
+			} else if resultTracker.failed() {
+				contextTracker.cancelAllContexts()
 				cleanupResultsAlreadyReceived()
 				return nil, result.err
 			}
@@ -190,15 +193,15 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.
 		result, haveResult := resultsMap[instance]
 
 		if haveResult {
-			if tracker.shouldIncludeResultFrom(instance) {
+			if resultTracker.shouldIncludeResultFrom(instance) {
 				results = append(results, result)
 			} else {
-				tracker.cancelContextFor(instance)
+				contextTracker.cancelContextFor(instance)
 				cleanupFunc(result)
 			}
 		} else {
 			// Nothing to clean up (yet) - this will be handled by deferred call above.
-			tracker.cancelContextFor(instance)
+			contextTracker.cancelContextFor(instance)
 		}
 	}
 

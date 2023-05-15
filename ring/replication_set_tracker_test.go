@@ -154,14 +154,12 @@ func TestDefaultResultTracker(t *testing.T) {
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			parentCtx := context.Background()
-
-			testCase.run(t, newDefaultResultTracker(parentCtx, testCase.instances, testCase.maxErrors))
+			testCase.run(t, newDefaultResultTracker(testCase.instances, testCase.maxErrors))
 		})
 	}
 }
 
-func TestDefaultResultTracker_ContextHandling(t *testing.T) {
+func TestDefaultContextTracker(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3"}
@@ -169,7 +167,7 @@ func TestDefaultResultTracker_ContextHandling(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	parentCtx := context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent")
-	tracker := newDefaultResultTracker(parentCtx, instances, 0)
+	tracker := newDefaultContextTracker(parentCtx, instances)
 
 	instance1Ctx := tracker.contextFor(&instance1)
 	instance2Ctx := tracker.contextFor(&instance2)
@@ -367,12 +365,12 @@ func TestZoneAwareResultTracker(t *testing.T) {
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			testCase.run(t, newZoneAwareResultTracker(context.Background(), testCase.instances, testCase.maxUnavailableZones))
+			testCase.run(t, newZoneAwareResultTracker(testCase.instances, testCase.maxUnavailableZones))
 		})
 	}
 }
 
-func TestZoneAwareResultTracker_ContextHandling(t *testing.T) {
+func TestZoneAwareContextTracker(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
@@ -382,7 +380,7 @@ func TestZoneAwareResultTracker_ContextHandling(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6}
 
 	parentCtx := context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent")
-	tracker := newZoneAwareResultTracker(parentCtx, instances, 0)
+	tracker := newZoneAwareContextTracker(parentCtx, instances)
 
 	instance1Ctx := tracker.contextFor(&instance1)
 	instance2Ctx := tracker.contextFor(&instance2)

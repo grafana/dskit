@@ -107,6 +107,8 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 // including when DoUntilQuorum returns an error or only returns a subset of successful results. cleanupFunc may
 // be called both before and after DoUntilQuorum returns.
 //
+// A call to f is considered successful if it returns a nil error.
+//
 // DoUntilQuorum cancels the context.Context passed to each invocation of f if the result of that invocation of
 // f will not be returned. If the result of that invocation of f will be returned, the context.Context passed
 // to that invocation of f will not be cancelled by DoUntilQuorum, but the context.Context is a child of ctx

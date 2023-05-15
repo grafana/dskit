@@ -80,12 +80,16 @@ func (t *defaultResultTracker) contextFor(instance *InstanceDesc) context.Contex
 }
 
 func (t *defaultResultTracker) cancelContextFor(instance *InstanceDesc) {
-	t.instanceContextCancelFuncs[instance]()
+	if cancel, ok := t.instanceContextCancelFuncs[instance]; ok {
+		cancel()
+		delete(t.instanceContextCancelFuncs, instance)
+	}
 }
 
 func (t *defaultResultTracker) cancelAllContexts() {
-	for _, cancel := range t.instanceContextCancelFuncs {
+	for instance, cancel := range t.instanceContextCancelFuncs {
 		cancel()
+		delete(t.instanceContextCancelFuncs, instance)
 	}
 }
 

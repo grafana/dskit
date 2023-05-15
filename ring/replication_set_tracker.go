@@ -165,11 +165,15 @@ func (t *zoneAwareResultTracker) contextFor(instance *InstanceDesc) context.Cont
 }
 
 func (t *zoneAwareResultTracker) cancelContextFor(instance *InstanceDesc) {
-	t.zoneContextCancelFuncs[instance.Zone]()
+	if cancel, ok := t.zoneContextCancelFuncs[instance.Zone]; ok {
+		cancel()
+		delete(t.zoneContextCancelFuncs, instance.Zone)
+	}
 }
 
 func (t *zoneAwareResultTracker) cancelAllContexts() {
-	for _, cancel := range t.zoneContextCancelFuncs {
+	for zone, cancel := range t.zoneContextCancelFuncs {
 		cancel()
+		delete(t.zoneContextCancelFuncs, zone)
 	}
 }

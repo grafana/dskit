@@ -99,13 +99,20 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	}
 
 	if cfg.ConnectTimeout > 0 {
+		defaultCfg := grpcbackoff.DefaultConfig
+
+		if cfg.ConnectBackoffBaseDelay > 0 {
+			defaultCfg.BaseDelay = cfg.ConnectBackoffBaseDelay
+		}
+
+		if cfg.ConnectBackoffMaxDelay > 0 {
+			defaultCfg.MaxDelay = cfg.ConnectBackoffMaxDelay
+		}
+
 		opts = append(
 			opts,
 			grpc.WithConnectParams(grpc.ConnectParams{
-				Backoff: grpcbackoff.Config{
-					BaseDelay: cfg.ConnectBackoffBaseDelay,
-					MaxDelay:  cfg.ConnectBackoffMaxDelay,
-				},
+				Backoff:           defaultCfg,
 				MinConnectTimeout: cfg.ConnectTimeout,
 			}),
 		)

@@ -876,3 +876,103 @@ func TestHasReplicationSetChangedWithoutState_IgnoresTimeStampAndState(t *testin
 		})
 	}
 }
+
+func TestReplicationSet_ZoneCount(t *testing.T) {
+	testCases := map[string]struct {
+		instances         []InstanceDesc
+		expectedZoneCount int
+	}{
+		"empty ring": {
+			instances:         []InstanceDesc{},
+			expectedZoneCount: 0,
+		},
+		"ring with single instance without a zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1"},
+			},
+			expectedZoneCount: 1,
+		},
+		"ring with many instances without a zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1"},
+				{Addr: "instance-2"},
+				{Addr: "instance-3"},
+			},
+			expectedZoneCount: 1,
+		},
+		"ring with single instance with a zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1", Zone: "zone-a"},
+			},
+			expectedZoneCount: 1,
+		},
+		"ring with many instances in one zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1", Zone: "zone-a"},
+				{Addr: "instance-2", Zone: "zone-a"},
+				{Addr: "instance-3", Zone: "zone-a"},
+			},
+			expectedZoneCount: 1,
+		},
+		"ring with many instances, each in their own zone": {
+			instances: []InstanceDesc{
+				{Addr: "instance-1", Zone: "zone-a"},
+				{Addr: "instance-2", Zone: "zone-b"},
+				{Addr: "instance-3", Zone: "zone-c"},
+			},
+			expectedZoneCount: 3,
+		},
+		"ring with many instances in each zone": {
+			instances: []InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a"},
+				{Addr: "zone-a-instance-2", Zone: "zone-a"},
+				{Addr: "zone-a-instance-3", Zone: "zone-a"},
+				{Addr: "zone-b-instance-1", Zone: "zone-b"},
+				{Addr: "zone-b-instance-2", Zone: "zone-b"},
+				{Addr: "zone-b-instance-3", Zone: "zone-b"},
+				{Addr: "zone-c-instance-1", Zone: "zone-c"},
+				{Addr: "zone-c-instance-2", Zone: "zone-c"},
+				{Addr: "zone-c-instance-3", Zone: "zone-c"},
+			},
+			expectedZoneCount: 3,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			r := ReplicationSet{Instances: testCase.instances}
+
+			actual := r.ZoneCount()
+			require.Equal(t, testCase.expectedZoneCount, actual)
+		})
+	}
+}
+
+func BenchmarkReplicationSetZoneCount(b *testing.B) {
+	for _, instancesPerZone := range []int{1, 2, 5, 10, 100, 300} {
+		for _, zones := range []int{1, 2, 3} {
+			instances := make([]InstanceDesc, 0, instancesPerZone*zones)
+
+			for zoneIdx := 0; zoneIdx < zones; zoneIdx++ {
+				zoneName := fmt.Sprintf("zone-%v", string(rune('a'+zoneIdx)))
+
+				for instanceIdx := 0; instanceIdx < instancesPerZone; instanceIdx++ {
+					instance := InstanceDesc{
+						Addr: fmt.Sprintf("%v-instance-%v", zoneName, instanceIdx+1),
+						Zone: zoneName,
+					}
+
+					instances = append(instances, instance)
+				}
+			}
+
+			r := ReplicationSet{Instances: instances}
+
+			b.Run(fmt.Sprintf("%v instances per zone, %v zones", instancesPerZone, zones), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					r.ZoneCount()
+				}
+			})
+		}
+	}
+}

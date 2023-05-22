@@ -57,6 +57,55 @@ func TestBadWriteLogging(t *testing.T) {
 	}
 }
 
+func TestDisabledSuccessfulRequestsLogging(t *testing.T) {
+	for _, tc := range []struct {
+		err         error
+		disableLog  bool
+		logContains string
+	}{
+		{
+			err:        nil,
+			disableLog: false,
+		}, {
+			err:         nil,
+			disableLog:  true,
+			logContains: "",
+		},
+	} {
+		buf := bytes.NewBuffer(nil)
+		logrusLogger := logrus.New()
+		logrusLogger.Out = buf
+		logrusLogger.Level = logrus.DebugLevel
+
+		loggingMiddleware := Log{
+			Log:                      logging.Logrus(logrusLogger),
+			DisableRequestSuccessLog: tc.disableLog,
+		}
+
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "<html><body>Hello World!</body></html>") //nolint:errcheck
+		}
+		loggingHandler := loggingMiddleware.Wrap(http.HandlerFunc(handler))
+
+		req := httptest.NewRequest("GET", "http://example.com/foo", nil)
+		recorder := httptest.NewRecorder()
+
+		w := errorWriter{
+			err: tc.err,
+			w:   recorder,
+		}
+		loggingHandler.ServeHTTP(w, req)
+		content := buf.String()
+
+		if !tc.disableLog {
+			require.Contains(t, content, "GET http://example.com/foo (200)")
+		} else {
+			require.NotContains(t, content, "(200)")
+			require.Empty(t, content)
+		}
+	}
+}
+
 func TestLoggingRequestsAtInfoLevel(t *testing.T) {
 	for _, tc := range []struct {
 		err         error

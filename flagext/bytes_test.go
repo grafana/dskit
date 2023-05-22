@@ -9,119 +9,143 @@ import (
 
 func Test_Bytes_String(t *testing.T) {
 	for _, tcase := range []struct {
-		value uint64
-		str   string
+		input    uint64
+		expected string
 	}{
 		{
-			value: 1024 * 1024 * 1024,
-			str:   "1GiB",
+			input:    1024 * 1024 * 1024,
+			expected: "1GiB",
 		},
 		{
-			value: 1024 * 1024,
-			str:   "1MiB",
+			input:    (1024 + 512) * 1024 * 1024,
+			expected: "1GiB512MiB",
 		},
 		{
-			value: 1024,
-			str:   "1KiB",
+			input:    1024 * 1024,
+			expected: "1MiB",
+		},
+		{
+			input:    1024,
+			expected: "1KiB",
 		},
 	} {
-		b := Bytes(tcase.value)
-		require.Equal(t, tcase.str, b.String())
+		b := Bytes(tcase.input)
+		require.Equal(t, tcase.expected, b.String())
 	}
 }
 
 func Test_Bytes_Set(t *testing.T) {
 	for _, tcase := range []struct {
-		value uint64
-		str   string
+		input    string
+		expected uint64
 	}{
 		{
-			value: 1024 * 1024 * 1024,
-			str:   "1GiB",
+			input:    "1536MiB",
+			expected: (1024 + 512) * 1024 * 1024,
 		},
 		{
-			value: 1024 * 1024 * 1024,
-			str:   "1GB",
+			input:    "1536MB",
+			expected: (1024 + 512) * 1024 * 1024,
 		},
 		{
-			value: 1024 * 1024,
-			str:   "1MiB",
+			input:    "1GiB",
+			expected: 1024 * 1024 * 1024,
 		},
 		{
-			value: 1024 * 1024,
-			str:   "1MB",
+			input:    "1GB",
+			expected: 1024 * 1024 * 1024,
 		},
 		{
-			value: 1024,
-			str:   "1KiB",
+			input:    "1MiB",
+			expected: 1024 * 1024,
 		},
 		{
-			value: 1024,
-			str:   "1KB",
+			input:    "1MB",
+			expected: 1024 * 1024,
+		},
+		{
+			input:    "1KiB",
+			expected: 1024,
+		},
+		{
+			input:    "1KB",
+			expected: 1024,
 		},
 	} {
 		var b Bytes
-		require.NoError(t, b.Set(tcase.str))
-		require.Equal(t, b, Bytes(tcase.value))
+		require.NoError(t, b.Set(tcase.input))
+		require.Equal(t, b, Bytes(tcase.expected))
 	}
 }
 func Test_Bytes_MarshalYAML(t *testing.T) {
 	for _, tcase := range []struct {
-		value uint64
-		str   string
+		input    uint64
+		expected string
 	}{
 		{
-			value: 1024 * 1024 * 1024,
-			str:   "1GiB\n",
+			input:    (1024 + 512) * 1024 * 1024,
+			expected: "1GiB512MiB\n",
 		},
 		{
-			value: 1024 * 1024,
-			str:   "1MiB\n",
+			input:    1024 * 1024 * 1024,
+			expected: "1GiB\n",
 		},
 		{
-			value: 1024,
-			str:   "1KiB\n",
+			input:    1024 * 1024,
+			expected: "1MiB\n",
+		},
+		{
+			input:    1024,
+			expected: "1KiB\n",
 		},
 	} {
-		b := Bytes(tcase.value)
+		b := Bytes(tcase.input)
 		y, err := yaml.Marshal(&b)
 		require.NoError(t, err)
-		require.Equal(t, []byte(tcase.str), y)
+		require.Equal(t, []byte(tcase.expected), y)
 	}
 }
 
 func Test_Bytes_UnmarshalYAML(t *testing.T) {
 	for _, tcase := range []struct {
-		value uint64
-		str   string
+		input    string
+		expected uint64
 	}{
 		{
-			value: 1024 * 1024 * 1024,
-			str:   "1GiB\n",
+			input:    "1536MiB\n",
+			expected: (1024 + 512) * 1024 * 1024,
 		},
 		{
-			value: 1024 * 1024 * 1024,
-			str:   "1GB\n",
+			input:    "1536MB\n",
+			expected: (1024 + 512) * 1024 * 1024,
 		},
 		{
-			value: 1024 * 1024,
-			str:   "1MiB\n",
+			input:    "1GiB\n",
+			expected: 1024 * 1024 * 1024,
 		},
 		{
-			value: 1024 * 1024,
-			str:   "1MB\n",
+			input:    "1GB\n",
+			expected: 1024 * 1024 * 1024,
 		},
 		{
-			value: 1024,
-			str:   "1KiB\n",
+			input:    "1MiB\n",
+			expected: 1024 * 1024,
 		},
 		{
-			value: 1024,
-			str:   "1KB\n",
+			input:    "1MB\n",
+			expected: 1024 * 1024,
+		},
+		{
+			input:    "1KiB\n",
+			expected: 1024,
+		},
+		{
+			input:    "1KB\n",
+			expected: 1024,
 		},
 	} {
 		var b Bytes
-		require.NoError(t, yaml.Unmarshal([]byte(tcase.str), &b))
-		require.Equal(t, Bytes(tcase.value), b)
+		require.NoError(t, yaml.Unmarshal([]byte(tcase.input), &b))
+		require.Equal(t, Bytes(tcase.expected), b)
 	}
 }

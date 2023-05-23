@@ -40,6 +40,14 @@ func Test_Bytes_Set(t *testing.T) {
 		expected uint64
 	}{
 		{
+			input:    "1.5GiB",
+			expected: (1024 + 512) * 1024 * 1024,
+		},
+		{
+			input:    "1.5GB",
+			expected: (1024 + 512) * 1024 * 1024,
+		},
+		{
 			input:    "1536MiB",
 			expected: (1024 + 512) * 1024 * 1024,
 		},
@@ -47,6 +55,7 @@ func Test_Bytes_Set(t *testing.T) {
 			input:    "1536MB",
 			expected: (1024 + 512) * 1024 * 1024,
 		},
+
 		{
 			input:    "1GiB",
 			expected: 1024 * 1024 * 1024,
@@ -111,6 +120,14 @@ func Test_Bytes_UnmarshalYAML(t *testing.T) {
 		input    string
 		expected uint64
 	}{
+		{
+			input:    "1.5GiB\n",
+			expected: (1024 + 512) * 1024 * 1024,
+		},
+		{
+			input:    "1.5GB\n",
+			expected: (1024 + 512) * 1024 * 1024,
+		},
 		{
 			input:    "1536MiB\n",
 			expected: (1024 + 512) * 1024 * 1024,

@@ -37,6 +37,6 @@ func (b *Bytes) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return b.Set(value)
 }
 
-func (b *Bytes) MarshalYAML() (interface{}, error) {
+func (b Bytes) MarshalYAML() (interface{}, error) {
 	return b.String(), nil
 }

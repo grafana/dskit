@@ -109,7 +109,7 @@ func Test_Bytes_MarshalYAML(t *testing.T) {
 		},
 	} {
 		b := Bytes(tcase.input)
-		y, err := yaml.Marshal(&b)
+		y, err := yaml.Marshal(b)
 		require.NoError(t, err)
 		require.Equal(t, []byte(tcase.expected), y)
 	}

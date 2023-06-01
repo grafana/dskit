@@ -172,12 +172,13 @@ func TestDefaultResultTracker_ReleaseAllRequests(t *testing.T) {
 
 	tracker.releaseAllRequests()
 
-	for _, i := range instances {
-		require.True(t, tracker.awaitRelease(&i), "requests for all instances should be released immediately")
+	for i := range instances {
+		instance := &instances[i]
+		require.True(t, tracker.awaitRelease(instance), "requests for all instances should be released immediately")
 	}
 }
 
-func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailures(t *testing.T) {
+func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3"}
@@ -194,11 +195,11 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailures(t *testing.T) {
 		instancesAwaitReleaseResults := make([]bool, len(instances))
 		countInstancesReleased := 0
 
-		for instanceIdx, instance := range instances {
+		for instanceIdx := range instances {
 			instanceIdx := instanceIdx
-			instance := instance
+			instance := &instances[instanceIdx]
 			go func() {
-				released := tracker.awaitRelease(&instance)
+				released := tracker.awaitRelease(instance)
 
 				mtx.Lock()
 				defer mtx.Unlock()
@@ -243,13 +244,173 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailures(t *testing.T) {
 
 			return countInstancesReleased == 4 && countSignalledToStart == 3
 		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released but not signalled to start")
+
+		require.True(t, tracker.succeeded())
 	}
 
 	// With 1000 iterations, 4 instances and 1 max error, we'd expect each instance to receive
 	// 750 calls each (each instance has a 3-in-4 chance of being called in each iteration).
 	for _, instanceRequestCount := range instanceRequestCounts {
-		require.InDeltaf(t, 750, instanceRequestCount.Load(), 10, "expected even distribution of requests across all instances, but got %v", instanceRequestCounts)
+		require.InDeltaf(t, 750, instanceRequestCount.Load(), 30, "expected roughly even distribution of requests across all instances, but got %v", instanceRequestCounts)
 	}
+}
+
+func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsBelowMaximumAllowed(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	tracker := newDefaultResultTracker(instances, 2)
+	tracker.releaseMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	countInstancesReleased := 0
+	countInstancesSignalledToStart := 0
+
+	for instanceIdx := range instances {
+		instance := &instances[instanceIdx]
+		go func() {
+			released := tracker.awaitRelease(instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			countInstancesReleased++
+			if released {
+				countInstancesSignalledToStart++
+			}
+
+			// If this is the first request released, mark it as failed.
+			if countInstancesReleased == 1 {
+				tracker.done(nil, errors.New("something went wrong"))
+			}
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return countInstancesReleased == 3
+	}, 1*time.Second, 10*time.Millisecond, "expected three requests to be released")
+
+	require.Equal(t, 3, countInstancesSignalledToStart, "all requests released so far should be signalled to start")
+
+	// Mark the remaining two requests as successful.
+	tracker.done(nil, nil)
+	tracker.done(nil, nil)
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return countInstancesReleased == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
+
+	require.Equal(t, 3, countInstancesSignalledToStart, "final request should not be signalled to start")
+	require.True(t, tracker.succeeded(), "overall request should succeed")
+}
+
+func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsEqualToMaximumAllowed(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	tracker := newDefaultResultTracker(instances, 2)
+	tracker.releaseMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	countInstancesReleased := 0
+	countInstancesSignalledToStart := 0
+
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			released := tracker.awaitRelease(instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			countInstancesReleased++
+			if released {
+				countInstancesSignalledToStart++
+			}
+
+			// If this is the first or second request released, mark it as failed.
+			if countInstancesReleased <= 2 {
+				tracker.done(nil, errors.New("something went wrong"))
+			}
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return countInstancesReleased == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
+
+	// Mark the remaining requests as successful.
+	tracker.done(nil, nil)
+	tracker.done(nil, nil)
+
+	require.Equal(t, 4, countInstancesSignalledToStart, "expected all four instances to be signalled to start")
+	require.True(t, tracker.succeeded(), "overall request should succeed")
+}
+
+func TestDefaultResultTracker_ReleaseMinimumRequests_MoreFailingRequestsThanMaximumAllowed(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	tracker := newDefaultResultTracker(instances, 1)
+	tracker.releaseMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	countInstancesReleased := 0
+	countInstancesSignalledToStart := 0
+
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			released := tracker.awaitRelease(instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			countInstancesReleased++
+			if released {
+				countInstancesSignalledToStart++
+			}
+
+			// If this is the first or second request released, mark it as failed.
+			if countInstancesReleased <= 2 {
+				tracker.done(nil, errors.New("something went wrong"))
+			}
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return countInstancesReleased == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
+
+	// Mark the remaining requests as successful.
+	tracker.done(nil, nil)
+	tracker.done(nil, nil)
+
+	require.Equal(t, 4, countInstancesSignalledToStart, "expected all four instances to be signalled to start")
+	require.True(t, tracker.failed(), "overall request should fail")
 }
 
 func TestDefaultContextTracker(t *testing.T) {

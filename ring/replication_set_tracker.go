@@ -1,6 +1,9 @@
 package ring
 
-import "context"
+import (
+	"context"
+	"math/rand"
+)
 
 type replicationSetResultTracker interface {
 	// Signals an instance has done the execution, either successful (no error)
@@ -53,11 +56,13 @@ type replicationSetContextTracker interface {
 }
 
 type defaultResultTracker struct {
-	minSucceeded    int
-	numSucceeded    int
-	numErrors       int
-	maxErrors       int
-	releaseRequests chan bool
+	minSucceeded     int
+	numSucceeded     int
+	numErrors        int
+	maxErrors        int
+	instances        []InstanceDesc
+	instanceRelease  map[*InstanceDesc]chan struct{}
+	pendingInstances []*InstanceDesc
 }
 
 func newDefaultResultTracker(instances []InstanceDesc, maxErrors int) *defaultResultTracker {
@@ -66,6 +71,7 @@ func newDefaultResultTracker(instances []InstanceDesc, maxErrors int) *defaultRe
 		numSucceeded: 0,
 		numErrors:    0,
 		maxErrors:    maxErrors,
+		instances:    instances,
 	}
 }
 
@@ -73,14 +79,23 @@ func (t *defaultResultTracker) done(_ *InstanceDesc, err error) {
 	if err == nil {
 		t.numSucceeded++
 
-		if t.succeeded() && t.releaseRequests != nil {
-			close(t.releaseRequests)
+		if t.succeeded() {
+			// We don't need any of the requests that are waiting to be released. Signal that they should abort.
+			for _, i := range t.pendingInstances {
+				close(t.instanceRelease[i])
+			}
+
+			t.pendingInstances = nil
 		}
 	} else {
 		t.numErrors++
 
-		// If this tracker has failed: close releaseRequests
-		// Otherwise, release one more request
+		if len(t.pendingInstances) > 0 {
+			// There are some outstanding requests we could make before we reach maxErrors. Release the next one.
+			i := t.pendingInstances[0]
+			t.instanceRelease[i] <- struct{}{}
+			t.pendingInstances = t.pendingInstances[1:]
+		}
 	}
 }
 
@@ -97,26 +112,40 @@ func (t *defaultResultTracker) shouldIncludeResultFrom(_ *InstanceDesc) bool {
 }
 
 func (t *defaultResultTracker) releaseMinimumRequests() {
-	// Important: the channel must be large enough to hold a value for all instances so that calling done() never blocks.
-	numInstances := t.minSucceeded + t.maxErrors
-	t.releaseRequests = make(chan bool, numInstances)
+	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
 
-	for i := 0; i < t.minSucceeded; i++ {
-		t.releaseRequests <- true
+	for i := range t.instances {
+		instance := &t.instances[i]
+		t.instanceRelease[instance] = make(chan struct{}, 1)
+	}
+
+	releaseOrder := rand.Perm(len(t.instances))
+	t.pendingInstances = make([]*InstanceDesc, 0, t.maxErrors)
+
+	for _, instanceIdx := range releaseOrder {
+		instance := &t.instances[instanceIdx]
+
+		if len(t.pendingInstances) < t.maxErrors {
+			t.pendingInstances = append(t.pendingInstances, instance)
+		} else {
+			t.instanceRelease[instance] <- struct{}{}
+		}
 	}
 }
 
 func (t *defaultResultTracker) releaseAllRequests() {
-	numInstances := t.minSucceeded + t.maxErrors
-	t.releaseRequests = make(chan bool, numInstances)
+	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
 
-	for i := 0; i < numInstances; i++ {
-		t.releaseRequests <- true
+	for i := range t.instances {
+		instance := &t.instances[i]
+		t.instanceRelease[instance] = make(chan struct{}, 1)
+		t.instanceRelease[instance] <- struct{}{}
 	}
 }
 
-func (t *defaultResultTracker) awaitRelease(_ *InstanceDesc) bool {
-	return <-t.releaseRequests
+func (t *defaultResultTracker) awaitRelease(instance *InstanceDesc) bool {
+	_, ok := <-t.instanceRelease[instance]
+	return ok
 }
 
 type defaultContextTracker struct {

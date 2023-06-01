@@ -20,6 +20,23 @@ type replicationSetResultTracker interface {
 	// This method should only be called after succeeded returns true for the first time and before
 	// calling done any further times.
 	shouldIncludeResultFrom(instance *InstanceDesc) bool
+
+	// Releases an initial set of requests sufficient to meet the quorum requirements of this tracker.
+	// Further requests will be released if necessary when done is called with a non-nil error.
+	// Calling this method multiple times may lead to unpredictable behaviour.
+	// Calling both this method and releaseAllRequests may lead to unpredictable behaviour.
+	releaseMinimumRequests()
+
+	// Releases requests for all instances.
+	// Calling this method multiple times may lead to unpredictable behaviour.
+	// Calling both this method and releaseMinimumRequests may lead to unpredictable behaviour.
+	releaseAllRequests()
+
+	// Blocks until the request for this instance should be released.
+	// Returns true if the request should be started, false if the request is not required.
+	// Must only be called after releaseMinimumRequests or releaseAllRequests returns.
+	// Calling this method multiple times for the same instance may lead to unpredictable behaviour.
+	awaitRelease(instance *InstanceDesc) bool
 }
 
 type replicationSetContextTracker interface {
@@ -36,10 +53,11 @@ type replicationSetContextTracker interface {
 }
 
 type defaultResultTracker struct {
-	minSucceeded int
-	numSucceeded int
-	numErrors    int
-	maxErrors    int
+	minSucceeded    int
+	numSucceeded    int
+	numErrors       int
+	maxErrors       int
+	releaseRequests chan bool
 }
 
 func newDefaultResultTracker(instances []InstanceDesc, maxErrors int) *defaultResultTracker {
@@ -54,8 +72,15 @@ func newDefaultResultTracker(instances []InstanceDesc, maxErrors int) *defaultRe
 func (t *defaultResultTracker) done(_ *InstanceDesc, err error) {
 	if err == nil {
 		t.numSucceeded++
+
+		if t.succeeded() && t.releaseRequests != nil {
+			close(t.releaseRequests)
+		}
 	} else {
 		t.numErrors++
+
+		// If this tracker has failed: close releaseRequests
+		// Otherwise, release one more request
 	}
 }
 
@@ -69,6 +94,29 @@ func (t *defaultResultTracker) failed() bool {
 
 func (t *defaultResultTracker) shouldIncludeResultFrom(_ *InstanceDesc) bool {
 	return true
+}
+
+func (t *defaultResultTracker) releaseMinimumRequests() {
+	// Important: the channel must be large enough to hold a value for all instances so that calling done() never blocks.
+	numInstances := t.minSucceeded + t.maxErrors
+	t.releaseRequests = make(chan bool, numInstances)
+
+	for i := 0; i < t.minSucceeded; i++ {
+		t.releaseRequests <- true
+	}
+}
+
+func (t *defaultResultTracker) releaseAllRequests() {
+	numInstances := t.minSucceeded + t.maxErrors
+	t.releaseRequests = make(chan bool, numInstances)
+
+	for i := 0; i < numInstances; i++ {
+		t.releaseRequests <- true
+	}
+}
+
+func (t *defaultResultTracker) awaitRelease(_ *InstanceDesc) bool {
+	return <-t.releaseRequests
 }
 
 type defaultContextTracker struct {
@@ -157,6 +205,18 @@ func (t *zoneAwareResultTracker) failed() bool {
 
 func (t *zoneAwareResultTracker) shouldIncludeResultFrom(instance *InstanceDesc) bool {
 	return t.failuresByZone[instance.Zone] == 0 && t.waitingByZone[instance.Zone] == 0
+}
+
+func (t *zoneAwareResultTracker) releaseMinimumRequests() {
+
+}
+
+func (t *zoneAwareResultTracker) releaseAllRequests() {
+	// Nothing to do: default state is to allow all instances to start.
+}
+
+func (t *zoneAwareResultTracker) awaitRelease(instance *InstanceDesc) bool {
+	return true
 }
 
 type zoneAwareContextTracker struct {

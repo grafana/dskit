@@ -3,10 +3,13 @@ package ring
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 type contextKey int
@@ -156,6 +159,96 @@ func TestDefaultResultTracker(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			testCase.run(t, newDefaultResultTracker(testCase.instances, testCase.maxErrors))
 		})
+	}
+}
+
+func TestDefaultResultTracker_ReleaseAllRequests(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+	tracker := newDefaultResultTracker(instances, 1)
+
+	tracker.releaseAllRequests()
+
+	for _, i := range instances {
+		require.True(t, tracker.awaitRelease(&i), "requests for all instances should be released immediately")
+	}
+}
+
+func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailures(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	instanceRequestCounts := make([]atomic.Uint64, len(instances))
+
+	for testIteration := 0; testIteration < 1000; testIteration++ {
+		tracker := newDefaultResultTracker(instances, 1)
+		tracker.releaseMinimumRequests()
+
+		mtx := sync.RWMutex{}
+		instancesAwaitReleaseResults := make([]bool, len(instances))
+		countInstancesReleased := 0
+
+		for instanceIdx, instance := range instances {
+			instanceIdx := instanceIdx
+			instance := instance
+			go func() {
+				released := tracker.awaitRelease(&instance)
+
+				mtx.Lock()
+				defer mtx.Unlock()
+				instancesAwaitReleaseResults[instanceIdx] = released
+				countInstancesReleased++
+
+				if released {
+					instanceRequestCounts[instanceIdx].Inc()
+				}
+			}()
+		}
+
+		require.Eventually(t, func() bool {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			countSignalledToStart := 0
+			for _, start := range instancesAwaitReleaseResults {
+				if start {
+					countSignalledToStart++
+				}
+			}
+
+			return countInstancesReleased == 3 && countSignalledToStart == 3
+		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released and signalled to start immediately")
+
+		// Signal that the three released requests have completed successfully.
+		tracker.done(nil, nil)
+		tracker.done(nil, nil)
+		tracker.done(nil, nil)
+
+		require.Eventually(t, func() bool {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			countSignalledToStart := 0
+			for _, start := range instancesAwaitReleaseResults {
+				if start {
+					countSignalledToStart++
+				}
+			}
+
+			return countInstancesReleased == 4 && countSignalledToStart == 3
+		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released but not signalled to start")
+	}
+
+	// With 1000 iterations, 4 instances and 1 max error, we'd expect each instance to receive
+	// 750 calls each (each instance has a 3-in-4 chance of being called in each iteration).
+	for _, instanceRequestCount := range instanceRequestCounts {
+		require.InDeltaf(t, 750, instanceRequestCount.Load(), 10, "expected even distribution of requests across all instances, but got %v", instanceRequestCounts)
 	}
 }
 

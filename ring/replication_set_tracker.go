@@ -3,6 +3,8 @@ package ring
 import (
 	"context"
 	"math/rand"
+
+	"go.uber.org/atomic"
 )
 
 type replicationSetResultTracker interface {
@@ -28,11 +30,13 @@ type replicationSetResultTracker interface {
 	// Further requests will be released if necessary when done is called with a non-nil error.
 	// Calling this method multiple times may lead to unpredictable behaviour.
 	// Calling both this method and releaseAllRequests may lead to unpredictable behaviour.
+	// This method must only be called before calling done.
 	releaseMinimumRequests()
 
 	// Releases requests for all instances.
 	// Calling this method multiple times may lead to unpredictable behaviour.
 	// Calling both this method and releaseMinimumRequests may lead to unpredictable behaviour.
+	// This method must only be called before calling done.
 	releaseAllRequests()
 
 	// Blocks until the request for this instance should be released.
@@ -187,6 +191,10 @@ type zoneAwareResultTracker struct {
 	failuresByZone      map[string]int
 	minSuccessfulZones  int
 	maxUnavailableZones int
+	instances           []InstanceDesc
+	zoneRelease         map[string]chan struct{}
+	zoneShouldStart     map[string]*atomic.Bool
+	pendingZones        []string
 }
 
 func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int) *zoneAwareResultTracker {
@@ -208,8 +216,24 @@ func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int
 func (t *zoneAwareResultTracker) done(instance *InstanceDesc, err error) {
 	t.waitingByZone[instance.Zone]--
 
-	if err != nil {
+	if err == nil {
+		if t.succeeded() {
+			// We don't need any of the requests that are waiting to be released. Signal that they should abort.
+			for _, zone := range t.pendingZones {
+				t.releaseZone(zone, false)
+			}
+
+			t.pendingZones = nil
+		}
+	} else {
 		t.failuresByZone[instance.Zone]++
+
+		if len(t.pendingZones) > 0 && t.failuresByZone[instance.Zone] == 1 {
+			// If there are more zones we could try before reaching maxUnavailableZones and this was the first
+			// failure for this zone, release another zone's requests and signal they should start.
+			t.releaseZone(t.pendingZones[0], true)
+			t.pendingZones = t.pendingZones[1:]
+		}
 	}
 }
 
@@ -237,15 +261,51 @@ func (t *zoneAwareResultTracker) shouldIncludeResultFrom(instance *InstanceDesc)
 }
 
 func (t *zoneAwareResultTracker) releaseMinimumRequests() {
+	t.createReleaseChannels()
 
+	allZones := make([]string, 0, len(t.waitingByZone))
+
+	for zone := range t.waitingByZone {
+		allZones = append(allZones, zone)
+	}
+
+	rand.Shuffle(len(allZones), func(i, j int) {
+		allZones[i], allZones[j] = allZones[j], allZones[i]
+	})
+
+	for i := 0; i < t.minSuccessfulZones; i++ {
+		t.releaseZone(allZones[i], true)
+	}
+
+	t.pendingZones = allZones[t.minSuccessfulZones:]
 }
 
 func (t *zoneAwareResultTracker) releaseAllRequests() {
-	// Nothing to do: default state is to allow all instances to start.
+	t.createReleaseChannels()
+
+	for zone := range t.waitingByZone {
+		t.releaseZone(zone, true)
+	}
+}
+
+func (t *zoneAwareResultTracker) createReleaseChannels() {
+	t.zoneRelease = make(map[string]chan struct{}, len(t.waitingByZone))
+	t.zoneShouldStart = make(map[string]*atomic.Bool, len(t.waitingByZone))
+
+	for zone := range t.waitingByZone {
+		t.zoneRelease[zone] = make(chan struct{})
+		t.zoneShouldStart[zone] = atomic.NewBool(false)
+	}
+}
+
+func (t *zoneAwareResultTracker) releaseZone(zone string, shouldStart bool) {
+	t.zoneShouldStart[zone].Store(shouldStart)
+	close(t.zoneRelease[zone])
 }
 
 func (t *zoneAwareResultTracker) awaitRelease(instance *InstanceDesc) bool {
-	return true
+	<-t.zoneRelease[instance.Zone]
+	return t.zoneShouldStart[instance.Zone].Load()
 }
 
 type zoneAwareContextTracker struct {

@@ -216,10 +216,10 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *testin
 			mtx.RLock()
 			defer mtx.RUnlock()
 
-			countSignalledToStart := trueCount(instancesAwaitReleaseResults)
+			return countInstancesReleased == 3
+		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released")
 
-			return countInstancesReleased == 3 && countSignalledToStart == 3
-		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released and signalled to start immediately")
+		require.Equal(t, 3, trueCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
 
 		// Signal that the three released requests have completed successfully.
 		tracker.done(nil, nil)
@@ -230,10 +230,10 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *testin
 			mtx.RLock()
 			defer mtx.RUnlock()
 
-			countSignalledToStart := trueCount(instancesAwaitReleaseResults)
+			return countInstancesReleased == 4
+		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released")
 
-			return countInstancesReleased == 4 && countSignalledToStart == 3
-		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released but not signalled to start")
+		require.Equal(t, 3, trueCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
 
 		require.True(t, tracker.succeeded())
 	}
@@ -649,7 +649,8 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *test
 
 		mtx := sync.RWMutex{}
 		instancesAwaitReleaseResults := make([]bool, len(instances))
-		countInstancesReleased := 0
+		instancesReleased := make([]*InstanceDesc, 0, len(instances))
+
 		for instanceIdx := range instances {
 			instanceIdx := instanceIdx
 			instance := &instances[instanceIdx]
@@ -659,7 +660,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *test
 				mtx.Lock()
 				defer mtx.Unlock()
 				instancesAwaitReleaseResults[instanceIdx] = released
-				countInstancesReleased++
+				instancesReleased = append(instancesReleased, instance)
 			}()
 		}
 
@@ -667,14 +668,11 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *test
 			mtx.RLock()
 			defer mtx.RUnlock()
 
-			countSignalledToStart := trueCount(instancesAwaitReleaseResults)
+			return len(instancesReleased) == 4
+		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released")
 
-			return countInstancesReleased == 4 && countSignalledToStart == 4
-		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released and signalled to start immediately")
-
-		require.Equal(t, instancesAwaitReleaseResults[0], instancesAwaitReleaseResults[1], "expected both zone A instances to either be started or not started")
-		require.Equal(t, instancesAwaitReleaseResults[2], instancesAwaitReleaseResults[3], "expected both zone B instances to either be started or not started")
-		require.Equal(t, instancesAwaitReleaseResults[4], instancesAwaitReleaseResults[5], "expected both zone C instances to either be started or not started")
+		require.Equal(t, 4, trueCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
+		require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
 
 		zoneAReleased := instancesAwaitReleaseResults[0]
 		zoneBReleased := instancesAwaitReleaseResults[2]
@@ -704,11 +702,10 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *test
 			mtx.RLock()
 			defer mtx.RUnlock()
 
-			countSignalledToStart := trueCount(instancesAwaitReleaseResults)
+			return len(instancesReleased) == 6
+		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released")
 
-			return countInstancesReleased == 6 && countSignalledToStart == 4
-		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released but not signalled to start")
-
+		require.Equal(t, 4, trueCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
 	}
 
 	// With 900 iterations, 3 zones and max 1 failing zone, we'd expect each zone to receive

@@ -3,8 +3,8 @@ package ring
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -485,7 +485,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	// Simulate ingester with 64 tokens left the ring in LEAVING state
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
-		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil)
+		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
 		if err != nil {
 			return nil, false, err
 		}
@@ -543,7 +543,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	// Simulate ingester with 128 tokens left the ring in LEAVING state
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
-		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil)
+		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
 		if err != nil {
 			return nil, false, err
 		}

@@ -1,6 +1,7 @@
 local supported_golang_versions = [
   '1.18.4',
   '1.19.3',
+  '1.20.4',
 ];
 
 local images = {

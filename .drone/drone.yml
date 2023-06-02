@@ -42,6 +42,16 @@
       },
       {
          "commands": [
+            "make test"
+         ],
+         "depends_on": [
+            "make-lint"
+         ],
+         "image": "golang:1.20.4",
+         "name": "make-test (go 1.20.4)"
+      },
+      {
+         "commands": [
             "apt-get update && apt-get -y install unzip",
             "go mod vendor",
             "make check-protos"
@@ -56,6 +66,6 @@
 }
 ---
 kind: signature
-hmac: 65d6be393627e1bca3cdec3ce103650a49f6460092ff0e6855be0938b9c69267
+hmac: 8d1c99ea3689b8cbf6aea9396160f1db269c4d0e9609924b97a674c585178a0b
 
 ...

@@ -201,7 +201,6 @@ type zoneAwareResultTracker struct {
 	failuresByZone      map[string]int
 	minSuccessfulZones  int
 	maxUnavailableZones int
-	instances           []InstanceDesc
 	zoneRelease         map[string]chan struct{}
 	zoneShouldStart     map[string]*atomic.Bool
 	pendingZones        []string

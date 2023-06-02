@@ -620,23 +620,23 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 		// OR unregister_on_shutdown=false
 		// Move it into ACTIVE to ensure the ingester joins the ring.
 		if instanceDesc.State == LEAVING {
-			var tokens Tokens = instanceDesc.Tokens // way of forcing tokens to be of type Tokens instead of []uint32.
+			tokens := Tokens(instanceDesc.Tokens)
 			setIsActive := true
-			if len(instanceDesc.Tokens) != i.cfg.NumTokens {
-				level.Debug(i.logger).Log("msg", "existing entry has different number of tokens", "existingTokens", len(instanceDesc.Tokens), "newTokens", i.cfg.NumTokens)
+			if len(tokens) != i.cfg.NumTokens {
+				level.Debug(i.logger).Log("msg", "existing entry has different number of tokens", "existingTokens", len(tokens), "newTokens", i.cfg.NumTokens)
 				if len(tokensFromFile) > 0 {
 					level.Debug(i.logger).Log("msg", "adding tokens from file", "tokens", len(tokensFromFile))
 					setIsActive = len(tokensFromFile) >= i.cfg.NumTokens
 					tokens = tokensFromFile
-				} else if i.cfg.NumTokens > len(instanceDesc.Tokens) {
-					needTokens := i.cfg.NumTokens - len(instanceDesc.Tokens)
+				} else if i.cfg.NumTokens > len(tokens) {
+					needTokens := i.cfg.NumTokens - len(tokens)
 					level.Debug(i.logger).Log("msg", "no tokens in file, generating new ones in addition to those of existing instance", "newTokens", needTokens)
 					newTokens := GenerateTokens(needTokens, ringDesc.GetTokens())
-					tokens = append(instanceDesc.Tokens, newTokens...)
+					tokens = append(tokens, newTokens...)
 					sort.Sort(tokens)
 				} else {
 					level.Debug(i.logger).Log("msg", "no tokens in file, adopting a subset of existing instance's tokens", "numTokens", i.cfg.NumTokens)
-					tokens = instanceDesc.Tokens[0:i.cfg.NumTokens]
+					tokens = tokens[0:i.cfg.NumTokens]
 				}
 			} else {
 				level.Debug(i.logger).Log("msg", "adopting tokens of existing instance")

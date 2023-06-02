@@ -764,7 +764,7 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 	// Simulate ingester2 crash on startup and left the ring with JOINING state
 	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc, ok := in.(*Desc)
-		require.Equal(t, true, ok)
+		require.True(t, ok)
 		ingester2Desc := desc.Ingesters["ing2"]
 		ingester2Desc.State = JOINING
 		desc.Ingesters["ing2"] = ingester2Desc
@@ -778,7 +778,7 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 	// Simulate ingester2 crash on startup and left the ring with PENDING state
 	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc, ok := in.(*Desc)
-		require.Equal(t, true, ok)
+		require.True(t, ok)
 		ingester2Desc := desc.Ingesters["ing2"]
 		ingester2Desc.State = PENDING
 		desc.Ingesters["ing2"] = ingester2Desc
@@ -869,7 +869,7 @@ func TestTokensOnDisk(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
 
-	// Check this ingester joined, is active, and has 512 token.
+	// Check this ingester joined, is active, and has 512 tokens.
 	var expTokens []uint32
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
 		d, err := r.KVClient.Get(context.Background(), ringKey)
@@ -894,7 +894,7 @@ func TestTokensOnDisk(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l2))
 	defer services.StopAndAwaitTerminated(context.Background(), l2) //nolint:errcheck
 
-	// Check this ingester joined, is active, and has 512 token.
+	// Check this ingester joined, is active, and has 512 tokens.
 	var actTokens []uint32
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
 		d, err := r.KVClient.Get(context.Background(), ringKey)

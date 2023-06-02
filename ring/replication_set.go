@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"time"
 )
@@ -89,6 +90,8 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	return results, nil
 }
 
+var errResultNotNeeded = errors.New("result from this instance is not needed and so f has not been called")
+
 // DoUntilQuorum runs function f in parallel for all replicas in r.
 //
 // If r.MaxUnavailableZones is greater than zero:
@@ -103,6 +106,17 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 //     (eg. if there are 6 replicas and r.MaxErrors is 2, DoUntilQuorum will return the results from the first 4
 //     successful calls to f, even if all 6 calls to f succeed).
 //
+// If minimizeRequests is false, DoUntilQuorum will call f for each instance in r.
+//
+// If minimizeRequests is true, DoUntilQuorum will call f for the minimum number of instances needed to reach
+// the termination conditions above. For example, if r.MaxUnavailableZones is 1 and there are three zones, DoUntilQuorum
+// will initially only call f for instances in two zones, and only call f for instances in the remaining zone if a
+// request in the initial two zones fails.
+//
+// If minimizeRequests is true, DoUntilQuorum will randomly select available zones / instances such that calling
+// DoUntilQuorum multiple times with the same ReplicationSet should evenly distribute requests across all zones /
+// instances.
+//
 // Any results from successful calls to f that are not returned by DoUntilQuorum will be passed to cleanupFunc,
 // including when DoUntilQuorum returns an error or only returns a subset of successful results. cleanupFunc may
 // be called both before and after DoUntilQuorum returns.
@@ -113,7 +127,7 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 // f will not be returned. If the result of that invocation of f will be returned, the context.Context passed
 // to that invocation of f will not be cancelled by DoUntilQuorum, but the context.Context is a child of ctx
 // passed to DoUntilQuorum and so will be cancelled if ctx is cancelled.
-func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
+func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
 	resultsRemaining := len(r.Instances)
 
@@ -140,11 +154,27 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.
 		contextTracker = newDefaultContextTracker(ctx, r.Instances)
 	}
 
+	if minimizeRequests {
+		resultTracker.releaseMinimumRequests()
+	} else {
+		resultTracker.releaseAllRequests()
+	}
+
 	for i := range r.Instances {
 		instance := &r.Instances[i]
 		instanceCtx := contextTracker.contextFor(instance)
 
 		go func(desc *InstanceDesc) {
+			if !resultTracker.awaitRelease(desc) {
+				// Post to resultsChan so that the deferred cleanup handler above eventually terminates.
+				resultsChan <- instanceResult[T]{
+					err:      errResultNotNeeded, // This will never be returned from this method.
+					instance: desc,
+				}
+
+				return
+			}
+
 			result, err := f(instanceCtx, desc)
 			resultsChan <- instanceResult[T]{
 				result:   result,

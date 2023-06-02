@@ -84,12 +84,7 @@ func (t *defaultResultTracker) done(_ *InstanceDesc, err error) {
 		t.numSucceeded++
 
 		if t.succeeded() {
-			// We don't need any of the requests that are waiting to be released. Signal that they should abort.
-			for _, i := range t.pendingInstances {
-				close(t.instanceRelease[i])
-			}
-
-			t.pendingInstances = nil
+			t.onSucceeded()
 		}
 	} else {
 		t.numErrors++
@@ -105,6 +100,15 @@ func (t *defaultResultTracker) done(_ *InstanceDesc, err error) {
 
 func (t *defaultResultTracker) succeeded() bool {
 	return t.numSucceeded >= t.minSucceeded
+}
+
+func (t *defaultResultTracker) onSucceeded() {
+	// We don't need any of the requests that are waiting to be released. Signal that they should abort.
+	for _, i := range t.pendingInstances {
+		close(t.instanceRelease[i])
+	}
+
+	t.pendingInstances = nil
 }
 
 func (t *defaultResultTracker) failed() bool {
@@ -134,6 +138,12 @@ func (t *defaultResultTracker) releaseMinimumRequests() {
 		} else {
 			t.instanceRelease[instance] <- struct{}{}
 		}
+	}
+
+	// If we've already succeeded (which should only happen if the replica set is misconfigured with MaxErrors >= the number of instances),
+	// then make sure we don't block requests forever.
+	if t.succeeded() {
+		t.onSucceeded()
 	}
 }
 
@@ -210,6 +220,10 @@ func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int
 
 	t.minSuccessfulZones = len(t.waitingByZone) - maxUnavailableZones
 
+	if t.minSuccessfulZones < 0 {
+		t.minSuccessfulZones = 0
+	}
+
 	return t
 }
 
@@ -218,12 +232,7 @@ func (t *zoneAwareResultTracker) done(instance *InstanceDesc, err error) {
 
 	if err == nil {
 		if t.succeeded() {
-			// We don't need any of the requests that are waiting to be released. Signal that they should abort.
-			for _, zone := range t.pendingZones {
-				t.releaseZone(zone, false)
-			}
-
-			t.pendingZones = nil
+			t.onSucceeded()
 		}
 	} else {
 		t.failuresByZone[instance.Zone]++
@@ -249,6 +258,15 @@ func (t *zoneAwareResultTracker) succeeded() bool {
 	}
 
 	return successfulZones >= t.minSuccessfulZones
+}
+
+func (t *zoneAwareResultTracker) onSucceeded() {
+	// We don't need any of the requests that are waiting to be released. Signal that they should abort.
+	for _, zone := range t.pendingZones {
+		t.releaseZone(zone, false)
+	}
+
+	t.pendingZones = nil
 }
 
 func (t *zoneAwareResultTracker) failed() bool {
@@ -278,6 +296,12 @@ func (t *zoneAwareResultTracker) releaseMinimumRequests() {
 	}
 
 	t.pendingZones = allZones[t.minSuccessfulZones:]
+
+	// If we've already succeeded (which should only happen if the replica set is misconfigured with MaxUnavailableZones >= the number of zones),
+	// then make sure we don't block requests forever.
+	if t.succeeded() {
+		t.onSucceeded()
+	}
 }
 
 func (t *zoneAwareResultTracker) releaseAllRequests() {

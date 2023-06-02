@@ -257,14 +257,6 @@ func TestDoUntilQuorum(t *testing.T) {
 		return "", fmt.Errorf("this is the error for %v", desc.Addr)
 	}
 
-	failingZoneBReplica2 := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-		if desc.Addr == "zone-b-replica-2" {
-			return "", fmt.Errorf("this is the error for %v", desc.Addr)
-		}
-
-		return desc.Addr, nil
-	}
-
 	failingZoneB := func(ctx context.Context, desc *InstanceDesc) (string, error) {
 		if desc.Zone == "zone-b" {
 			return "", fmt.Errorf("this is the error for %v", desc.Addr)
@@ -282,36 +274,40 @@ func TestDoUntilQuorum(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		replicationSet  ReplicationSet
-		f               func(context.Context, *InstanceDesc) (string, error)
-		expectedResults []string
-		expectedError   error
-		expectedCleanup []string
+		replicationSet                         ReplicationSet
+		f                                      func(context.Context, *InstanceDesc) (string, error)
+		expectedResults                        []string
+		expectedError                          error
+		expectedCleanupWithoutMinimizeRequests []string
+		expectedCleanupWithMinimizeRequests    []string
 	}{
 		"no replicas, max errors = 0, max unavailable zones = 0": {
-			replicationSet:  ReplicationSet{},
-			f:               successfulF,
-			expectedResults: []string{},
-			expectedError:   nil,
-			expectedCleanup: nil,
+			replicationSet:                         ReplicationSet{},
+			f:                                      successfulF,
+			expectedResults:                        []string{},
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: nil,
+			expectedCleanupWithMinimizeRequests:    nil,
 		},
 		"no replicas, max errors = 1": {
 			replicationSet: ReplicationSet{
 				MaxErrors: 1,
 			},
-			f:               successfulF,
-			expectedResults: []string{},
-			expectedError:   nil,
-			expectedCleanup: nil,
+			f:                                      successfulF,
+			expectedResults:                        []string{},
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: nil,
+			expectedCleanupWithMinimizeRequests:    nil,
 		},
 		"no replicas, max unavailable zones = 1": {
 			replicationSet: ReplicationSet{
 				MaxUnavailableZones: 1,
 			},
-			f:               successfulF,
-			expectedResults: []string{},
-			expectedError:   nil,
-			expectedCleanup: nil,
+			f:                                      successfulF,
+			expectedResults:                        []string{},
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: nil,
+			expectedCleanupWithMinimizeRequests:    nil,
 		},
 		"one replica, max errors = 0, max unavailable zones = 0, call succeeds": {
 			replicationSet: ReplicationSet{
@@ -319,10 +315,11 @@ func TestDoUntilQuorum(t *testing.T) {
 					{Addr: "replica-1", Zone: "zone-1"},
 				},
 			},
-			f:               successfulF,
-			expectedResults: []string{"replica-1"},
-			expectedError:   nil,
-			expectedCleanup: nil,
+			f:                                      successfulF,
+			expectedResults:                        []string{"replica-1"},
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: nil,
+			expectedCleanupWithMinimizeRequests:    nil,
 		},
 		"one replica, max errors = 0, max unavailable zones = 0, call fails": {
 			replicationSet: ReplicationSet{
@@ -330,10 +327,11 @@ func TestDoUntilQuorum(t *testing.T) {
 					{Addr: "replica-1", Zone: "zone-1"},
 				},
 			},
-			f:               failingF,
-			expectedResults: nil,
-			expectedError:   errors.New("this is the error for replica-1"),
-			expectedCleanup: nil,
+			f:                                      failingF,
+			expectedResults:                        nil,
+			expectedError:                          errors.New("this is the error for replica-1"),
+			expectedCleanupWithoutMinimizeRequests: nil,
+			expectedCleanupWithMinimizeRequests:    nil,
 		},
 		"one replica, max errors = 1, call succeeds": {
 			replicationSet: ReplicationSet{
@@ -342,10 +340,11 @@ func TestDoUntilQuorum(t *testing.T) {
 				},
 				MaxErrors: 1,
 			},
-			f:               successfulF,
-			expectedResults: []string{}, // We don't need any results.
-			expectedError:   nil,
-			expectedCleanup: []string{"replica-1"},
+			f:                                      successfulF,
+			expectedResults:                        []string{}, // We don't need any results.
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: []string{"replica-1"},
+			expectedCleanupWithMinimizeRequests:    nil, // No requests should be issued.
 		},
 		"one replica, max errors = 1, call fails": {
 			replicationSet: ReplicationSet{
@@ -354,10 +353,11 @@ func TestDoUntilQuorum(t *testing.T) {
 				},
 				MaxErrors: 1,
 			},
-			f:               failingF,
-			expectedResults: []string{},
-			expectedError:   nil,
-			expectedCleanup: nil,
+			f:                                      failingF,
+			expectedResults:                        []string{},
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: nil,
+			expectedCleanupWithMinimizeRequests:    nil,
 		},
 		"one replica, max unavailable zones = 1, call succeeds": {
 			replicationSet: ReplicationSet{
@@ -366,10 +366,11 @@ func TestDoUntilQuorum(t *testing.T) {
 				},
 				MaxUnavailableZones: 1,
 			},
-			f:               successfulF,
-			expectedResults: []string{}, // We don't need any results.
-			expectedError:   nil,
-			expectedCleanup: []string{"replica-1"},
+			f:                                      successfulF,
+			expectedResults:                        []string{}, // We don't need any results.
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: []string{"replica-1"},
+			expectedCleanupWithMinimizeRequests:    nil, // No requests should be issued.
 		},
 		"one replica, max unavailable zones = 1, call fails": {
 			replicationSet: ReplicationSet{
@@ -378,27 +379,11 @@ func TestDoUntilQuorum(t *testing.T) {
 				},
 				MaxUnavailableZones: 1,
 			},
-			f:               failingF,
-			expectedResults: []string{},
-			expectedError:   nil,
-			expectedCleanup: nil,
-		},
-		"partial zone failure with many replicas, max unavailable zones = 1": {
-			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
-					{Addr: "zone-a-replica-1", Zone: "zone-a"},
-					{Addr: "zone-a-replica-2", Zone: "zone-a"},
-					{Addr: "zone-b-replica-1", Zone: "zone-b"},
-					{Addr: "zone-b-replica-2", Zone: "zone-b"},
-					{Addr: "zone-c-replica-1", Zone: "zone-c"},
-					{Addr: "zone-c-replica-2", Zone: "zone-c"},
-				},
-				MaxUnavailableZones: 1,
-			},
-			f:               failingZoneBReplica2,
-			expectedResults: []string{"zone-a-replica-1", "zone-a-replica-2", "zone-c-replica-1", "zone-c-replica-2"},
-			expectedError:   nil,
-			expectedCleanup: []string{"zone-b-replica-1"},
+			f:                                      failingF,
+			expectedResults:                        []string{},
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: nil,
+			expectedCleanupWithMinimizeRequests:    nil,
 		},
 		"total zone failure with many replicas, max unavailable zones = 1": {
 			replicationSet: ReplicationSet{
@@ -412,10 +397,11 @@ func TestDoUntilQuorum(t *testing.T) {
 				},
 				MaxUnavailableZones: 1,
 			},
-			f:               failingZoneB,
-			expectedResults: []string{"zone-a-replica-1", "zone-a-replica-2", "zone-c-replica-1", "zone-c-replica-2"},
-			expectedError:   nil,
-			expectedCleanup: nil,
+			f:                                      failingZoneB,
+			expectedResults:                        []string{"zone-a-replica-1", "zone-a-replica-2", "zone-c-replica-1", "zone-c-replica-2"},
+			expectedError:                          nil,
+			expectedCleanupWithoutMinimizeRequests: nil,
+			expectedCleanupWithMinimizeRequests:    nil,
 		},
 		"multiple unavailable zones": {
 			replicationSet: ReplicationSet{
@@ -429,202 +415,295 @@ func TestDoUntilQuorum(t *testing.T) {
 				},
 				MaxUnavailableZones: 1,
 			},
-			f:               failingReplica1,
-			expectedResults: nil,
-			expectedError:   errors.New("error from a replica-1 instance"),
-			expectedCleanup: []string{"zone-a-replica-2", "zone-b-replica-2", "zone-c-replica-2"},
+			f:                                      failingReplica1,
+			expectedResults:                        nil,
+			expectedError:                          errors.New("error from a replica-1 instance"),
+			expectedCleanupWithoutMinimizeRequests: []string{"zone-a-replica-2", "zone-b-replica-2", "zone-c-replica-2"},
+			expectedCleanupWithMinimizeRequests:    []string{"zone-a-replica-2", "zone-b-replica-2", "zone-c-replica-2"},
 		},
 	}
 
 	for name, testCase := range testCases {
 		testCase := testCase
 		t.Run(name, func(t *testing.T) {
+			for _, minimizeRequests := range []bool{true, false} {
+				t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
+					defer goleak.VerifyNone(t)
+
+					var expectedCleanup []string
+
+					if minimizeRequests {
+						expectedCleanup = testCase.expectedCleanupWithMinimizeRequests
+					} else {
+						expectedCleanup = testCase.expectedCleanupWithoutMinimizeRequests
+					}
+
+					ctx := context.Background()
+					cleanupTracker := newCleanupTracker(t, len(expectedCleanup))
+
+					wrappedF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+						cleanupTracker.trackInstanceContext(ctx, desc)
+						return testCase.f(ctx, desc)
+					}
+
+					actualResults, actualError := DoUntilQuorum(ctx, testCase.replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
+					require.ElementsMatch(t, testCase.expectedResults, actualResults)
+					require.Equal(t, testCase.expectedError, actualError)
+
+					cleanupTracker.collectCleanedUpInstances()
+					cleanupTracker.assertCorrectCleanup(testCase.expectedResults, expectedCleanup)
+				})
+			}
+		})
+	}
+}
+
+func TestDoUntilQuorum_PartialZoneFailure(t *testing.T) {
+	replicationSet := ReplicationSet{
+		Instances: []InstanceDesc{
+			{Addr: "zone-a-replica-1", Zone: "zone-a"},
+			{Addr: "zone-a-replica-2", Zone: "zone-a"},
+			{Addr: "zone-b-replica-1", Zone: "zone-b"},
+			{Addr: "zone-b-replica-2", Zone: "zone-b"},
+			{Addr: "zone-c-replica-1", Zone: "zone-c"},
+			{Addr: "zone-c-replica-2", Zone: "zone-c"},
+		},
+		MaxUnavailableZones: 1,
+	}
+
+	expectedResults := []string{"zone-a-replica-1", "zone-a-replica-2", "zone-c-replica-1", "zone-c-replica-2"}
+
+	for _, minimizeRequests := range []bool{true, false} {
+		t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
 			defer goleak.VerifyNone(t)
 
 			ctx := context.Background()
-			cleanupTracker := newCleanupTracker(t, len(testCase.expectedCleanup))
+			cleanupTracker := newCleanupTracker(t, 1)
+			zoneBCalled := atomic.NewBool(false)
 
-			wrappedF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
 				cleanupTracker.trackInstanceContext(ctx, desc)
-				return testCase.f(ctx, desc)
+
+				if desc.Zone == "zone-b" {
+					zoneBCalled.Store(true)
+				}
+
+				if desc.Addr == "zone-b-replica-2" {
+					return "", fmt.Errorf("this is the error for %v", desc.Addr)
+				}
+
+				return desc.Addr, nil
 			}
 
-			actualResults, actualError := DoUntilQuorum(ctx, testCase.replicationSet, wrappedF, cleanupTracker.cleanup)
-			require.ElementsMatch(t, testCase.expectedResults, actualResults)
-			require.Equal(t, testCase.expectedError, actualError)
+			actualResults, err := DoUntilQuorum(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			require.ElementsMatch(t, expectedResults, actualResults)
+			require.NoError(t, err)
 
-			cleanupTracker.collectCleanedUpInstances()
-			cleanupTracker.assertCorrectCleanup(testCase.expectedResults, testCase.expectedCleanup)
+			if minimizeRequests {
+				if zoneBCalled.Load() {
+					cleanupTracker.collectCleanedUpInstances()
+					cleanupTracker.assertCorrectCleanup(expectedResults, []string{"zone-b-replica-1"})
+				} else {
+					// Not necessary to call cleanupTracker.collectCleanedUpInstances: there is nothing to clean up.
+					cleanupTracker.assertCorrectCleanup(expectedResults, []string{})
+				}
+			} else {
+				require.True(t, zoneBCalled.Load(), "calls should be made for all instances when minimizeRequests=false")
+				cleanupTracker.collectCleanedUpInstances()
+				cleanupTracker.assertCorrectCleanup(expectedResults, []string{"zone-b-replica-1"})
+			}
 		})
 	}
 }
 
 func TestDoUntilQuorum_RunsCallsInParallel(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	for _, minimizeRequests := range []bool{true, false} {
+		t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
+			defer goleak.VerifyNone(t)
 
-	ctx := context.Background()
-	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
-			{
-				Addr: "replica-1",
-			},
-			{
-				Addr: "replica-2",
-			},
-		},
+			ctx := context.Background()
+			replicationSet := ReplicationSet{
+				Instances: []InstanceDesc{
+					{
+						Addr: "replica-1",
+					},
+					{
+						Addr: "replica-2",
+					},
+				},
+			}
+
+			wg := sync.WaitGroup{}
+			wg.Add(len(replicationSet.Instances))
+
+			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+				wg.Done()
+
+				// Wait for the other calls to f to start. If this test hangs here, then the calls are not running in parallel.
+				wg.Wait()
+
+				return desc.Addr, nil
+			}
+
+			cleanupFunc := func(_ string) {}
+			results, err := DoUntilQuorum(ctx, replicationSet, false, f, cleanupFunc)
+			require.NoError(t, err)
+			require.ElementsMatch(t, []string{"replica-1", "replica-2"}, results)
+		})
 	}
-
-	wg := sync.WaitGroup{}
-	wg.Add(len(replicationSet.Instances))
-
-	f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-		wg.Done()
-
-		// Wait for the other calls to f to start. If this test hangs here, then the calls are not running in parallel.
-		wg.Wait()
-
-		return desc.Addr, nil
-	}
-
-	cleanupFunc := func(_ string) {}
-	results, err := DoUntilQuorum(ctx, replicationSet, f, cleanupFunc)
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"replica-1", "replica-2"}, results)
 }
 
 func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *testing.T) {
-	defer goleak.VerifyNone(t)
-
 	instances := []InstanceDesc{
-		{
-			Addr: "zone-a-replica-1",
-			Zone: "zone-a",
-		},
-		{
-			Addr: "zone-a-replica-2",
-			Zone: "zone-a",
-		},
-		{
-			Addr: "zone-b-replica-1",
-			Zone: "zone-b",
-		},
-		{
-			Addr: "zone-b-replica-2",
-			Zone: "zone-b",
-		},
-		{
-			Addr: "zone-c-replica-1",
-			Zone: "zone-c",
-		},
-		{
-			Addr: "zone-c-replica-2",
-			Zone: "zone-c",
-		},
+		{Addr: "zone-a-replica-1", Zone: "zone-a"},
+		{Addr: "zone-a-replica-2", Zone: "zone-a"},
+		{Addr: "zone-b-replica-1", Zone: "zone-b"},
+		{Addr: "zone-b-replica-2", Zone: "zone-b"},
+		{Addr: "zone-c-replica-1", Zone: "zone-c"},
+		{Addr: "zone-c-replica-2", Zone: "zone-c"},
 	}
 
-	ctx := context.Background()
-	replicationSet := ReplicationSet{
-		Instances:           instances,
-		MaxUnavailableZones: 1,
-	}
+	for _, minimizeRequests := range []bool{true, false} {
+		t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
+			defer goleak.VerifyNone(t)
 
-	cleanupTracker := newCleanupTracker(t, 2)
+			ctx := context.Background()
+			replicationSet := ReplicationSet{
+				Instances:           instances,
+				MaxUnavailableZones: 1,
+			}
 
-	f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-		cleanupTracker.trackInstanceContext(ctx, desc)
-		return desc.Addr, nil
-	}
+			cleanupTracker := newCleanupTracker(t, 2)
+			zonesCalled := map[string]*atomic.Bool{
+				"zone-a": atomic.NewBool(false),
+				"zone-b": atomic.NewBool(false),
+				"zone-c": atomic.NewBool(false),
+			}
 
-	results, err := DoUntilQuorum(ctx, replicationSet, f, cleanupTracker.cleanup)
-	require.NoError(t, err)
-	require.Len(t, results, 4)
+			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+				cleanupTracker.trackInstanceContext(ctx, desc)
+				zonesCalled[desc.Zone].Store(true)
+				return desc.Addr, nil
+			}
 
-	zoneAReturned := slices.Contains(results, "zone-a-replica-1") && slices.Contains(results, "zone-a-replica-2")
-	zoneBReturned := slices.Contains(results, "zone-b-replica-1") && slices.Contains(results, "zone-b-replica-2")
-	zoneCReturned := slices.Contains(results, "zone-c-replica-1") && slices.Contains(results, "zone-c-replica-2")
-	zonesReturned := 0
+			results, err := DoUntilQuorum(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			require.NoError(t, err)
+			require.Len(t, results, 4)
 
-	if zoneAReturned {
-		zonesReturned++
-	}
+			zoneAReturned := slices.Contains(results, "zone-a-replica-1") && slices.Contains(results, "zone-a-replica-2")
+			zoneBReturned := slices.Contains(results, "zone-b-replica-1") && slices.Contains(results, "zone-b-replica-2")
+			zoneCReturned := slices.Contains(results, "zone-c-replica-1") && slices.Contains(results, "zone-c-replica-2")
+			zonesReturned := 0
 
-	if zoneBReturned {
-		zonesReturned++
-	}
+			if zoneAReturned {
+				zonesReturned++
+			}
 
-	if zoneCReturned {
-		zonesReturned++
-	}
+			if zoneBReturned {
+				zonesReturned++
+			}
 
-	require.Equalf(t, 2, zonesReturned, "received results from %v, expected results from only two zones", results)
+			if zoneCReturned {
+				zonesReturned++
+			}
 
-	cleanupTracker.collectCleanedUpInstances()
+			require.Equalf(t, 2, zonesReturned, "received results from %v, expected results from only two zones", results)
 
-	switch {
-	case !zoneAReturned:
-		cleanupTracker.assertCorrectCleanup([]string{"zone-b-replica-1", "zone-b-replica-2", "zone-c-replica-1", "zone-c-replica-1"}, []string{"zone-a-replica-1", "zone-a-replica-2"})
-	case !zoneBReturned:
-		cleanupTracker.assertCorrectCleanup([]string{"zone-a-replica-1", "zone-a-replica-2", "zone-c-replica-1", "zone-c-replica-1"}, []string{"zone-b-replica-1", "zone-b-replica-2"})
-	case !zoneCReturned:
-		cleanupTracker.assertCorrectCleanup([]string{"zone-a-replica-1", "zone-a-replica-2", "zone-b-replica-1", "zone-b-replica-1"}, []string{"zone-c-replica-1", "zone-c-replica-2"})
-	default:
-		require.FailNow(t, "this should never happen")
+			if minimizeRequests {
+				zoneCountCalled := 0
+
+				for _, called := range zonesCalled {
+					if called.Load() {
+						zoneCountCalled++
+					}
+				}
+
+				require.Equal(t, 2, zoneCountCalled, "expected function to only be called for two zones")
+
+				cleanupTracker.collectCleanedUpInstancesWithExpectedCount(0)
+
+				switch {
+				case !zoneAReturned:
+					cleanupTracker.assertCorrectCleanup([]string{"zone-b-replica-1", "zone-b-replica-2", "zone-c-replica-1", "zone-c-replica-1"}, []string{})
+				case !zoneBReturned:
+					cleanupTracker.assertCorrectCleanup([]string{"zone-a-replica-1", "zone-a-replica-2", "zone-c-replica-1", "zone-c-replica-1"}, []string{})
+				case !zoneCReturned:
+					cleanupTracker.assertCorrectCleanup([]string{"zone-a-replica-1", "zone-a-replica-2", "zone-b-replica-1", "zone-b-replica-1"}, []string{})
+				default:
+					require.FailNow(t, "this should never happen")
+				}
+			} else {
+				cleanupTracker.collectCleanedUpInstancesWithExpectedCount(2)
+
+				switch {
+				case !zoneAReturned:
+					cleanupTracker.assertCorrectCleanup([]string{"zone-b-replica-1", "zone-b-replica-2", "zone-c-replica-1", "zone-c-replica-1"}, []string{"zone-a-replica-1", "zone-a-replica-2"})
+				case !zoneBReturned:
+					cleanupTracker.assertCorrectCleanup([]string{"zone-a-replica-1", "zone-a-replica-2", "zone-c-replica-1", "zone-c-replica-1"}, []string{"zone-b-replica-1", "zone-b-replica-2"})
+				case !zoneCReturned:
+					cleanupTracker.assertCorrectCleanup([]string{"zone-a-replica-1", "zone-a-replica-2", "zone-b-replica-1", "zone-b-replica-1"}, []string{"zone-c-replica-1", "zone-c-replica-2"})
+				default:
+					require.FailNow(t, "this should never happen")
+				}
+			}
+		})
 	}
 }
 
+// TODO: minimizeRequests = true
 func TestDoUntilQuorum_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
 	instances := []InstanceDesc{
-		{
-			Addr: "zone-a-replica-1",
-			Zone: "zone-a",
-		},
-		{
-			Addr: "zone-a-replica-2",
-			Zone: "zone-a",
-		},
-		{
-			Addr: "zone-b-replica-1",
-			Zone: "zone-b",
-		},
-		{
-			Addr: "zone-b-replica-2",
-			Zone: "zone-b",
-		},
-		{
-			Addr: "zone-c-replica-1",
-			Zone: "zone-c",
-		},
-		{
-			Addr: "zone-c-replica-2",
-			Zone: "zone-c",
-		},
+		{Addr: "zone-a-replica-1", Zone: "zone-a"},
+		{Addr: "zone-a-replica-2", Zone: "zone-a"},
+		{Addr: "zone-b-replica-1", Zone: "zone-b"},
+		{Addr: "zone-b-replica-2", Zone: "zone-b"},
+		{Addr: "zone-c-replica-1", Zone: "zone-c"},
+		{Addr: "zone-c-replica-2", Zone: "zone-c"},
 	}
 
-	ctx := context.Background()
-	replicationSet := ReplicationSet{
-		Instances: instances,
-		MaxErrors: 1,
+	for _, minimizeRequests := range []bool{true, false} {
+		t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
+			ctx := context.Background()
+			replicationSet := ReplicationSet{
+				Instances: instances,
+				MaxErrors: 1,
+			}
+
+			expectedCleanupCount := 0
+
+			if !minimizeRequests {
+				expectedCleanupCount = 1
+			}
+
+			cleanupTracker := newCleanupTracker(t, expectedCleanupCount)
+			instancesCalled := atomic.NewInt32(0)
+
+			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+				cleanupTracker.trackInstanceContext(ctx, desc)
+				instancesCalled.Inc()
+				return desc.Addr, nil
+			}
+
+			results, err := DoUntilQuorum(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			require.NoError(t, err)
+			require.Len(t, results, 5, "should only have results from instances required to meet quorum requirement")
+
+			if minimizeRequests {
+				require.Equal(t, 5, int(instancesCalled.Load()), "should only call function for instances required to meet quorum requirement")
+				cleanupTracker.assertCorrectCleanup(results, []string{})
+			} else {
+				cleanupTracker.collectCleanedUpInstances()
+				require.Len(t, cleanupTracker.cleanedUpInstances, 1, "should clean up result from instance not used to meet quorum requirement")
+				require.NotContains(t, results, cleanupTracker.cleanedUpInstances, "result from instance cleaned up should not be returned")
+				require.ElementsMatch(t, append(results, cleanupTracker.cleanedUpInstances...), []string{"zone-a-replica-1", "zone-a-replica-2", "zone-b-replica-1", "zone-b-replica-2", "zone-c-replica-1", "zone-c-replica-2"})
+				cleanupTracker.assertCorrectCleanup(results, cleanupTracker.cleanedUpInstances)
+			}
+		})
 	}
-
-	cleanupTracker := newCleanupTracker(t, 1)
-
-	f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-		cleanupTracker.trackInstanceContext(ctx, desc)
-		return desc.Addr, nil
-	}
-
-	results, err := DoUntilQuorum(ctx, replicationSet, f, cleanupTracker.cleanup)
-	require.NoError(t, err)
-	require.Len(t, results, 5, "should only have results from instances require to meet quorum requirement")
-
-	cleanupTracker.collectCleanedUpInstances()
-	require.Len(t, cleanupTracker.cleanedUpInstances, 1, "should clean up result from instance not used to meet quorum requirement")
-	require.NotContains(t, results, cleanupTracker.cleanedUpInstances, "result from instance cleaned up should not be returned")
-	require.ElementsMatch(t, append(results, cleanupTracker.cleanedUpInstances...), []string{"zone-a-replica-1", "zone-a-replica-2", "zone-b-replica-1", "zone-b-replica-2", "zone-c-replica-1", "zone-c-replica-2"})
-
-	cleanupTracker.assertCorrectCleanup(results, cleanupTracker.cleanedUpInstances)
 }
 
 func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
@@ -686,7 +765,7 @@ func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
 				return desc.Addr, nil
 			}
 
-			actualResults, err := DoUntilQuorum(ctx, testCase.replicationSet, f, cleanupTracker.cleanup)
+			actualResults, err := DoUntilQuorum(ctx, testCase.replicationSet, false, f, cleanupTracker.cleanup)
 			require.ElementsMatch(t, testCase.expectedResults, actualResults)
 			require.NoError(t, err)
 
@@ -734,7 +813,7 @@ func TestDoUntilQuorum_ParentContextHandling(t *testing.T) {
 		return desc.Addr, nil
 	}
 
-	results, err := DoUntilQuorum(ctx, replicationSet, f, cleanupTracker.cleanup)
+	results, err := DoUntilQuorum(ctx, replicationSet, false, f, cleanupTracker.cleanup)
 	require.Empty(t, results)
 	require.Equal(t, context.Canceled, err)
 
@@ -743,20 +822,20 @@ func TestDoUntilQuorum_ParentContextHandling(t *testing.T) {
 }
 
 type cleanupTracker struct {
-	t                    *testing.T
-	expectedCleanupCalls int
-	receivedCleanupCalls *atomic.Uint64
-	cleanupChan          chan string
-	cleanedUpInstances   []string
-	instanceContexts     sync.Map
+	t                           *testing.T
+	maximumExpectedCleanupCalls int
+	receivedCleanupCalls        *atomic.Uint64
+	cleanupChan                 chan string
+	cleanedUpInstances          []string
+	instanceContexts            sync.Map
 }
 
-func newCleanupTracker(t *testing.T, expectedCleanupCalls int) *cleanupTracker {
+func newCleanupTracker(t *testing.T, expectedMaximumCleanupCalls int) *cleanupTracker {
 	return &cleanupTracker{
-		t:                    t,
-		expectedCleanupCalls: expectedCleanupCalls,
-		receivedCleanupCalls: atomic.NewUint64(0),
-		cleanupChan:          make(chan string, expectedCleanupCalls),
+		t:                           t,
+		maximumExpectedCleanupCalls: expectedMaximumCleanupCalls,
+		receivedCleanupCalls:        atomic.NewUint64(0),
+		cleanupChan:                 make(chan string, expectedMaximumCleanupCalls),
 	}
 }
 
@@ -767,22 +846,26 @@ func (c *cleanupTracker) trackInstanceContext(ctx context.Context, instance *Ins
 func (c *cleanupTracker) cleanup(res string) {
 	cleanupCallsSoFar := c.receivedCleanupCalls.Inc()
 
-	if cleanupCallsSoFar > uint64(c.expectedCleanupCalls) {
-		require.FailNowf(c.t, "received more cleanup calls than expected", "expected %v, but got at least %v", c.expectedCleanupCalls, cleanupCallsSoFar)
+	if cleanupCallsSoFar > uint64(c.maximumExpectedCleanupCalls) {
+		require.FailNowf(c.t, "received more cleanup calls than expected", "expected at most %v, but got at least %v", c.maximumExpectedCleanupCalls, cleanupCallsSoFar)
 	}
 
 	c.cleanupChan <- res
 }
 
 func (c *cleanupTracker) collectCleanedUpInstances() {
-	c.cleanedUpInstances = make([]string, 0, c.expectedCleanupCalls)
+	c.collectCleanedUpInstancesWithExpectedCount(c.maximumExpectedCleanupCalls)
+}
 
-	for len(c.cleanedUpInstances) < c.expectedCleanupCalls {
+func (c *cleanupTracker) collectCleanedUpInstancesWithExpectedCount(expected int) {
+	c.cleanedUpInstances = make([]string, 0, expected)
+
+	for len(c.cleanedUpInstances) < expected {
 		select {
 		case call := <-c.cleanupChan:
 			c.cleanedUpInstances = append(c.cleanedUpInstances, call)
 		case <-time.After(time.Second):
-			require.FailNowf(c.t, "gave up waiting for expected cleanup call", "have received %v so far, expected %v", c.cleanedUpInstances, c.expectedCleanupCalls)
+			require.FailNowf(c.t, "gave up waiting for expected cleanup call", "have received %v so far, expected %v", c.cleanedUpInstances, expected)
 		}
 	}
 }

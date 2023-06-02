@@ -403,6 +403,31 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_MoreFailingRequestsThanMaxi
 	require.True(t, tracker.failed(), "overall request should fail")
 }
 
+func TestDefaultResultTracker_ReleaseMinimumRequests_MaxErrorsIsNumberOfInstances(t *testing.T) {
+	// This scenario should never happen in the real world, but if we were to get into this situation,
+	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorum.
+
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instances := []InstanceDesc{instance1}
+	tracker := newDefaultResultTracker(instances, 1)
+	tracker.releaseMinimumRequests()
+
+	requestStarted := false
+	released := make(chan struct{})
+
+	go func() {
+		requestStarted = tracker.awaitRelease(&instances[0])
+		close(released)
+	}()
+
+	select {
+	case <-released:
+		require.False(t, requestStarted, "should not start request not required for quorum")
+	case <-time.After(time.Second):
+		require.Fail(t, "gave up waiting for request to be released")
+	}
+}
+
 func TestDefaultContextTracker(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
@@ -1017,6 +1042,43 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesGreaterThanMa
 	tracker.done(instancesReleased[4], errors.New("something else went wrong"))
 
 	require.True(t, tracker.failed())
+}
+
+func TestZoneAwareResultTracker_ReleaseMinimumRequests_MaxUnavailableZonesIsNumberOfZones(t *testing.T) {
+	// This scenario should never happen in the real world, but if we were to get into this situation,
+	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorum.
+
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instances := []InstanceDesc{instance1, instance2}
+	tracker := newZoneAwareResultTracker(instances, 1)
+	tracker.releaseMinimumRequests()
+
+	requestsStarted := []bool{false, false}
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	done := make(chan struct{})
+
+	for i := range instances {
+		i := i
+		instance := &instances[i]
+		go func() {
+			requestsStarted[i] = tracker.awaitRelease(instance)
+			wg.Done()
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		require.Equal(t, []bool{false, false}, requestsStarted, "should not start request not required for quorum")
+	case <-time.After(time.Second):
+		require.Fail(t, "gave up waiting for requests to be released")
+	}
 }
 
 func TestZoneAwareContextTracker(t *testing.T) {

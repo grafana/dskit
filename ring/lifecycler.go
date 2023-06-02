@@ -616,38 +616,43 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			return ringDesc, true, nil
 		}
 
-		// If the ingester failed to clean its ring entry up it can leave its state in LEAVING
-		// OR unregister_on_shutdown=false
-		// Move it into ACTIVE to ensure the ingester joins the ring.
+		tokens := Tokens(instanceDesc.Tokens)
+
+		// If the ingester fails to clean its ring entry up or unregister_on_shutdown=false, it can leave behind its
+		// ring state as LEAVING. Make sure to switch to the ACTIVE state.
 		if instanceDesc.State == LEAVING {
-			tokens := Tokens(instanceDesc.Tokens)
-			setIsActive := true
 			if len(tokens) != i.cfg.NumTokens {
-				level.Debug(i.logger).Log("msg", "existing entry has different number of tokens", "existingTokens", len(tokens), "newTokens", i.cfg.NumTokens)
+				level.Debug(i.logger).Log("msg", "existing entry has different number of tokens",
+					"existing_tokens", len(tokens), "new_tokens", i.cfg.NumTokens)
 				if len(tokensFromFile) > 0 {
-					level.Debug(i.logger).Log("msg", "adding tokens from file", "tokens", len(tokensFromFile))
-					setIsActive = len(tokensFromFile) >= i.cfg.NumTokens
+					tokens = tokensFromFile
+					if len(tokens) < i.cfg.NumTokens {
+						needTokens := i.cfg.NumTokens - len(tokens)
+						newTokens := GenerateTokens(needTokens, ringDesc.GetTokens())
+						tokens = append(tokens, newTokens...)
+						sort.Sort(tokens)
+					}
+					level.Debug(i.logger).Log("msg", "adding tokens from file", "tokens", len(tokens))
 					tokens = tokensFromFile
 				} else if i.cfg.NumTokens > len(tokens) {
 					needTokens := i.cfg.NumTokens - len(tokens)
-					level.Debug(i.logger).Log("msg", "no tokens in file, generating new ones in addition to those of existing instance", "newTokens", needTokens)
+					level.Debug(i.logger).Log("msg",
+						"no tokens in file, generating new ones in addition to those of existing instance",
+						"new_tokens", needTokens)
 					newTokens := GenerateTokens(needTokens, ringDesc.GetTokens())
 					tokens = append(tokens, newTokens...)
 					sort.Sort(tokens)
 				} else {
-					level.Debug(i.logger).Log("msg", "no tokens in file, adopting a subset of existing instance's tokens", "numTokens", i.cfg.NumTokens)
+					level.Debug(i.logger).Log("msg", "no tokens in file, adopting a subset of existing instance's tokens",
+						"num_tokens", i.cfg.NumTokens)
 					tokens = tokens[0:i.cfg.NumTokens]
 				}
 			} else {
 				level.Debug(i.logger).Log("msg", "adopting tokens of existing instance")
 			}
 
-			if setIsActive {
-				level.Debug(i.logger).Log("msg", "switching state to active")
-				i.setState(ACTIVE)
-			} else {
-				level.Debug(i.logger).Log("msg", "not switching state to active", "state", i.GetState())
-			}
+			level.Debug(i.logger).Log("msg", "switching state to active")
+			i.setState(ACTIVE)
 
 			i.setTokens(tokens)
 			instanceDesc.State = i.GetState()
@@ -655,17 +660,12 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 		} else {
 			// We exist in the ring and not in leaving state, so assume the ring is right and copy tokens & state out of there.
 			i.setState(instanceDesc.State)
-			i.setTokens(instanceDesc.Tokens)
+			i.setTokens(tokens)
 		}
 
 		// We're taking over this entry, update instanceDesc with our values
 		instanceDesc.Addr = i.Addr
 		instanceDesc.Zone = i.Zone
-
-		// We exist in the ring, so assume the ring is right and copy out tokens & state out of there.
-		i.setState(instanceDesc.State)
-		tokens, _ := ringDesc.TokensFor(i.ID)
-		i.setTokens(tokens)
 
 		level.Info(i.logger).Log("msg", "existing entry found in ring", "state", i.GetState(), "tokens", len(tokens), "ring", i.RingName)
 
@@ -769,6 +769,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) er
 		// At this point, we should not have any tokens, and we should be in PENDING state.
 		myTokens, takenTokens := ringDesc.TokensFor(i.ID)
 		if len(myTokens) > 0 {
+			// TODO: Should we log this case as an error, as we don't treat it as one?
 			level.Error(i.logger).Log("msg", "tokens already exist for this instance - wasn't expecting any!", "num_tokens", len(myTokens), "ring", i.RingName)
 		}
 

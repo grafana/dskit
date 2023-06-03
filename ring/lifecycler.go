@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -635,7 +636,14 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				// We have too many tokens
 				level.Debug(i.logger).Log("msg", "existing instance has too many tokens, removing difference",
 					"num_tokens", len(tokens), "need", i.cfg.NumTokens)
+				// Originally suggested by Andrea Gardiman, make sure we don't pick the N smallest tokens,
+				// since that would increase the chance of the instance receiving only smaller hashes
+				// https://github.com/grafana/dskit/pull/79#discussion_r1056205242
+				rand.Shuffle(len(tokens), func(i, j int) {
+					tokens[i] = tokens[j]
+				})
 				tokens = tokens[0:i.cfg.NumTokens]
+				sort.Sort(tokens)
 			} else {
 				level.Debug(i.logger).Log("msg", "existing instance has the right amount of tokens")
 			}

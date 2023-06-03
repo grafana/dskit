@@ -156,7 +156,7 @@ func (m *mockMessage) ProtoMessage() {
 
 type testLogger struct{}
 
-func (l testLogger) Log(keyvals ...interface{}) error {
+func (l testLogger) Log(_ ...interface{}) error {
 	return nil
 }
 

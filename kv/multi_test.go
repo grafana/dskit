@@ -45,5 +45,6 @@ func TestNewMulti(t *testing.T) {
 	clients := []kvclient{{name: "a"}, {name: "b"}}
 
 	mc := NewMultiClient(cfg, clients, log.NewNopLogger(), nil)
+	t.Log("canceling MultiClient")
 	mc.cancel()
 }

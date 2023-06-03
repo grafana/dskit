@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -475,12 +474,10 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, r))
 	})
 
-	tokenDir := t.TempDir()
 	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
 	// Make sure changes are applied instantly
 	lifecyclerConfig.HeartbeatPeriod = 0
 	lifecyclerConfig.NumTokens = 128
-	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
 
 	// Simulate ingester with 64 tokens left the ring in LEAVING state
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -533,12 +530,10 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, r))
 	})
 
-	tokenDir := t.TempDir()
 	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
 	// Make sure changes are applied instantly
 	lifecyclerConfig.HeartbeatPeriod = 0
 	lifecyclerConfig.NumTokens = 64
-	lifecyclerConfig.TokensFilePath = filepath.Join(tokenDir, "/tokens")
 
 	// Simulate ingester with 128 tokens left the ring in LEAVING state
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {

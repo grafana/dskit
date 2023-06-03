@@ -464,6 +464,8 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
+	const numTokens = 128
+
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = ringStore
@@ -477,7 +479,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
 	// Make sure changes are applied instantly
 	lifecyclerConfig.HeartbeatPeriod = 0
-	lifecyclerConfig.NumTokens = 128
+	lifecyclerConfig.NumTokens = numTokens
 
 	// Simulate ingester with 64 tokens left the ring in LEAVING state
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -488,7 +490,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		}
 
 		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, GenerateTokens(64, nil), LEAVING, time.Now())
-		return ringDesc, true, nil
+		return ringDesc, false, nil
 	})
 	require.NoError(t, err)
 
@@ -508,8 +510,9 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		desc, ok := d.(*Desc)
 		require.True(t, ok)
 		ingDesc := desc.Ingesters["ing1"]
-		t.Log("Polling for new ingester to have become active with 128 tokens", "state", ingDesc.State, "tokens", len(ingDesc.Tokens))
-		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == 128
+		t.Log(fmt.Sprintf("Polling for new ingester to have become active with %d tokens", numTokens),
+			"state", ingDesc.State, "tokens", len(ingDesc.Tokens))
+		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == numTokens
 	})
 }
 
@@ -519,6 +522,8 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	const numTokens = 64
 
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
@@ -533,7 +538,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
 	// Make sure changes are applied instantly
 	lifecyclerConfig.HeartbeatPeriod = 0
-	lifecyclerConfig.NumTokens = 64
+	lifecyclerConfig.NumTokens = numTokens
 
 	// Simulate ingester with 128 tokens left the ring in LEAVING state
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -544,7 +549,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		}
 
 		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, GenerateTokens(128, nil), LEAVING, time.Now())
-		return ringDesc, true, nil
+		return ringDesc, false, nil
 	})
 	require.NoError(t, err)
 
@@ -564,8 +569,9 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		desc, ok := d.(*Desc)
 		require.True(t, ok)
 		ingDesc := desc.Ingesters["ing1"]
-		t.Log("Polling for new ingester to have become active with 64 tokens", "state", ingDesc.State, "tokens", len(ingDesc.Tokens))
-		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == 64
+		t.Log(fmt.Sprintf("Polling for new ingester to have become active with %d tokens", numTokens),
+			"state", ingDesc.State, "tokens", len(ingDesc.Tokens))
+		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == numTokens
 	})
 }
 

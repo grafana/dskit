@@ -312,7 +312,7 @@ func newGatheringManagerListener(t *testing.T) *gatheringManagerListener {
 	return gl
 }
 
-func (g *gatheringManagerListener) collect(ctx context.Context) error {
+func (g *gatheringManagerListener) collect(_ context.Context) error {
 	for s := range g.ch {
 		g.log = append(g.log, s)
 	}
@@ -328,6 +328,6 @@ func (g *gatheringManagerListener) Stopped() {
 	close(g.ch)
 }
 
-func (g *gatheringManagerListener) Failure(s Service) {
+func (g *gatheringManagerListener) Failure(_ Service) {
 	g.ch <- "failed"
 }

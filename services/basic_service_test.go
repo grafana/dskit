@@ -265,7 +265,7 @@ func newServiceListener() *serviceListener {
 	return sl
 }
 
-func (sl *serviceListener) collect(ctx context.Context) error {
+func (sl *serviceListener) collect(_ context.Context) error {
 	for l := range sl.ch {
 		sl.log = append(sl.log, l)
 	}

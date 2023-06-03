@@ -683,8 +683,8 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 type noopFlushTransferer struct {
 }
 
-func (f *noopFlushTransferer) Flush()                                {}
-func (f *noopFlushTransferer) TransferOut(ctx context.Context) error { return nil }
+func (f *noopFlushTransferer) Flush()                              {}
+func (f *noopFlushTransferer) TransferOut(_ context.Context) error { return nil }
 
 func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)

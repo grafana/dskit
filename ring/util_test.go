@@ -17,9 +17,9 @@ type RingMock struct {
 	mock.Mock
 }
 
-func (r *RingMock) Collect(ch chan<- prometheus.Metric) {}
+func (r *RingMock) Collect(_ chan<- prometheus.Metric) {}
 
-func (r *RingMock) Describe(ch chan<- *prometheus.Desc) {}
+func (r *RingMock) Describe(_ chan<- *prometheus.Desc) {}
 
 func (r *RingMock) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
 	args := r.Called(key, op, bufDescs, bufHosts, bufZones)
@@ -59,11 +59,11 @@ func (r *RingMock) ShuffleShardWithLookback(identifier string, size int, lookbac
 	return args.Get(0).(ReadRing)
 }
 
-func (r *RingMock) HasInstance(instanceID string) bool {
+func (r *RingMock) HasInstance(_ string) bool {
 	return true
 }
 
-func (r *RingMock) CleanupShuffleShardCache(identifier string) {}
+func (r *RingMock) CleanupShuffleShardCache(_ string) {}
 
 func TestGenerateTokens(t *testing.T) {
 	tokens := GenerateTokens(1000000, nil)

@@ -91,19 +91,17 @@ func generateKeys(r *rand.Rand, numTokens int, dest []uint32) {
 
 func BenchmarkUpdateRingState(b *testing.B) {
 	for _, numInstances := range []int{50, 100, 500} {
-		for _, numZones := range []int{1, 3} {
-			for _, numTokens := range []int{128, 256, 512} {
-				for _, updateTokens := range []bool{false, true} {
-					b.Run(fmt.Sprintf("num instances = %d, num zones = %d, num tokens = %d, update tokens = %t", numInstances, numZones, numTokens, updateTokens), func(b *testing.B) {
-						benchmarkUpdateRingState(b, numInstances, numZones, numTokens, updateTokens)
-					})
-				}
+		for _, numTokens := range []int{128, 256, 512} {
+			for _, updateTokens := range []bool{false, true} {
+				b.Run(fmt.Sprintf("num instances = %d, num tokens = %d, update tokens = %t", numInstances, numTokens, updateTokens), func(b *testing.B) {
+					benchmarkUpdateRingState(b, numInstances, numTokens, updateTokens)
+				})
 			}
 		}
 	}
 }
 
-func benchmarkUpdateRingState(b *testing.B, numInstances, numZones, numTokens int, updateTokens bool) {
+func benchmarkUpdateRingState(b *testing.B, numInstances, numTokens int, updateTokens bool) {
 	cfg := Config{
 		KVStore:              kv.Config{},
 		HeartbeatTimeout:     0, // get healthy stats

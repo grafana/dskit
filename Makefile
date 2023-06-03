@@ -74,7 +74,7 @@ check-protos: clean-protos protos
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.10.0
 
 .tools/bin/golangci-lint: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.47.3
+	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.53.2
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")

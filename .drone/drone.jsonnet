@@ -6,7 +6,7 @@ local supported_golang_versions = [
 
 local images = {
   golang(version):: 'golang:%s' % version,
-  default:: self.golang(supported_golang_versions[0]),
+  default:: self.golang(supported_golang_versions[std.length(supported_golang_versions)-1]),
 };
 
 local pipeline = {

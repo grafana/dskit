@@ -44,11 +44,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
+const defaultInitialWindowSize = 65535 // From https://github.com/grpc/grpc-go/blob/c9d3ea5673252d212c69f3d3c10ce1d7b287a86b/internal/transport/defaults.go#L28
+
 // RegisterFlagsWithPrefix registers flags with prefix.
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	// Set the default values.
-	must(cfg.InitialStreamWindowSize.Set("65535B"))
-	must(cfg.InitialConnectionWindowSize.Set("65535B"))
+	cfg.InitialStreamWindowSize = defaultInitialWindowSize
+	cfg.InitialConnectionWindowSize = defaultInitialWindowSize
 
 	f.IntVar(&cfg.MaxRecvMsgSize, prefix+".grpc-max-recv-msg-size", 100<<20, "gRPC client max receive message size (bytes).")
 	f.IntVar(&cfg.MaxSendMsgSize, prefix+".grpc-max-send-msg-size", 100<<20, "gRPC client max send message size (bytes).")
@@ -126,6 +128,14 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 		)
 	}
 
+	if cfg.InitialStreamWindowSize > defaultInitialWindowSize {
+		opts = append(opts, grpc.WithInitialWindowSize(int32(cfg.InitialStreamWindowSize)))
+	}
+
+	if cfg.InitialConnectionWindowSize > defaultInitialWindowSize {
+		opts = append(opts, grpc.WithInitialConnWindowSize(int32(cfg.InitialConnectionWindowSize)))
+	}
+
 	return append(
 		opts,
 		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
@@ -136,8 +146,6 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 			Timeout:             time.Second * 10,
 			PermitWithoutStream: true,
 		}),
-		grpc.WithInitialConnWindowSize(int32(cfg.InitialConnectionWindowSize)),
-		grpc.WithInitialWindowSize(int32(cfg.InitialStreamWindowSize)),
 	), nil
 }
 

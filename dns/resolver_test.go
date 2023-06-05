@@ -21,21 +21,21 @@ type mockHostnameResolver struct {
 	err        error
 }
 
-func (m mockHostnameResolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
+func (m mockHostnameResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.resultIPs[host], nil
 }
 
-func (m mockHostnameResolver) LookupSRV(ctx context.Context, service, proto, name string) (cname string, addrs []*net.SRV, err error) {
+func (m mockHostnameResolver) LookupSRV(_ context.Context, _, _, name string) (cname string, addrs []*net.SRV, err error) {
 	if m.err != nil {
 		return "", nil, m.err
 	}
 	return "", m.resultSRVs[name], nil
 }
 
-func (m mockHostnameResolver) IsNotFound(err error) bool {
+func (m mockHostnameResolver) IsNotFound(_ error) bool {
 	return false
 }
 

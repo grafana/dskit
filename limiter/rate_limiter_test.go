@@ -136,12 +136,12 @@ type increasingLimitStrategy struct {
 	burst int
 }
 
-func (s *increasingLimitStrategy) Limit(tenantID string) float64 {
+func (s *increasingLimitStrategy) Limit(_ string) float64 {
 	s.limit++
 	return s.limit
 }
 
-func (s *increasingLimitStrategy) Burst(tenantID string) int {
+func (s *increasingLimitStrategy) Burst(_ string) int {
 	s.burst++
 	return s.burst
 }

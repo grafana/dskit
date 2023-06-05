@@ -4,7 +4,6 @@ import (
 	"flag"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	grpcbackoff "google.golang.org/grpc/backoff"
@@ -60,7 +59,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
-func (cfg *Config) Validate(log log.Logger) error {
+func (cfg *Config) Validate() error {
 	switch cfg.GRPCCompression {
 	case gzip.Name, snappy.Name, "":
 		// valid

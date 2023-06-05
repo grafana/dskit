@@ -640,7 +640,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				// since that would increase the chance of the instance receiving only smaller hashes
 				// https://github.com/grafana/dskit/pull/79#discussion_r1056205242
 				rand.Shuffle(len(tokens), func(i, j int) {
-					tokens[i] = tokens[j]
+					tokens[i], tokens[j] = tokens[j], tokens[i]
 				})
 				tokens = tokens[0:i.cfg.NumTokens]
 				sort.Sort(tokens)

@@ -27,8 +27,8 @@ type Config struct {
 	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits" category:"advanced"`
 	BackoffConfig       backoff.Config `yaml:"backoff_config"`
 
-	InitialStreamWindowSize     flagext.Bytes `yaml:"initial_stream_window_size" category:"advanced"`
-	InitialConnectionWindowSize flagext.Bytes `yaml:"initial_connection_window_size" category:"advanced"`
+	InitialStreamWindowSize     flagext.Bytes `yaml:"initial_stream_window_size" category:"experimental"`
+	InitialConnectionWindowSize flagext.Bytes `yaml:"initial_connection_window_size" category:"experimental"`
 
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`

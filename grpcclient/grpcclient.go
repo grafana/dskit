@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/crypto/tls"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcencoding/snappy"
 )
 
@@ -25,6 +26,9 @@ type Config struct {
 
 	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits" category:"advanced"`
 	BackoffConfig       backoff.Config `yaml:"backoff_config"`
+
+	InitialStreamWindowSize     flagext.Bytes `yaml:"initial_stream_window_size" category:"advanced"`
+	InitialConnectionWindowSize flagext.Bytes `yaml:"initial_connection_window_size" category:"advanced"`
 
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`
@@ -42,14 +46,19 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 // RegisterFlagsWithPrefix registers flags with prefix.
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	// Set the default values.
+	must(cfg.InitialStreamWindowSize.Set("65535B"))
+	must(cfg.InitialConnectionWindowSize.Set("65535B"))
+
 	f.IntVar(&cfg.MaxRecvMsgSize, prefix+".grpc-max-recv-msg-size", 100<<20, "gRPC client max receive message size (bytes).")
 	f.IntVar(&cfg.MaxSendMsgSize, prefix+".grpc-max-send-msg-size", 100<<20, "gRPC client max send message size (bytes).")
 	f.StringVar(&cfg.GRPCCompression, prefix+".grpc-compression", "", "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)")
 	f.Float64Var(&cfg.RateLimit, prefix+".grpc-client-rate-limit", 0., "Rate limit for gRPC client; 0 means disabled.")
 	f.IntVar(&cfg.RateLimitBurst, prefix+".grpc-client-rate-limit-burst", 0, "Rate limit burst for gRPC client.")
 	f.BoolVar(&cfg.BackoffOnRatelimits, prefix+".backoff-on-ratelimits", false, "Enable backoff and retry when we hit rate limits.")
+	f.Var(&cfg.InitialStreamWindowSize, prefix+".initial-stream-window-size", "Initial stream window size. Values less than the default are not supported and are ignored.")
+	f.Var(&cfg.InitialConnectionWindowSize, prefix+"initial-connection-window-size", "Initial connection window size. Values less than the default are not supported and are ignored.")
 	f.BoolVar(&cfg.TLSEnabled, prefix+".tls-enabled", cfg.TLSEnabled, "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.")
-
 	f.DurationVar(&cfg.ConnectTimeout, prefix+".connect-timeout", 0, "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.")
 	f.DurationVar(&cfg.ConnectBackoffBaseDelay, prefix+".connect-backoff-base-delay", time.Second, "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0.")
 	f.DurationVar(&cfg.ConnectBackoffMaxDelay, prefix+".connect-backoff-max-delay", 5*time.Second, "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0.")
@@ -127,5 +136,13 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 			Timeout:             time.Second * 10,
 			PermitWithoutStream: true,
 		}),
+		grpc.WithInitialConnWindowSize(int32(cfg.InitialConnectionWindowSize)),
+		grpc.WithInitialWindowSize(int32(cfg.InitialStreamWindowSize)),
 	), nil
+}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
 }

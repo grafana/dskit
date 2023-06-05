@@ -618,7 +618,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 		}
 
 		tokens := Tokens(instanceDesc.Tokens)
-		level.Info(i.logger).Log("msg", "existing instance found in ring", "state", i.GetState(), "tokens",
+		level.Info(i.logger).Log("msg", "existing instance found in ring", "state", instanceDesc.State, "tokens",
 			len(tokens), "ring", i.RingName)
 
 		// If the ingester fails to clean its ring entry up or unregister_on_shutdown=false, it can leave behind its

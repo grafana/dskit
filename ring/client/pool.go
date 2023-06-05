@@ -103,13 +103,6 @@ func (p *Pool) GetClientFor(addr string) (PoolClient, error) {
 		return client, nil
 	}
 
-	p.Lock()
-	defer p.Unlock()
-	client, ok = p.clients[addr]
-	if ok {
-		return client, nil
-	}
-
 	client, err := p.factory(addr)
 	if err != nil {
 		return nil, err

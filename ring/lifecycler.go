@@ -636,9 +636,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				// We have too many tokens
 				level.Debug(i.logger).Log("msg", "existing instance has too many tokens, removing difference",
 					"num_tokens", len(tokens), "need", i.cfg.NumTokens)
-				// Originally suggested by Andrea Gardiman, make sure we don't pick the N smallest tokens,
-				// since that would increase the chance of the instance receiving only smaller hashes
-				// https://github.com/grafana/dskit/pull/79#discussion_r1056205242
+				// Make sure we don't pick the N smallest tokens, since that would increase the chance of the instance receiving only smaller hashes.
 				rand.Shuffle(len(tokens), func(i, j int) {
 					tokens[i], tokens[j] = tokens[j], tokens[i]
 				})

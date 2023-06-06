@@ -650,7 +650,6 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *test
 	}
 }
 
-// TODO: minimizeRequests = true
 func TestDoUntilQuorum_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *testing.T) {
 	defer goleak.VerifyNone(t)
 

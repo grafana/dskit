@@ -634,8 +634,8 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				sort.Sort(tokens)
 			} else if delta < 0 {
 				// We have too many tokens
-				level.Debug(i.logger).Log("msg", "existing instance has too many tokens, removing difference",
-					"num_tokens", len(tokens), "need", i.cfg.NumTokens)
+				level.Info(i.logger).Log("msg", "existing instance has too many tokens, removing difference",
+					"current_tokens", len(tokens), "desired_tokens", i.cfg.NumTokens)
 				// Make sure we don't pick the N smallest tokens, since that would increase the chance of the instance receiving only smaller hashes.
 				rand.Shuffle(len(tokens), func(i, j int) {
 					tokens[i], tokens[j] = tokens[j], tokens[i]

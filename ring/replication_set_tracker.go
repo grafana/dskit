@@ -26,24 +26,24 @@ type replicationSetResultTracker interface {
 	// calling done any further times.
 	shouldIncludeResultFrom(instance *InstanceDesc) bool
 
-	// Releases an initial set of requests sufficient to meet the quorum requirements of this tracker.
-	// Further requests will be released if necessary when done is called with a non-nil error.
+	// Starts an initial set of requests sufficient to meet the quorum requirements of this tracker.
+	// Further requests will be started if necessary when done is called with a non-nil error.
 	// Calling this method multiple times may lead to unpredictable behaviour.
 	// Calling both this method and releaseAllRequests may lead to unpredictable behaviour.
 	// This method must only be called before calling done.
-	releaseMinimumRequests()
+	startMinimumRequests()
 
-	// Releases requests for all instances.
+	// Starts requests for all instances.
 	// Calling this method multiple times may lead to unpredictable behaviour.
 	// Calling both this method and releaseMinimumRequests may lead to unpredictable behaviour.
 	// This method must only be called before calling done.
-	releaseAllRequests()
+	startAllRequests()
 
-	// Blocks until the request for this instance should be released.
+	// Blocks until the request for this instance should be started.
 	// Returns true if the request should be started, false if the request is not required.
 	// Must only be called after releaseMinimumRequests or releaseAllRequests returns.
 	// Calling this method multiple times for the same instance may lead to unpredictable behaviour.
-	awaitRelease(instance *InstanceDesc) bool
+	awaitStart(instance *InstanceDesc) bool
 }
 
 type replicationSetContextTracker interface {
@@ -119,7 +119,7 @@ func (t *defaultResultTracker) shouldIncludeResultFrom(_ *InstanceDesc) bool {
 	return true
 }
 
-func (t *defaultResultTracker) releaseMinimumRequests() {
+func (t *defaultResultTracker) startMinimumRequests() {
 	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
 
 	for i := range t.instances {
@@ -147,7 +147,7 @@ func (t *defaultResultTracker) releaseMinimumRequests() {
 	}
 }
 
-func (t *defaultResultTracker) releaseAllRequests() {
+func (t *defaultResultTracker) startAllRequests() {
 	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
 
 	for i := range t.instances {
@@ -157,7 +157,7 @@ func (t *defaultResultTracker) releaseAllRequests() {
 	}
 }
 
-func (t *defaultResultTracker) awaitRelease(instance *InstanceDesc) bool {
+func (t *defaultResultTracker) awaitStart(instance *InstanceDesc) bool {
 	_, ok := <-t.instanceRelease[instance]
 	return ok
 }
@@ -277,7 +277,7 @@ func (t *zoneAwareResultTracker) shouldIncludeResultFrom(instance *InstanceDesc)
 	return t.failuresByZone[instance.Zone] == 0 && t.waitingByZone[instance.Zone] == 0
 }
 
-func (t *zoneAwareResultTracker) releaseMinimumRequests() {
+func (t *zoneAwareResultTracker) startMinimumRequests() {
 	t.createReleaseChannels()
 
 	allZones := make([]string, 0, len(t.waitingByZone))
@@ -303,7 +303,7 @@ func (t *zoneAwareResultTracker) releaseMinimumRequests() {
 	}
 }
 
-func (t *zoneAwareResultTracker) releaseAllRequests() {
+func (t *zoneAwareResultTracker) startAllRequests() {
 	t.createReleaseChannels()
 
 	for zone := range t.waitingByZone {
@@ -326,7 +326,7 @@ func (t *zoneAwareResultTracker) releaseZone(zone string, shouldStart bool) {
 	close(t.zoneRelease[zone])
 }
 
-func (t *zoneAwareResultTracker) awaitRelease(instance *InstanceDesc) bool {
+func (t *zoneAwareResultTracker) awaitStart(instance *InstanceDesc) bool {
 	<-t.zoneRelease[instance.Zone]
 	return t.zoneShouldStart[instance.Zone].Load()
 }

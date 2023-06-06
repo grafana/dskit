@@ -155,9 +155,9 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequest
 	}
 
 	if minimizeRequests {
-		resultTracker.releaseMinimumRequests()
+		resultTracker.startMinimumRequests()
 	} else {
-		resultTracker.releaseAllRequests()
+		resultTracker.startAllRequests()
 	}
 
 	for i := range r.Instances {
@@ -165,7 +165,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequest
 		instanceCtx := contextTracker.contextFor(instance)
 
 		go func(desc *InstanceDesc) {
-			if !resultTracker.awaitRelease(desc) {
+			if !resultTracker.awaitStart(desc) {
 				// Post to resultsChan so that the deferred cleanup handler above eventually terminates.
 				resultsChan <- instanceResult[T]{
 					err:      errResultNotNeeded, // This will never be returned from this method.

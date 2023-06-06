@@ -162,7 +162,7 @@ func TestDefaultResultTracker(t *testing.T) {
 	}
 }
 
-func TestDefaultResultTracker_ReleaseAllRequests(t *testing.T) {
+func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3"}
@@ -170,15 +170,15 @@ func TestDefaultResultTracker_ReleaseAllRequests(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 	tracker := newDefaultResultTracker(instances, 1)
 
-	tracker.releaseAllRequests()
+	tracker.startAllRequests()
 
 	for i := range instances {
 		instance := &instances[i]
-		require.True(t, tracker.awaitRelease(instance), "requests for all instances should be released immediately")
+		require.True(t, tracker.awaitStart(instance), "requests for all instances should be released immediately")
 	}
 }
 
-func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *testing.T) {
+func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3"}
@@ -189,7 +189,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *testin
 
 	for testIteration := 0; testIteration < 1000; testIteration++ {
 		tracker := newDefaultResultTracker(instances, 1)
-		tracker.releaseMinimumRequests()
+		tracker.startMinimumRequests()
 
 		mtx := sync.RWMutex{}
 		instancesAwaitReleaseResults := make([]bool, len(instances))
@@ -199,7 +199,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *testin
 			instanceIdx := instanceIdx
 			instance := &instances[instanceIdx]
 			go func() {
-				released := tracker.awaitRelease(instance)
+				released := tracker.awaitStart(instance)
 
 				mtx.Lock()
 				defer mtx.Unlock()
@@ -245,7 +245,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *testin
 	}
 }
 
-func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsBelowMaximumAllowed(t *testing.T) {
+func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAllowed(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3"}
@@ -253,7 +253,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsBelowMaximum
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	tracker := newDefaultResultTracker(instances, 2)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
 	countInstancesReleased := 0
@@ -262,7 +262,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsBelowMaximum
 	for instanceIdx := range instances {
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitRelease(instance)
+			released := tracker.awaitStart(instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
@@ -303,7 +303,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsBelowMaximum
 	require.True(t, tracker.succeeded(), "overall request should succeed")
 }
 
-func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsEqualToMaximumAllowed(t *testing.T) {
+func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsEqualToMaximumAllowed(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3"}
@@ -311,7 +311,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsEqualToMaxim
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	tracker := newDefaultResultTracker(instances, 2)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
 	countInstancesReleased := 0
@@ -321,7 +321,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsEqualToMaxim
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitRelease(instance)
+			released := tracker.awaitStart(instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
@@ -353,7 +353,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_FailingRequestsEqualToMaxim
 	require.True(t, tracker.succeeded(), "overall request should succeed")
 }
 
-func TestDefaultResultTracker_ReleaseMinimumRequests_MoreFailingRequestsThanMaximumAllowed(t *testing.T) {
+func TestDefaultResultTracker_StartMinimumRequests_MoreFailingRequestsThanMaximumAllowed(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3"}
@@ -361,7 +361,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_MoreFailingRequestsThanMaxi
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	tracker := newDefaultResultTracker(instances, 1)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
 	countInstancesReleased := 0
@@ -371,7 +371,7 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_MoreFailingRequestsThanMaxi
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitRelease(instance)
+			released := tracker.awaitStart(instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
@@ -403,20 +403,20 @@ func TestDefaultResultTracker_ReleaseMinimumRequests_MoreFailingRequestsThanMaxi
 	require.True(t, tracker.failed(), "overall request should fail")
 }
 
-func TestDefaultResultTracker_ReleaseMinimumRequests_MaxErrorsIsNumberOfInstances(t *testing.T) {
+func TestDefaultResultTracker_StartMinimumRequests_MaxErrorsIsNumberOfInstances(t *testing.T) {
 	// This scenario should never happen in the real world, but if we were to get into this situation,
 	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorum.
 
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instances := []InstanceDesc{instance1}
 	tracker := newDefaultResultTracker(instances, 1)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	requestStarted := false
 	released := make(chan struct{})
 
 	go func() {
-		requestStarted = tracker.awaitRelease(&instances[0])
+		requestStarted = tracker.awaitStart(&instances[0])
 		close(released)
 	}()
 
@@ -639,7 +639,7 @@ func TestZoneAwareResultTracker(t *testing.T) {
 	}
 }
 
-func TestZoneAwareResultTracker_ReleaseAllRequests(t *testing.T) {
+func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
@@ -649,15 +649,15 @@ func TestZoneAwareResultTracker_ReleaseAllRequests(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6}
 	tracker := newZoneAwareResultTracker(instances, 1)
 
-	tracker.releaseAllRequests()
+	tracker.startAllRequests()
 
 	for i := range instances {
 		instance := &instances[i]
-		require.True(t, tracker.awaitRelease(instance), "requests for all instances should be released immediately")
+		require.True(t, tracker.awaitStart(instance), "requests for all instances should be released immediately")
 	}
 }
 
-func TestZoneAwareResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *testing.T) {
+func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
@@ -670,7 +670,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *test
 
 	for testIteration := 0; testIteration < 900; testIteration++ {
 		tracker := newZoneAwareResultTracker(instances, 1)
-		tracker.releaseMinimumRequests()
+		tracker.startMinimumRequests()
 
 		mtx := sync.RWMutex{}
 		instancesAwaitReleaseResults := make([]bool, len(instances))
@@ -680,7 +680,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *test
 			instanceIdx := instanceIdx
 			instance := &instances[instanceIdx]
 			go func() {
-				released := tracker.awaitRelease(instance)
+				released := tracker.awaitStart(instance)
 
 				mtx.Lock()
 				defer mtx.Unlock()
@@ -740,7 +740,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_NoFailingRequests(t *test
 	}
 }
 
-func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesLessThanMaximumAllowed_SingleFailingRequestInZone(t *testing.T) {
+func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximumAllowed_SingleFailingRequestInZone(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
@@ -752,7 +752,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesLessThanMaxim
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
 	tracker := newZoneAwareResultTracker(instances, 2)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
 	instancesAwaitReleaseResults := make([]bool, len(instances))
@@ -761,7 +761,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesLessThanMaxim
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitRelease(instance)
+			released := tracker.awaitStart(instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
@@ -808,7 +808,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesLessThanMaxim
 	require.Equal(t, 6, trueCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
 }
 
-func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesLessThanMaximumAllowed_MultipleFailingRequestsInSingleZone(t *testing.T) {
+func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximumAllowed_MultipleFailingRequestsInSingleZone(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
@@ -820,7 +820,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesLessThanMaxim
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
 	tracker := newZoneAwareResultTracker(instances, 2)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
 	instancesAwaitReleaseResults := make([]bool, len(instances))
@@ -832,7 +832,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesLessThanMaxim
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitRelease(instance)
+			released := tracker.awaitStart(instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
@@ -913,7 +913,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesLessThanMaxim
 	require.Equal(t, 6, trueCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
 }
 
-func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesEqualToMaximumAllowed(t *testing.T) {
+func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumAllowed(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
@@ -925,7 +925,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesEqualToMaximu
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
 	tracker := newZoneAwareResultTracker(instances, 2)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
 	instancesAwaitReleaseResults := make([]bool, len(instances))
@@ -934,7 +934,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesEqualToMaximu
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitRelease(instance)
+			released := tracker.awaitStart(instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
@@ -984,7 +984,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesEqualToMaximu
 	require.Equal(t, 4, uniqueZoneCount(instancesReleased), "expected four zones to be released after two failed")
 }
 
-func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesGreaterThanMaximumAllowed(t *testing.T) {
+func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaximumAllowed(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
@@ -996,7 +996,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesGreaterThanMa
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
 	tracker := newZoneAwareResultTracker(instances, 2)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
 	instancesAwaitReleaseResults := make([]bool, len(instances))
@@ -1005,7 +1005,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesGreaterThanMa
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitRelease(instance)
+			released := tracker.awaitStart(instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
@@ -1044,7 +1044,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_FailingZonesGreaterThanMa
 	require.True(t, tracker.failed())
 }
 
-func TestZoneAwareResultTracker_ReleaseMinimumRequests_MaxUnavailableZonesIsNumberOfZones(t *testing.T) {
+func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumberOfZones(t *testing.T) {
 	// This scenario should never happen in the real world, but if we were to get into this situation,
 	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorum.
 
@@ -1052,7 +1052,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_MaxUnavailableZonesIsNumb
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instances := []InstanceDesc{instance1, instance2}
 	tracker := newZoneAwareResultTracker(instances, 1)
-	tracker.releaseMinimumRequests()
+	tracker.startMinimumRequests()
 
 	requestsStarted := []bool{false, false}
 	wg := sync.WaitGroup{}
@@ -1063,7 +1063,7 @@ func TestZoneAwareResultTracker_ReleaseMinimumRequests_MaxUnavailableZonesIsNumb
 		i := i
 		instance := &instances[i]
 		go func() {
-			requestsStarted[i] = tracker.awaitRelease(instance)
+			requestsStarted[i] = tracker.awaitStart(instance)
 			wg.Done()
 		}()
 	}

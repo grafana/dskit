@@ -105,14 +105,17 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 //
 // If minimizeRequests is false, DoUntilQuorum will call f for each instance in r.
 //
-// If minimizeRequests is true, DoUntilQuorum will call f for the minimum number of instances needed to reach
-// the termination conditions above. For example, if r.MaxUnavailableZones is 1 and there are three zones, DoUntilQuorum
-// will initially only call f for instances in two zones, and only call f for instances in the remaining zone if a
-// request in the initial two zones fails.
+// If minimizeRequests is true, DoUntilQuorum will initially call f for the minimum number of instances needed to reach
+// the termination conditions above, and later call f for further instances if required. For example, if
+// r.MaxUnavailableZones is 1 and there are three zones, DoUntilQuorum will initially only call f for instances in two
+// zones, and only call f for instances in the remaining zone if a request in the initial two zones fails.
 //
 // If minimizeRequests is true, DoUntilQuorum will randomly select available zones / instances such that calling
 // DoUntilQuorum multiple times with the same ReplicationSet should evenly distribute requests across all zones /
 // instances.
+//
+// Regardless of the value of minimizeRequests, if one of the termination conditions above is satisfied or ctx is
+// cancelled before f is called for an instance, f may not be called for that instance at all.
 //
 // Any results from successful calls to f that are not returned by DoUntilQuorum will be passed to cleanupFunc,
 // including when DoUntilQuorum returns an error or only returns a subset of successful results. cleanupFunc may

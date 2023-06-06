@@ -150,9 +150,3 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 		}),
 	), nil
 }
-
-func must(err error) {
-	if err != nil {
-		panic(err)
-	}
-}

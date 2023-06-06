@@ -627,8 +627,8 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			delta := i.cfg.NumTokens - len(tokens)
 			if delta > 0 {
 				// We need more tokens
-				level.Debug(i.logger).Log("msg", "existing instance has too few tokens, adding difference",
-					"num_tokens", len(tokens), "need", i.cfg.NumTokens)
+				level.Info(i.logger).Log("msg", "existing instance has too few tokens, adding difference",
+					"current_tokens", len(tokens), "desired_tokens", i.cfg.NumTokens)
 				newTokens := GenerateTokens(delta, ringDesc.GetTokens())
 				tokens = append(tokens, newTokens...)
 				sort.Sort(tokens)

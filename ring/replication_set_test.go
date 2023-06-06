@@ -508,9 +508,9 @@ func TestDoUntilQuorum_PartialZoneFailure(t *testing.T) {
 					cleanupTracker.assertCorrectCleanup(expectedResults, []string{})
 				}
 			} else {
-				require.True(t, zoneBCalled.Load(), "calls should be made for all instances when minimizeRequests=false")
 				cleanupTracker.collectCleanedUpInstances()
 				cleanupTracker.assertCorrectCleanup(expectedResults, []string{"zone-b-replica-1"})
+				require.True(t, zoneBCalled.Load(), "calls should be made for all instances when minimizeRequests=false")
 			}
 		})
 	}

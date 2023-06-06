@@ -775,7 +775,7 @@ func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
 	}
 }
 
-func TestDoUntilQuorum_ParentContextHandling(t *testing.T) {
+func TestDoUntilQuorum_ParentContextHandling_WithoutMinimizeRequests(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
 	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
@@ -818,6 +818,74 @@ func TestDoUntilQuorum_ParentContextHandling(t *testing.T) {
 
 	cleanupTracker.collectCleanedUpInstances()
 	cleanupTracker.assertCorrectCleanup(nil, []string{"instance-1", "instance-2", "instance-3"})
+}
+
+func TestDoUntilQuorum_ParentContextHandling_WithMinimizeRequests(t *testing.T) {
+	testCases := map[string]ReplicationSet{
+		"with zone awareness": {
+			Instances: []InstanceDesc{
+				{Addr: "instance-1", Zone: "zone-a"},
+				{Addr: "instance-2", Zone: "zone-b"},
+				{Addr: "instance-3", Zone: "zone-c"},
+			},
+			MaxUnavailableZones: 1,
+		},
+		"without zone awareness": {
+			Instances: []InstanceDesc{
+				{Addr: "instance-1"},
+				{Addr: "instance-2"},
+				{Addr: "instance-3"},
+			},
+			MaxErrors: 1,
+		},
+	}
+
+	for name, replicationSet := range testCases {
+		t.Run(name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
+			ctx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
+			cleanupTracker := newCleanupTracker(t, 2)
+
+			mtx := sync.RWMutex{}
+			calledInstances := []string{}
+
+			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+				cleanupTracker.trackInstanceContext(ctx, desc)
+
+				require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "expected instance context to inherit from context passed to DoUntilQuorum")
+
+				select {
+				case <-ctx.Done():
+					// Nothing more to do.
+				case <-time.After(time.Second):
+					require.FailNow(t, "expected instance context to be cancelled, but timed out waiting for cancellation")
+				}
+
+				mtx.Lock()
+				defer mtx.Unlock()
+				calledInstances = append(calledInstances, desc.Addr)
+
+				return desc.Addr, nil
+			}
+
+			go func() {
+				time.Sleep(100 * time.Millisecond)
+				cancel()
+			}()
+
+			results, err := DoUntilQuorum(ctx, replicationSet, true, f, cleanupTracker.cleanup)
+			require.Empty(t, results)
+			require.Equal(t, context.Canceled, err)
+
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			cleanupTracker.collectCleanedUpInstances()
+			require.Len(t, calledInstances, 2)
+			cleanupTracker.assertCorrectCleanup(nil, calledInstances)
+		})
+	}
 }
 
 type cleanupTracker struct {

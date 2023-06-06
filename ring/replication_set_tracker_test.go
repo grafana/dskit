@@ -162,6 +162,22 @@ func TestDefaultResultTracker(t *testing.T) {
 	}
 }
 
+func TestDefaultResultTracker_AwaitStart_ContextCancelled(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instances := []InstanceDesc{instance1}
+	tracker := newDefaultResultTracker(instances, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	instance := &instances[0]
+	require.Equal(t, context.Canceled, tracker.awaitStart(ctx, instance), "expected awaitStart() to abort when context cancelled")
+}
+
 func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
@@ -174,7 +190,7 @@ func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 
 	for i := range instances {
 		instance := &instances[i]
-		require.True(t, tracker.awaitStart(instance), "requests for all instances should be released immediately")
+		require.NoError(t, tracker.awaitStart(context.Background(), instance), "requests for all instances should be released immediately")
 	}
 }
 
@@ -192,21 +208,21 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 		tracker.startMinimumRequests()
 
 		mtx := sync.RWMutex{}
-		instancesAwaitReleaseResults := make([]bool, len(instances))
+		instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
 		countInstancesReleased := 0
 
 		for instanceIdx := range instances {
 			instanceIdx := instanceIdx
 			instance := &instances[instanceIdx]
 			go func() {
-				released := tracker.awaitStart(instance)
+				err := tracker.awaitStart(context.Background(), instance)
 
 				mtx.Lock()
 				defer mtx.Unlock()
-				instancesAwaitReleaseResults[instanceIdx] = released
+				instancesAwaitReleaseResults[instance] = err
 				countInstancesReleased++
 
-				if released {
+				if err == nil {
 					instanceRequestCounts[instanceIdx].Inc()
 				}
 			}()
@@ -219,7 +235,7 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 			return countInstancesReleased == 3
 		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released")
 
-		require.Equal(t, 3, trueCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
+		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
 
 		// Signal that the three released requests have completed successfully.
 		tracker.done(nil, nil)
@@ -233,7 +249,7 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 			return countInstancesReleased == 4
 		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released")
 
-		require.Equal(t, 3, trueCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
+		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
 
 		require.True(t, tracker.succeeded())
 	}
@@ -262,13 +278,13 @@ func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAl
 	for instanceIdx := range instances {
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitStart(instance)
+			err := tracker.awaitStart(context.Background(), instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
 
 			countInstancesReleased++
-			if released {
+			if err == nil {
 				countInstancesSignalledToStart++
 			}
 
@@ -321,13 +337,13 @@ func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsEqualToMaximum
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitStart(instance)
+			err := tracker.awaitStart(context.Background(), instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
 
 			countInstancesReleased++
-			if released {
+			if err == nil {
 				countInstancesSignalledToStart++
 			}
 
@@ -371,13 +387,13 @@ func TestDefaultResultTracker_StartMinimumRequests_MoreFailingRequestsThanMaximu
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitStart(instance)
+			err := tracker.awaitStart(context.Background(), instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
 
 			countInstancesReleased++
-			if released {
+			if err == nil {
 				countInstancesSignalledToStart++
 			}
 
@@ -412,17 +428,17 @@ func TestDefaultResultTracker_StartMinimumRequests_MaxErrorsIsNumberOfInstances(
 	tracker := newDefaultResultTracker(instances, 1)
 	tracker.startMinimumRequests()
 
-	requestStarted := false
+	var err error
 	released := make(chan struct{})
 
 	go func() {
-		requestStarted = tracker.awaitStart(&instances[0])
+		err = tracker.awaitStart(context.Background(), &instances[0])
 		close(released)
 	}()
 
 	select {
 	case <-released:
-		require.False(t, requestStarted, "should not start request not required for quorum")
+		require.Equal(t, errResultNotNeeded, err, "should not start request not required for quorum")
 	case <-time.After(time.Second):
 		require.Fail(t, "gave up waiting for request to be released")
 	}
@@ -639,6 +655,22 @@ func TestZoneAwareResultTracker(t *testing.T) {
 	}
 }
 
+func TestZoneAwareResultTracker_AwaitStart_ContextCancelled(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instances := []InstanceDesc{instance1}
+	tracker := newZoneAwareResultTracker(instances, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	instance := &instances[0]
+	require.Equal(t, context.Canceled, tracker.awaitStart(ctx, instance), "expected awaitStart() to abort when context cancelled")
+}
+
 func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
@@ -653,7 +685,7 @@ func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
 
 	for i := range instances {
 		instance := &instances[i]
-		require.True(t, tracker.awaitStart(instance), "requests for all instances should be released immediately")
+		require.NoError(t, tracker.awaitStart(context.Background(), instance), "requests for all instances should be released immediately")
 	}
 }
 
@@ -673,18 +705,18 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 		tracker.startMinimumRequests()
 
 		mtx := sync.RWMutex{}
-		instancesAwaitReleaseResults := make([]bool, len(instances))
+		instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
 		instancesReleased := make([]*InstanceDesc, 0, len(instances))
 
 		for instanceIdx := range instances {
 			instanceIdx := instanceIdx
 			instance := &instances[instanceIdx]
 			go func() {
-				released := tracker.awaitStart(instance)
+				released := tracker.awaitStart(context.Background(), instance)
 
 				mtx.Lock()
 				defer mtx.Unlock()
-				instancesAwaitReleaseResults[instanceIdx] = released
+				instancesAwaitReleaseResults[instance] = released
 				instancesReleased = append(instancesReleased, instance)
 			}()
 		}
@@ -696,12 +728,12 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			return len(instancesReleased) == 4
 		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released")
 
-		require.Equal(t, 4, trueCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
+		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
 		require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
 
-		zoneAReleased := instancesAwaitReleaseResults[0]
-		zoneBReleased := instancesAwaitReleaseResults[2]
-		zoneCReleased := instancesAwaitReleaseResults[4]
+		_, zoneAReleased := instancesAwaitReleaseResults[&instances[0]]
+		_, zoneBReleased := instancesAwaitReleaseResults[&instances[2]]
+		_, zoneCReleased := instancesAwaitReleaseResults[&instances[4]]
 
 		if zoneAReleased {
 			zoneRequestCounts["zone-a"]++
@@ -730,7 +762,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			return len(instancesReleased) == 6
 		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released")
 
-		require.Equal(t, 4, trueCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
+		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
 	}
 
 	// With 900 iterations, 3 zones and max 1 failing zone, we'd expect each zone to receive
@@ -755,17 +787,17 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make([]bool, len(instances))
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
 	instancesReleased := make([]*InstanceDesc, 0, len(instances))
 	for instanceIdx := range instances {
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitStart(instance)
+			released := tracker.awaitStart(context.Background(), instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instanceIdx] = released
+			instancesAwaitReleaseResults[instance] = released
 			instancesReleased = append(instancesReleased, instance)
 		}()
 	}
@@ -777,7 +809,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 		return len(instancesReleased) == 4
 	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
 
-	require.Equal(t, 4, trueCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
+	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
 	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
 
 	// Simulate one request failing and check that another zone is released.
@@ -789,7 +821,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 		return len(instancesReleased) == 6
 	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
 
-	require.Equal(t, 6, trueCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
 	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
 
 	// Simulate the remaining requests succeeding and check that the last zone is signalled not to start.
@@ -805,7 +837,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 		return len(instancesReleased) == 8
 	}, 1*time.Second, 10*time.Millisecond, "expected remaining instances to be released")
 
-	require.Equal(t, 6, trueCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
 }
 
 func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximumAllowed_MultipleFailingRequestsInSingleZone(t *testing.T) {
@@ -823,7 +855,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make([]bool, len(instances))
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
 	instancesReleased := make([]*InstanceDesc, 0, len(instances))
 	reportingSecondFailure := false
 	instanceReleasedWhileReportingSecondFailure := false
@@ -832,11 +864,11 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitStart(instance)
+			released := tracker.awaitStart(context.Background(), instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instanceIdx] = released
+			instancesAwaitReleaseResults[instance] = released
 			instancesReleased = append(instancesReleased, instance)
 
 			if reportingSecondFailure {
@@ -852,7 +884,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 		return len(instancesReleased) == 4
 	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
 
-	require.Equal(t, 4, trueCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
+	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
 	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
 
 	// Simulate one request failing and check that another zone is released.
@@ -865,7 +897,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 		return len(instancesReleased) == 6
 	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
 
-	require.Equal(t, 6, trueCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
 	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
 
 	// Simulate the other request in the same zone as the previous failing request also failing, and check that no further zones are released.
@@ -910,7 +942,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 		return len(instancesReleased) == 8
 	}, 1*time.Second, 10*time.Millisecond, "expected remaining instances to be released")
 
-	require.Equal(t, 6, trueCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
 }
 
 func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumAllowed(t *testing.T) {
@@ -928,17 +960,17 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumA
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make([]bool, len(instances))
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
 	instancesReleased := make([]*InstanceDesc, 0, len(instances))
 	for instanceIdx := range instances {
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitStart(instance)
+			released := tracker.awaitStart(context.Background(), instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instanceIdx] = released
+			instancesAwaitReleaseResults[instance] = released
 			instancesReleased = append(instancesReleased, instance)
 		}()
 	}
@@ -950,7 +982,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumA
 		return len(instancesReleased) == 4
 	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
 
-	require.Equal(t, 4, trueCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
+	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
 	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
 
 	// Simulate one request failing and check that another zone is released.
@@ -963,7 +995,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumA
 		return len(instancesReleased) == 6
 	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
 
-	require.Equal(t, 6, trueCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
 	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
 
 	// Simulate another request from another zone failing and check that another zone is released.
@@ -980,7 +1012,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumA
 		return len(instancesReleased) == 8
 	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in a second zone")
 
-	require.Equal(t, 8, trueCount(instancesAwaitReleaseResults), "expected all eight instances to be signalled to start")
+	require.Equal(t, 8, nilErrorCount(instancesAwaitReleaseResults), "expected all eight instances to be signalled to start")
 	require.Equal(t, 4, uniqueZoneCount(instancesReleased), "expected four zones to be released after two failed")
 }
 
@@ -999,17 +1031,17 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaxi
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make([]bool, len(instances))
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
 	instancesReleased := make([]*InstanceDesc, 0, len(instances))
 	for instanceIdx := range instances {
 		instanceIdx := instanceIdx
 		instance := &instances[instanceIdx]
 		go func() {
-			released := tracker.awaitStart(instance)
+			released := tracker.awaitStart(context.Background(), instance)
 
 			mtx.Lock()
 			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instanceIdx] = released
+			instancesAwaitReleaseResults[instance] = released
 			instancesReleased = append(instancesReleased, instance)
 		}()
 	}
@@ -1021,7 +1053,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaxi
 		return len(instancesReleased) == 4
 	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
 
-	require.Equal(t, 4, trueCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
+	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
 	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
 
 	// Simulate both initial zones failing and check that the remaining two zones are released.
@@ -1036,7 +1068,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaxi
 		return len(instancesReleased) == 8
 	}, 1*time.Second, 10*time.Millisecond, "expected all instances to be released after initial two zone failures")
 
-	require.Equal(t, 8, trueCount(instancesAwaitReleaseResults), "expected all instances to be signalled to start")
+	require.Equal(t, 8, nilErrorCount(instancesAwaitReleaseResults), "expected all instances to be signalled to start")
 
 	// Simulate one more zone failing.
 	tracker.done(instancesReleased[4], errors.New("something else went wrong"))
@@ -1054,7 +1086,6 @@ func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumber
 	tracker := newZoneAwareResultTracker(instances, 1)
 	tracker.startMinimumRequests()
 
-	requestsStarted := []bool{false, false}
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	done := make(chan struct{})
@@ -1063,7 +1094,8 @@ func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumber
 		i := i
 		instance := &instances[i]
 		go func() {
-			requestsStarted[i] = tracker.awaitStart(instance)
+			err := tracker.awaitStart(context.Background(), instance)
+			require.Equal(t, errResultNotNeeded, err)
 			wg.Done()
 		}()
 	}
@@ -1075,7 +1107,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumber
 
 	select {
 	case <-done:
-		require.Equal(t, []bool{false, false}, requestsStarted, "should not start request not required for quorum")
+		// Nothing more to do here.
 	case <-time.After(time.Second):
 		require.Fail(t, "gave up waiting for requests to be released")
 	}
@@ -1130,11 +1162,11 @@ func uniqueZoneCount(instances []*InstanceDesc) int {
 	return len(zones)
 }
 
-func trueCount(l []bool) int {
+func nilErrorCount(l map[*InstanceDesc]error) int {
 	count := 0
 
-	for _, v := range l {
-		if v {
+	for _, err := range l {
+		if err == nil {
 			count++
 		}
 	}

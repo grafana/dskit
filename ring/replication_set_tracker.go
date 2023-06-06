@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 
 	"go.uber.org/atomic"
@@ -40,10 +41,11 @@ type replicationSetResultTracker interface {
 	startAllRequests()
 
 	// Blocks until the request for this instance should be started.
-	// Returns true if the request should be started, false if the request is not required.
+	// Returns nil if the request should be started, or a non-nil error if the request is not required
+	// or ctx has been cancelled.
 	// Must only be called after releaseMinimumRequests or releaseAllRequests returns.
 	// Calling this method multiple times for the same instance may lead to unpredictable behaviour.
-	awaitStart(instance *InstanceDesc) bool
+	awaitStart(ctx context.Context, instance *InstanceDesc) error
 }
 
 type replicationSetContextTracker interface {
@@ -58,6 +60,8 @@ type replicationSetContextTracker interface {
 	// Cancels all contexts previously obtained with contextFor.
 	cancelAllContexts()
 }
+
+var errResultNotNeeded = errors.New("result from this instance is not needed")
 
 type defaultResultTracker struct {
 	minSucceeded     int
@@ -157,9 +161,17 @@ func (t *defaultResultTracker) startAllRequests() {
 	}
 }
 
-func (t *defaultResultTracker) awaitStart(instance *InstanceDesc) bool {
-	_, ok := <-t.instanceRelease[instance]
-	return ok
+func (t *defaultResultTracker) awaitStart(ctx context.Context, instance *InstanceDesc) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case _, ok := <-t.instanceRelease[instance]:
+		if ok {
+			return nil
+		}
+
+		return errResultNotNeeded
+	}
 }
 
 type defaultContextTracker struct {
@@ -326,9 +338,17 @@ func (t *zoneAwareResultTracker) releaseZone(zone string, shouldStart bool) {
 	close(t.zoneRelease[zone])
 }
 
-func (t *zoneAwareResultTracker) awaitStart(instance *InstanceDesc) bool {
-	<-t.zoneRelease[instance.Zone]
-	return t.zoneShouldStart[instance.Zone].Load()
+func (t *zoneAwareResultTracker) awaitStart(ctx context.Context, instance *InstanceDesc) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.zoneRelease[instance.Zone]:
+		if t.zoneShouldStart[instance.Zone].Load() {
+			return nil
+		}
+
+		return errResultNotNeeded
+	}
 }
 
 type zoneAwareContextTracker struct {

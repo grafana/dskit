@@ -2,7 +2,6 @@ package ring
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"time"
 )
@@ -90,8 +89,6 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	return results, nil
 }
 
-var errResultNotNeeded = errors.New("result from this instance is not needed and so f has not been called")
-
 // DoUntilQuorum runs function f in parallel for all replicas in r.
 //
 // If r.MaxUnavailableZones is greater than zero:
@@ -162,20 +159,20 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequest
 
 	for i := range r.Instances {
 		instance := &r.Instances[i]
-		instanceCtx := contextTracker.contextFor(instance)
+		ctx := contextTracker.contextFor(instance)
 
 		go func(desc *InstanceDesc) {
-			if !resultTracker.awaitStart(desc) {
+			if err := resultTracker.awaitStart(ctx, desc); err != nil {
 				// Post to resultsChan so that the deferred cleanup handler above eventually terminates.
 				resultsChan <- instanceResult[T]{
-					err:      errResultNotNeeded, // This will never be returned from this method.
+					err:      err,
 					instance: desc,
 				}
 
 				return
 			}
 
-			result, err := f(instanceCtx, desc)
+			result, err := f(ctx, desc)
 			resultsChan <- instanceResult[T]{
 				result:   result,
 				err:      err,

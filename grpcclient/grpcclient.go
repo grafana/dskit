@@ -58,8 +58,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Float64Var(&cfg.RateLimit, prefix+".grpc-client-rate-limit", 0., "Rate limit for gRPC client; 0 means disabled.")
 	f.IntVar(&cfg.RateLimitBurst, prefix+".grpc-client-rate-limit-burst", 0, "Rate limit burst for gRPC client.")
 	f.BoolVar(&cfg.BackoffOnRatelimits, prefix+".backoff-on-ratelimits", false, "Enable backoff and retry when we hit rate limits.")
-	f.Var(&cfg.InitialStreamWindowSize, prefix+".initial-stream-window-size", "Initial stream window size. Values less than the default are not supported and are ignored.")
-	f.Var(&cfg.InitialConnectionWindowSize, prefix+"initial-connection-window-size", "Initial connection window size. Values less than the default are not supported and are ignored.")
+	f.Var(&cfg.InitialStreamWindowSize, prefix+".initial-stream-window-size", "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.")
+	f.Var(&cfg.InitialConnectionWindowSize, prefix+"initial-connection-window-size", "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.")
 	f.BoolVar(&cfg.TLSEnabled, prefix+".tls-enabled", cfg.TLSEnabled, "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.")
 	f.DurationVar(&cfg.ConnectTimeout, prefix+".connect-timeout", 0, "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.")
 	f.DurationVar(&cfg.ConnectBackoffBaseDelay, prefix+".connect-backoff-base-delay", time.Second, "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0.")
@@ -129,10 +129,12 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	}
 
 	if cfg.InitialStreamWindowSize > defaultInitialWindowSize {
+		// We only want to explicitly set the window size if it's not the default, as setting the window size (even to the default) always disables the BDP estimator.
 		opts = append(opts, grpc.WithInitialWindowSize(int32(cfg.InitialStreamWindowSize)))
 	}
 
 	if cfg.InitialConnectionWindowSize > defaultInitialWindowSize {
+		// We only want to explicitly set the window size if it's not the default, as setting the window size (even to the default) always disables the BDP estimator.
 		opts = append(opts, grpc.WithInitialConnWindowSize(int32(cfg.InitialConnectionWindowSize)))
 	}
 

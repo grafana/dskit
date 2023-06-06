@@ -642,8 +642,6 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				})
 				tokens = tokens[0:i.cfg.NumTokens]
 				sort.Sort(tokens)
-			} else {
-				level.Debug(i.logger).Log("msg", "existing instance has the right amount of tokens")
 			}
 
 			level.Debug(i.logger).Log("msg", "switching state from LEAVING to ACTIVE")

@@ -3,10 +3,13 @@ package ring
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 type contextKey int
@@ -156,6 +159,288 @@ func TestDefaultResultTracker(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			testCase.run(t, newDefaultResultTracker(testCase.instances, testCase.maxErrors))
 		})
+	}
+}
+
+func TestDefaultResultTracker_AwaitStart_ContextCancelled(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instances := []InstanceDesc{instance1}
+	tracker := newDefaultResultTracker(instances, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	instance := &instances[0]
+	require.Equal(t, context.Canceled, tracker.awaitStart(ctx, instance), "expected awaitStart() to abort when context cancelled")
+}
+
+func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+	tracker := newDefaultResultTracker(instances, 1)
+
+	tracker.startAllRequests()
+
+	for i := range instances {
+		instance := &instances[i]
+		require.NoError(t, tracker.awaitStart(context.Background(), instance), "requests for all instances should be released immediately")
+	}
+}
+
+func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	instanceRequestCounts := make([]atomic.Uint64, len(instances))
+
+	for testIteration := 0; testIteration < 1000; testIteration++ {
+		tracker := newDefaultResultTracker(instances, 1)
+		tracker.startMinimumRequests()
+
+		mtx := sync.RWMutex{}
+		instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
+		countInstancesReleased := 0
+
+		for instanceIdx := range instances {
+			instanceIdx := instanceIdx
+			instance := &instances[instanceIdx]
+			go func() {
+				err := tracker.awaitStart(context.Background(), instance)
+
+				mtx.Lock()
+				defer mtx.Unlock()
+				instancesAwaitReleaseResults[instance] = err
+				countInstancesReleased++
+
+				if err == nil {
+					instanceRequestCounts[instanceIdx].Inc()
+				}
+			}()
+		}
+
+		require.Eventually(t, func() bool {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			return countInstancesReleased == 3
+		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released")
+
+		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
+
+		// Signal that the three released requests have completed successfully.
+		tracker.done(nil, nil)
+		tracker.done(nil, nil)
+		tracker.done(nil, nil)
+
+		require.Eventually(t, func() bool {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			return countInstancesReleased == 4
+		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released")
+
+		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
+
+		require.True(t, tracker.succeeded())
+	}
+
+	// With 1000 iterations, 4 instances and max 1 error, we'd expect each instance to receive
+	// 750 calls each (each instance has a 3-in-4 chance of being called in each iteration).
+	for _, instanceRequestCount := range instanceRequestCounts {
+		require.InDeltaf(t, 750, instanceRequestCount.Load(), 50, "expected roughly even distribution of requests across all instances, but got %v", instanceRequestCounts)
+	}
+}
+
+func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAllowed(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	tracker := newDefaultResultTracker(instances, 2)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	countInstancesReleased := 0
+	countInstancesSignalledToStart := 0
+
+	for instanceIdx := range instances {
+		instance := &instances[instanceIdx]
+		go func() {
+			err := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			countInstancesReleased++
+			if err == nil {
+				countInstancesSignalledToStart++
+			}
+
+			// If this is the first request released, mark it as failed.
+			if countInstancesReleased == 1 {
+				tracker.done(nil, errors.New("something went wrong"))
+			}
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return countInstancesReleased == 3
+	}, 1*time.Second, 10*time.Millisecond, "expected three requests to be released")
+
+	require.Equal(t, 3, countInstancesSignalledToStart, "all requests released so far should be signalled to start")
+
+	// Mark the remaining two requests as successful.
+	tracker.done(nil, nil)
+	tracker.done(nil, nil)
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return countInstancesReleased == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
+
+	require.Equal(t, 3, countInstancesSignalledToStart, "final request should not be signalled to start")
+	require.True(t, tracker.succeeded(), "overall request should succeed")
+}
+
+func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsEqualToMaximumAllowed(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	tracker := newDefaultResultTracker(instances, 2)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	countInstancesReleased := 0
+	countInstancesSignalledToStart := 0
+
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			err := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			countInstancesReleased++
+			if err == nil {
+				countInstancesSignalledToStart++
+			}
+
+			// If this is the first or second request released, mark it as failed.
+			if countInstancesReleased <= 2 {
+				tracker.done(nil, errors.New("something went wrong"))
+			}
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return countInstancesReleased == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
+
+	// Mark the remaining requests as successful.
+	tracker.done(nil, nil)
+	tracker.done(nil, nil)
+
+	require.Equal(t, 4, countInstancesSignalledToStart, "expected all four instances to be signalled to start")
+	require.True(t, tracker.succeeded(), "overall request should succeed")
+}
+
+func TestDefaultResultTracker_StartMinimumRequests_MoreFailingRequestsThanMaximumAllowed(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	tracker := newDefaultResultTracker(instances, 1)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	countInstancesReleased := 0
+	countInstancesSignalledToStart := 0
+
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			err := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			countInstancesReleased++
+			if err == nil {
+				countInstancesSignalledToStart++
+			}
+
+			// If this is the first or second request released, mark it as failed.
+			if countInstancesReleased <= 2 {
+				tracker.done(nil, errors.New("something went wrong"))
+			}
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return countInstancesReleased == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
+
+	// Mark the remaining requests as successful.
+	tracker.done(nil, nil)
+	tracker.done(nil, nil)
+
+	require.Equal(t, 4, countInstancesSignalledToStart, "expected all four instances to be signalled to start")
+	require.True(t, tracker.failed(), "overall request should fail")
+}
+
+func TestDefaultResultTracker_StartMinimumRequests_MaxErrorsIsNumberOfInstances(t *testing.T) {
+	// This scenario should never happen in the real world, but if we were to get into this situation,
+	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorum.
+
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instances := []InstanceDesc{instance1}
+	tracker := newDefaultResultTracker(instances, 1)
+	tracker.startMinimumRequests()
+
+	var err error
+	released := make(chan struct{})
+
+	go func() {
+		err = tracker.awaitStart(context.Background(), &instances[0])
+		close(released)
+	}()
+
+	select {
+	case <-released:
+		require.Equal(t, errResultNotNeeded, err, "should not start request not required for quorum")
+	case <-time.After(time.Second):
+		require.Fail(t, "gave up waiting for request to be released")
 	}
 }
 
@@ -370,6 +655,464 @@ func TestZoneAwareResultTracker(t *testing.T) {
 	}
 }
 
+func TestZoneAwareResultTracker_AwaitStart_ContextCancelled(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instances := []InstanceDesc{instance1}
+	tracker := newZoneAwareResultTracker(instances, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	instance := &instances[0]
+	require.Equal(t, context.Canceled, tracker.awaitStart(ctx, instance), "expected awaitStart() to abort when context cancelled")
+}
+
+func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-b"}
+	instance5 := InstanceDesc{Addr: "127.0.0.5", Zone: "zone-c"}
+	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6}
+	tracker := newZoneAwareResultTracker(instances, 1)
+
+	tracker.startAllRequests()
+
+	for i := range instances {
+		instance := &instances[i]
+		require.NoError(t, tracker.awaitStart(context.Background(), instance), "requests for all instances should be released immediately")
+	}
+}
+
+func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-b"}
+	instance5 := InstanceDesc{Addr: "127.0.0.5", Zone: "zone-c"}
+	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6}
+
+	zoneRequestCounts := map[string]int{"zone-a": 0, "zone-b": 0, "zone-c": 0}
+
+	for testIteration := 0; testIteration < 900; testIteration++ {
+		tracker := newZoneAwareResultTracker(instances, 1)
+		tracker.startMinimumRequests()
+
+		mtx := sync.RWMutex{}
+		instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
+		instancesReleased := make([]*InstanceDesc, 0, len(instances))
+
+		for instanceIdx := range instances {
+			instanceIdx := instanceIdx
+			instance := &instances[instanceIdx]
+			go func() {
+				released := tracker.awaitStart(context.Background(), instance)
+
+				mtx.Lock()
+				defer mtx.Unlock()
+				instancesAwaitReleaseResults[instance] = released
+				instancesReleased = append(instancesReleased, instance)
+			}()
+		}
+
+		require.Eventually(t, func() bool {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			return len(instancesReleased) == 4
+		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released")
+
+		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
+		require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
+
+		_, zoneAReleased := instancesAwaitReleaseResults[&instances[0]]
+		_, zoneBReleased := instancesAwaitReleaseResults[&instances[2]]
+		_, zoneCReleased := instancesAwaitReleaseResults[&instances[4]]
+
+		if zoneAReleased {
+			zoneRequestCounts["zone-a"]++
+			tracker.done(&instance1, nil)
+			tracker.done(&instance2, nil)
+		}
+
+		if zoneBReleased {
+			zoneRequestCounts["zone-b"]++
+			tracker.done(&instance3, nil)
+			tracker.done(&instance4, nil)
+		}
+
+		if zoneCReleased {
+			zoneRequestCounts["zone-c"]++
+			tracker.done(&instance5, nil)
+			tracker.done(&instance6, nil)
+		}
+
+		require.True(t, tracker.succeeded())
+
+		require.Eventually(t, func() bool {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			return len(instancesReleased) == 6
+		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released")
+
+		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
+	}
+
+	// With 900 iterations, 3 zones and max 1 failing zone, we'd expect each zone to receive
+	// 600 calls each (each zone has a 2-in-3 chance of being called in each iteration).
+	for _, zoneRequestCount := range zoneRequestCounts {
+		require.InDeltaf(t, 600, zoneRequestCount, 50, "expected roughly even distribution of requests across all zones, but got %v", zoneRequestCount)
+	}
+}
+
+func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximumAllowed_SingleFailingRequestInZone(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-b"}
+	instance5 := InstanceDesc{Addr: "127.0.0.5", Zone: "zone-c"}
+	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
+	instance7 := InstanceDesc{Addr: "127.0.0.7", Zone: "zone-d"}
+	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
+
+	tracker := newZoneAwareResultTracker(instances, 2)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
+	instancesReleased := make([]*InstanceDesc, 0, len(instances))
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			released := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+			instancesAwaitReleaseResults[instance] = released
+			instancesReleased = append(instancesReleased, instance)
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return len(instancesReleased) == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
+
+	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
+	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
+
+	// Simulate one request failing and check that another zone is released.
+	tracker.done(instancesReleased[0], errors.New("something went wrong"))
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		return len(instancesReleased) == 6
+	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
+
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
+	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
+
+	// Simulate the remaining requests succeeding and check that the last zone is signalled not to start.
+	for _, i := range instancesReleased[1:] {
+		tracker.done(i, nil)
+	}
+
+	require.True(t, tracker.succeeded())
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		return len(instancesReleased) == 8
+	}, 1*time.Second, 10*time.Millisecond, "expected remaining instances to be released")
+
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
+}
+
+func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximumAllowed_MultipleFailingRequestsInSingleZone(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-b"}
+	instance5 := InstanceDesc{Addr: "127.0.0.5", Zone: "zone-c"}
+	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
+	instance7 := InstanceDesc{Addr: "127.0.0.7", Zone: "zone-d"}
+	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
+
+	tracker := newZoneAwareResultTracker(instances, 2)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
+	instancesReleased := make([]*InstanceDesc, 0, len(instances))
+	reportingSecondFailure := false
+	instanceReleasedWhileReportingSecondFailure := false
+
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			released := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+			instancesAwaitReleaseResults[instance] = released
+			instancesReleased = append(instancesReleased, instance)
+
+			if reportingSecondFailure {
+				instanceReleasedWhileReportingSecondFailure = true
+			}
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return len(instancesReleased) == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
+
+	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
+	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
+
+	// Simulate one request failing and check that another zone is released.
+	failingInstance := instancesReleased[0]
+	tracker.done(failingInstance, errors.New("something went wrong"))
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		return len(instancesReleased) == 6
+	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
+
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
+	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
+
+	// Simulate the other request in the same zone as the previous failing request also failing, and check that no further zones are released.
+	var otherInstanceInFailingZone *InstanceDesc
+
+	for _, i := range instancesReleased[1:] {
+		if i.Zone == failingInstance.Zone {
+			otherInstanceInFailingZone = i
+			break
+		}
+	}
+
+	mtx.Lock()
+	reportingSecondFailure = true
+	mtx.Unlock()
+	tracker.done(otherInstanceInFailingZone, errors.New("something else went wrong"))
+
+	// Wait a little to make sure no more requests were released.
+	require.Never(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return instanceReleasedWhileReportingSecondFailure
+	}, 500*time.Millisecond, 10*time.Millisecond, "expected no instances to be released after reporting a second failure in the same zone")
+
+	mtx.Lock()
+	reportingSecondFailure = false
+	mtx.Unlock()
+
+	// Simulate the remaining requests succeeding and check that the last zone is signalled not to start.
+	for _, i := range instancesReleased {
+		if i != failingInstance && i != otherInstanceInFailingZone {
+			tracker.done(i, nil)
+		}
+	}
+
+	require.True(t, tracker.succeeded())
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		return len(instancesReleased) == 8
+	}, 1*time.Second, 10*time.Millisecond, "expected remaining instances to be released")
+
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
+}
+
+func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumAllowed(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-b"}
+	instance5 := InstanceDesc{Addr: "127.0.0.5", Zone: "zone-c"}
+	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
+	instance7 := InstanceDesc{Addr: "127.0.0.7", Zone: "zone-d"}
+	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
+
+	tracker := newZoneAwareResultTracker(instances, 2)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
+	instancesReleased := make([]*InstanceDesc, 0, len(instances))
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			released := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+			instancesAwaitReleaseResults[instance] = released
+			instancesReleased = append(instancesReleased, instance)
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return len(instancesReleased) == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
+
+	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
+	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
+
+	// Simulate one request failing and check that another zone is released.
+	firstFailingInstance := instancesReleased[0]
+	tracker.done(firstFailingInstance, errors.New("something went wrong"))
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		return len(instancesReleased) == 6
+	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
+
+	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
+	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
+
+	// Simulate another request from another zone failing and check that another zone is released.
+	for _, i := range instancesReleased {
+		if i.Zone != firstFailingInstance.Zone {
+			tracker.done(i, errors.New("something else went wrong"))
+			break
+		}
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		return len(instancesReleased) == 8
+	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in a second zone")
+
+	require.Equal(t, 8, nilErrorCount(instancesAwaitReleaseResults), "expected all eight instances to be signalled to start")
+	require.Equal(t, 4, uniqueZoneCount(instancesReleased), "expected four zones to be released after two failed")
+}
+
+func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaximumAllowed(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-b"}
+	instance5 := InstanceDesc{Addr: "127.0.0.5", Zone: "zone-c"}
+	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
+	instance7 := InstanceDesc{Addr: "127.0.0.7", Zone: "zone-d"}
+	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
+
+	tracker := newZoneAwareResultTracker(instances, 2)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
+	instancesReleased := make([]*InstanceDesc, 0, len(instances))
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			released := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+			instancesAwaitReleaseResults[instance] = released
+			instancesReleased = append(instancesReleased, instance)
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return len(instancesReleased) == 4
+	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
+
+	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
+	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
+
+	// Simulate both initial zones failing and check that the remaining two zones are released.
+	for _, i := range instancesReleased {
+		tracker.done(i, errors.New("something went wrong"))
+	}
+
+	require.Eventually(t, func() bool {
+		mtx.RLock()
+		defer mtx.RUnlock()
+
+		return len(instancesReleased) == 8
+	}, 1*time.Second, 10*time.Millisecond, "expected all instances to be released after initial two zone failures")
+
+	require.Equal(t, 8, nilErrorCount(instancesAwaitReleaseResults), "expected all instances to be signalled to start")
+
+	// Simulate one more zone failing.
+	tracker.done(instancesReleased[4], errors.New("something else went wrong"))
+
+	require.True(t, tracker.failed())
+}
+
+func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumberOfZones(t *testing.T) {
+	// This scenario should never happen in the real world, but if we were to get into this situation,
+	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorum.
+
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instances := []InstanceDesc{instance1, instance2}
+	tracker := newZoneAwareResultTracker(instances, 1)
+	tracker.startMinimumRequests()
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	done := make(chan struct{})
+
+	for i := range instances {
+		i := i
+		instance := &instances[i]
+		go func() {
+			err := tracker.awaitStart(context.Background(), instance)
+			require.Equal(t, errResultNotNeeded, err)
+			wg.Done()
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Nothing more to do here.
+	case <-time.After(time.Second):
+		require.Fail(t, "gave up waiting for requests to be released")
+	}
+}
+
 func TestZoneAwareContextTracker(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
@@ -407,4 +1150,26 @@ func TestZoneAwareContextTracker(t *testing.T) {
 	for _, ctx := range []context.Context{instance1Ctx, instance2Ctx, instance3Ctx, instance4Ctx, instance5Ctx, instance6Ctx} {
 		require.Equal(t, context.Canceled, ctx.Err(), "context for instance should be cancelled after cancelling all contexts")
 	}
+}
+
+func uniqueZoneCount(instances []*InstanceDesc) int {
+	zones := map[string]struct{}{}
+
+	for _, i := range instances {
+		zones[i.Zone] = struct{}{}
+	}
+
+	return len(zones)
+}
+
+func nilErrorCount(l map[*InstanceDesc]error) int {
+	count := 0
+
+	for _, err := range l {
+		if err == nil {
+			count++
+		}
+	}
+
+	return count
 }

@@ -642,17 +642,13 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				sort.Sort(tokens)
 			}
 
-			level.Debug(i.logger).Log("msg", "switching state from LEAVING to ACTIVE")
-			i.setState(ACTIVE)
-
-			i.setTokens(tokens)
-			instanceDesc.State = i.GetState()
+			instanceDesc.State = ACTIVE
 			instanceDesc.Tokens = tokens
-		} else {
-			// We exist in the ring and not in leaving state, so assume the ring is right and copy tokens & state out of there.
-			i.setState(instanceDesc.State)
-			i.setTokens(tokens)
 		}
+
+		// Set the local state based on the updated instance.
+		i.setState(instanceDesc.State)
+		i.setTokens(tokens)
 
 		// We're taking over this entry, update instanceDesc with our values
 		instanceDesc.Addr = i.Addr

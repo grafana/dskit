@@ -598,6 +598,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		// Guard against potential bug in token shuffling
 		_, exists := seen[tok]
 		require.False(t, exists, "tokens are not unique")
+		seen[tok] = struct{}{}
 
 		found := false
 		for _, ot := range origTokens {
@@ -607,8 +608,6 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 			}
 		}
 		require.True(t, found, "old tokens were not re-used")
-
-		seen[tok] = struct{}{}
 	}
 
 	assert.True(t, sort.SliceIsSorted(ingDesc.Tokens, func(i, j int) bool {

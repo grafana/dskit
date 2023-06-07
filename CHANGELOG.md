@@ -132,3 +132,4 @@
 * [BUGFIX] runtimeconfig: Fix `runtime_config_last_reload_successful` metric after recovery from bad config with exact same config hash as before. #262
 * [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #282
 * [BUGFIX] Ring: prevent iterating the whole ring when using `ExcludedZones`. #285
+* [BUGFIX] grpcclient: fix missing `.` in flag name for initial connection window size flag. #314

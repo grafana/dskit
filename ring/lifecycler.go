@@ -754,7 +754,6 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) er
 		// At this point, we should not have any tokens, and we should be in PENDING state.
 		myTokens, takenTokens := ringDesc.TokensFor(i.ID)
 		if len(myTokens) > 0 {
-			// TODO: Should we log this case as an error, as we don't treat it as one?
 			level.Error(i.logger).Log("msg", "tokens already exist for this instance - wasn't expecting any!", "num_tokens", len(myTokens), "ring", i.RingName)
 		}
 

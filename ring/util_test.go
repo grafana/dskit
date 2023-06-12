@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -414,4 +415,43 @@ func TestWaitInstanceState_ExitsAfterActualStateEqualsState(t *testing.T) {
 
 	assert.Nil(t, err)
 	ring.AssertNumberOfCalls(t, "GetInstanceState", 1)
+}
+
+func TestGetTokenDistance(t *testing.T) {
+	tests := map[string]struct {
+		from     uint32
+		to       uint32
+		expected int
+	}{
+		"whole ring between token and itself": {
+			from:     10,
+			to:       10,
+			expected: math.MaxUint32 + 1,
+		},
+		"10 tokens from 0 to 10": {
+			from:     0,
+			to:       10,
+			expected: 10,
+		},
+		"10 tokens from math.MaxUint32 - 10 to math.MaxUint32": {
+			from:     math.MaxUint32 - 10,
+			to:       math.MaxUint32,
+			expected: 10,
+		},
+		"1 token from math.MaxUint32 and 0": {
+			from:     math.MaxUint32,
+			to:       0,
+			expected: 1,
+		},
+		"21 tokens from math.MaxUint32 - 10 to 10": {
+			from:     math.MaxUint32 - 10,
+			to:       10,
+			expected: 21,
+		},
+	}
+
+	for _, testData := range tests {
+		distance := getTokenDistance(testData.from, testData.to)
+		require.Equal(t, testData.expected, distance)
+	}
 }

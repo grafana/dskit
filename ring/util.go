@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	"math"
 	"math/rand"
 	"sort"
 	"time"
@@ -167,4 +168,14 @@ func searchToken(tokens []uint32, key uint32) int {
 		i = 0
 	}
 	return i
+}
+
+// getTokenDistance returns the distance between the given tokens from and to.
+// The distance between a token and itself is the whole ring, i.e., math.MaxUint32 + 1.
+func getTokenDistance(from, to uint32) int {
+	if from < to {
+		return int(to - from)
+	}
+	// the trailing +1 is needed to ensure that token 0 is counted
+	return math.MaxUint32 - int(from) + int(to) + 1
 }

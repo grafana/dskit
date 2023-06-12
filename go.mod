@@ -14,6 +14,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.0
 	github.com/golang/snappy v0.0.4
+	github.com/google/go-cmp v0.5.6
 	github.com/grafana/gomemcache v0.0.0-20230316202710-a081dae0aba9
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2

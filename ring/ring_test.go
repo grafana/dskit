@@ -3080,11 +3080,11 @@ func TestMergeTokenGroups(t *testing.T) {
 func TestCountTokens(t *testing.T) {
 	tests := map[string]struct {
 		ring     *Desc
-		expected map[string]uint32
+		expected map[string]int
 	}{
 		"empty ring": {
 			ring:     &Desc{},
-			expected: map[string]uint32{},
+			expected: map[string]int{},
 		},
 		"1 instance with 1 token in the ring": {
 			ring: &Desc{
@@ -3092,8 +3092,8 @@ func TestCountTokens(t *testing.T) {
 					"ingester-1": {Tokens: []uint32{1000000}},
 				},
 			},
-			expected: map[string]uint32{
-				"ingester-1": math.MaxUint32,
+			expected: map[string]int{
+				"ingester-1": math.MaxUint32 + 1,
 			},
 		},
 		"1 instance with multiple tokens in the ring": {
@@ -3102,8 +3102,8 @@ func TestCountTokens(t *testing.T) {
 					"ingester-1": {Tokens: []uint32{1000000, 2000000, 3000000}},
 				},
 			},
-			expected: map[string]uint32{
-				"ingester-1": math.MaxUint32,
+			expected: map[string]int{
+				"ingester-1": math.MaxUint32 + 1,
 			},
 		},
 		"multiple instances with multiple tokens in the ring": {
@@ -3114,8 +3114,8 @@ func TestCountTokens(t *testing.T) {
 					"ingester-3": {Tokens: []uint32{5000000, 9000000}},
 				},
 			},
-			expected: map[string]uint32{
-				"ingester-1": 3000000 + (math.MaxUint32 - 9000000),
+			expected: map[string]int{
+				"ingester-1": 3000000 + (math.MaxUint32 + 1 - 9000000),
 				"ingester-2": 4000000,
 				"ingester-3": 2000000,
 			},

@@ -3,7 +3,7 @@ package ring
 import "testing"
 
 func TestRandomTokenGenerator_GenerateTokens(t *testing.T) {
-	tokenGenerator := newRandomTokenGenerator()
+	tokenGenerator := NewRandomTokenGenerator()
 	tokens := tokenGenerator.GenerateTokens(1000000, nil)
 
 	dups := make(map[uint32]int)
@@ -18,7 +18,7 @@ func TestRandomTokenGenerator_GenerateTokens(t *testing.T) {
 }
 
 func TestRandomTokenGenerator_IgnoresOldTokens(t *testing.T) {
-	tokenGenerator := newRandomTokenGenerator()
+	tokenGenerator := NewRandomTokenGenerator()
 	first := tokenGenerator.GenerateTokens(1000000, nil)
 	second := tokenGenerator.GenerateTokens(1000000, first)
 
@@ -37,5 +37,5 @@ func TestRandomTokenGenerator_IgnoresOldTokens(t *testing.T) {
 
 // GenerateTokens generates numTokens unique, random and sorted tokens for testing purposes.
 func GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
-	return newRandomTokenGenerator().GenerateTokens(tokensCount, takenTokens)
+	return NewRandomTokenGenerator().GenerateTokens(tokensCount, takenTokens)
 }

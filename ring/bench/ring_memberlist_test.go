@@ -47,9 +47,9 @@ func encodeMessage(b *testing.B, key string, d *ring.Desc) []byte {
 }
 
 func generateUniqueTokens(ingester, numTokens int) []uint32 {
-	// Generate unique tokens without using ring.GenerateTokens in order to not
+	// Generate unique tokens without using ring.generateRandomTokens in order to not
 	// rely on random number generation. Also, because generating unique tokens
-	// with GenerateTokens can be quite expensive, it pollutes the CPU profile
+	// with generateRandomTokens can be quite expensive, it pollutes the CPU profile
 	// to the point of being useless.
 	tokens := make([]uint32, numTokens)
 	for i := range tokens {

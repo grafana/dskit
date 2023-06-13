@@ -482,7 +482,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig.NumTokens = numTokens
 
 	// Simulate ingester with 64 tokens left the ring in LEAVING state
-	origTokens := generateRandomTokens(64, nil)
+	origTokens := GenerateTokens(64, nil)
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
 		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
@@ -558,7 +558,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig.NumTokens = numTokens
 
 	// Simulate ingester with 128 tokens left the ring in LEAVING state
-	origTokens := generateRandomTokens(128, nil)
+	origTokens := GenerateTokens(128, nil)
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
 		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
@@ -952,7 +952,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	origTokens := generateRandomTokens(100, nil)
+	origTokens := GenerateTokens(100, nil)
 
 	const id = "test"
 	registeredAt := time.Now().Add(-1 * time.Hour)

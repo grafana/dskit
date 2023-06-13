@@ -30,12 +30,12 @@ func TestRandomTokenGenerator_IgnoresOldTokens(t *testing.T) {
 
 	for _, v := range second {
 		if dups[v] {
-			t.Fatal("generateRandomTokens returned old token")
+			t.Fatal("GenerateTokens returned old token")
 		}
 	}
 }
 
-// generateRandomTokens generates numTokens unique, random and sorted tokens for testing purposes.
-func generateRandomTokens(numTokens int, takenTokens []uint32) Tokens {
-	return newRandomTokenGenerator().GenerateTokens(numTokens, takenTokens)
+// GenerateTokens generates numTokens unique, random and sorted tokens for testing purposes.
+func GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
+	return newRandomTokenGenerator().GenerateTokens(tokensCount, takenTokens)
 }

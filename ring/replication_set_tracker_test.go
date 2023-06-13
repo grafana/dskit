@@ -88,7 +88,7 @@ func TestDefaultResultTracker(t *testing.T) {
 				assert.False(t, tracker.failed())
 
 				assert.True(t, tracker.shouldIncludeResultFrom(&instance1))
-				// Instance 2 failed, and so shouldIncludeResultFrom won't be called by DoUntilQuorum.
+				// Instance 2 failed, and so shouldIncludeResultFrom won't be called by DoUntilQuorumWithoutSuccessfulContextCancellation.
 				assert.True(t, tracker.shouldIncludeResultFrom(&instance3))
 				assert.True(t, tracker.shouldIncludeResultFrom(&instance4))
 			},
@@ -421,7 +421,7 @@ func TestDefaultResultTracker_StartMinimumRequests_MoreFailingRequestsThanMaximu
 
 func TestDefaultResultTracker_StartMinimumRequests_MaxErrorsIsNumberOfInstances(t *testing.T) {
 	// This scenario should never happen in the real world, but if we were to get into this situation,
-	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorum.
+	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorumWithoutSuccessfulContextCancellation.
 
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instances := []InstanceDesc{instance1}
@@ -1078,7 +1078,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaxi
 
 func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumberOfZones(t *testing.T) {
 	// This scenario should never happen in the real world, but if we were to get into this situation,
-	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorum.
+	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorumWithoutSuccessfulContextCancellation.
 
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}

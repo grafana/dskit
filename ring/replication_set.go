@@ -153,8 +153,9 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequest
 // to establish a set of streams that will be used after DoUntilQuorumWithoutSuccessfulContextCancellation returns.
 //
 // It is the caller's responsibility to ensure that either of the following are eventually true:
-// - ctx is cancelled, or
-// - for all invocations of f that do not return an error, the corresponding context.CancelFunc is called.
+//   - ctx is cancelled, or
+//   - the corresponding context.CancelFunc is called for all invocations of f whose results are returned by
+//     DoUntilQuorumWithoutSuccessfulContextCancellation
 //
 // Failing to do this may result in a memory leak.
 func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc, context.CancelFunc) (T, error), cleanupFunc func(T)) ([]T, error) {

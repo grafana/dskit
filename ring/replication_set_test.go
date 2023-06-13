@@ -398,8 +398,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 					mtx := sync.RWMutex{}
 					successfulInstances := []*InstanceDesc{}
 
-					wrappedF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-						cleanupTracker.trackCall(ctx, desc)
+					wrappedF := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+						cleanupTracker.trackCall(ctx, desc, cancel)
 						res, err := testCase.f(ctx, desc)
 
 						if err == nil {
@@ -458,8 +458,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZo
 			mtx := sync.RWMutex{}
 			expectedCleanup := []string{}
 
-			wrappedF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			wrappedF := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				if strings.HasSuffix(desc.Addr, "replica-1") {
 					return "", errors.New("error from a replica-1 instance")
@@ -507,8 +507,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t 
 			cleanupTracker := newCleanupTracker(t, 1)
 			zoneBReplica1CleanupRequired := atomic.NewBool(false)
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				if desc.Addr == "zone-b-replica-1" {
 					zoneBReplica1CleanupRequired.Store(true)
@@ -556,7 +556,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_RunsCallsInParallel(t
 			wg := sync.WaitGroup{}
 			wg.Add(len(replicationSet.Instances))
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+			f := func(ctx context.Context, desc *InstanceDesc, _ context.CancelFunc) (string, error) {
 				wg.Done()
 
 				// Wait for the other calls to f to start. If this test hangs here, then the calls are not running in parallel.
@@ -597,8 +597,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultS
 			mtx := sync.RWMutex{}
 			instancesCalled := []*InstanceDesc{}
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				mtx.Lock()
 				defer mtx.Unlock()
@@ -690,8 +690,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultS
 			mtx := sync.RWMutex{}
 			instancesCalled := []string{}
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 				mtx.Lock()
 				defer mtx.Unlock()
 				instancesCalled = append(instancesCalled, desc.Addr)
@@ -772,8 +772,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_DoesNotWaitForUnneces
 			mtx := sync.RWMutex{}
 			instancesCalled := []string{}
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				mtx.Lock()
 				instancesCalled = append(instancesCalled, desc.Addr)
@@ -819,7 +819,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_DoesNotWaitForUnneces
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling_WithoutMinimizeRequests(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
-	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
+	parentCtx, parentCancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
 
 	replicationSet := ReplicationSet{
 		Instances: []InstanceDesc{
@@ -831,15 +831,15 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 
 	cleanupTracker := newCleanupTracker(t, 3)
 
-	f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-		cleanupTracker.trackCall(ctx, desc)
+	f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+		cleanupTracker.trackCall(ctx, desc, cancel)
 
 		require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "expected instance context to inherit from context passed to DoUntilQuorumWithoutSuccessfulContextCancellation")
 
 		if desc.Addr == "instance-1" {
 			go func() {
 				time.Sleep(100 * time.Millisecond)
-				cancel()
+				parentCancel()
 			}()
 		} else {
 			select {
@@ -853,7 +853,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 		return desc.Addr, nil
 	}
 
-	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, false, f, cleanupTracker.cleanup)
+	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(parentCtx, replicationSet, false, f, cleanupTracker.cleanup)
 	require.Empty(t, results)
 	require.Equal(t, context.Canceled, err)
 
@@ -893,8 +893,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 			wg := sync.WaitGroup{}
 			wg.Add(2)
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "expected instance context to inherit from context passed to DoUntilQuorumWithoutSuccessfulContextCancellation")
 				mtx.Lock()
@@ -933,6 +933,89 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 	}
 }
 
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandling(t *testing.T) {
+	testCases := map[string]struct {
+		replicationSet      ReplicationSet
+		expectedResultCount int
+	}{
+		"with zone awareness": {
+			replicationSet: ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: "instance-1", Zone: "zone-a"},
+					{Addr: "instance-2", Zone: "zone-a"},
+					{Addr: "instance-3", Zone: "zone-b"},
+					{Addr: "instance-4", Zone: "zone-b"},
+					{Addr: "instance-5", Zone: "zone-c"},
+					{Addr: "instance-6", Zone: "zone-c"},
+				},
+				MaxUnavailableZones: 1,
+			},
+			expectedResultCount: 4,
+		},
+		"without zone awareness": {
+			replicationSet: ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: "instance-1"},
+					{Addr: "instance-2"},
+					{Addr: "instance-3"},
+				},
+				MaxErrors: 1,
+			},
+			expectedResultCount: 2,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
+			ctx := context.Background()
+			cleanupTracker := newCleanupTracker(t, 0)
+
+			mtx := sync.RWMutex{}
+			calledInstances := []string{}
+
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
+
+				mtx.Lock()
+				defer mtx.Unlock()
+				calledInstances = append(calledInstances, desc.Addr)
+
+				return desc.Addr, nil
+			}
+
+			instancesCalled, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
+			require.NoError(t, err)
+			require.Len(t, instancesCalled, testCase.expectedResultCount)
+
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			cleanupTracker.collectCleanedUpInstances()
+			cleanupTracker.assertCorrectCleanup(instancesCalled, nil)
+
+			// Use the cancel function provided to the first instance and verify that no other instance contexts are cancelled.
+			instanceToCancel := instancesCalled[0]
+			cancel, ok := cleanupTracker.instanceCancelFuncs.Load(instanceToCancel)
+			require.True(t, ok)
+			cancel.(context.CancelFunc)()
+
+			for _, instanceAddr := range instancesCalled {
+				v, ok := cleanupTracker.instanceContexts.Load(instanceAddr)
+				require.True(t, ok)
+				ctx := v.(context.Context)
+
+				if instanceAddr == instanceToCancel {
+					require.Equal(t, context.Canceled, ctx.Err())
+				} else {
+					require.NoError(t, ctx.Err(), "expected context for other instance to not be cancelled")
+				}
+			}
+		})
+	}
+}
+
 type cleanupTracker struct {
 	t                           *testing.T
 	maximumExpectedCleanupCalls int
@@ -940,6 +1023,7 @@ type cleanupTracker struct {
 	cleanupChan                 chan string
 	cleanedUpInstances          []string
 	instanceContexts            sync.Map
+	instanceCancelFuncs         sync.Map
 }
 
 func newCleanupTracker(t *testing.T, expectedMaximumCleanupCalls int) *cleanupTracker {
@@ -951,8 +1035,9 @@ func newCleanupTracker(t *testing.T, expectedMaximumCleanupCalls int) *cleanupTr
 	}
 }
 
-func (c *cleanupTracker) trackCall(ctx context.Context, instance *InstanceDesc) {
+func (c *cleanupTracker) trackCall(ctx context.Context, instance *InstanceDesc, cancel context.CancelFunc) {
 	c.instanceContexts.Store(instance.Addr, ctx)
+	c.instanceCancelFuncs.Store(instance.Addr, cancel)
 }
 
 func (c *cleanupTracker) cleanup(res string) {
@@ -985,7 +1070,6 @@ func (c *cleanupTracker) collectCleanedUpInstancesWithExpectedCount(expected int
 func (c *cleanupTracker) assertCorrectCleanup(successfulInstances []string, failedInstances []string) {
 	for _, instance := range successfulInstances {
 		require.NotContainsf(c.t, failedInstances, instance, "invalid test case: instance %v is in list of both successful and failed instances", instance)
-
 		require.NotContainsf(c.t, c.cleanedUpInstances, instance, "result for instance %v was returned, but it was cleaned up", instance)
 
 		instanceContext, ok := c.instanceContexts.Load(instance)

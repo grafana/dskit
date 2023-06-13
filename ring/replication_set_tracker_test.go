@@ -454,20 +454,27 @@ func TestDefaultContextTracker(t *testing.T) {
 	parentCtx := context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent")
 	tracker := newDefaultContextTracker(parentCtx, instances)
 
-	instance1Ctx := tracker.contextFor(&instance1)
-	instance2Ctx := tracker.contextFor(&instance2)
-	instance3Ctx := tracker.contextFor(&instance3)
-	instance4Ctx := tracker.contextFor(&instance4)
+	instance1Ctx, _ := tracker.contextFor(&instance1)
+	instance2Ctx, instance2Cancel := tracker.contextFor(&instance2)
+	instance3Ctx, _ := tracker.contextFor(&instance3)
+	instance4Ctx, _ := tracker.contextFor(&instance4)
 
 	for _, ctx := range []context.Context{instance1Ctx, instance2Ctx, instance3Ctx, instance4Ctx} {
 		require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "context for instance should inherit from provided parent context")
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled")
 	}
 
-	// Cancel a context for one instance and check that the others are not cancelled.
+	// Cancel a context for one instance using cancelContextFor and check that the others are not cancelled.
 	tracker.cancelContextFor(&instance1)
 	require.Equal(t, context.Canceled, instance1Ctx.Err(), "instance context should be cancelled")
 	for _, ctx := range []context.Context{instance2Ctx, instance3Ctx, instance4Ctx} {
+		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
+	}
+
+	// Cancel another context using the cancellation function provided and check that the others are not cancelled.
+	instance2Cancel()
+	require.Equal(t, context.Canceled, instance2Ctx.Err(), "instance context should be cancelled")
+	for _, ctx := range []context.Context{instance3Ctx, instance4Ctx} {
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
 	}
 
@@ -1125,24 +1132,30 @@ func TestZoneAwareContextTracker(t *testing.T) {
 	parentCtx := context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent")
 	tracker := newZoneAwareContextTracker(parentCtx, instances)
 
-	instance1Ctx := tracker.contextFor(&instance1)
-	instance2Ctx := tracker.contextFor(&instance2)
-	instance3Ctx := tracker.contextFor(&instance3)
-	instance4Ctx := tracker.contextFor(&instance4)
-	instance5Ctx := tracker.contextFor(&instance5)
-	instance6Ctx := tracker.contextFor(&instance6)
+	instance1Ctx, _ := tracker.contextFor(&instances[0])
+	instance2Ctx, _ := tracker.contextFor(&instances[1])
+	instance3Ctx, instance3Cancel := tracker.contextFor(&instances[2])
+	instance4Ctx, _ := tracker.contextFor(&instances[3])
+	instance5Ctx, _ := tracker.contextFor(&instances[4])
+	instance6Ctx, _ := tracker.contextFor(&instances[5])
 
 	for _, ctx := range []context.Context{instance1Ctx, instance2Ctx, instance3Ctx, instance4Ctx, instance5Ctx, instance6Ctx} {
 		require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "context for instance should inherit from provided parent context")
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled")
 	}
 
-	// Cancel a context for one instance and check that the other context in its zone is cancelled, but others are
+	// Cancel a context for one instance using cancelContextFor and check that the other context in its zone is cancelled, but others are
 	// unaffected.
 	tracker.cancelContextFor(&instance1)
 	require.Equal(t, context.Canceled, instance1Ctx.Err(), "instance context should be cancelled")
 	require.Equal(t, context.Canceled, instance2Ctx.Err(), "context for instance in same zone as cancelled instance should also be cancelled")
 	for _, ctx := range []context.Context{instance3Ctx, instance4Ctx, instance5Ctx, instance6Ctx} {
+		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
+	}
+
+	// Cancel a context for one instance using the cancellation function provided and check that the other context in its zone is NOT cancelled.
+	instance3Cancel()
+	for _, ctx := range []context.Context{instance4Ctx, instance5Ctx, instance6Ctx} {
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
 	}
 

@@ -128,10 +128,9 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 // to that invocation of f will not be cancelled by DoUntilQuorumWithoutSuccessfulContextCancellation, but the context.Context is a child of ctx
 // passed to DoUntilQuorumWithoutSuccessfulContextCancellation and so will be cancelled if ctx is cancelled.
 //
-// Important: to ensure that no context.Context is leaked, you must ensure that ctx is cancelled after DoUntilQuorumWithoutSuccessfulContextCancellation
-// returns. (Until ctx is cancelled, ctx will retain a reference to each uncancelled child context.Context for each
-// returned invocation of f.)
-func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
+// Important: to ensure that no context.Context is leaked, you must ensure that either ctx is cancelled or the context.CancelFunc passed to each
+// invocation of f is called after DoUntilQuorumWithoutSuccessfulContextCancellation returns.
+func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc, context.CancelFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
 	resultsRemaining := len(r.Instances)
 
@@ -166,7 +165,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 
 	for i := range r.Instances {
 		instance := &r.Instances[i]
-		ctx := contextTracker.contextFor(instance)
+		ctx, ctxCancel := contextTracker.contextFor(instance)
 
 		go func(desc *InstanceDesc) {
 			if err := resultTracker.awaitStart(ctx, desc); err != nil {
@@ -179,7 +178,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 				return
 			}
 
-			result, err := f(ctx, desc)
+			result, err := f(ctx, desc, ctxCancel)
 			resultsChan <- instanceResult[T]{
 				result:   result,
 				err:      err,

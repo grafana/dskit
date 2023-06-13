@@ -20,8 +20,8 @@ func newRandomTokenGenerator() *randomTokenGenerator {
 
 // GenerateTokens generates unique tokensCount random tokens, none of which clash
 // with takenTokens. Generated tokens are sorted.
-func (t *randomTokenGenerator) GenerateTokens(numTokens int, takenTokens []uint32) Tokens {
-	if numTokens <= 0 {
+func (t *randomTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
+	if tokensCount <= 0 {
 		return []uint32{}
 	}
 
@@ -32,8 +32,8 @@ func (t *randomTokenGenerator) GenerateTokens(numTokens int, takenTokens []uint3
 		used[v] = true
 	}
 
-	tokens := make([]uint32, 0, numTokens)
-	for i := 0; i < numTokens; {
+	tokens := make([]uint32, 0, tokensCount)
+	for i := 0; i < tokensCount; {
 		candidate := r.Uint32()
 		if used[candidate] {
 			continue
@@ -49,9 +49,4 @@ func (t *randomTokenGenerator) GenerateTokens(numTokens int, takenTokens []uint3
 	})
 
 	return tokens
-}
-
-// generateRandomTokens generates numTokens unique, random and sorted tokens for testing purposes.
-func generateRandomTokens(numTokens int, takenTokens []uint32) Tokens {
-	return newRandomTokenGenerator().GenerateTokens(numTokens, takenTokens)
 }

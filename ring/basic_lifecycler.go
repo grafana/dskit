@@ -147,6 +147,10 @@ func (l *BasicLifecycler) GetTokens() Tokens {
 	return l.currInstanceDesc.GetTokens()
 }
 
+func (l *BasicLifecycler) GetTokenGenerator() TokenGenerator {
+	return l.tokenGenerator
+}
+
 // GetRegisteredAt returns the timestamp when the instance has been registered to the ring
 // or a zero value if the lifecycler hasn't been started yet or was already registered and its
 // timestamp is unknown.

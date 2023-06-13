@@ -44,6 +44,7 @@
 * [CHANGE] Cache: Switch Memcached backend to use `github.com/grafana/gomemcache` repository instead of `github.com/bradfitz/gomemcache`. #248
 * [CHANGE] Multierror: Implement `Is(error) bool`. This allows to use `multierror.MultiError` with `errors.Is()`. `MultiError` will in turn call `errors.Is()` on every error value. #254
 * [CHANGE] Cache: Remove the `context.Context` argument from the `Cache.Store` method and rename the method to `Cache.StoreAsync`. #273
+* [CHANGE] ring: make it harder to leak contexts when using `DoUntilQuorum`. #319
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.

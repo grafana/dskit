@@ -248,7 +248,7 @@ func TestReplicationSet_Do(t *testing.T) {
 	}
 }
 
-func TestDoUntilQuorum(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 	successfulF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
 		return desc.Addr, nil
 	}
@@ -398,8 +398,8 @@ func TestDoUntilQuorum(t *testing.T) {
 					mtx := sync.RWMutex{}
 					successfulInstances := []*InstanceDesc{}
 
-					wrappedF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-						cleanupTracker.trackCall(ctx, desc)
+					wrappedF := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+						cleanupTracker.trackCall(ctx, desc, cancel)
 						res, err := testCase.f(ctx, desc)
 
 						if err == nil {
@@ -411,12 +411,12 @@ func TestDoUntilQuorum(t *testing.T) {
 						return res, err
 					}
 
-					actualResults, actualError := DoUntilQuorum(ctx, testCase.replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
+					actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
 					require.ElementsMatch(t, testCase.expectedResults, actualResults)
 					require.Equal(t, testCase.expectedError, actualError)
 
 					// The list of instances expected to be cleaned up is not deterministic, even with minimizeRequests=false: there's a
-					// chance we'll reach quorum before DoUntilQuorum has a chance to call f for each instance.
+					// chance we'll reach quorum before DoUntilQuorumWithoutSuccessfulContextCancellation has a chance to call f for each instance.
 					var expectedCleanup []string
 
 					mtx.Lock()
@@ -436,7 +436,7 @@ func TestDoUntilQuorum(t *testing.T) {
 	}
 }
 
-func TestDoUntilQuorum_MultipleUnavailableZones(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZones(t *testing.T) {
 	replicationSet := ReplicationSet{
 		Instances: []InstanceDesc{
 			{Addr: "zone-a-replica-1", Zone: "zone-a"},
@@ -458,8 +458,8 @@ func TestDoUntilQuorum_MultipleUnavailableZones(t *testing.T) {
 			mtx := sync.RWMutex{}
 			expectedCleanup := []string{}
 
-			wrappedF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			wrappedF := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				if strings.HasSuffix(desc.Addr, "replica-1") {
 					return "", errors.New("error from a replica-1 instance")
@@ -472,7 +472,7 @@ func TestDoUntilQuorum_MultipleUnavailableZones(t *testing.T) {
 				return desc.Addr, nil
 			}
 
-			actualResults, actualError := DoUntilQuorum(ctx, replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
+			actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
 			require.Empty(t, actualResults)
 			require.EqualError(t, actualError, "error from a replica-1 instance")
 
@@ -484,7 +484,7 @@ func TestDoUntilQuorum_MultipleUnavailableZones(t *testing.T) {
 	}
 }
 
-func TestDoUntilQuorum_PartialZoneFailure(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t *testing.T) {
 	replicationSet := ReplicationSet{
 		Instances: []InstanceDesc{
 			{Addr: "zone-a-replica-1", Zone: "zone-a"},
@@ -507,8 +507,8 @@ func TestDoUntilQuorum_PartialZoneFailure(t *testing.T) {
 			cleanupTracker := newCleanupTracker(t, 1)
 			zoneBReplica1CleanupRequired := atomic.NewBool(false)
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				if desc.Addr == "zone-b-replica-1" {
 					zoneBReplica1CleanupRequired.Store(true)
@@ -521,7 +521,7 @@ func TestDoUntilQuorum_PartialZoneFailure(t *testing.T) {
 				return desc.Addr, nil
 			}
 
-			actualResults, err := DoUntilQuorum(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
 			require.ElementsMatch(t, expectedResults, actualResults)
 			require.NoError(t, err)
 
@@ -536,7 +536,7 @@ func TestDoUntilQuorum_PartialZoneFailure(t *testing.T) {
 	}
 }
 
-func TestDoUntilQuorum_RunsCallsInParallel(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_RunsCallsInParallel(t *testing.T) {
 	for _, minimizeRequests := range []bool{true, false} {
 		t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
 			defer goleak.VerifyNone(t)
@@ -556,7 +556,7 @@ func TestDoUntilQuorum_RunsCallsInParallel(t *testing.T) {
 			wg := sync.WaitGroup{}
 			wg.Add(len(replicationSet.Instances))
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+			f := func(ctx context.Context, desc *InstanceDesc, _ context.CancelFunc) (string, error) {
 				wg.Done()
 
 				// Wait for the other calls to f to start. If this test hangs here, then the calls are not running in parallel.
@@ -566,14 +566,14 @@ func TestDoUntilQuorum_RunsCallsInParallel(t *testing.T) {
 			}
 
 			cleanupFunc := func(_ string) {}
-			results, err := DoUntilQuorum(ctx, replicationSet, false, f, cleanupFunc)
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, false, f, cleanupFunc)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"replica-1", "replica-2"}, results)
 		})
 	}
 }
 
-func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *testing.T) {
 	instances := []InstanceDesc{
 		{Addr: "zone-a-replica-1", Zone: "zone-a"},
 		{Addr: "zone-a-replica-2", Zone: "zone-a"},
@@ -597,8 +597,8 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *test
 			mtx := sync.RWMutex{}
 			instancesCalled := []*InstanceDesc{}
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				mtx.Lock()
 				defer mtx.Unlock()
@@ -607,7 +607,7 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *test
 				return desc.Addr, nil
 			}
 
-			results, err := DoUntilQuorum(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, results, 4)
 
@@ -643,7 +643,7 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *test
 			}
 
 			// The list of instances expected to be cleaned up is not deterministic, even with minimizeRequests=false: there's a
-			// chance we'll reach quorum before DoUntilQuorum has a chance to call f for each instance in the unused zone.
+			// chance we'll reach quorum before DoUntilQuorumWithoutSuccessfulContextCancellation has a chance to call f for each instance in the unused zone.
 			var expectedCleanup []string
 
 			for _, i := range instancesCalled {
@@ -658,7 +658,7 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *test
 	}
 }
 
-func TestDoUntilQuorum_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
 	instances := []InstanceDesc{
@@ -690,15 +690,15 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *t
 			mtx := sync.RWMutex{}
 			instancesCalled := []string{}
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 				mtx.Lock()
 				defer mtx.Unlock()
 				instancesCalled = append(instancesCalled, desc.Addr)
 				return desc.Addr, nil
 			}
 
-			results, err := DoUntilQuorum(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, results, 5, "should only have results from instances required to meet quorum requirement")
 
@@ -711,7 +711,7 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *t
 				require.Len(t, instancesCalled, 5, "should only call function for instances required to meet quorum requirement")
 			} else {
 				// The list of instances expected to be cleaned up is not deterministic, even with minimizeRequests=false: there's a
-				// chance we'll reach quorum before DoUntilQuorum has a chance to call f for the unused instance.
+				// chance we'll reach quorum before DoUntilQuorumWithoutSuccessfulContextCancellation has a chance to call f for the unused instance.
 				for _, i := range instancesCalled {
 					if !slices.Contains(results, i) {
 						expectedCleanup = append(expectedCleanup, i)
@@ -726,7 +726,7 @@ func TestDoUntilQuorum_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *t
 	}
 }
 
-func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
 	testCases := map[string]struct {
 		replicationSet  ReplicationSet
 		expectedResults []string
@@ -772,8 +772,8 @@ func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
 			mtx := sync.RWMutex{}
 			instancesCalled := []string{}
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				mtx.Lock()
 				instancesCalled = append(instancesCalled, desc.Addr)
@@ -784,21 +784,21 @@ func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
 					case <-waitChan:
 						// Nothing more to do.
 					case <-time.After(time.Second):
-						require.FailNow(t, "DoUntilQuorum waited for unnecessary slow response")
+						require.FailNow(t, "DoUntilQuorumWithoutSuccessfulContextCancellation waited for unnecessary slow response")
 					}
 				}
 
 				return desc.Addr, nil
 			}
 
-			actualResults, err := DoUntilQuorum(ctx, testCase.replicationSet, false, f, cleanupTracker.cleanup)
+			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, false, f, cleanupTracker.cleanup)
 			require.ElementsMatch(t, testCase.expectedResults, actualResults)
 			require.NoError(t, err)
 
 			close(waitChan)
 
 			// The list of instances expected to be cleaned up is not deterministic, even with minimizeRequests=false: there's a
-			// chance we'll reach quorum before DoUntilQuorum has a chance to call f for the unused instance.
+			// chance we'll reach quorum before DoUntilQuorumWithoutSuccessfulContextCancellation has a chance to call f for the unused instance.
 			mtx.RLock()
 			defer mtx.RUnlock()
 
@@ -816,10 +816,10 @@ func TestDoUntilQuorum_DoesNotWaitForUnnecessarySlowResponses(t *testing.T) {
 	}
 }
 
-func TestDoUntilQuorum_ParentContextHandling_WithoutMinimizeRequests(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling_WithoutMinimizeRequests(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
-	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
+	parentCtx, parentCancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
 
 	replicationSet := ReplicationSet{
 		Instances: []InstanceDesc{
@@ -831,15 +831,15 @@ func TestDoUntilQuorum_ParentContextHandling_WithoutMinimizeRequests(t *testing.
 
 	cleanupTracker := newCleanupTracker(t, 3)
 
-	f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-		cleanupTracker.trackCall(ctx, desc)
+	f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+		cleanupTracker.trackCall(ctx, desc, cancel)
 
-		require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "expected instance context to inherit from context passed to DoUntilQuorum")
+		require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "expected instance context to inherit from context passed to DoUntilQuorumWithoutSuccessfulContextCancellation")
 
 		if desc.Addr == "instance-1" {
 			go func() {
 				time.Sleep(100 * time.Millisecond)
-				cancel()
+				parentCancel()
 			}()
 		} else {
 			select {
@@ -853,7 +853,7 @@ func TestDoUntilQuorum_ParentContextHandling_WithoutMinimizeRequests(t *testing.
 		return desc.Addr, nil
 	}
 
-	results, err := DoUntilQuorum(ctx, replicationSet, false, f, cleanupTracker.cleanup)
+	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(parentCtx, replicationSet, false, f, cleanupTracker.cleanup)
 	require.Empty(t, results)
 	require.Equal(t, context.Canceled, err)
 
@@ -861,7 +861,7 @@ func TestDoUntilQuorum_ParentContextHandling_WithoutMinimizeRequests(t *testing.
 	cleanupTracker.assertCorrectCleanup(nil, []string{"instance-1", "instance-2", "instance-3"})
 }
 
-func TestDoUntilQuorum_ParentContextHandling_WithMinimizeRequests(t *testing.T) {
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling_WithMinimizeRequests(t *testing.T) {
 	testCases := map[string]ReplicationSet{
 		"with zone awareness": {
 			Instances: []InstanceDesc{
@@ -888,18 +888,13 @@ func TestDoUntilQuorum_ParentContextHandling_WithMinimizeRequests(t *testing.T) 
 			ctx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
 			cleanupTracker := newCleanupTracker(t, 2)
 
-			mtx := sync.RWMutex{}
-			calledInstances := []string{}
 			wg := sync.WaitGroup{}
 			wg.Add(2)
 
-			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc)
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
 
-				require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "expected instance context to inherit from context passed to DoUntilQuorum")
-				mtx.Lock()
-				calledInstances = append(calledInstances, desc.Addr)
-				mtx.Unlock()
+				require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "expected instance context to inherit from context passed to DoUntilQuorumWithoutSuccessfulContextCancellation")
 
 				wg.Done()
 
@@ -919,13 +914,11 @@ func TestDoUntilQuorum_ParentContextHandling_WithMinimizeRequests(t *testing.T) 
 				cancel()
 			}()
 
-			results, err := DoUntilQuorum(ctx, replicationSet, true, f, cleanupTracker.cleanup)
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, true, f, cleanupTracker.cleanup)
 			require.Empty(t, results)
 			require.Equal(t, context.Canceled, err)
 
-			mtx.RLock()
-			defer mtx.RUnlock()
-
+			calledInstances := cleanupTracker.calledInstances()
 			require.Len(t, calledInstances, 2)
 			cleanupTracker.collectCleanedUpInstances()
 			cleanupTracker.assertCorrectCleanup(nil, calledInstances)
@@ -933,13 +926,146 @@ func TestDoUntilQuorum_ParentContextHandling_WithMinimizeRequests(t *testing.T) 
 	}
 }
 
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandling(t *testing.T) {
+	testCases := map[string]struct {
+		replicationSet      ReplicationSet
+		expectedResultCount int
+	}{
+		"with zone awareness": {
+			replicationSet: ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: "instance-1", Zone: "zone-a"},
+					{Addr: "instance-2", Zone: "zone-a"},
+					{Addr: "instance-3", Zone: "zone-b"},
+					{Addr: "instance-4", Zone: "zone-b"},
+					{Addr: "instance-5", Zone: "zone-c"},
+					{Addr: "instance-6", Zone: "zone-c"},
+				},
+				MaxUnavailableZones: 1,
+			},
+			expectedResultCount: 4,
+		},
+		"without zone awareness": {
+			replicationSet: ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: "instance-1"},
+					{Addr: "instance-2"},
+					{Addr: "instance-3"},
+				},
+				MaxErrors: 1,
+			},
+			expectedResultCount: 2,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
+			ctx := context.Background()
+			cleanupTracker := newCleanupTracker(t, 0)
+
+			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, cancel)
+
+				return desc.Addr, nil
+			}
+
+			instancesCalled, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
+			require.NoError(t, err)
+			require.Len(t, instancesCalled, testCase.expectedResultCount)
+
+			cleanupTracker.collectCleanedUpInstances()
+			cleanupTracker.assertCorrectCleanup(instancesCalled, nil)
+
+			// Use the cancel function provided to the first instance and verify that no other instance contexts are cancelled.
+			instanceToCancel := instancesCalled[0]
+			cancel, ok := cleanupTracker.instanceCancelFuncs.Load(instanceToCancel)
+			require.True(t, ok)
+			cancel.(context.CancelFunc)()
+
+			for _, instanceAddr := range instancesCalled {
+				v, ok := cleanupTracker.instanceContexts.Load(instanceAddr)
+				require.True(t, ok)
+				ctx := v.(context.Context)
+
+				if instanceAddr == instanceToCancel {
+					require.Equal(t, context.Canceled, ctx.Err())
+				} else {
+					require.NoError(t, ctx.Err(), "expected context for other instance to not be cancelled")
+				}
+			}
+		})
+	}
+}
+
+func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
+	testCases := map[string]struct {
+		replicationSet      ReplicationSet
+		expectedResultCount int
+	}{
+		"with zone awareness": {
+			replicationSet: ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: "instance-1", Zone: "zone-a"},
+					{Addr: "instance-2", Zone: "zone-a"},
+					{Addr: "instance-3", Zone: "zone-b"},
+					{Addr: "instance-4", Zone: "zone-b"},
+					{Addr: "instance-5", Zone: "zone-c"},
+					{Addr: "instance-6", Zone: "zone-c"},
+				},
+				MaxUnavailableZones: 1,
+			},
+			expectedResultCount: 4,
+		},
+		"without zone awareness": {
+			replicationSet: ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: "instance-1"},
+					{Addr: "instance-2"},
+					{Addr: "instance-3"},
+				},
+				MaxErrors: 1,
+			},
+			expectedResultCount: 2,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
+			ctx := context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent")
+			cleanupTracker := newCleanupTracker(t, 0)
+			cleanupTracker.successfulResultsShouldHaveCancelledContexts = true
+
+			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, nil)
+				require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey))
+
+				return desc.Addr, nil
+			}
+
+			instancesCalled, err := DoUntilQuorum(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
+			require.NoError(t, err)
+			require.Len(t, instancesCalled, testCase.expectedResultCount)
+
+			cleanupTracker.collectCleanedUpInstances()
+			cleanupTracker.assertCorrectCleanup(instancesCalled, nil) // This will check that all request contexts are cancelled.
+		})
+	}
+}
+
 type cleanupTracker struct {
-	t                           *testing.T
-	maximumExpectedCleanupCalls int
-	receivedCleanupCalls        *atomic.Uint64
-	cleanupChan                 chan string
-	cleanedUpInstances          []string
-	instanceContexts            sync.Map
+	t                                            *testing.T
+	maximumExpectedCleanupCalls                  int
+	successfulResultsShouldHaveCancelledContexts bool
+
+	receivedCleanupCalls *atomic.Uint64
+	cleanupChan          chan string
+	cleanedUpInstances   []string
+	instanceContexts     sync.Map
+	instanceCancelFuncs  sync.Map
 }
 
 func newCleanupTracker(t *testing.T, expectedMaximumCleanupCalls int) *cleanupTracker {
@@ -951,8 +1077,21 @@ func newCleanupTracker(t *testing.T, expectedMaximumCleanupCalls int) *cleanupTr
 	}
 }
 
-func (c *cleanupTracker) trackCall(ctx context.Context, instance *InstanceDesc) {
+func (c *cleanupTracker) trackCall(ctx context.Context, instance *InstanceDesc, cancel context.CancelFunc) {
 	c.instanceContexts.Store(instance.Addr, ctx)
+	c.instanceCancelFuncs.Store(instance.Addr, cancel)
+}
+
+func (c *cleanupTracker) calledInstances() []string {
+	instances := []string{}
+
+	c.instanceContexts.Range(func(key, value any) bool {
+		instances = append(instances, key.(string))
+
+		return true
+	})
+
+	return instances
 }
 
 func (c *cleanupTracker) cleanup(res string) {
@@ -985,12 +1124,16 @@ func (c *cleanupTracker) collectCleanedUpInstancesWithExpectedCount(expected int
 func (c *cleanupTracker) assertCorrectCleanup(successfulInstances []string, failedInstances []string) {
 	for _, instance := range successfulInstances {
 		require.NotContainsf(c.t, failedInstances, instance, "invalid test case: instance %v is in list of both successful and failed instances", instance)
-
 		require.NotContainsf(c.t, c.cleanedUpInstances, instance, "result for instance %v was returned, but it was cleaned up", instance)
 
 		instanceContext, ok := c.instanceContexts.Load(instance)
 		require.True(c.t, ok)
-		require.NoErrorf(c.t, instanceContext.(context.Context).Err(), "all returned results should not have their context cancelled, but context for %v is cancelled", instance)
+
+		if c.successfulResultsShouldHaveCancelledContexts {
+			require.Equalf(c.t, context.Canceled, instanceContext.(context.Context).Err(), "all returned results should have their context cancelled, but context for %v is not cancelled", instance)
+		} else {
+			require.NoErrorf(c.t, instanceContext.(context.Context).Err(), "all returned results should not have their context cancelled, but context for %v is cancelled", instance)
+		}
 	}
 
 	for _, instance := range failedInstances {

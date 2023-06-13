@@ -888,8 +888,6 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 			ctx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
 			cleanupTracker := newCleanupTracker(t, 2)
 
-			mtx := sync.RWMutex{}
-			calledInstances := []string{}
 			wg := sync.WaitGroup{}
 			wg.Add(2)
 
@@ -897,9 +895,6 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 				cleanupTracker.trackCall(ctx, desc, cancel)
 
 				require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey), "expected instance context to inherit from context passed to DoUntilQuorumWithoutSuccessfulContextCancellation")
-				mtx.Lock()
-				calledInstances = append(calledInstances, desc.Addr)
-				mtx.Unlock()
 
 				wg.Done()
 
@@ -923,9 +918,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 			require.Empty(t, results)
 			require.Equal(t, context.Canceled, err)
 
-			mtx.RLock()
-			defer mtx.RUnlock()
-
+			calledInstances := cleanupTracker.calledInstances()
 			require.Len(t, calledInstances, 2)
 			cleanupTracker.collectCleanedUpInstances()
 			cleanupTracker.assertCorrectCleanup(nil, calledInstances)
@@ -972,15 +965,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandli
 			ctx := context.Background()
 			cleanupTracker := newCleanupTracker(t, 0)
 
-			mtx := sync.RWMutex{}
-			calledInstances := []string{}
-
 			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
 				cleanupTracker.trackCall(ctx, desc, cancel)
-
-				mtx.Lock()
-				defer mtx.Unlock()
-				calledInstances = append(calledInstances, desc.Addr)
 
 				return desc.Addr, nil
 			}
@@ -988,9 +974,6 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandli
 			instancesCalled, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, instancesCalled, testCase.expectedResultCount)
-
-			mtx.RLock()
-			defer mtx.RUnlock()
 
 			cleanupTracker.collectCleanedUpInstances()
 			cleanupTracker.assertCorrectCleanup(instancesCalled, nil)
@@ -1038,6 +1021,18 @@ func newCleanupTracker(t *testing.T, expectedMaximumCleanupCalls int) *cleanupTr
 func (c *cleanupTracker) trackCall(ctx context.Context, instance *InstanceDesc, cancel context.CancelFunc) {
 	c.instanceContexts.Store(instance.Addr, ctx)
 	c.instanceCancelFuncs.Store(instance.Addr, cancel)
+}
+
+func (c *cleanupTracker) calledInstances() []string {
+	instances := []string{}
+
+	c.instanceContexts.Range(func(key, value any) bool {
+		instances = append(instances, key.(string))
+
+		return true
+	})
+
+	return instances
 }
 
 func (c *cleanupTracker) cleanup(res string) {

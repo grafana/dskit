@@ -9,7 +9,7 @@ import (
 type TokenGenerator interface {
 	// GenerateTokens generates unique tokensCount tokens, none of which clash
 	// with the given takenTokens. Generated tokens are sorted.
-	GenerateTokens(tokensCount int, takenTokens []uint32) Tokens
+	GenerateTokens(tokensCount int, takenTokens []uint32) (Tokens, error)
 }
 
 type RandomTokenGenerator struct{}
@@ -20,9 +20,9 @@ func NewRandomTokenGenerator() *RandomTokenGenerator {
 
 // GenerateTokens generates unique tokensCount random tokens, none of which clash
 // with takenTokens. Generated tokens are sorted.
-func (t *RandomTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
+func (t *RandomTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) (Tokens, error) {
 	if tokensCount <= 0 {
-		return []uint32{}
+		return []uint32{}, nil
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -48,5 +48,5 @@ func (t *RandomTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uin
 		return tokens[i] < tokens[j]
 	})
 
-	return tokens
+	return tokens, nil
 }

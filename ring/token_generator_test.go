@@ -4,7 +4,7 @@ import "testing"
 
 func TestRandomTokenGenerator_GenerateTokens(t *testing.T) {
 	tokenGenerator := NewRandomTokenGenerator()
-	tokens := tokenGenerator.GenerateTokens(1000000, nil)
+	tokens, _ := tokenGenerator.GenerateTokens(1000000, nil)
 
 	dups := make(map[uint32]int)
 
@@ -19,8 +19,8 @@ func TestRandomTokenGenerator_GenerateTokens(t *testing.T) {
 
 func TestRandomTokenGenerator_IgnoresOldTokens(t *testing.T) {
 	tokenGenerator := NewRandomTokenGenerator()
-	first := tokenGenerator.GenerateTokens(1000000, nil)
-	second := tokenGenerator.GenerateTokens(1000000, first)
+	first, _ := tokenGenerator.GenerateTokens(1000000, nil)
+	second, _ := tokenGenerator.GenerateTokens(1000000, first)
 
 	dups := make(map[uint32]bool)
 
@@ -37,5 +37,9 @@ func TestRandomTokenGenerator_IgnoresOldTokens(t *testing.T) {
 
 // GenerateTokens generates numTokens unique, random and sorted tokens for testing purposes.
 func GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
-	return NewRandomTokenGenerator().GenerateTokens(tokensCount, takenTokens)
+	tokens, err := NewRandomTokenGenerator().GenerateTokens(tokensCount, takenTokens)
+	if err != nil {
+		return nil
+	}
+	return tokens
 }

@@ -999,14 +999,73 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandli
 	}
 }
 
+func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
+	testCases := map[string]struct {
+		replicationSet      ReplicationSet
+		expectedResultCount int
+	}{
+		"with zone awareness": {
+			replicationSet: ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: "instance-1", Zone: "zone-a"},
+					{Addr: "instance-2", Zone: "zone-a"},
+					{Addr: "instance-3", Zone: "zone-b"},
+					{Addr: "instance-4", Zone: "zone-b"},
+					{Addr: "instance-5", Zone: "zone-c"},
+					{Addr: "instance-6", Zone: "zone-c"},
+				},
+				MaxUnavailableZones: 1,
+			},
+			expectedResultCount: 4,
+		},
+		"without zone awareness": {
+			replicationSet: ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: "instance-1"},
+					{Addr: "instance-2"},
+					{Addr: "instance-3"},
+				},
+				MaxErrors: 1,
+			},
+			expectedResultCount: 2,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
+			ctx := context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent")
+			cleanupTracker := newCleanupTracker(t, 0)
+			cleanupTracker.successfulResultsShouldHaveCancelledContexts = true
+
+			f := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+				cleanupTracker.trackCall(ctx, desc, nil)
+				require.Equal(t, "this-is-the-value-from-the-parent", ctx.Value(testContextKey))
+
+				return desc.Addr, nil
+			}
+
+			instancesCalled, err := DoUntilQuorum(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
+			require.NoError(t, err)
+			require.Len(t, instancesCalled, testCase.expectedResultCount)
+
+			cleanupTracker.collectCleanedUpInstances()
+			cleanupTracker.assertCorrectCleanup(instancesCalled, nil) // This will check that all request contexts are cancelled.
+		})
+	}
+}
+
 type cleanupTracker struct {
-	t                           *testing.T
-	maximumExpectedCleanupCalls int
-	receivedCleanupCalls        *atomic.Uint64
-	cleanupChan                 chan string
-	cleanedUpInstances          []string
-	instanceContexts            sync.Map
-	instanceCancelFuncs         sync.Map
+	t                                            *testing.T
+	maximumExpectedCleanupCalls                  int
+	successfulResultsShouldHaveCancelledContexts bool
+
+	receivedCleanupCalls *atomic.Uint64
+	cleanupChan          chan string
+	cleanedUpInstances   []string
+	instanceContexts     sync.Map
+	instanceCancelFuncs  sync.Map
 }
 
 func newCleanupTracker(t *testing.T, expectedMaximumCleanupCalls int) *cleanupTracker {
@@ -1069,7 +1128,12 @@ func (c *cleanupTracker) assertCorrectCleanup(successfulInstances []string, fail
 
 		instanceContext, ok := c.instanceContexts.Load(instance)
 		require.True(c.t, ok)
-		require.NoErrorf(c.t, instanceContext.(context.Context).Err(), "all returned results should not have their context cancelled, but context for %v is cancelled", instance)
+
+		if c.successfulResultsShouldHaveCancelledContexts {
+			require.Equalf(c.t, context.Canceled, instanceContext.(context.Context).Err(), "all returned results should have their context cancelled, but context for %v is not cancelled", instance)
+		} else {
+			require.NoErrorf(c.t, instanceContext.(context.Context).Err(), "all returned results should not have their context cancelled, but context for %v is cancelled", instance)
+		}
 	}
 
 	for _, instance := range failedInstances {

@@ -27,13 +27,13 @@ var (
 	errorZoneSetTooBig = func(zonesCount, tokensPerInstance int) error {
 		return fmt.Errorf("number of zones %d is too big: with that number of zones it is impossible to place %d tokens per instance", zonesCount, tokensPerInstance)
 	}
-	errorMultipleOfZonesCount = func(zonesCount, optimalTokenOwnership uint32, token *ringToken) error {
+	errorMultipleOfZonesCount = func(zonesCount, optimalTokenOwnership uint32, token ringToken) error {
 		return fmt.Errorf("calculation of a new token between %d and %d with optimal token ownership %d was impossible: optimal token ownership must be a positive multiple of number of zones %d", token.prevToken, token.token, optimalTokenOwnership, zonesCount)
 	}
-	errorLowerAndUpperBoundModulo = func(zonesCount, optimalTokenOwnership uint32, token *ringToken) error {
+	errorLowerAndUpperBoundModulo = func(zonesCount, optimalTokenOwnership uint32, token ringToken) error {
 		return fmt.Errorf("calculation of a new token between %d and %d with optimal token ownership %d was impossible: lower and upper bounds must be congruent modulo number of zones %d", token.prevToken, token.token, optimalTokenOwnership, zonesCount)
 	}
-	errorDistanceBetweenTokensNotBigEnough = func(optimalTokenOwnership, ownership int, token *ringToken) error {
+	errorDistanceBetweenTokensNotBigEnough = func(optimalTokenOwnership, ownership int, token ringToken) error {
 		return fmt.Errorf("calculation of a new token between %d and %d with optimal token ownership %d was impossible: distance between lower and upper bound %d is not big enough", token.prevToken, token.token, optimalTokenOwnership, ownership)
 	}
 	errorNotAllTokenCreated = func(instanceID int, zone string, tokensPerInstance int) error {
@@ -136,7 +136,7 @@ func (t *SpreadMinimizingTokenGenerator) generateFirstInstanceTokens(zoneID int,
 // - ringToken.token % zonesCount == ringToken.prevToken % zonesCount
 // - optimalTokenOwnership % zonesCount == 0,
 // where zonesCount is the number of zones in the ring. The caller of this function must ensure that these assumptions hold.
-func (t *SpreadMinimizingTokenGenerator) calculateNewToken(token *ringToken, optimalTokenOwnership uint32) (uint32, error) {
+func (t *SpreadMinimizingTokenGenerator) calculateNewToken(token ringToken, optimalTokenOwnership uint32) (uint32, error) {
 	zonesCount := uint32(len(t.zones))
 	if optimalTokenOwnership < zonesCount || optimalTokenOwnership%zonesCount != 0 {
 		return 0, errorMultipleOfZonesCount(zonesCount, optimalTokenOwnership, token)
@@ -182,10 +182,10 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
 	// to the ids of instances, while priority queues represent the tokens
 	// of the corresponding instance, ordered from highest to lowest ownership.
-	tokensQueues := make([]*ownershipPriorityQueue[*ringToken], t.instanceID)
+	tokensQueues := make([]ownershipPriorityQueue[ringToken], t.instanceID)
 
 	// Create and initialize priority queue of tokens for the first instance
-	tokensQueue := newPriorityQueue[*ringToken](tokensCount)
+	tokensQueue := newPriorityQueue[ringToken](tokensCount)
 	prev := len(firstInstanceTokens) - 1
 	firstInstanceOwnership := 0.0
 	for tk, token := range firstInstanceTokens {
@@ -194,14 +194,13 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 		tokensQueue.Add(newRingTokenOwnershipInfo(token, firstInstanceTokens[prev]))
 		prev = tk
 	}
-	heap.Init(tokensQueue)
+	heap.Init(&tokensQueue)
 	tokensQueues[0] = tokensQueue
 
 	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
-	instanceQueue := newPriorityQueue[*ringInstance](t.instanceID)
+	instanceQueue := newPriorityQueue[ringInstance](t.instanceID)
 	instanceQueue.Add(newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
-	heap.Init(instanceQueue)
-	defer t.cleanUp(instanceQueue, tokensQueues)
+	heap.Init(&instanceQueue)
 
 	for i := 1; i <= t.instanceID; i++ {
 		optimalInstanceOwnership := float64(totalTokensCount) / float64(i+1)
@@ -209,7 +208,7 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 		addedTokens := 0
 		tokens := make(Tokens, 0, tokensCount)
 		// currInstanceTokenQueue is the priority queue of tokens of newInstance
-		currInstanceTokenQueue := newPriorityQueue[*ringToken](tokensCount)
+		currInstanceTokenQueue := newPriorityQueue[ringToken](tokensCount)
 		for addedTokens < tokensCount {
 			optimalTokenOwnership := t.getOptimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(tokensCount-addedTokens))
 			highestOwnershipInstance := instanceQueue.Peek()
@@ -217,15 +216,15 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "token", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
 				return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
 			}
-			tokensQueue := tokensQueues[highestOwnershipInstance.ringItem.GetID()]
+			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
 			highestOwnershipToken := tokensQueue.Peek()
 			if highestOwnershipToken.ownership < float64(optimalTokenOwnership) {
 				// token with the highest ownership of the instance with the highest ownership
 				// could not satisfy the request, hence we pass to the next instance.
-				heap.Pop(instanceQueue)
+				heap.Pop(&instanceQueue)
 				continue
 			}
-			token := highestOwnershipToken.ringItem
+			token := highestOwnershipToken.item
 			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
 			if err != nil {
 				return nil, err
@@ -237,24 +236,24 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			oldTokenOwnership := highestOwnershipToken.ownership
 			newTokenOwnership := float64(getTokenDistance(newToken, token.token))
 			currInstanceOwnership += oldTokenOwnership - newTokenOwnership
-			tokensQueue.Update(highestOwnershipToken, func(tokenOwnershipInfo *ownershipInfo[*ringToken]) {
-				rT := tokenOwnershipInfo.ringItem
-				rT.prevToken = newToken
-				tokenOwnershipInfo.ownership = newTokenOwnership
-			})
-			instanceQueue.Update(highestOwnershipInstance, func(instanceOwnershipInfo *ownershipInfo[*ringInstance]) {
-				instanceOwnershipInfo.ownership = highestOwnershipInstance.ownership - oldTokenOwnership + newTokenOwnership
-			})
+
+			highestOwnershipToken.item.prevToken = newToken
+			highestOwnershipToken.ownership = newTokenOwnership
+			heap.Fix(&tokensQueue, 0)
+
+			highestOwnershipInstance.ownership = highestOwnershipInstance.ownership - oldTokenOwnership + newTokenOwnership
+			heap.Fix(&instanceQueue, 0)
+
 			addedTokens++
 		}
 		if i == t.instanceID {
 			return t.sortAndCheckUniquenessIfNeeded(tokens, takenTokens, i)
 		}
-		heap.Init(currInstanceTokenQueue)
+		heap.Init(&currInstanceTokenQueue)
 		tokensQueues[i] = currInstanceTokenQueue
 
 		// add the current instance with the calculated ownership currInstanceOwnership to instanceQueue
-		heap.Push(instanceQueue, newRingInstanceOwnershipInfo(i, currInstanceOwnership))
+		heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(i, currInstanceOwnership))
 	}
 
 	return nil, nil
@@ -274,7 +273,7 @@ func (t *SpreadMinimizingTokenGenerator) sortAndCheckUniquenessIfNeeded(tokens T
 	return tokens, nil
 }
 
-func (t *SpreadMinimizingTokenGenerator) cleanUp(instanceQueue *ownershipPriorityQueue[*ringInstance], tokensQueues []*ownershipPriorityQueue[*ringToken]) {
+func (t *SpreadMinimizingTokenGenerator) cleanUp(instanceQueue *ownershipPriorityQueue[ringInstance], tokensQueues []*ownershipPriorityQueue[ringToken]) {
 	instanceQueue.Clear()
 	for _, tokenQueue := range tokensQueues {
 		if tokenQueue != nil {

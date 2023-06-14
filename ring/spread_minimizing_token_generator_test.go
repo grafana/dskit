@@ -163,73 +163,73 @@ func TestSpreadMinimizingTokenGenerator_GetOptimalTokenOwnership(t *testing.T) {
 
 func TestSpreadMinimizingTokenGenerator_CalculateNewToken(t *testing.T) {
 	tests := map[string]struct {
-		ringToken             *ringToken
+		ringToken             ringToken
 		optimalTokenOwnership uint32
 		expectedNewToken      uint32
 		expectedError         error
 	}{
 		"zoneID 0, prevToken < token": {
-			ringToken:             &ringToken{90, 30},
+			ringToken:             ringToken{90, 30},
 			optimalTokenOwnership: 30,
 			expectedNewToken:      60,
 		},
 		"zoneID 1, prevToken < token": {
-			ringToken:             &ringToken{91, 31},
+			ringToken:             ringToken{91, 31},
 			optimalTokenOwnership: 30,
 			expectedNewToken:      61,
 		},
 		"zoneID 2, prevToken < token": {
-			ringToken:             &ringToken{92, 32},
+			ringToken:             ringToken{92, 32},
 			optimalTokenOwnership: 30,
 			expectedNewToken:      62,
 		},
 		"zoneID 0, prevToken > token": {
-			ringToken:             &ringToken{420, 4294967142},
+			ringToken:             ringToken{420, 4294967142},
 			optimalTokenOwnership: 210,
 			expectedNewToken:      60,
 		},
 		"zoneID 1, prevToken > token": {
-			ringToken:             &ringToken{421, 4294967143},
+			ringToken:             ringToken{421, 4294967143},
 			optimalTokenOwnership: 210,
 			expectedNewToken:      61,
 		},
 		"zoneID 2, prevToken > token": {
-			ringToken:             &ringToken{422, 4294967144},
+			ringToken:             ringToken{422, 4294967144},
 			optimalTokenOwnership: 210,
 			expectedNewToken:      62,
 		},
 		"zoneID 0, prevToken > token, offset > optimalTokenOwnership": {
-			ringToken:             &ringToken{420, 4294967142},
+			ringToken:             ringToken{420, 4294967142},
 			optimalTokenOwnership: 120,
 			expectedNewToken:      4294967262,
 		},
 		"zoneID 1, prevToken > token, offset > optimalTokenOwnership": {
-			ringToken:             &ringToken{421, 4294967143},
+			ringToken:             ringToken{421, 4294967143},
 			optimalTokenOwnership: 120,
 			expectedNewToken:      4294967263,
 		},
 		"zoneID 2, prevToken > token, offset > optimalTokenOwnership": {
-			ringToken:             &ringToken{422, 4294967144},
+			ringToken:             ringToken{422, 4294967144},
 			optimalTokenOwnership: 120,
 			expectedNewToken:      4294967264,
 		},
 		"bad congruence": {
-			ringToken:             &ringToken{90, 31},
+			ringToken:             ringToken{90, 31},
 			optimalTokenOwnership: 30,
 			expectedError:         fmt.Errorf("calculation of a new token between 31 and 90 with optimal token ownership 30 was impossible: lower and upper bounds must be congruent modulo number of zones 3"),
 		},
 		"optimalTokenOwnership small": {
-			ringToken:             &ringToken{90, 30},
+			ringToken:             ringToken{90, 30},
 			optimalTokenOwnership: 2,
 			expectedError:         fmt.Errorf("calculation of a new token between 30 and 90 with optimal token ownership 2 was impossible: optimal token ownership must be a positive multiple of number of zones 3"),
 		},
 		"optimalTokenOwnership bad congruence": {
-			ringToken:             &ringToken{90, 30},
+			ringToken:             ringToken{90, 30},
 			optimalTokenOwnership: 32,
 			expectedError:         fmt.Errorf("calculation of a new token between 30 and 90 with optimal token ownership 32 was impossible: optimal token ownership must be a positive multiple of number of zones 3"),
 		},
 		"optimalTokenOwnership too big": {
-			ringToken:             &ringToken{90, 30},
+			ringToken:             ringToken{90, 30},
 			optimalTokenOwnership: 300,
 			expectedError:         fmt.Errorf("calculation of a new token between 30 and 90 with optimal token ownership 300 was impossible: distance between lower and upper bound 60 is not big enough"),
 		},

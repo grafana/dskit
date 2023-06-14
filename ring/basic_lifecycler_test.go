@@ -519,12 +519,13 @@ type mockDelegate struct {
 	onHeartbeat     func(lifecycler *BasicLifecycler, ringDesc *Desc, instanceDesc *InstanceDesc)
 }
 
-func (m *mockDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+func (m *mockDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens, error) {
 	if m.onRegister == nil {
-		return PENDING, Tokens{}
+		return PENDING, Tokens{}, nil
 	}
 
-	return m.onRegister(lifecycler, ringDesc, instanceExists, instanceID, instanceDesc)
+	instanceState, tokens := m.onRegister(lifecycler, ringDesc, instanceExists, instanceID, instanceDesc)
+	return instanceState, tokens, nil
 }
 
 func (m *mockDelegate) OnRingInstanceTokens(lifecycler *BasicLifecycler, tokens Tokens) {

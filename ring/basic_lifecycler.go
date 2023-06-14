@@ -21,8 +21,9 @@ import (
 type BasicLifecyclerDelegate interface {
 	// OnRingInstanceRegister is called while the lifecycler is registering the
 	// instance within the ring and should return the state and set of tokens to
-	// use for the instance itself.
-	OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens)
+	// use for the instance itself. If it was possible to generate the set of
+	// for the instance, an error is returned.
+	OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens, error)
 
 	// OnRingInstanceTokens is called once the instance tokens are set and are
 	// stable within the ring (honoring the observe period, if set).
@@ -285,7 +286,10 @@ func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 		}
 
 		// We call the delegate to get the desired state right after the initialization.
-		state, tokens := l.delegate.OnRingInstanceRegister(l, *ringDesc, exists, l.cfg.ID, instanceDesc)
+		state, tokens, err := l.delegate.OnRingInstanceRegister(l, *ringDesc, exists, l.cfg.ID, instanceDesc)
+		if err != nil {
+			return nil, true, err
+		}
 
 		// Ensure tokens are sorted.
 		sort.Sort(tokens)
@@ -373,7 +377,11 @@ func (l *BasicLifecycler) verifyTokens(ctx context.Context) bool {
 		needTokens := l.cfg.NumTokens - len(actualTokens)
 
 		level.Info(l.logger).Log("msg", "generating new tokens", "count", needTokens, "ring", l.ringName)
-		newTokens := l.tokenGenerator.GenerateTokens(needTokens, takenTokens)
+		newTokens, err := l.tokenGenerator.GenerateTokens(needTokens, takenTokens)
+		if err != nil {
+			level.Error(l.logger).Log("msg", "failed to generate new tokens", "count", needTokens, "ring", l.ringName, "err", err)
+			return false
+		}
 
 		actualTokens = append(actualTokens, newTokens...)
 		sort.Sort(actualTokens)

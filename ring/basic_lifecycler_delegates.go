@@ -21,7 +21,7 @@ func NewLeaveOnStoppingDelegate(next BasicLifecyclerDelegate, logger log.Logger)
 	}
 }
 
-func (d *LeaveOnStoppingDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+func (d *LeaveOnStoppingDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens, error) {
 	return d.next.OnRingInstanceRegister(lifecycler, ringDesc, instanceExists, instanceID, instanceDesc)
 }
 
@@ -57,7 +57,7 @@ func NewTokensPersistencyDelegate(path string, state InstanceState, next BasicLi
 	}
 }
 
-func (d *TokensPersistencyDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+func (d *TokensPersistencyDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens, error) {
 	// Skip if no path has been configured.
 	if d.tokensPath == "" {
 		level.Info(d.logger).Log("msg", "not loading tokens from file, tokens file path is empty")
@@ -126,7 +126,7 @@ func NewAutoForgetDelegate(forgetPeriod time.Duration, next BasicLifecyclerDeleg
 	}
 }
 
-func (d *AutoForgetDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+func (d *AutoForgetDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens, error) {
 	return d.next.OnRingInstanceRegister(lifecycler, ringDesc, instanceExists, instanceID, instanceDesc)
 }
 
@@ -164,7 +164,7 @@ func NewInstanceRegisterDelegate(state InstanceState, tokenCount int) InstanceRe
 	}
 }
 
-func (d InstanceRegisterDelegate) OnRingInstanceRegister(l *BasicLifecycler, ringDesc Desc, instanceExists bool, _ string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+func (d InstanceRegisterDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, _ string, instanceDesc InstanceDesc) (InstanceState, Tokens, error) {
 	// Keep the existing tokens if any, otherwise start with a clean situation.
 	var tokens []uint32
 	if instanceExists {
@@ -172,12 +172,15 @@ func (d InstanceRegisterDelegate) OnRingInstanceRegister(l *BasicLifecycler, rin
 	}
 
 	takenTokens := ringDesc.GetTokens()
-	newTokens := l.GetTokenGenerator().GenerateTokens(d.tokenCount-len(tokens), takenTokens)
+	newTokens, err := lifecycler.GetTokenGenerator().GenerateTokens(d.tokenCount-len(tokens), takenTokens)
+	if err != nil {
+		return d.registerState, nil, err
+	}
 
 	// Tokens sorting will be enforced by the parent caller.
 	tokens = append(tokens, newTokens...)
 
-	return d.registerState, tokens
+	return d.registerState, tokens, nil
 }
 
 func (d InstanceRegisterDelegate) OnRingInstanceTokens(*BasicLifecycler, Tokens) {}

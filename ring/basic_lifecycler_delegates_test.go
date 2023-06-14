@@ -322,7 +322,7 @@ func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
 		desc := NewDesc()
 		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now())
 
-		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, false, "test-instance", InstanceDesc{})
+		state, tokens, _ := delegate.OnRingInstanceRegister(lifecycler, *desc, false, "test-instance", InstanceDesc{})
 		require.Equal(t, JOINING, state)
 		require.Equal(t, tokenCount, len(tokens))
 		for _, tok := range otherIngesterTokens {
@@ -346,7 +346,7 @@ func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
 		prevTokens := []uint32{10, 20, 30}
 		desc.AddIngester("test-instance", "test-addr", "zone", prevTokens, JOINING, time.Now())
 
-		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, true, "test-instance", desc.GetIngesters()["test-instance"])
+		state, tokens, _ := delegate.OnRingInstanceRegister(lifecycler, *desc, true, "test-instance", desc.GetIngesters()["test-instance"])
 		require.Equal(t, ACTIVE, state)
 		require.Equal(t, tokenCount, len(tokens))
 

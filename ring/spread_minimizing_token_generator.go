@@ -182,10 +182,10 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
 	// to the ids of instances, while priority queues represent the tokens
 	// of the corresponding instance, ordered from highest to lowest ownership.
-	tokensQueues := make([]*ownershipPriorityQueue, t.instanceID)
+	tokensQueues := make([]*ownershipPriorityQueue[*ringToken], t.instanceID)
 
 	// Create and initialize priority queue of tokens for the first instance
-	tokensQueue := newPriorityQueue(tokensCount)
+	tokensQueue := newPriorityQueue[*ringToken](tokensCount)
 	prev := len(firstInstanceTokens) - 1
 	firstInstanceOwnership := 0.0
 	for tk, token := range firstInstanceTokens {
@@ -198,7 +198,7 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 	tokensQueues[0] = tokensQueue
 
 	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
-	instanceQueue := newPriorityQueue(t.instanceID)
+	instanceQueue := newPriorityQueue[*ringInstance](t.instanceID)
 	instanceQueue.Add(newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
 	heap.Init(instanceQueue)
 	defer t.cleanUp(instanceQueue, tokensQueues)
@@ -209,7 +209,7 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 		addedTokens := 0
 		tokens := make(Tokens, 0, tokensCount)
 		// currInstanceTokenQueue is the priority queue of tokens of newInstance
-		currInstanceTokenQueue := newPriorityQueue(tokensCount)
+		currInstanceTokenQueue := newPriorityQueue[*ringToken](tokensCount)
 		for addedTokens < tokensCount {
 			optimalTokenOwnership := t.getOptimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(tokensCount-addedTokens))
 			highestOwnershipInstance := instanceQueue.Peek()
@@ -225,7 +225,7 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 				heap.Pop(instanceQueue)
 				continue
 			}
-			token := highestOwnershipToken.ringItem.(*ringToken)
+			token := highestOwnershipToken.ringItem
 			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
 			if err != nil {
 				return nil, err
@@ -237,12 +237,12 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			oldTokenOwnership := highestOwnershipToken.ownership
 			newTokenOwnership := float64(getTokenDistance(newToken, token.token))
 			currInstanceOwnership += oldTokenOwnership - newTokenOwnership
-			tokensQueue.Update(highestOwnershipToken, func(tokenOwnershipInfo *ownershipInfo) {
-				rT := tokenOwnershipInfo.ringItem.(*ringToken)
+			tokensQueue.Update(highestOwnershipToken, func(tokenOwnershipInfo *ownershipInfo[*ringToken]) {
+				rT := tokenOwnershipInfo.ringItem
 				rT.prevToken = newToken
 				tokenOwnershipInfo.ownership = newTokenOwnership
 			})
-			instanceQueue.Update(highestOwnershipInstance, func(instanceOwnershipInfo *ownershipInfo) {
+			instanceQueue.Update(highestOwnershipInstance, func(instanceOwnershipInfo *ownershipInfo[*ringInstance]) {
 				instanceOwnershipInfo.ownership = highestOwnershipInstance.ownership - oldTokenOwnership + newTokenOwnership
 			})
 			addedTokens++
@@ -274,7 +274,7 @@ func (t *SpreadMinimizingTokenGenerator) sortAndCheckUniquenessIfNeeded(tokens T
 	return tokens, nil
 }
 
-func (t *SpreadMinimizingTokenGenerator) cleanUp(instanceQueue *ownershipPriorityQueue, tokensQueues []*ownershipPriorityQueue) {
+func (t *SpreadMinimizingTokenGenerator) cleanUp(instanceQueue *ownershipPriorityQueue[*ringInstance], tokensQueues []*ownershipPriorityQueue[*ringToken]) {
 	instanceQueue.Clear()
 	for _, tokenQueue := range tokensQueues {
 		if tokenQueue != nil {

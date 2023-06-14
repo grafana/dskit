@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"math/bits"
 	"regexp"
 	"sort"
 	"strconv"
@@ -113,18 +112,10 @@ func getZoneID(zone string, zones []string) (int, error) {
 // generateInitTokens calculates a set of tokens for a given zone that will be assigned
 // to the first instance (with id 0) of that zone.
 func (t *SpreadMinimizingTokenGenerator) generateInitTokens(zoneID int, tokensPerInstance int) (Tokens, error) {
-	tokenDistance := float64(1<<32) / float64(tokensPerInstance)
-	zonesCount := uint32(len(t.zones))
-	tokenDistanceLen := bits.Len(uint(tokenDistance) - 1)
-	zonesOffsetLen := bits.Len(uint(len(t.zones) - 1))
-	if zonesOffsetLen >= tokenDistanceLen {
-		return nil, errorZoneSetTooBig(len(t.zones), tokensPerInstance)
-	}
 	tokens := make(Tokens, 0, tokensPerInstance)
 	for i := 0; i < tokensPerInstance; i++ {
-		token := uint32(i << tokenDistanceLen)
-		token = (token/zonesCount)*zonesCount + uint32(zoneID)
-		tokens = append(tokens, token)
+		token := float64(math.MaxUint32) / float64(tokensPerInstance) * float64(i)
+		tokens = append(tokens, uint32(token)+uint32(zoneID))
 	}
 	return tokens, nil
 }
@@ -139,9 +130,9 @@ func (t *SpreadMinimizingTokenGenerator) calculateNewToken(token *ringToken, opt
 	if optimalTokenOwnership < zonesCount || optimalTokenOwnership%zonesCount != 0 {
 		return 0, errorMultipleOfZonesCount(zonesCount, optimalTokenOwnership, token)
 	}
-	if token.prevToken%zonesCount != token.token%zonesCount {
-		return 0, errorLowerAndUpperBoundModulo(zonesCount, optimalTokenOwnership, token)
-	}
+	//if token.prevToken%zonesCount != token.token%zonesCount {
+	//	return 0, errorLowerAndUpperBoundModulo(zonesCount, optimalTokenOwnership, token)
+	//}
 	ownership := getTokenDistance(token.prevToken, token.token)
 	if ownership <= int(optimalTokenOwnership) {
 		return 0, errorDistanceBetweenTokensNotBigEnough(int(optimalTokenOwnership), ownership, token)

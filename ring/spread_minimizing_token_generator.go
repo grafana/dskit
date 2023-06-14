@@ -14,6 +14,8 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+const totalTokensCount = 1 << 32
+
 var (
 	instanceIDRegex          = regexp.MustCompile(`^(.*)-(zone-[a-z])-(\d+)$`)
 	errorBadInstanceIDFormat = func(instanceID string) error {
@@ -110,10 +112,10 @@ func getZoneID(zone string, zones []string) (int, error) {
 	return index, nil
 }
 
-// generateInitTokens calculates a set of tokens for a given zone that will be assigned
+// generateFirstInstanceTokens calculates a set of tokens for a given zone that will be assigned
 // to the first instance (with id 0) of that zone.
-func (t *SpreadMinimizingTokenGenerator) generateInitTokens(zoneID int, tokensPerInstance int) (Tokens, error) {
-	tokenDistance := float64(1<<32) / float64(tokensPerInstance)
+func (t *SpreadMinimizingTokenGenerator) generateFirstInstanceTokens(zoneID int, tokensPerInstance int) (Tokens, error) {
+	tokenDistance := float64(totalTokensCount) / float64(tokensPerInstance)
 	zonesCount := uint32(len(t.zones))
 	tokenDistanceLen := bits.Len(uint(tokenDistance) - 1)
 	zonesOffsetLen := bits.Len(uint(len(t.zones) - 1))
@@ -168,13 +170,13 @@ func (t *SpreadMinimizingTokenGenerator) getOptimalTokenOwnership(optimalInstanc
 // GenerateTokens generates unique tokensCount tokens, none of which clash
 // with the given takenTokens. Generated tokens are sorted.
 func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) (Tokens, error) {
-	initTokens, err := t.generateInitTokens(t.zoneID, tokensCount)
+	firstInstanceTokens, err := t.generateFirstInstanceTokens(t.zoneID, tokensCount)
 	if err != nil {
 		return nil, err
 	}
 
 	if t.instanceID == 0 {
-		return initTokens, nil
+		return firstInstanceTokens, nil
 	}
 
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
@@ -184,12 +186,12 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 
 	// Create and initialize priority queue of tokens for the first instance
 	tokensQueue := newPriorityQueue(tokensCount)
-	prev := len(initTokens) - 1
-	instanceOwnership := 0.0
-	for tk, token := range initTokens {
-		tokenOwnership := float64(getTokenDistance(initTokens[prev], token))
-		instanceOwnership += tokenOwnership
-		tokensQueue.Add(newRingTokenOwnershipInfo(token, initTokens[prev]))
+	prev := len(firstInstanceTokens) - 1
+	firstInstanceOwnership := 0.0
+	for tk, token := range firstInstanceTokens {
+		tokenOwnership := float64(getTokenDistance(firstInstanceTokens[prev], token))
+		firstInstanceOwnership += tokenOwnership
+		tokensQueue.Add(newRingTokenOwnershipInfo(token, firstInstanceTokens[prev]))
 		prev = tk
 	}
 	heap.Init(tokensQueue)
@@ -197,12 +199,12 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 
 	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
 	instanceQueue := newPriorityQueue(t.instanceID)
-	instanceQueue.Add(newRingInstanceOwnershipInfo(0, instanceOwnership))
+	instanceQueue.Add(newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
 	heap.Init(instanceQueue)
 	defer t.cleanUp(instanceQueue, tokensQueues)
 
 	for i := 1; i <= t.instanceID; i++ {
-		optimalInstanceOwnership := float64(1<<32) / float64(i+1)
+		optimalInstanceOwnership := float64(totalTokensCount) / float64(i+1)
 		currInstanceOwnership := 0.0
 		addedTokens := 0
 		tokens := make(Tokens, 0, tokensCount)
@@ -213,7 +215,7 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			highestOwnershipInstance := instanceQueue.Peek()
 			if highestOwnershipInstance.ownership < float64(optimalTokenOwnership) {
 				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "token", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
-				break
+				return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
 			}
 			tokensQueue := tokensQueues[highestOwnershipInstance.ringItem.GetID()]
 			highestOwnershipToken := tokensQueue.Peek()
@@ -245,21 +247,8 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			})
 			addedTokens++
 		}
-		if addedTokens != tokensCount {
-			return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
-		}
 		if i == t.instanceID {
-			slices.Sort(tokens)
-			if t.cfg.tokenUniquenessCheck {
-				for _, token := range tokens {
-					if slices.Contains(takenTokens, token) {
-						level.Error(t.logger).Log("msg", "token uniqueness check has failed", "token", token, "instanceID", t.instanceID, "zone", t.cfg.zone)
-						return nil, errorTokenNotUnique(i, t.cfg.zone, token)
-					}
-				}
-				level.Info(t.logger).Log("msg", "token uniqueness has been verified", "instanceID", t.instanceID, "zone", t.cfg.zone)
-			}
-			return tokens, nil
+			return t.sortAndCheckUniquenessIfNeeded(tokens, takenTokens, i)
 		}
 		heap.Init(currInstanceTokenQueue)
 		tokensQueues[i] = currInstanceTokenQueue
@@ -269,6 +258,20 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 	}
 
 	return nil, nil
+}
+
+func (t *SpreadMinimizingTokenGenerator) sortAndCheckUniquenessIfNeeded(tokens Tokens, takenTokens []uint32, instanceID int) (Tokens, error) {
+	slices.Sort(tokens)
+	if t.cfg.tokenUniquenessCheck {
+		for _, token := range tokens {
+			if slices.Contains(takenTokens, token) {
+				level.Error(t.logger).Log("msg", "token uniqueness check has failed", "token", token, "instanceID", t.instanceID, "zone", t.cfg.zone)
+				return nil, errorTokenNotUnique(instanceID, t.cfg.zone, token)
+			}
+		}
+		level.Info(t.logger).Log("msg", "token uniqueness has been verified", "instanceID", t.instanceID, "zone", t.cfg.zone)
+	}
+	return tokens, nil
 }
 
 func (t *SpreadMinimizingTokenGenerator) cleanUp(instanceQueue *ownershipPriorityQueue, tokensQueues []*ownershipPriorityQueue) {

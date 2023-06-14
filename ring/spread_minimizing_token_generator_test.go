@@ -98,12 +98,12 @@ func TestSpreadMinimizingTokenGenerator_GetZoneID(t *testing.T) {
 	}
 }
 
-func TestSpreadMinimizingTokenGenerator_GenerateInitTokens(t *testing.T) {
+func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokens(t *testing.T) {
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, nil)
 	zonesCount := len(zones)
 	tokensPerInstance := 512
 	for z := range zones {
-		tokens, err := tokenGenerator.generateInitTokens(z, tokensPerInstance)
+		tokens, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
 		require.NoError(t, err)
 		for i, token := range tokens {
 			require.Equal(t, uint32(i<<23/zonesCount*zonesCount+z), token)
@@ -116,19 +116,19 @@ func TestSpreadMinimizingTokenGenerator_ZoneSetTooBig(t *testing.T) {
 	tokensPerInstance := 1 << 31
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, nil)
 	for z := range zones {
-		_, err := tokenGenerator.generateInitTokens(z, tokensPerInstance)
+		_, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
 		require.Error(t, err)
 		require.Equal(t, errorZoneSetTooBig(len(zones), tokensPerInstance), err)
 	}
 }
 
-func TestSpreadMinimizingTokenGenerator_GenerateInitTokensIdempotent(t *testing.T) {
+func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokensIdempotent(t *testing.T) {
 	tokensPerInstance := 512
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, nil)
 	for z := range tokenGenerator.zones {
-		tokens1, err := tokenGenerator.generateInitTokens(z, tokensPerInstance)
+		tokens1, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
 		require.NoError(t, err)
-		tokens2, err := tokenGenerator.generateInitTokens(z, tokensPerInstance)
+		tokens2, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
 		require.NoError(t, err)
 		require.True(t, tokens1.Equals(tokens2))
 	}

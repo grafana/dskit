@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"strings"
 )
 
 type ringItem interface {
@@ -128,9 +129,6 @@ func (pq *ownershipPriorityQueue) Less(i, j int) bool {
 }
 
 func (pq *ownershipPriorityQueue) compareRingItems(ri1, ri2 ringItem) bool {
-	if ri1 == nil || ri2 == nil {
-		return true
-	}
 	// we invert the order because we want that instances with higher ids have a higher priority
 	return ri2.Less(ri1)
 }
@@ -184,17 +182,15 @@ func (pq *ownershipPriorityQueue) Clear() {
 }
 
 func (pq *ownershipPriorityQueue) String() string {
-	if pq.Len() == 0 {
-		return "[]"
-	}
+	return fmt.Sprintf("[%s]", strings.Join(mapItems(pq.items, func(item *ownershipInfo) string {
+		return fmt.Sprintf("%s-ownership: %.3f", item.ringItem, item.ownership)
+	}), ","))
+}
 
-	str := "["
-	for i, item := range pq.items {
-		str += fmt.Sprintf("%d: %s-%15.3f", i, item.ringItem, item.ownership)
-		if i < pq.Len()-1 {
-			str += ","
-		}
+func mapItems[T, V any](in []T, mapItem func(T) V) []V {
+	out := make([]V, len(in))
+	for i, v := range in {
+		out[i] = mapItem(v)
 	}
-	str += "]"
-	return str
+	return out
 }

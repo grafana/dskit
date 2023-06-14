@@ -127,13 +127,6 @@ func (pq *ownershipPriorityQueue[T]) Add(ownershipInfo ownershipInfo[T]) {
 	pq.items = append(pq.items, ownershipInfo)
 }
 
-// Clear removes all the items from the queue.
-func (pq *ownershipPriorityQueue[T]) Clear() {
-	if len(pq.items) != 0 {
-		pq.items = pq.items[:0]
-	}
-}
-
 func (pq *ownershipPriorityQueue[T]) String() string {
 	return fmt.Sprintf("[%s]", strings.Join(mapItems(pq.items, func(item ownershipInfo[T]) string {
 		return fmt.Sprintf("%s-ownership: %.3f", item.item, item.ownership)

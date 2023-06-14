@@ -212,17 +212,15 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 		for addedTokens < tokensCount {
 			optimalTokenOwnership := t.getOptimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(tokensCount-addedTokens))
 			highestOwnershipInstance := instanceQueue.Peek()
-			if highestOwnershipInstance.ownership < float64(optimalTokenOwnership) {
-				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "token", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
+			if highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
+				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
 				return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
 			}
 			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
 			highestOwnershipToken := tokensQueue.Peek()
-			if highestOwnershipToken.ownership < float64(optimalTokenOwnership) {
-				// token with the highest ownership of the instance with the highest ownership
-				// could not satisfy the request, hence we pass to the next instance.
-				heap.Pop(&instanceQueue)
-				continue
+			if highestOwnershipToken.ownership <= float64(optimalTokenOwnership) {
+				level.Error(t.logger).Log("msg", "it was impossible to add a token because the token with the highest ownership of the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "token with the highest ownership", highestOwnershipToken.item.token, "instance with the highest ownership", highestOwnershipInstance.item.instanceID, "highest token ownership", highestOwnershipToken.ownership, "requested ownership", optimalTokenOwnership)
+				return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
 			}
 			token := highestOwnershipToken.item
 			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
@@ -271,13 +269,4 @@ func (t *SpreadMinimizingTokenGenerator) sortAndCheckUniquenessIfNeeded(tokens T
 		level.Info(t.logger).Log("msg", "token uniqueness has been verified", "instanceID", t.instanceID, "zone", t.cfg.zone)
 	}
 	return tokens, nil
-}
-
-func (t *SpreadMinimizingTokenGenerator) cleanUp(instanceQueue *ownershipPriorityQueue[ringInstance], tokensQueues []*ownershipPriorityQueue[ringToken]) {
-	instanceQueue.Clear()
-	for _, tokenQueue := range tokensQueues {
-		if tokenQueue != nil {
-			tokenQueue.Clear()
-		}
-	}
 }

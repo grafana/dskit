@@ -35,36 +35,30 @@ var (
 )
 
 type SpreadMinimizingConfig struct {
-	instanceID        string
-	zone              string
-	tokensPerInstance int
-}
-
-func NewSpreadMinimizingConfig(instanceID, zone string, tokensPerInstance int) *SpreadMinimizingConfig {
-	return &SpreadMinimizingConfig{
-		instanceID:        instanceID,
-		zone:              zone,
-		tokensPerInstance: tokensPerInstance,
-	}
+	InstanceID        string
+	Zone              string
+	TokensPerInstance int
 }
 
 type SpreadMinimizingTokenGenerator struct {
-	cfg        *SpreadMinimizingConfig
+	cfg        SpreadMinimizingConfig
 	instanceID int
 	zoneID     int
 	zones      []string
 	logger     log.Logger
 }
 
-func NewSpreadMinimizingTokenGenerator(cfg *SpreadMinimizingConfig, zones []string, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
-	if !slices.IsSorted(zones) {
-		sort.Strings(zones)
+func NewSpreadMinimizingTokenGenerator(cfg SpreadMinimizingConfig, zones []string, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
+	sortedZones := make([]string, len(zones))
+	copy(sortedZones, zones)
+	if !slices.IsSorted(sortedZones) {
+		sort.Strings(sortedZones)
 	}
-	instanceID, err := getInstanceID(cfg.instanceID)
+	instanceID, err := getInstanceID(cfg.InstanceID)
 	if err != nil {
 		return nil, err
 	}
-	zoneID, err := getZoneID(cfg.zone, zones)
+	zoneID, err := getZoneID(cfg.Zone, sortedZones)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +67,7 @@ func NewSpreadMinimizingTokenGenerator(cfg *SpreadMinimizingConfig, zones []stri
 		cfg:        cfg,
 		instanceID: instanceID,
 		zoneID:     zoneID,
-		zones:      zones,
+		zones:      sortedZones,
 		logger:     logger,
 	}
 	return tokenGenerator, nil
@@ -82,22 +76,20 @@ func NewSpreadMinimizingTokenGenerator(cfg *SpreadMinimizingConfig, zones []stri
 func getInstanceID(instanceID string) (int, error) {
 	parts := instanceIDRegex.FindStringSubmatch(instanceID)
 	if len(parts) != 4 {
-		return -1, errorBadInstanceIDFormat(instanceID)
+		return 0, errorBadInstanceIDFormat(instanceID)
 	}
-	id, err := strconv.Atoi(parts[3])
-	if err != nil {
-		return -1, err
-	}
-	return id, nil
+	return strconv.Atoi(parts[3])
 }
 
-func getZoneID(zone string, zones []string) (int, error) {
-	if !slices.IsSorted(zones) {
-		slices.Sort(zones)
+// getZoneID gets a zone name and a slice of sorted zones,
+// and return the index of the zone in the slice.
+func getZoneID(zone string, sortedZones []string) (int, error) {
+	if !slices.IsSorted(sortedZones) {
+		slices.Sort(sortedZones)
 	}
-	index := sort.SearchStrings(zones, zone)
-	if index >= len(zones) {
-		return -1, errorZoneNotValid(zone)
+	index := sort.SearchStrings(sortedZones, zone)
+	if index >= len(sortedZones) {
+		return 0, errorZoneNotValid(zone)
 	}
 	return index, nil
 }
@@ -106,7 +98,7 @@ func getZoneID(zone string, zones []string) (int, error) {
 // of the zone of the underlying instance.
 func (t *SpreadMinimizingTokenGenerator) generateFirstInstanceTokens() Tokens {
 	zonesCount := len(t.zones)
-	tokensPerInstance := t.cfg.tokensPerInstance
+	tokensPerInstance := t.cfg.TokensPerInstance
 	tokenDistance := (totalTokensCount / tokensPerInstance / zonesCount) * zonesCount
 	tokens := make(Tokens, 0, tokensPerInstance)
 	for i := 0; i < tokensPerInstance; i++ {
@@ -167,7 +159,7 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 	allTokens := t.generateAllTokens()
 	tokens := make(Tokens, 0, tokensCount)
 
-	// allTokens is a sorted slice of tokens for instance t.cfg.instanceID in zone t.cfg.zone
+	// allTokens is a sorted slice of tokens for instance t.cfg.InstanceID in zone t.cfg.zone
 	// We filter out tokens from takenTokens, if any, and return at most tokensCount tokens.
 	for i := 0; i < len(allTokens) && len(tokens) < tokensCount; i++ {
 		token := allTokens[i]
@@ -188,7 +180,7 @@ func (t *SpreadMinimizingTokenGenerator) generateAllTokens() Tokens {
 		return firstInstanceTokens
 	}
 
-	tokensCount := t.cfg.tokensPerInstance
+	tokensCount := t.cfg.TokensPerInstance
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
 	// to the ids of instances, while priority queues represent the tokens
 	// of the corresponding instance, ordered from highest to lowest ownership.

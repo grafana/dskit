@@ -107,7 +107,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokens(t *testing.T
 	zonesCount := len(zones)
 	for z, zone := range zones {
 		instanceID := fmt.Sprintf("instance-%s-%d", zone, 10)
-		cfg := NewSpreadMinimizingConfig(instanceID, zone, tokensPerInstance)
+		cfg := &SpreadMinimizingConfig{instanceID, zone, tokensPerInstance}
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokens := tokenGenerator.generateFirstInstanceTokens()
 		for i, token := range tokens {
@@ -120,7 +120,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokens(t *testing.T
 func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokensIdempotent(t *testing.T) {
 	for _, zone := range zones {
 		instanceID := fmt.Sprintf("instance-%s-%d", zone, 10)
-		cfg := NewSpreadMinimizingConfig(instanceID, zone, tokensPerInstance)
+		cfg := &SpreadMinimizingConfig{instanceID, zone, tokensPerInstance}
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokens1 := tokenGenerator.generateFirstInstanceTokens()
 		require.Len(t, tokens1, tokensPerInstance)
@@ -247,7 +247,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateAllTokensIdempotent(t *testing.T
 	for instanceID := 0; instanceID < maxInstanceID; instanceID++ {
 		for _, zone := range zones {
 			instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-			cfg := NewSpreadMinimizingConfig(instance, zone, tokensPerInstance)
+			cfg := &SpreadMinimizingConfig{instance, zone, tokensPerInstance}
 			tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 			tokens1 := tokenGenerator.generateAllTokens()
 			require.Len(t, tokens1, tokensPerInstance)
@@ -295,7 +295,7 @@ func TestSpreadMinimizingTokenGenerator_CheckTokenUniqueness(t *testing.T) {
 	allTokens := make(map[uint32]bool, tokensPerInstance*(instanceID+1)*len(zones))
 	for _, zone := range zones {
 		instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-		cfg := NewSpreadMinimizingConfig(instance, zone, tokensPerInstance)
+		cfg := &SpreadMinimizingConfig{instance, zone, tokensPerInstance}
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokens := tokenGenerator.generateTokensByInstanceID()
 		for i := 0; i <= instanceID; i++ {
@@ -316,7 +316,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateTokens(t *testing.T) {
 	instanceID := 1000
 	zone := zones[0]
 	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-	cfg := NewSpreadMinimizingConfig(instance, zone, tokensPerInstance)
+	cfg := &SpreadMinimizingConfig{instance, zone, tokensPerInstance}
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 	// this is the set of all sorted tokens assigned to instance
 	allTokens := tokenGenerator.generateAllTokens()
@@ -361,7 +361,7 @@ func TestSpreadMinimizingTokenGenerator_GetMissingTokens(t *testing.T) {
 	instanceID := 1000
 	zone := zones[0]
 	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-	cfg := NewSpreadMinimizingConfig(instance, zone, tokensPerInstance)
+	cfg := &SpreadMinimizingConfig{instance, zone, tokensPerInstance}
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 
 	// we get all the tokens for the underlying instance, but we don't mark all of them as taken
@@ -393,7 +393,7 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 	tokenSetsByZone := make(map[string][][]uint32, len(zones))
 	for _, zone := range zones {
 		finalInstance := fmt.Sprintf("instance-%s-%d", zone, maxInstanceID)
-		cfg := NewSpreadMinimizingConfig(finalInstance, zone, tokensPerInstance)
+		cfg := &SpreadMinimizingConfig{finalInstance, zone, tokensPerInstance}
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokensByInstance := tokenGenerator.generateTokensByInstanceID()
 		for id, tokens := range tokensByInstance {
@@ -423,9 +423,9 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 
 func createSpreadMinimizingTokenGenerator(t *testing.T, cfg *SpreadMinimizingConfig, zones []string) *SpreadMinimizingTokenGenerator {
 	if cfg == nil {
-		cfg = NewSpreadMinimizingConfig("instance-zone-a-10", "zone-a", tokensPerInstance)
+		cfg = &SpreadMinimizingConfig{"instance-zone-a-10", "zone-a", tokensPerInstance}
 	}
-	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg, zones, log.NewLogfmtLogger(os.Stdout))
+	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(*cfg, zones, log.NewLogfmtLogger(os.Stdout))
 	require.NoError(t, err)
 	require.NotNil(t, tokenGenerator)
 	return tokenGenerator
@@ -459,7 +459,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 		return map[int]Tokens{0: firstInstanceTokens}
 	}
 
-	tokensCount := t.cfg.tokensPerInstance
+	tokensCount := t.cfg.TokensPerInstance
 
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
 	// to the ids of instances, while priority queues represent the tokens

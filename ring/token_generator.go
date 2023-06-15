@@ -7,7 +7,7 @@ import (
 )
 
 type TokenGenerator interface {
-	// GenerateTokens generates unique tokensCount tokens, none of which clash
+	// GenerateTokens generates at most tokensCount unique tokens, none of which clash
 	// with the given takenTokens. Generated tokens are sorted.
 	GenerateTokens(tokensCount int, takenTokens []uint32) Tokens
 }

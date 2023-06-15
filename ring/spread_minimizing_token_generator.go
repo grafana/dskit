@@ -23,9 +23,6 @@ var (
 	errorZoneNotValid = func(zone string) error {
 		return fmt.Errorf("zone %s is not valid", zone)
 	}
-	errorZoneSetTooBig = func(zonesCount, tokensPerInstance int) error {
-		return fmt.Errorf("number of zones %d is too big: with that number of zones it is impossible to place %d tokens per instance", zonesCount, tokensPerInstance)
-	}
 	errorMultipleOfZonesCount = func(zonesCount, optimalTokenOwnership uint32, token ringToken) error {
 		return fmt.Errorf("calculation of a new token between %d and %d with optimal token ownership %d was impossible: optimal token ownership must be a positive multiple of number of zones %d", token.prevToken, token.token, optimalTokenOwnership, zonesCount)
 	}
@@ -35,25 +32,19 @@ var (
 	errorDistanceBetweenTokensNotBigEnough = func(optimalTokenOwnership, ownership int, token ringToken) error {
 		return fmt.Errorf("calculation of a new token between %d and %d with optimal token ownership %d was impossible: distance between lower and upper bound %d is not big enough", token.prevToken, token.token, optimalTokenOwnership, ownership)
 	}
-	errorNotAllTokenCreated = func(instanceID int, zone string, tokensPerInstance int) error {
-		return fmt.Errorf("impossible to find all %d tokens: it was not possible to create all required tokens for instance %d in zone %s", tokensPerInstance, instanceID, zone)
-	}
-	errorTokenNotUnique = func(instanceID int, zone string, token uint32) error {
-		return fmt.Errorf("token %d generated for instance with id %d in zone %s was not unique", token, instanceID, zone)
-	}
 )
 
 type SpreadMinimizingConfig struct {
-	instanceID           string
-	zone                 string
-	tokenUniquenessCheck bool
+	instanceID        string
+	zone              string
+	tokensPerInstance int
 }
 
-func NewSpreadMinimizingConfig(instanceID, zone string, tokenUniquenessCheck bool) *SpreadMinimizingConfig {
+func NewSpreadMinimizingConfig(instanceID, zone string, tokensPerInstance int) *SpreadMinimizingConfig {
 	return &SpreadMinimizingConfig{
-		instanceID:           instanceID,
-		zone:                 zone,
-		tokenUniquenessCheck: tokenUniquenessCheck,
+		instanceID:        instanceID,
+		zone:              zone,
+		tokensPerInstance: tokensPerInstance,
 	}
 }
 
@@ -111,20 +102,18 @@ func getZoneID(zone string, zones []string) (int, error) {
 	return index, nil
 }
 
-// generateFirstInstanceTokens calculates a set of tokens for a given zone that will be assigned
-// to the first instance (with id 0) of that zone.
-func (t *SpreadMinimizingTokenGenerator) generateFirstInstanceTokens(zoneID int, tokensPerInstance int) (Tokens, error) {
+// generateFirstInstanceTokens calculates a set of tokens that should be assigned to the first instance (with id 0)
+// of the zone of the underlying instance.
+func (t *SpreadMinimizingTokenGenerator) generateFirstInstanceTokens() Tokens {
 	zonesCount := len(t.zones)
+	tokensPerInstance := t.cfg.tokensPerInstance
 	tokenDistance := (totalTokensCount / tokensPerInstance / zonesCount) * zonesCount
-	if tokenDistance < zonesCount || tokenDistance*tokensPerInstance+zonesCount >= totalTokensCount {
-		return nil, errorZoneSetTooBig(len(t.zones), tokensPerInstance)
-	}
 	tokens := make(Tokens, 0, tokensPerInstance)
 	for i := 0; i < tokensPerInstance; i++ {
-		token := uint32(i*tokenDistance) + uint32(zoneID)
+		token := uint32(i*tokenDistance) + uint32(t.zoneID)
 		tokens = append(tokens, token)
 	}
-	return tokens, nil
+	return tokens
 }
 
 // calculateNewToken determines where in the range represented by the given ringToken should a new token be placed
@@ -163,18 +152,43 @@ func (t *SpreadMinimizingTokenGenerator) getOptimalTokenOwnership(optimalInstanc
 	return optimalTokenOwnership
 }
 
-// GenerateTokens generates unique tokensCount tokens, none of which clash
-// with the given takenTokens. Generated tokens are sorted.
+// GenerateTokens generates at most tokensCount unique tokens, none of which clash with the given takenTokens.
+// Generated tokens are sorted. The number of returned tokens might be less than requested in the following cases:
+//   - if tokensCount is higher than the maximal configured number of tokens of the
+//     underlying instance (t.cfg.tokensPerInstance).
+//   - if among t.cfg.tokensPerInstance tokens reserved for the underlying instance
+//     there is less than tokenCount tokens not already present in takenTokens.
 func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
-	firstInstanceTokens, err := t.generateFirstInstanceTokens(t.zoneID, tokensCount)
-	if err != nil {
-		return nil
+	used := make(map[uint32]bool, len(takenTokens))
+	for _, v := range takenTokens {
+		used[v] = true
 	}
+
+	allTokens := t.generateAllTokens()
+	tokens := make(Tokens, 0, tokensCount)
+
+	// allTokens is a sorted slice of tokens for instance t.cfg.instanceID in zone t.cfg.zone
+	// We filter out tokens from takenTokens, if any, and return at most tokensCount tokens.
+	for i := 0; i < len(allTokens) && len(tokens) < tokensCount; i++ {
+		token := allTokens[i]
+		if used[token] {
+			continue
+		}
+		tokens = append(tokens, token)
+	}
+	return tokens
+}
+
+// generateAllTokens generates the configured number of tokens (t.cfg.tokensPerInstance) for the underlying instance.
+// Generated tokens are sorted. Calls to this method will always return the same set of tokens.
+func (t *SpreadMinimizingTokenGenerator) generateAllTokens() Tokens {
+	firstInstanceTokens := t.generateFirstInstanceTokens()
 
 	if t.instanceID == 0 {
 		return firstInstanceTokens
 	}
 
+	tokensCount := t.cfg.tokensPerInstance
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
 	// to the ids of instances, while priority queues represent the tokens
 	// of the corresponding instance, ordered from highest to lowest ownership.
@@ -212,8 +226,9 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			optimalTokenOwnership := t.getOptimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(tokensCount-addedTokens))
 			highestOwnershipInstance := instanceQueue.Peek()
 			if highestOwnershipInstance == nil || highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
-				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
-				return nil
+				level.Warn(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
+				// if this happens, we return the current set of tokens, although it is less than t.cfg.tokensPerInstance
+				break
 			}
 			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
 			highestOwnershipToken := tokensQueue.Peek()
@@ -226,7 +241,9 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			token := highestOwnershipToken.item
 			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
 			if err != nil {
-				return nil
+				level.Error(t.logger).Log("msg", "it was impossible to calculate a new token because an error occurred", "err", err)
+				// if this happens, we return the current set of tokens, although it is less than t.cfg.tokensPerInstance
+				break
 			}
 			tokens = append(tokens, newToken)
 			// add the new token to currInstanceTokenQueue
@@ -250,14 +267,13 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			addedTokens++
 		}
 		if i == t.instanceID {
-			return t.sortAndCheckUniquenessIfNeeded(tokens, takenTokens, i)
+			slices.Sort(tokens)
+			return tokens
 		}
 
 		// If there were some ignored instances, we put them back on the queue.
-		if len(ignoredInstances) != 0 {
-			for _, ignoredInstance := range ignoredInstances {
-				heap.Push(&instanceQueue, ignoredInstance)
-			}
+		for _, ignoredInstance := range ignoredInstances {
+			heap.Push(&instanceQueue, ignoredInstance)
 		}
 
 		heap.Init(&currInstanceTokenQueue)
@@ -268,17 +284,4 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 	}
 
 	return nil
-}
-
-func (t *SpreadMinimizingTokenGenerator) sortAndCheckUniquenessIfNeeded(tokens Tokens, takenTokens []uint32, instanceID int) Tokens {
-	slices.Sort(tokens)
-	if t.cfg.tokenUniquenessCheck {
-		for _, token := range tokens {
-			if slices.Contains(takenTokens, token) {
-				level.Error(t.logger).Log("msg", "token uniqueness check has failed", "token", token, "instanceID", t.instanceID, "zone", t.cfg.zone)
-			}
-		}
-		level.Info(t.logger).Log("msg", "token uniqueness has been verified", "instanceID", t.instanceID, "zone", t.cfg.zone)
-	}
-	return tokens
 }

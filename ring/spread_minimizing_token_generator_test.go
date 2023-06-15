@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"testing"
 
@@ -14,7 +15,8 @@ import (
 )
 
 var (
-	zones = []string{"zone-a", "zone-b", "zone-c"}
+	zones             = []string{"zone-a", "zone-b", "zone-c"}
+	tokensPerInstance = 512
 )
 
 func TestSpreadMinimizingTokenGenerator_GetInstanceID(t *testing.T) {
@@ -102,12 +104,12 @@ func TestSpreadMinimizingTokenGenerator_GetZoneID(t *testing.T) {
 }
 
 func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokens(t *testing.T) {
-	tokenGenerator := createSpreadMinimizingTokenGenerator(t, nil, zones)
 	zonesCount := len(zones)
-	tokensPerInstance := 512
-	for z := range zones {
-		tokens, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
-		require.NoError(t, err)
+	for z, zone := range zones {
+		instanceID := fmt.Sprintf("instance-%s-%d", zone, 10)
+		cfg := NewSpreadMinimizingConfig(instanceID, zone, tokensPerInstance)
+		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
+		tokens := tokenGenerator.generateFirstInstanceTokens()
 		for i, token := range tokens {
 			require.Equal(t, uint32(1<<23/zonesCount*zonesCount*i+z), token)
 			require.True(t, token%uint32(zonesCount) == uint32(z))
@@ -115,24 +117,14 @@ func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokens(t *testing.T
 	}
 }
 
-func TestSpreadMinimizingTokenGenerator_ZoneSetTooBig(t *testing.T) {
-	tokensPerInstance := 1 << 31
-	tokenGenerator := createSpreadMinimizingTokenGenerator(t, nil, zones)
-	for z := range zones {
-		_, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
-		require.Error(t, err)
-		require.Equal(t, errorZoneSetTooBig(len(zones), tokensPerInstance), err)
-	}
-}
-
 func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokensIdempotent(t *testing.T) {
-	tokensPerInstance := 512
-	tokenGenerator := createSpreadMinimizingTokenGenerator(t, nil, zones)
-	for z := range tokenGenerator.zones {
-		tokens1, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
-		require.NoError(t, err)
-		tokens2, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
-		require.NoError(t, err)
+	for _, zone := range zones {
+		instanceID := fmt.Sprintf("instance-%s-%d", zone, 10)
+		cfg := NewSpreadMinimizingConfig(instanceID, zone, tokensPerInstance)
+		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
+		tokens1 := tokenGenerator.generateFirstInstanceTokens()
+		require.Len(t, tokens1, tokensPerInstance)
+		tokens2 := tokenGenerator.generateFirstInstanceTokens()
 		require.True(t, tokens1.Equals(tokens2))
 	}
 }
@@ -250,33 +242,17 @@ func TestSpreadMinimizingTokenGenerator_CalculateNewToken(t *testing.T) {
 	}
 }
 
-func TestSpreadMinimizingTokenGenerator_GenerateTokensIdempotent(t *testing.T) {
-	tokensPerInstance := 512
+func TestSpreadMinimizingTokenGenerator_GenerateAllTokensIdempotent(t *testing.T) {
 	maxInstanceID := 128
 	for instanceID := 0; instanceID < maxInstanceID; instanceID++ {
 		for _, zone := range zones {
 			instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-			cfg := NewSpreadMinimizingConfig(instance, zone, false)
+			cfg := NewSpreadMinimizingConfig(instance, zone, tokensPerInstance)
 			tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
-			tokens1 := tokenGenerator.GenerateTokens(tokensPerInstance, nil)
+			tokens1 := tokenGenerator.generateAllTokens()
 			require.Len(t, tokens1, tokensPerInstance)
-			tokens2 := tokenGenerator.GenerateTokens(tokensPerInstance, nil)
+			tokens2 := tokenGenerator.generateAllTokens()
 			require.True(t, tokens1.Equals(tokens2))
-		}
-	}
-}
-
-func TestSpreadMinimizingTokenGenerator_CalculateTokensByInstanceUnique(t *testing.T) {
-	tokensPerInstance := 512
-	maxInstancesPerZone := 128
-	allTokens := make(Tokens, 0, maxInstancesPerZone*tokensPerInstance*len(zones))
-	for instanceID := 0; instanceID < maxInstancesPerZone; instanceID++ {
-		for _, zone := range zones {
-			instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-			cfg := NewSpreadMinimizingConfig(instance, zone, true)
-			tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
-			tokens := tokenGenerator.GenerateTokens(tokensPerInstance, allTokens)
-			allTokens = append(allTokens, tokens...)
 		}
 	}
 }
@@ -296,7 +272,7 @@ func TestSpreadMinimizingTokenGenerator_VerifyTokensByZone(t *testing.T) {
 
 func TestSpreadMinimizingTokenGenerator_VerifyInstanceOwnershipSpreadByZone(t *testing.T) {
 	tokensPerInstance := 512
-	instancesPerZone := 128
+	instancesPerZone := 10000
 	instanceByToken, tokensByZone := createTokensForAllInstancesAndZones(t, instancesPerZone, tokensPerInstance)
 	ownershipByInstanceByZone := getRegisteredOwnershipByZone(instancesPerZone, instanceByToken, tokensByZone)
 	for _, ownershipByInstance := range ownershipByInstanceByZone {
@@ -317,14 +293,11 @@ func TestSpreadMinimizingTokenGenerator_CheckTokenUniqueness(t *testing.T) {
 	tokensPerInstance := 512
 	instanceID := 10000
 	allTokens := make(map[uint32]bool, tokensPerInstance*(instanceID+1)*len(zones))
-	for z, zone := range zones {
+	for _, zone := range zones {
 		instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-		cfg := NewSpreadMinimizingConfig(instance, zone, false)
+		cfg := NewSpreadMinimizingConfig(instance, zone, tokensPerInstance)
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
-		tokens, err := tokenGenerator.generateAllTokens(instanceID, z, tokensPerInstance)
-		if err != nil {
-			panic(err)
-		}
+		tokens := tokenGenerator.generateTokensByInstanceID()
 		for i := 0; i <= instanceID; i++ {
 			tks := tokens[i]
 			for _, token := range tks {
@@ -338,37 +311,119 @@ func TestSpreadMinimizingTokenGenerator_CheckTokenUniqueness(t *testing.T) {
 	}
 }
 
-func createTokensForAllInstancesAndZones(t *testing.T, instancesPerZone, tokensPerInstance int) (map[uint32]*instanceInfo, map[string][]uint32) {
-	instanceByToken := make(map[uint32]*instanceInfo, instancesPerZone*tokensPerInstance*len(zones))
+func TestSpreadMinimizingTokenGenerator_GenerateTokens(t *testing.T) {
+	tokensPerInstance := 512
+	instanceID := 1000
+	zone := zones[0]
+	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
+	cfg := NewSpreadMinimizingConfig(instance, zone, tokensPerInstance)
+	tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
+	// this is the set of all sorted tokens assigned to instance
+	allTokens := tokenGenerator.generateAllTokens()
+	require.Len(t, allTokens, tokensPerInstance)
+
+	// we try to generate 1024, and we ensure that only allTokens will be returned
+	tokens := tokenGenerator.GenerateTokens(2*tokensPerInstance, nil)
+	require.Len(t, tokens, tokensPerInstance)
+	require.True(t, allTokens.Equals(tokens))
+
+	takenTokens := make(Tokens, 0, tokensPerInstance)
+	tokensCount := 300
+	// we get the first tokensCount tokens and ensure that they are returned in the same order
+	// they have in allTokens
+	tokens = tokenGenerator.GenerateTokens(tokensCount, takenTokens)
+	require.Len(t, tokens, tokensCount)
+	for i := 0; i < tokensCount; i++ {
+		require.Equal(t, allTokens[i], tokens[i])
+	}
+	// we mark the returned tokens as taken
+	takenTokens = append(takenTokens, tokens...)
+
+	// we get the remaining tokens and ensure that they are actually the remaining tokens from allTokens
+	// returned in the same order
+	remainingTokensCount := tokensPerInstance - tokensCount
+	remainingTokens := tokenGenerator.GenerateTokens(remainingTokensCount, takenTokens)
+	require.Len(t, remainingTokens, remainingTokensCount)
+	for i := 0; i < remainingTokensCount; i++ {
+		require.Equal(t, allTokens[i+tokensCount], remainingTokens[i])
+	}
+
+	// we mark remaining tokens as taken
+	takenTokens = append(takenTokens, remainingTokens...)
+
+	// we ensure that further attempts to generate tokens return nothing
+	noTokens := tokenGenerator.GenerateTokens(tokensPerInstance, takenTokens)
+	require.Len(t, noTokens, 0)
+}
+
+func TestSpreadMinimizingTokenGenerator_GetMissingTokens(t *testing.T) {
+	tokensPerInstance := 512
+	instanceID := 1000
+	zone := zones[0]
+	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
+	cfg := NewSpreadMinimizingConfig(instance, zone, tokensPerInstance)
+	tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
+
+	// we get all the tokens for the underlying instance, but we don't mark all of them as taken
+	// in order to simulate that some tokens were taken by another instance when the method was
+	// first called
+	missingIndexes := []int{rand.Intn(tokensPerInstance - 1), rand.Intn(tokensPerInstance - 1), rand.Intn(tokensPerInstance - 1)}
+	slices.Sort(missingIndexes)
+	takenTokens := make(Tokens, 0, tokensPerInstance)
+	allTokens := tokenGenerator.GenerateTokens(tokensPerInstance, takenTokens)
+
+	for i, token := range allTokens {
+		if slices.Contains(missingIndexes, i) {
+			continue
+		}
+		takenTokens = append(takenTokens, token)
+	}
+
+	// we generate the missing tokens, and we ensure that they correspond to the
+	// tokens of allTokens having indexes in missingIndexes.
+	tokens := tokenGenerator.GenerateTokens(len(missingIndexes), takenTokens)
+	require.Len(t, tokens, len(missingIndexes))
+	for i, missingIndex := range missingIndexes {
+		require.Equal(t, allTokens[missingIndex], tokens[i])
+	}
+}
+
+func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerInstance int) (map[uint32]*instanceInfo, map[string][]uint32) {
+	instanceByToken := make(map[uint32]*instanceInfo, (maxInstanceID+1)*tokensPerInstance*len(zones))
 	tokenSetsByZone := make(map[string][][]uint32, len(zones))
-	for instanceID := 0; instanceID < instancesPerZone; instanceID++ {
-		for _, zone := range zones {
-			instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-			cfg := NewSpreadMinimizingConfig(instance, zone, false)
-			tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
-			tokens := tokenGenerator.GenerateTokens(tokensPerInstance, nil)
+	for _, zone := range zones {
+		finalInstance := fmt.Sprintf("instance-%s-%d", zone, maxInstanceID)
+		cfg := NewSpreadMinimizingConfig(finalInstance, zone, tokensPerInstance)
+		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
+		tokensByInstance := tokenGenerator.generateTokensByInstanceID()
+		for id, tokens := range tokensByInstance {
 			instInfo := &instanceInfo{
-				InstanceID: instance,
+				InstanceID: fmt.Sprintf("instance-%s-%d", zone, id),
 				Zone:       zone,
 			}
 			for _, token := range tokens {
+				if inst, ok := instanceByToken[token]; ok {
+					err := fmt.Errorf("token %d was already assigned to instance %s", token, inst.InstanceID)
+					panic(err)
+				}
 				instanceByToken[token] = instInfo
 			}
 			allTokens, ok := tokenSetsByZone[zone]
 			if !ok {
-				allTokens = make([][]uint32, 0, instancesPerZone)
+				allTokens = make([][]uint32, 0, maxInstanceID+1)
 			}
 			allTokens = append(allTokens, tokens)
 			tokenSetsByZone[zone] = allTokens
 		}
 	}
+
 	tokensByZone := MergeTokensByZone(tokenSetsByZone)
 	return instanceByToken, tokensByZone
 }
 
 func createSpreadMinimizingTokenGenerator(t *testing.T, cfg *SpreadMinimizingConfig, zones []string) *SpreadMinimizingTokenGenerator {
 	if cfg == nil {
-		cfg = NewSpreadMinimizingConfig("instance-zone-a-10", "zone-a", false)
+		cfg = NewSpreadMinimizingConfig("instance-zone-a-10", "zone-a", tokensPerInstance)
 	}
 	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg, zones, log.NewLogfmtLogger(os.Stdout))
 	require.NoError(t, err)
@@ -394,23 +449,22 @@ func getRegisteredOwnershipByZone(instancesPerZone int, instanceByToken map[uint
 	return ownershipByInstanceByZone
 }
 
-// generateAllTokens is a modified implementation of SpreadMinimizingTokenGenerator.GenerateTokens that is used in
-// the tests to speed up the generation of tokens, since the generation of tokens for instance with id instanceID
-// already generates the tokens of all other instances with lower ids.
-func (t *SpreadMinimizingTokenGenerator) generateAllTokens(instanceID, zoneID, tokensCount int) (map[int]Tokens, error) {
-	firstInstanceTokens, err := t.generateFirstInstanceTokens(zoneID, tokensCount)
-	if err != nil {
-		return nil, err
+// generateTokensByInstanceID is a modified implementation of SpreadMinimizingTokenGenerator.generateAllTokens that
+// is used in the tests to speed up the generation of tokens, since the generation of tokens for instance with id
+// instanceID already generates the tokens of all other instances with lower ids.
+func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]Tokens {
+	firstInstanceTokens := t.generateFirstInstanceTokens()
+
+	if t.instanceID == 0 {
+		return map[int]Tokens{0: firstInstanceTokens}
 	}
 
-	if instanceID == 0 {
-		return map[int]Tokens{0: firstInstanceTokens}, nil
-	}
+	tokensCount := t.cfg.tokensPerInstance
 
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
 	// to the ids of instances, while priority queues represent the tokens
 	// of the corresponding instance, ordered from highest to lowest ownership.
-	tokensQueues := make([]ownershipPriorityQueue[ringToken], instanceID)
+	tokensQueues := make([]ownershipPriorityQueue[ringToken], t.instanceID)
 
 	// Create and initialize priority queue of tokens for the first instance
 	tokensQueue := newPriorityQueue[ringToken](tokensCount)
@@ -426,27 +480,27 @@ func (t *SpreadMinimizingTokenGenerator) generateAllTokens(instanceID, zoneID, t
 	tokensQueues[0] = tokensQueue
 
 	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
-	instanceQueue := newPriorityQueue[ringInstance](instanceID)
+	instanceQueue := newPriorityQueue[ringInstance](t.instanceID)
 	instanceQueue.Add(newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
 	heap.Init(&instanceQueue)
 
-	allTokens := make(map[int]Tokens, instanceID+1)
+	allTokens := make(map[int]Tokens, t.instanceID+1)
 	allTokens[0] = firstInstanceTokens
 
-	for i := 1; i <= instanceID; i++ {
+	for i := 1; i <= t.instanceID; i++ {
 		optimalInstanceOwnership := float64(totalTokensCount) / float64(i+1)
 		currInstanceOwnership := 0.0
 		addedTokens := 0
 		tokens := make(Tokens, 0, tokensCount)
 		// currInstanceTokenQueue is the priority queue of tokens of newInstance
 		currInstanceTokenQueue := newPriorityQueue[ringToken](tokensCount)
-		ignoredInstances := make([]ownershipInfo[ringInstance], 0, instanceID)
+		ignoredInstances := make([]ownershipInfo[ringInstance], 0, t.instanceID)
 		for addedTokens < tokensCount {
 			optimalTokenOwnership := t.getOptimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(tokensCount-addedTokens))
 			highestOwnershipInstance := instanceQueue.Peek()
 			if highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
 				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
-				return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
+				break
 			}
 			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
 			highestOwnershipToken := tokensQueue.Peek()
@@ -459,7 +513,7 @@ func (t *SpreadMinimizingTokenGenerator) generateAllTokens(instanceID, zoneID, t
 			token := highestOwnershipToken.item
 			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
 			if err != nil {
-				return nil, err
+				return nil
 			}
 			tokens = append(tokens, newToken)
 			// add the new token to currInstanceTokenQueue
@@ -480,8 +534,8 @@ func (t *SpreadMinimizingTokenGenerator) generateAllTokens(instanceID, zoneID, t
 		}
 		slices.Sort(tokens)
 		allTokens[i] = tokens
-		if i == instanceID {
-			return allTokens, err
+		if i == t.instanceID {
+			return allTokens
 		}
 		if len(ignoredInstances) != 0 {
 			for _, ignoredInstance := range ignoredInstances {
@@ -495,5 +549,5 @@ func (t *SpreadMinimizingTokenGenerator) generateAllTokens(instanceID, zoneID, t
 		heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(i, currInstanceOwnership))
 	}
 
-	return nil, nil
+	return nil
 }

@@ -165,14 +165,14 @@ func (t *SpreadMinimizingTokenGenerator) getOptimalTokenOwnership(optimalInstanc
 
 // GenerateTokens generates unique tokensCount tokens, none of which clash
 // with the given takenTokens. Generated tokens are sorted.
-func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) (Tokens, error) {
+func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
 	firstInstanceTokens, err := t.generateFirstInstanceTokens(t.zoneID, tokensCount)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 
 	if t.instanceID == 0 {
-		return firstInstanceTokens, nil
+		return firstInstanceTokens
 	}
 
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
@@ -213,7 +213,7 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			highestOwnershipInstance := instanceQueue.Peek()
 			if highestOwnershipInstance == nil || highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
 				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
-				return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
+				return nil
 			}
 			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
 			highestOwnershipToken := tokensQueue.Peek()
@@ -226,7 +226,7 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			token := highestOwnershipToken.item
 			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
 			if err != nil {
-				return nil, err
+				return nil
 			}
 			tokens = append(tokens, newToken)
 			// add the new token to currInstanceTokenQueue
@@ -267,19 +267,18 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 		heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(i, currInstanceOwnership))
 	}
 
-	return nil, nil
+	return nil
 }
 
-func (t *SpreadMinimizingTokenGenerator) sortAndCheckUniquenessIfNeeded(tokens Tokens, takenTokens []uint32, instanceID int) (Tokens, error) {
+func (t *SpreadMinimizingTokenGenerator) sortAndCheckUniquenessIfNeeded(tokens Tokens, takenTokens []uint32, instanceID int) Tokens {
 	slices.Sort(tokens)
 	if t.cfg.tokenUniquenessCheck {
 		for _, token := range tokens {
 			if slices.Contains(takenTokens, token) {
 				level.Error(t.logger).Log("msg", "token uniqueness check has failed", "token", token, "instanceID", t.instanceID, "zone", t.cfg.zone)
-				return nil, errorTokenNotUnique(instanceID, t.cfg.zone, token)
 			}
 		}
 		level.Info(t.logger).Log("msg", "token uniqueness has been verified", "instanceID", t.instanceID, "zone", t.cfg.zone)
 	}
-	return tokens, nil
+	return tokens
 }

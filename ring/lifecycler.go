@@ -633,10 +633,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				// We need more tokens
 				level.Info(i.logger).Log("msg", "existing instance has too few tokens, adding difference",
 					"current_tokens", len(tokens), "desired_tokens", i.cfg.NumTokens)
-				newTokens, err := i.tokenGenerator.GenerateTokens(delta, ringDesc.GetTokens())
-				if err != nil {
-					return nil, true, err
-				}
+				newTokens := i.tokenGenerator.GenerateTokens(delta, ringDesc.GetTokens())
 				tokens = append(tokens, newTokens...)
 				sort.Sort(tokens)
 			} else if delta < 0 {
@@ -704,10 +701,7 @@ func (i *Lifecycler) verifyTokens(ctx context.Context) bool {
 			needTokens := i.cfg.NumTokens - len(ringTokens)
 
 			level.Info(i.logger).Log("msg", "generating new tokens", "count", needTokens, "ring", i.RingName)
-			newTokens, err := i.tokenGenerator.GenerateTokens(needTokens, takenTokens)
-			if err != nil {
-				return nil, true, err
-			}
+			newTokens := i.tokenGenerator.GenerateTokens(needTokens, takenTokens)
 
 			ringTokens = append(ringTokens, newTokens...)
 			sort.Sort(ringTokens)
@@ -767,11 +761,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) er
 			level.Error(i.logger).Log("msg", "tokens already exist for this instance - wasn't expecting any!", "num_tokens", len(myTokens), "ring", i.RingName)
 		}
 
-		newTokens, err := i.tokenGenerator.GenerateTokens(i.cfg.NumTokens-len(myTokens), takenTokens)
-		if err != nil {
-			return nil, true, err
-		}
-
+		newTokens := i.tokenGenerator.GenerateTokens(i.cfg.NumTokens-len(myTokens), takenTokens)
 		i.setState(targetState)
 
 		myTokens = append(myTokens, newTokens...)

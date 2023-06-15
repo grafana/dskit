@@ -202,21 +202,26 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 		optimalInstanceOwnership := float64(totalTokensCount) / float64(i+1)
 		currInstanceOwnership := 0.0
 		addedTokens := 0
+		// ignoredInstances is a slice of the current instances whose tokens
+		// don't have enough space to accommodate new tokens.
+		ignoredInstances := make([]ownershipInfo[ringInstance], 0, i)
 		tokens := make(Tokens, 0, tokensCount)
 		// currInstanceTokenQueue is the priority queue of tokens of newInstance
 		currInstanceTokenQueue := newPriorityQueue[ringToken](tokensCount)
 		for addedTokens < tokensCount {
 			optimalTokenOwnership := t.getOptimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(tokensCount-addedTokens))
 			highestOwnershipInstance := instanceQueue.Peek()
-			if highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
+			if highestOwnershipInstance == nil || highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
 				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
 				return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
 			}
 			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
 			highestOwnershipToken := tokensQueue.Peek()
 			if highestOwnershipToken.ownership <= float64(optimalTokenOwnership) {
-				level.Error(t.logger).Log("msg", "it was impossible to add a token because the token with the highest ownership of the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "token with the highest ownership", highestOwnershipToken.item.token, "instance with the highest ownership", highestOwnershipInstance.item.instanceID, "highest token ownership", highestOwnershipToken.ownership, "requested ownership", optimalTokenOwnership)
-				return nil, errorNotAllTokenCreated(i, t.cfg.zone, tokensCount)
+				// The token with the highest ownership of the instance with the highest ownership could not
+				// accommodate a new token, hence we ignore this instance and pass to the next instance.
+				ignoredInstances = append(ignoredInstances, heap.Pop(&instanceQueue).(ownershipInfo[ringInstance]))
+				continue
 			}
 			token := highestOwnershipToken.item
 			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
@@ -231,10 +236,14 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 			newTokenOwnership := float64(getTokenDistance(newToken, token.token))
 			currInstanceOwnership += oldTokenOwnership - newTokenOwnership
 
+			// The token with the highest ownership of the instance with the highest ownership has changed,
+			// so we propagate these changes in the corresponding tokens queue.
 			highestOwnershipToken.item.prevToken = newToken
 			highestOwnershipToken.ownership = newTokenOwnership
 			heap.Fix(&tokensQueue, 0)
 
+			// The ownership of the instance with the highest ownership has changed,
+			// so we propagate these changes in the instances queue.
 			highestOwnershipInstance.ownership = highestOwnershipInstance.ownership - oldTokenOwnership + newTokenOwnership
 			heap.Fix(&instanceQueue, 0)
 
@@ -243,6 +252,14 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(tokensCount int, takenTo
 		if i == t.instanceID {
 			return t.sortAndCheckUniquenessIfNeeded(tokens, takenTokens, i)
 		}
+
+		// If there were some ignored instances, we put them back on the queue.
+		if len(ignoredInstances) != 0 {
+			for _, ignoredInstance := range ignoredInstances {
+				heap.Push(&instanceQueue, ignoredInstance)
+			}
+		}
+
 		heap.Init(&currInstanceTokenQueue)
 		tokensQueues[i] = currInstanceTokenQueue
 

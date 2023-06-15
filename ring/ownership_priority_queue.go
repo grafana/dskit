@@ -118,6 +118,9 @@ func (pq *ownershipPriorityQueue[T]) Pop() any {
 // Peek the returns the element with the highest priority from ownershipPriorityQueue,
 // but it does not remove it from the latter. Time complexity is O(1).
 func (pq *ownershipPriorityQueue[T]) Peek() *ownershipInfo[T] {
+	if len(pq.items) == 0 {
+		return nil
+	}
 	return &pq.items[0]
 }
 

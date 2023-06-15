@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"math/bits"
 	"regexp"
 	"sort"
 	"strconv"
@@ -115,17 +114,14 @@ func getZoneID(zone string, zones []string) (int, error) {
 // generateFirstInstanceTokens calculates a set of tokens for a given zone that will be assigned
 // to the first instance (with id 0) of that zone.
 func (t *SpreadMinimizingTokenGenerator) generateFirstInstanceTokens(zoneID int, tokensPerInstance int) (Tokens, error) {
-	tokenDistance := float64(totalTokensCount) / float64(tokensPerInstance)
-	zonesCount := uint32(len(t.zones))
-	tokenDistanceLen := bits.Len(uint(tokenDistance) - 1)
-	zonesOffsetLen := bits.Len(uint(len(t.zones) - 1))
-	if zonesOffsetLen >= tokenDistanceLen {
+	zonesCount := len(t.zones)
+	tokenDistance := (totalTokensCount / tokensPerInstance / zonesCount) * zonesCount
+	if tokenDistance < zonesCount || tokenDistance*tokensPerInstance+zonesCount >= totalTokensCount {
 		return nil, errorZoneSetTooBig(len(t.zones), tokensPerInstance)
 	}
 	tokens := make(Tokens, 0, tokensPerInstance)
 	for i := 0; i < tokensPerInstance; i++ {
-		token := uint32(i << tokenDistanceLen)
-		token = (token/zonesCount)*zonesCount + uint32(zoneID)
+		token := uint32(i*tokenDistance) + uint32(zoneID)
 		tokens = append(tokens, token)
 	}
 	return tokens, nil

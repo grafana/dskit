@@ -106,7 +106,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokens(t *testing.T
 		tokens, err := tokenGenerator.generateFirstInstanceTokens(z, tokensPerInstance)
 		require.NoError(t, err)
 		for i, token := range tokens {
-			require.Equal(t, uint32(i<<23/zonesCount*zonesCount+z), token)
+			require.Equal(t, uint32(1<<23/zonesCount*zonesCount*i+z), token)
 			require.True(t, token%uint32(zonesCount) == uint32(z))
 		}
 	}

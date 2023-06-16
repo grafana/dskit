@@ -18,7 +18,7 @@ func getRandomTokenWeight() float64 {
 	return (maxTokenWeight-minTokenWeight)*rand.Float64() + minTokenWeight
 }
 
-func createPriorityQueueWithoutInitialization(size int) (ownershipPriorityQueue[ringInstance], float64, float64) {
+func createPriorityQueue(size int) (ownershipPriorityQueue[ringInstance], float64, float64) {
 	pq := newPriorityQueue[ringInstance](size)
 
 	minWeight := float64(math.MaxUint32)
@@ -32,7 +32,7 @@ func createPriorityQueueWithoutInitialization(size int) (ownershipPriorityQueue[
 			minWeight = randomWeight
 		}
 		item := newRingInstanceOwnershipInfo(rand.Int(), randomWeight)
-		pq.Add(item)
+		heap.Push(&pq, item)
 	}
 	return pq, minWeight, maxWeight
 }
@@ -41,15 +41,17 @@ func TestOwnershipPriorityQueue_EqualOwnershipOfRingTokens(t *testing.T) {
 	pq := newPriorityQueue[ringToken](3)
 	// ownership of first is 20, and its token is 60
 	first := newRingTokenOwnershipInfo(60, 40)
-	pq.Add(first)
+
 	// ownership of second is 20, and its token is 40, so second > first
 	// (when ownership is equal, priority is decided by the order of ids)
 	second := newRingTokenOwnershipInfo(40, 40)
-	pq.Add(second)
+
 	// ownership of third is 10, so second > first > third
 	third := newRingTokenOwnershipInfo(20, 10)
-	pq.Add(third)
-	heap.Init(&pq)
+
+	heap.Push(&pq, first)
+	heap.Push(&pq, second)
+	heap.Push(&pq, third)
 
 	max := heap.Pop(&pq).(ownershipInfo[ringToken])
 	require.Equal(t, second, max)
@@ -65,15 +67,17 @@ func TestOwnershipPriorityQueue_EqualOwnershipOfRingInstances(t *testing.T) {
 	pq := newPriorityQueue[ringInstance](3)
 	// ownership of first is 40.0, and its id is 10
 	first := newRingInstanceOwnershipInfo(10, 40.0)
-	pq.Add(first)
+
 	// ownership of second is 40.0, and its id is 8, so first > second
 	// (when ownership is equal, priority is decided by comparing ids)
 	second := newRingInstanceOwnershipInfo(8, 40.0)
-	pq.Add(second)
+
 	// ownership of third is 15.0, so first > second > third
 	third := newRingInstanceOwnershipInfo(9, 15.0)
-	pq.Add(third)
-	heap.Init(&pq)
+
+	heap.Push(&pq, first)
+	heap.Push(&pq, second)
+	heap.Push(&pq, third)
 
 	max := heap.Pop(&pq).(ownershipInfo[ringInstance])
 	require.Equal(t, first, max)
@@ -87,10 +91,7 @@ func TestOwnershipPriorityQueue_EqualOwnershipOfRingInstances(t *testing.T) {
 
 func TestOwnershipPriorityQueue_PushPopPeek(t *testing.T) {
 	size := 10
-	pq, minWeight, maxWeight := createPriorityQueueWithoutInitialization(size)
-
-	// Initialize PriorityQueue
-	heap.Init(&pq)
+	pq, minWeight, maxWeight := createPriorityQueue(size)
 
 	// Check that the highest priority is maxWeight, but don't remove it
 	require.Equal(t, maxWeight, pq.Peek().ownership)

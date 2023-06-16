@@ -19,7 +19,7 @@ var (
 	tokensPerInstance = 512
 )
 
-func TestSpreadMinimizingTokenGenerator_GetInstanceID(t *testing.T) {
+func TestSpreadMinimizingTokenGenerator_ParseInstanceID(t *testing.T) {
 	tests := map[string]struct {
 		instanceID    string
 		expectedID    int
@@ -32,6 +32,10 @@ func TestSpreadMinimizingTokenGenerator_GetInstanceID(t *testing.T) {
 		"instance-zone-b-0 is correct": {
 			instanceID: "instance-zone-b-0",
 			expectedID: 0,
+		},
+		"store-gateway-zone-c-7 is correct": {
+			instanceID: "store-gateway-zone-c-7",
+			expectedID: 7,
 		},
 		"instance-zone-5 is not valid": {
 			instanceID:    "instance-zone-5",
@@ -47,18 +51,18 @@ func TestSpreadMinimizingTokenGenerator_GetInstanceID(t *testing.T) {
 		},
 	}
 	for _, testData := range tests {
-		ID, err := getInstanceID(testData.instanceID)
+		id, err := parseInstanceID(testData.instanceID)
 		if testData.expectedError != nil {
 			require.Error(t, err)
 			require.Equal(t, testData.expectedError, err)
 		} else {
 			require.NoError(t, err)
-			require.Equal(t, testData.expectedID, ID)
+			require.Equal(t, testData.expectedID, id)
 		}
 	}
 }
 
-func TestSpreadMinimizingTokenGenerator_GetZoneID(t *testing.T) {
+func TestSpreadMinimizingTokenGenerator_FindZoneID(t *testing.T) {
 	tests := map[string]struct {
 		zone          string
 		zones         []string
@@ -89,7 +93,7 @@ func TestSpreadMinimizingTokenGenerator_GetZoneID(t *testing.T) {
 		},
 	}
 	for _, testData := range tests {
-		zoneID, err := getZoneID(testData.zone, testData.zones)
+		zoneID, err := findZoneID(testData.zone, testData.zones)
 		if testData.expectedError != nil {
 			require.Error(t, err)
 			require.Equal(t, testData.expectedError, err)
@@ -104,15 +108,14 @@ func TestSpreadMinimizingTokenGenerator_GetZoneID(t *testing.T) {
 }
 
 func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokens(t *testing.T) {
-	zonesCount := len(zones)
 	for z, zone := range zones {
 		instanceID := fmt.Sprintf("instance-%s-%d", zone, 10)
-		cfg := &SpreadMinimizingConfig{instanceID, zone, tokensPerInstance}
+		cfg := &SpreadMinimizingConfig{instanceID, zone}
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokens := tokenGenerator.generateFirstInstanceTokens()
 		for i, token := range tokens {
-			require.Equal(t, uint32(1<<23/zonesCount*zonesCount*i+z), token)
-			require.True(t, token%uint32(zonesCount) == uint32(z))
+			require.Equal(t, uint32(1<<23*i+z), token)
+			require.True(t, token%uint32(maxZonesCount) == uint32(z))
 		}
 	}
 }
@@ -120,7 +123,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokens(t *testing.T
 func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokensIdempotent(t *testing.T) {
 	for _, zone := range zones {
 		instanceID := fmt.Sprintf("instance-%s-%d", zone, 10)
-		cfg := &SpreadMinimizingConfig{instanceID, zone, tokensPerInstance}
+		cfg := &SpreadMinimizingConfig{instanceID, zone}
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokens1 := tokenGenerator.generateFirstInstanceTokens()
 		require.Len(t, tokens1, tokensPerInstance)
@@ -129,7 +132,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateFirstInstanceTokensIdempotent(t 
 	}
 }
 
-func TestSpreadMinimizingTokenGenerator_GetOptimalTokenOwnership(t *testing.T) {
+func TestSpreadMinimizingTokenGenerator_OptimalTokenOwnership(t *testing.T) {
 	tests := []struct {
 		optimalInstanceOwnership      float64
 		currInstanceOwnership         float64
@@ -151,7 +154,7 @@ func TestSpreadMinimizingTokenGenerator_GetOptimalTokenOwnership(t *testing.T) {
 	}
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, nil, zones)
 	for _, testData := range tests {
-		optimalTokenOwnership := tokenGenerator.getOptimalTokenOwnership(testData.optimalInstanceOwnership, testData.currInstanceOwnership, testData.currTokensCount)
+		optimalTokenOwnership := tokenGenerator.optimalTokenOwnership(testData.optimalInstanceOwnership, testData.currInstanceOwnership, testData.currTokensCount)
 		require.Equal(t, testData.expectedOptimalTokenOwnership, optimalTokenOwnership)
 	}
 }
@@ -164,69 +167,69 @@ func TestSpreadMinimizingTokenGenerator_CalculateNewToken(t *testing.T) {
 		expectedError         error
 	}{
 		"zoneID 0, prevToken < token": {
-			ringToken:             ringToken{90, 30},
-			optimalTokenOwnership: 30,
-			expectedNewToken:      60,
+			ringToken:             ringToken{800, 40},
+			optimalTokenOwnership: 80,
+			expectedNewToken:      120,
 		},
 		"zoneID 1, prevToken < token": {
-			ringToken:             ringToken{91, 31},
-			optimalTokenOwnership: 30,
-			expectedNewToken:      61,
+			ringToken:             ringToken{801, 41},
+			optimalTokenOwnership: 80,
+			expectedNewToken:      121,
 		},
 		"zoneID 2, prevToken < token": {
-			ringToken:             ringToken{92, 32},
-			optimalTokenOwnership: 30,
-			expectedNewToken:      62,
+			ringToken:             ringToken{802, 42},
+			optimalTokenOwnership: 80,
+			expectedNewToken:      122,
 		},
 		"zoneID 0, prevToken > token": {
-			ringToken:             ringToken{420, 4294967142},
-			optimalTokenOwnership: 210,
-			expectedNewToken:      60,
+			ringToken:             ringToken{416, 4294967136},
+			optimalTokenOwnership: 240,
+			expectedNewToken:      96,
 		},
 		"zoneID 1, prevToken > token": {
-			ringToken:             ringToken{421, 4294967143},
-			optimalTokenOwnership: 210,
-			expectedNewToken:      61,
+			ringToken:             ringToken{417, 4294967137},
+			optimalTokenOwnership: 240,
+			expectedNewToken:      97,
 		},
 		"zoneID 2, prevToken > token": {
-			ringToken:             ringToken{422, 4294967144},
-			optimalTokenOwnership: 210,
-			expectedNewToken:      62,
+			ringToken:             ringToken{418, 4294967138},
+			optimalTokenOwnership: 240,
+			expectedNewToken:      98,
 		},
 		"zoneID 0, prevToken > token, offset > optimalTokenOwnership": {
-			ringToken:             ringToken{420, 4294967142},
+			ringToken:             ringToken{416, 4294967136},
 			optimalTokenOwnership: 120,
-			expectedNewToken:      4294967262,
+			expectedNewToken:      4294967256,
 		},
 		"zoneID 1, prevToken > token, offset > optimalTokenOwnership": {
-			ringToken:             ringToken{421, 4294967143},
+			ringToken:             ringToken{417, 4294967137},
 			optimalTokenOwnership: 120,
-			expectedNewToken:      4294967263,
+			expectedNewToken:      4294967257,
 		},
 		"zoneID 2, prevToken > token, offset > optimalTokenOwnership": {
-			ringToken:             ringToken{422, 4294967144},
+			ringToken:             ringToken{418, 4294967138},
 			optimalTokenOwnership: 120,
-			expectedNewToken:      4294967264,
+			expectedNewToken:      4294967258,
 		},
 		"bad congruence": {
 			ringToken:             ringToken{90, 31},
-			optimalTokenOwnership: 30,
-			expectedError:         fmt.Errorf("calculation of a new token between 31 and 90 with optimal token ownership 30 was impossible: lower and upper bounds must be congruent modulo number of zones 3"),
+			optimalTokenOwnership: 80,
+			expectedError:         fmt.Errorf("calculation of a new token between 31 and 90 with optimal token ownership 80 was impossible: lower and upper bounds must be congruent modulo maximal allowed number of zones 8"),
 		},
 		"optimalTokenOwnership small": {
-			ringToken:             ringToken{90, 30},
+			ringToken:             ringToken{240, 80},
 			optimalTokenOwnership: 2,
-			expectedError:         fmt.Errorf("calculation of a new token between 30 and 90 with optimal token ownership 2 was impossible: optimal token ownership must be a positive multiple of number of zones 3"),
+			expectedError:         fmt.Errorf("calculation of a new token between 80 and 240 with optimal token ownership 2 was impossible: optimal token ownership must be a positive multiple of maximal allowed number of zones 8"),
 		},
 		"optimalTokenOwnership bad congruence": {
-			ringToken:             ringToken{90, 30},
-			optimalTokenOwnership: 32,
-			expectedError:         fmt.Errorf("calculation of a new token between 30 and 90 with optimal token ownership 32 was impossible: optimal token ownership must be a positive multiple of number of zones 3"),
+			ringToken:             ringToken{240, 80},
+			optimalTokenOwnership: 42,
+			expectedError:         fmt.Errorf("calculation of a new token between 80 and 240 with optimal token ownership 42 was impossible: optimal token ownership must be a positive multiple of maximal allowed number of zones 8"),
 		},
 		"optimalTokenOwnership too big": {
-			ringToken:             ringToken{90, 30},
-			optimalTokenOwnership: 300,
-			expectedError:         fmt.Errorf("calculation of a new token between 30 and 90 with optimal token ownership 300 was impossible: distance between lower and upper bound 60 is not big enough"),
+			ringToken:             ringToken{240, 80},
+			optimalTokenOwnership: 400,
+			expectedError:         fmt.Errorf("calculation of a new token between 80 and 240 with optimal token ownership 400 was impossible: distance between lower and upper bound 160 is not big enough"),
 		},
 	}
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, nil, zones)
@@ -247,7 +250,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateAllTokensIdempotent(t *testing.T
 	for instanceID := 0; instanceID < maxInstanceID; instanceID++ {
 		for _, zone := range zones {
 			instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-			cfg := &SpreadMinimizingConfig{instance, zone, tokensPerInstance}
+			cfg := &SpreadMinimizingConfig{instance, zone}
 			tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 			tokens1 := tokenGenerator.generateAllTokens()
 			require.Len(t, tokens1, tokensPerInstance)
@@ -274,7 +277,7 @@ func TestSpreadMinimizingTokenGenerator_VerifyInstanceOwnershipSpreadByZone(t *t
 	tokensPerInstance := 512
 	instancesPerZone := 10000
 	instanceByToken, tokensByZone := createTokensForAllInstancesAndZones(t, instancesPerZone, tokensPerInstance)
-	ownershipByInstanceByZone := getRegisteredOwnershipByZone(instancesPerZone, instanceByToken, tokensByZone)
+	ownershipByInstanceByZone := registeredOwnershipByZone(instancesPerZone, instanceByToken, tokensByZone)
 	for _, ownershipByInstance := range ownershipByInstanceByZone {
 		own := 0.0
 		minOwnership := math.MaxFloat64
@@ -295,7 +298,7 @@ func TestSpreadMinimizingTokenGenerator_CheckTokenUniqueness(t *testing.T) {
 	allTokens := make(map[uint32]bool, tokensPerInstance*(instanceID+1)*len(zones))
 	for _, zone := range zones {
 		instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-		cfg := &SpreadMinimizingConfig{instance, zone, tokensPerInstance}
+		cfg := &SpreadMinimizingConfig{instance, zone}
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokens := tokenGenerator.generateTokensByInstanceID()
 		for i := 0; i <= instanceID; i++ {
@@ -316,7 +319,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateTokens(t *testing.T) {
 	instanceID := 1000
 	zone := zones[0]
 	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-	cfg := &SpreadMinimizingConfig{instance, zone, tokensPerInstance}
+	cfg := &SpreadMinimizingConfig{instance, zone}
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 	// this is the set of all sorted tokens assigned to instance
 	allTokens := tokenGenerator.generateAllTokens()
@@ -356,12 +359,24 @@ func TestSpreadMinimizingTokenGenerator_GenerateTokens(t *testing.T) {
 	require.Len(t, noTokens, 0)
 }
 
+func BenchmarkSpreadMinimizingTokenGenerator_GenerateTokens(b *testing.B) {
+	instanceID := 1000
+	zone := zones[0]
+	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
+	cfg := &SpreadMinimizingConfig{instance, zone}
+	tokenGenerator := createSpreadMinimizingTokenGenerator(b, cfg, zones)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tokenGenerator.GenerateTokens(512, nil)
+	}
+}
+
 func TestSpreadMinimizingTokenGenerator_GetMissingTokens(t *testing.T) {
 	tokensPerInstance := 512
 	instanceID := 1000
 	zone := zones[0]
 	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-	cfg := &SpreadMinimizingConfig{instance, zone, tokensPerInstance}
+	cfg := &SpreadMinimizingConfig{instance, zone}
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 
 	// we get all the tokens for the underlying instance, but we don't mark all of them as taken
@@ -393,7 +408,7 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 	tokenSetsByZone := make(map[string][][]uint32, len(zones))
 	for _, zone := range zones {
 		finalInstance := fmt.Sprintf("instance-%s-%d", zone, maxInstanceID)
-		cfg := &SpreadMinimizingConfig{finalInstance, zone, tokensPerInstance}
+		cfg := &SpreadMinimizingConfig{finalInstance, zone}
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokensByInstance := tokenGenerator.generateTokensByInstanceID()
 		for id, tokens := range tokensByInstance {
@@ -421,9 +436,9 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 	return instanceByToken, tokensByZone
 }
 
-func createSpreadMinimizingTokenGenerator(t *testing.T, cfg *SpreadMinimizingConfig, zones []string) *SpreadMinimizingTokenGenerator {
+func createSpreadMinimizingTokenGenerator(t testing.TB, cfg *SpreadMinimizingConfig, zones []string) *SpreadMinimizingTokenGenerator {
 	if cfg == nil {
-		cfg = &SpreadMinimizingConfig{"instance-zone-a-10", "zone-a", tokensPerInstance}
+		cfg = &SpreadMinimizingConfig{"instance-zone-a-10", "zone-a"}
 	}
 	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(*cfg, zones, log.NewLogfmtLogger(os.Stdout))
 	require.NoError(t, err)
@@ -431,8 +446,8 @@ func createSpreadMinimizingTokenGenerator(t *testing.T, cfg *SpreadMinimizingCon
 	return tokenGenerator
 }
 
-// getRegisteredOwnershipByZone calculates ownership maps grouped by instance id and by zone
-func getRegisteredOwnershipByZone(instancesPerZone int, instanceByToken map[uint32]*instanceInfo, tokensByZone map[string][]uint32) map[string]map[string]float64 {
+// registeredOwnershipByZone calculates ownership maps grouped by instance id and by zone
+func registeredOwnershipByZone(instancesPerZone int, instanceByToken map[uint32]*instanceInfo, tokensByZone map[string][]uint32) map[string]map[string]float64 {
 	ownershipByInstanceByZone := make(map[string]map[string]float64, len(zones))
 	for zone, tokens := range tokensByZone {
 		ownershipByInstanceByZone[zone] = make(map[string]float64, instancesPerZone)
@@ -441,7 +456,7 @@ func getRegisteredOwnershipByZone(instancesPerZone int, instanceByToken map[uint
 		}
 		prev := len(tokens) - 1
 		for tk, token := range tokens {
-			ownership := float64(getTokenDistance(tokens[prev], token))
+			ownership := float64(tokenDistance(tokens[prev], token))
 			ownershipByInstanceByZone[zone][instanceByToken[token].InstanceID] += ownership
 			prev = tk
 		}
@@ -459,30 +474,26 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 		return map[int]Tokens{0: firstInstanceTokens}
 	}
 
-	tokensCount := t.cfg.TokensPerInstance
-
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
 	// to the ids of instances, while priority queues represent the tokens
 	// of the corresponding instance, ordered from highest to lowest ownership.
 	tokensQueues := make([]ownershipPriorityQueue[ringToken], t.instanceID)
 
 	// Create and initialize priority queue of tokens for the first instance
-	tokensQueue := newPriorityQueue[ringToken](tokensCount)
+	tokensQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
 	prev := len(firstInstanceTokens) - 1
 	firstInstanceOwnership := 0.0
 	for tk, token := range firstInstanceTokens {
-		tokenOwnership := float64(getTokenDistance(firstInstanceTokens[prev], token))
+		tokenOwnership := float64(tokenDistance(firstInstanceTokens[prev], token))
 		firstInstanceOwnership += tokenOwnership
-		tokensQueue.Add(newRingTokenOwnershipInfo(token, firstInstanceTokens[prev]))
+		heap.Push(&tokensQueue, newRingTokenOwnershipInfo(token, firstInstanceTokens[prev]))
 		prev = tk
 	}
-	heap.Init(&tokensQueue)
 	tokensQueues[0] = tokensQueue
 
 	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
 	instanceQueue := newPriorityQueue[ringInstance](t.instanceID)
-	instanceQueue.Add(newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
-	heap.Init(&instanceQueue)
+	heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
 
 	allTokens := make(map[int]Tokens, t.instanceID+1)
 	allTokens[0] = firstInstanceTokens
@@ -491,12 +502,12 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 		optimalInstanceOwnership := float64(totalTokensCount) / float64(i+1)
 		currInstanceOwnership := 0.0
 		addedTokens := 0
-		tokens := make(Tokens, 0, tokensCount)
+		tokens := make(Tokens, 0, optimalTokensPerInstance)
 		// currInstanceTokenQueue is the priority queue of tokens of newInstance
-		currInstanceTokenQueue := newPriorityQueue[ringToken](tokensCount)
+		currInstanceTokenQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
 		ignoredInstances := make([]ownershipInfo[ringInstance], 0, t.instanceID)
-		for addedTokens < tokensCount {
-			optimalTokenOwnership := t.getOptimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(tokensCount-addedTokens))
+		for addedTokens < optimalTokensPerInstance {
+			optimalTokenOwnership := t.optimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(optimalTokensPerInstance-addedTokens))
 			highestOwnershipInstance := instanceQueue.Peek()
 			if highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
 				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
@@ -517,10 +528,10 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 			}
 			tokens = append(tokens, newToken)
 			// add the new token to currInstanceTokenQueue
-			currInstanceTokenQueue.Add(newRingTokenOwnershipInfo(newToken, token.prevToken))
+			heap.Push(&currInstanceTokenQueue, newRingTokenOwnershipInfo(newToken, token.prevToken))
 
 			oldTokenOwnership := highestOwnershipToken.ownership
-			newTokenOwnership := float64(getTokenDistance(newToken, token.token))
+			newTokenOwnership := float64(tokenDistance(newToken, token.token))
 			currInstanceOwnership += oldTokenOwnership - newTokenOwnership
 
 			highestOwnershipToken.item.prevToken = newToken
@@ -537,12 +548,9 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 		if i == t.instanceID {
 			return allTokens
 		}
-		if len(ignoredInstances) != 0 {
-			for _, ignoredInstance := range ignoredInstances {
-				heap.Push(&instanceQueue, ignoredInstance)
-			}
+		for _, ignoredInstance := range ignoredInstances {
+			heap.Push(&instanceQueue, ignoredInstance)
 		}
-		heap.Init(&currInstanceTokenQueue)
 		tokensQueues[i] = currInstanceTokenQueue
 
 		// add the current instance with the calculated ownership currInstanceOwnership to instanceQueue

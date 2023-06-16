@@ -42,7 +42,7 @@ type ownershipInfo[T ringItem] struct {
 }
 
 func newRingTokenOwnershipInfo(token, prevToken uint32) ownershipInfo[ringToken] {
-	ownership := float64(getTokenDistance(prevToken, token))
+	ownership := float64(tokenDistance(prevToken, token))
 	return ownershipInfo[ringToken]{
 		ownership: ownership,
 		item: ringToken{
@@ -72,9 +72,9 @@ type ownershipPriorityQueue[T ringItem] struct {
 	items []ownershipInfo[T]
 }
 
-func newPriorityQueue[T ringItem](len int) ownershipPriorityQueue[T] {
+func newPriorityQueue[T ringItem](capacity int) ownershipPriorityQueue[T] {
 	return ownershipPriorityQueue[T]{
-		items: make([]ownershipInfo[T], 0, len),
+		items: make([]ownershipInfo[T], 0, capacity),
 	}
 }
 
@@ -122,12 +122,6 @@ func (pq *ownershipPriorityQueue[T]) Peek() *ownershipInfo[T] {
 		return nil
 	}
 	return &pq.items[0]
-}
-
-// Add adds an element at the end of the queue, but it does not take into account the ownership value.
-// In order to re-stabilize the priority queue property it is necessary to call heap.Init() on this queue.
-func (pq *ownershipPriorityQueue[T]) Add(ownershipInfo ownershipInfo[T]) {
-	pq.items = append(pq.items, ownershipInfo)
 }
 
 func (pq *ownershipPriorityQueue[T]) String() string {

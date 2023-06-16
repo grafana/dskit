@@ -420,7 +420,7 @@ func TestGetTokenDistance(t *testing.T) {
 	}
 
 	for _, testData := range tests {
-		distance := getTokenDistance(testData.from, testData.to)
+		distance := tokenDistance(testData.from, testData.to)
 		require.Equal(t, testData.expected, distance)
 	}
 }

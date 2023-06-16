@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -314,6 +315,18 @@ func TestSpreadMinimizingTokenGenerator_CheckTokenUniqueness(t *testing.T) {
 	}
 }
 
+func TestSpreadMinimizingTokenGenerator_GenerateTokensPanics(t *testing.T) {
+	instanceID := 1000
+	zone := zones[0]
+	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
+	cfg := &SpreadMinimizingConfig{instance, zone}
+	tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
+	// we try to generate 1024, and we ensure that this call panics
+	assert.Panics(t, func() {
+		tokenGenerator.GenerateTokens(2*tokensPerInstance, nil)
+	})
+}
+
 func TestSpreadMinimizingTokenGenerator_GenerateTokens(t *testing.T) {
 	tokensPerInstance := 512
 	instanceID := 1000
@@ -325,16 +338,11 @@ func TestSpreadMinimizingTokenGenerator_GenerateTokens(t *testing.T) {
 	allTokens := tokenGenerator.generateAllTokens()
 	require.Len(t, allTokens, tokensPerInstance)
 
-	// we try to generate 1024, and we ensure that only allTokens will be returned
-	tokens := tokenGenerator.GenerateTokens(2*tokensPerInstance, nil)
-	require.Len(t, tokens, tokensPerInstance)
-	require.True(t, allTokens.Equals(tokens))
-
 	takenTokens := make(Tokens, 0, tokensPerInstance)
 	tokensCount := 300
 	// we get the first tokensCount tokens and ensure that they are returned in the same order
 	// they have in allTokens
-	tokens = tokenGenerator.GenerateTokens(tokensCount, takenTokens)
+	tokens := tokenGenerator.GenerateTokens(tokensCount, takenTokens)
 	require.Len(t, tokens, tokensCount)
 	for i := 0; i < tokensCount; i++ {
 		require.Equal(t, allTokens[i], tokens[i])
@@ -354,9 +362,10 @@ func TestSpreadMinimizingTokenGenerator_GenerateTokens(t *testing.T) {
 	// we mark remaining tokens as taken
 	takenTokens = append(takenTokens, remainingTokens...)
 
-	// we ensure that further attempts to generate tokens return nothing
-	noTokens := tokenGenerator.GenerateTokens(tokensPerInstance, takenTokens)
-	require.Len(t, noTokens, 0)
+	// we ensure that further attempts to generate a positive number of tokens panics
+	assert.Panics(t, func() {
+		tokenGenerator.GenerateTokens(1, takenTokens)
+	})
 }
 
 func BenchmarkSpreadMinimizingTokenGenerator_GenerateTokens(b *testing.B) {

@@ -103,6 +103,9 @@ func findZoneID(zone string, sortedZones []string) (int, error) {
 // generateFirstInstanceTokens calculates a set of tokens that should be assigned to the first instance (with id 0)
 // of the zone of the underlying instance.
 func (t *SpreadMinimizingTokenGenerator) generateFirstInstanceTokens() Tokens {
+	// In this approach all the tokens from the same zone are equal to each other modulo maxZonesCount.
+	// Therefore, tokenDistance is calculated as a multiple of maxZonesCount, so that we ensure that
+	// the following for loop calculates the actual tokens following the approach's requirement.
 	tokenDistance := (totalTokensCount / optimalTokensPerInstance / maxZonesCount) * maxZonesCount
 	tokens := make(Tokens, 0, optimalTokensPerInstance)
 	for i := 0; i < optimalTokensPerInstance; i++ {
@@ -114,8 +117,8 @@ func (t *SpreadMinimizingTokenGenerator) generateFirstInstanceTokens() Tokens {
 
 // calculateNewToken determines where in the range represented by the given ringToken should a new token be placed
 // in order to satisfy the constraint represented by the optimalTokenOwnership. This method assumes that:
-// - ringToken.token % zonesCount == ringToken.prevToken % zonesCount
-// - optimalTokenOwnership % zonesCount == 0,
+// - ringToken.token % maxZonesCount == ringToken.prevToken % zonesCount
+// - optimalTokenOwnership % maxZonesCount == 0,
 // where zonesCount is the number of zones in the ring. The caller of this function must ensure that these assumptions hold.
 func (t *SpreadMinimizingTokenGenerator) calculateNewToken(token ringToken, optimalTokenOwnership uint32) (uint32, error) {
 	if optimalTokenOwnership < maxZonesCount || optimalTokenOwnership%maxZonesCount != 0 {
@@ -128,7 +131,13 @@ func (t *SpreadMinimizingTokenGenerator) calculateNewToken(token ringToken, opti
 	if ownership <= int(optimalTokenOwnership) {
 		return 0, errorDistanceBetweenTokensNotBigEnough(int(optimalTokenOwnership), ownership, token)
 	}
-	maxTokenValue := (math.MaxUint32/uint32(maxZonesCount) - 1) * maxZonesCount
+	// In the present approach tokens of successive zones are immediate successors of the tokens in
+	// the previous zone. This means that once a token of the "leading" zone, i.e., the zone with
+	// id 0 is determined, we must have enough space to accommodate the corresponding tokens in the
+	// remaining (maxZonesCount-1) zones. Hence, the highest token of the leading zone must be a
+	// multiple of maxZonesCount, that guarantees that there are remaining (maxZonesCount-1) available
+	// tokens in the token space.
+	maxTokenValue := uint32(((totalTokensCount / maxZonesCount) - 1) * maxZonesCount)
 	offset := maxTokenValue - token.prevToken
 	if offset < optimalTokenOwnership {
 		newToken := optimalTokenOwnership - offset
@@ -140,8 +149,8 @@ func (t *SpreadMinimizingTokenGenerator) calculateNewToken(token ringToken, opti
 // optimalTokenOwnership calculates the optimal ownership of the remaining currTokensCount tokens of an instance
 // having the given current instances ownership currInstanceOwnership and the given optimal instance ownership
 // optimalInstanceOwnership. The resulting token ownership must be a multiple of the number of zones.
-func (t *SpreadMinimizingTokenGenerator) optimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership float64, currTokensCount uint32) uint32 {
-	optimalTokenOwnership := uint32(optimalInstanceOwnership-currInstanceOwnership) / currTokensCount
+func (t *SpreadMinimizingTokenGenerator) optimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership float64, remainingTokensCount uint32) uint32 {
+	optimalTokenOwnership := uint32(optimalInstanceOwnership-currInstanceOwnership) / remainingTokensCount
 	return (optimalTokenOwnership / maxZonesCount) * maxZonesCount
 }
 
@@ -161,18 +170,18 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(requestedTokensCount int
 	}
 
 	allTokens := t.generateAllTokens()
-	tokens := make(Tokens, 0, requestedTokensCount)
+	uniqueTokens := make(Tokens, 0, requestedTokensCount)
 
 	// allTokens is a sorted slice of tokens for instance t.cfg.InstanceID in zone t.cfg.zone
 	// We filter out tokens from allTakenTokens, if any, and return at most requestedTokensCount tokens.
-	for i := 0; i < len(allTokens) && len(tokens) < requestedTokensCount; i++ {
+	for i := 0; i < len(allTokens) && len(uniqueTokens) < requestedTokensCount; i++ {
 		token := allTokens[i]
 		if used[token] {
 			continue
 		}
-		tokens = append(tokens, token)
+		uniqueTokens = append(uniqueTokens, token)
 	}
-	return tokens
+	return uniqueTokens
 }
 
 // generateAllTokens generates the optimal number of tokens (optimalTokenPerInstance), i.e., 512,
@@ -182,10 +191,24 @@ func (t *SpreadMinimizingTokenGenerator) GenerateTokens(requestedTokensCount int
 // is optimal.
 // Calls to this method will always return the same set of tokens.
 func (t *SpreadMinimizingTokenGenerator) generateAllTokens() Tokens {
+	tokensByInstanceID := t.generateTokensByInstanceID()
+	allTokens := tokensByInstanceID[t.instanceID]
+	slices.Sort(allTokens)
+	return allTokens
+}
+
+// generateTokensByInstanceID generates the optimal number of tokens (optimalTokenPerInstance),
+// i.e., 512, for all instances whose id is less or equal to the id of the underlying instance
+// (with id t.instanceID). Generated tokens are not sorted, but they are distributed in such a
+// way that registered ownership of all the instances is optimal.
+// Calls to this method will always return the same set of tokens.
+func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]Tokens {
 	firstInstanceTokens := t.generateFirstInstanceTokens()
+	tokensByInstanceID := make(map[int]Tokens, t.instanceID+1)
+	tokensByInstanceID[0] = firstInstanceTokens
 
 	if t.instanceID == 0 {
-		return firstInstanceTokens
+		return tokensByInstanceID
 	}
 
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
@@ -267,9 +290,10 @@ func (t *SpreadMinimizingTokenGenerator) generateAllTokens() Tokens {
 
 			addedTokens++
 		}
+		tokensByInstanceID[i] = tokens
+		// if this is the last iteration we return, so we avoid to call additional heap.Pushs
 		if i == t.instanceID {
-			slices.Sort(tokens)
-			return tokens
+			return tokensByInstanceID
 		}
 
 		// If there were some ignored instances, we put them back on the queue.
@@ -283,5 +307,5 @@ func (t *SpreadMinimizingTokenGenerator) generateAllTokens() Tokens {
 		heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(i, currInstanceOwnership))
 	}
 
-	return nil
+	return tokensByInstanceID
 }

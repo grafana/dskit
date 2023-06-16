@@ -1,7 +1,6 @@
 package ring
 
 import (
-	"container/heap"
 	"fmt"
 	"math"
 	"math/rand"
@@ -9,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -174,17 +172,17 @@ func TestSpreadMinimizingTokenGenerator_CalculateNewToken(t *testing.T) {
 		"zoneID 0, prevToken > token": {
 			ringToken:             ringToken{416, 4294967136},
 			optimalTokenOwnership: 240,
-			expectedNewToken:      96,
+			expectedNewToken:      88,
 		},
 		"zoneID 1, prevToken > token": {
 			ringToken:             ringToken{417, 4294967137},
 			optimalTokenOwnership: 240,
-			expectedNewToken:      97,
+			expectedNewToken:      89,
 		},
 		"zoneID 2, prevToken > token": {
 			ringToken:             ringToken{418, 4294967138},
 			optimalTokenOwnership: 240,
-			expectedNewToken:      98,
+			expectedNewToken:      90,
 		},
 		"zoneID 0, prevToken > token, offset > optimalTokenOwnership": {
 			ringToken:             ringToken{416, 4294967136},
@@ -409,6 +407,9 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, cfg, zones)
 		tokensByInstance := tokenGenerator.generateTokensByInstanceID()
 		for id, tokens := range tokensByInstance {
+			if !slices.IsSorted(tokens) {
+				slices.Sort(tokens)
+			}
 			instInfo := &instanceInfo{
 				InstanceID: fmt.Sprintf("instance-%s-%d", zone, id),
 				Zone:       zone,
@@ -459,100 +460,4 @@ func registeredOwnershipByZone(instancesPerZone int, instanceByToken map[uint32]
 		}
 	}
 	return ownershipByInstanceByZone
-}
-
-// generateTokensByInstanceID is a modified implementation of SpreadMinimizingTokenGenerator.generateAllTokens that
-// is used in the tests to speed up the generation of tokens, since the generation of tokens for instance with id
-// instanceID already generates the tokens of all other instances with lower ids.
-func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]Tokens {
-	firstInstanceTokens := t.generateFirstInstanceTokens()
-
-	if t.instanceID == 0 {
-		return map[int]Tokens{0: firstInstanceTokens}
-	}
-
-	// tokensQueues is a slice of priority queues. Slice indexes correspond
-	// to the ids of instances, while priority queues represent the tokens
-	// of the corresponding instance, ordered from highest to lowest ownership.
-	tokensQueues := make([]ownershipPriorityQueue[ringToken], t.instanceID)
-
-	// Create and initialize priority queue of tokens for the first instance
-	tokensQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
-	prev := len(firstInstanceTokens) - 1
-	firstInstanceOwnership := 0.0
-	for tk, token := range firstInstanceTokens {
-		tokenOwnership := float64(tokenDistance(firstInstanceTokens[prev], token))
-		firstInstanceOwnership += tokenOwnership
-		heap.Push(&tokensQueue, newRingTokenOwnershipInfo(token, firstInstanceTokens[prev]))
-		prev = tk
-	}
-	tokensQueues[0] = tokensQueue
-
-	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
-	instanceQueue := newPriorityQueue[ringInstance](t.instanceID)
-	heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
-
-	allTokens := make(map[int]Tokens, t.instanceID+1)
-	allTokens[0] = firstInstanceTokens
-
-	for i := 1; i <= t.instanceID; i++ {
-		optimalInstanceOwnership := float64(totalTokensCount) / float64(i+1)
-		currInstanceOwnership := 0.0
-		addedTokens := 0
-		tokens := make(Tokens, 0, optimalTokensPerInstance)
-		// currInstanceTokenQueue is the priority queue of tokens of newInstance
-		currInstanceTokenQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
-		ignoredInstances := make([]ownershipInfo[ringInstance], 0, t.instanceID)
-		for addedTokens < optimalTokensPerInstance {
-			optimalTokenOwnership := t.optimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(optimalTokensPerInstance-addedTokens))
-			highestOwnershipInstance := instanceQueue.Peek()
-			if highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
-				level.Error(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
-				break
-			}
-			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
-			highestOwnershipToken := tokensQueue.Peek()
-			if highestOwnershipToken.ownership <= float64(optimalTokenOwnership) {
-				// token with the highest ownership of the instance with the highest ownership
-				// could not satisfy the request, hence we pass to the next instance.
-				ignoredInstances = append(ignoredInstances, heap.Pop(&instanceQueue).(ownershipInfo[ringInstance]))
-				continue
-			}
-			token := highestOwnershipToken.item
-			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
-			if err != nil {
-				return nil
-			}
-			tokens = append(tokens, newToken)
-			// add the new token to currInstanceTokenQueue
-			heap.Push(&currInstanceTokenQueue, newRingTokenOwnershipInfo(newToken, token.prevToken))
-
-			oldTokenOwnership := highestOwnershipToken.ownership
-			newTokenOwnership := float64(tokenDistance(newToken, token.token))
-			currInstanceOwnership += oldTokenOwnership - newTokenOwnership
-
-			highestOwnershipToken.item.prevToken = newToken
-			highestOwnershipToken.ownership = newTokenOwnership
-			heap.Fix(&tokensQueue, 0)
-
-			highestOwnershipInstance.ownership = highestOwnershipInstance.ownership - oldTokenOwnership + newTokenOwnership
-			heap.Fix(&instanceQueue, 0)
-
-			addedTokens++
-		}
-		slices.Sort(tokens)
-		allTokens[i] = tokens
-		if i == t.instanceID {
-			return allTokens
-		}
-		for _, ignoredInstance := range ignoredInstances {
-			heap.Push(&instanceQueue, ignoredInstance)
-		}
-		tokensQueues[i] = currInstanceTokenQueue
-
-		// add the current instance with the calculated ownership currInstanceOwnership to instanceQueue
-		heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(i, currInstanceOwnership))
-	}
-
-	return nil
 }

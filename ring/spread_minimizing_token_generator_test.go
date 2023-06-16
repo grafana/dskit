@@ -37,10 +37,6 @@ func TestSpreadMinimizingTokenGenerator_ParseInstanceID(t *testing.T) {
 			instanceID: "store-gateway-zone-c-7",
 			expectedID: 7,
 		},
-		"instance-zone-5 is not valid": {
-			instanceID:    "instance-zone-5",
-			expectedError: errorBadInstanceIDFormat("instance-zone-5"),
-		},
 		"instance-zone-c is not valid": {
 			instanceID:    "instance-zone-c",
 			expectedError: errorBadInstanceIDFormat("instance-zone-c"),
@@ -79,12 +75,6 @@ func TestSpreadMinimizingTokenGenerator_FindZoneID(t *testing.T) {
 			zone:       "zone-c",
 			zones:      []string{"zone-a", "zone-b", "zone-c"},
 			expectedID: 2,
-		},
-		"zone-c has index 2 in an unsorted slice of zones": {
-			zone:          "zone-c",
-			zones:         []string{"zone-c", "zone-b", "zone-a"},
-			expectedID:    2,
-			expectedZones: []string{"zone-a", "zone-b", "zone-c"},
 		},
 		"zone-d is not valid": {
 			zone:          "zone-d",

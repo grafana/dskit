@@ -99,19 +99,16 @@ func (pq *ownershipPriorityQueue[T]) Less(i, j int) bool {
 }
 
 // Push implements heap.Push(any). It pushes the element item onto ownershipPriorityQueue.
-// Time complexity is O(log n), where n = Len().
 func (pq *ownershipPriorityQueue[T]) Push(item any) {
 	ownershipInfo := item.(ownershipInfo[T])
 	pq.items = append(pq.items, ownershipInfo)
 }
 
 // Pop implements heap.Pop(). It removes and returns the element with the highest priority from ownershipPriorityQueue.
-// Time complexity is O(log n), where n = Len().
 func (pq *ownershipPriorityQueue[T]) Pop() any {
-	old := pq.items
-	n := len(old)
-	item := old[n-1]
-	pq.items = old[0 : n-1]
+	n := len(pq.items)
+	item := pq.items[n-1]
+	pq.items = pq.items[0 : n-1]
 	return item
 }
 

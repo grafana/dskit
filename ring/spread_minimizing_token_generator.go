@@ -14,15 +14,18 @@ import (
 )
 
 const (
-	totalTokensCount         = 1 << 32
-	optimalTokensPerInstance = 1 << 9
-	maxZonesCount            = 1 << 3
+	totalTokensCount         = math.MaxUint32 + 1
+	optimalTokensPerInstance = 512
+	maxZonesCount            = 8
 )
 
 var (
-	instanceIDRegex          = regexp.MustCompile(`^(.*)-(zone-[a-z])-(\d+)$`)
+	instanceIDRegex          = regexp.MustCompile(`^(.*)-(\d+)$`)
 	errorBadInstanceIDFormat = func(instanceID string) error {
 		return fmt.Errorf("unable to extract instance id from \"%s\"", instanceID)
+	}
+	errorZoneCountTooBig = func(zonesCount int) error {
+		return fmt.Errorf("number of zones %d is too big: it should be higher than %d", zonesCount, maxZonesCount)
 	}
 	errorZoneNotValid = func(zone string) error {
 		return fmt.Errorf("zone %s is not valid", zone)
@@ -52,6 +55,9 @@ type SpreadMinimizingTokenGenerator struct {
 }
 
 func NewSpreadMinimizingTokenGenerator(cfg SpreadMinimizingConfig, zones []string, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
+	if len(zones) > maxZonesCount {
+		return nil, errorZoneCountTooBig(len(zones))
+	}
 	sortedZones := make([]string, len(zones))
 	copy(sortedZones, zones)
 	if !slices.IsSorted(sortedZones) {
@@ -78,20 +84,17 @@ func NewSpreadMinimizingTokenGenerator(cfg SpreadMinimizingConfig, zones []strin
 
 func parseInstanceID(instanceID string) (int, error) {
 	parts := instanceIDRegex.FindStringSubmatch(instanceID)
-	if len(parts) != 4 {
+	if len(parts) != 3 {
 		return 0, errorBadInstanceIDFormat(instanceID)
 	}
-	return strconv.Atoi(parts[3])
+	return strconv.Atoi(parts[2])
 }
 
 // findZoneID gets a zone name and a slice of sorted zones,
 // and return the index of the zone in the slice.
 func findZoneID(zone string, sortedZones []string) (int, error) {
-	if !slices.IsSorted(sortedZones) {
-		slices.Sort(sortedZones)
-	}
-	index := sort.SearchStrings(sortedZones, zone)
-	if index >= len(sortedZones) {
+	index := slices.Index(sortedZones, zone)
+	if index < 0 {
 		return 0, errorZoneNotValid(zone)
 	}
 	return index, nil

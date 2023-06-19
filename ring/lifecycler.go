@@ -54,6 +54,8 @@ type LifecyclerConfig struct {
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
+
+	SpreadMinimizingConfig SpreadMinimizingConfig `yaml:"spread_minimizing_config" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -66,6 +68,7 @@ func (cfg *LifecyclerConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 // The default values of some flags can be changed; see docs of LifecyclerConfig.
 func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
 	cfg.RingConfig.RegisterFlagsWithPrefix(prefix, f)
+	cfg.SpreadMinimizingConfig.RegisterFlagsWithPrefix(prefix, f)
 
 	// In order to keep backwards compatibility all of these need to be prefixed
 	// with "ingester."
@@ -170,7 +173,10 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		flushTransferer = NewNoopFlushTransferer()
 	}
 
-	tokenGenerator := NewRandomTokenGenerator()
+	tokenGenerator, err := newTokenGenerator(cfg.SpreadMinimizingConfig, cfg.ID, cfg.Zone, logger)
+	if err != nil {
+		return nil, err
+	}
 	l := &Lifecycler{
 		cfg:                   cfg,
 		flushTransferer:       flushTransferer,

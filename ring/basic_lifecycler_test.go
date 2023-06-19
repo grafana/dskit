@@ -19,8 +19,37 @@ import (
 const (
 	testRingKey    = "test"
 	testRingName   = "test"
-	testInstanceID = "test-id"
+	testInstanceID = "test-id-1"
 )
+
+func TestBasicLifecycler_GetTokenGenerator(t *testing.T) {
+	cfg := prepareBasicLifecyclerConfig()
+
+	spreadMinimizingCfg := SpreadMinimizingConfig{}
+	cfg.SpreadMinimizingConfig = spreadMinimizingCfg
+
+	// If SpreadMinimizingZones is empty, RandomTokenGenerator is used
+	lifecycler, _, _, err := prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+	tokenGenerator1, ok := lifecycler.tokenGenerator.(*RandomTokenGenerator)
+	require.True(t, ok)
+	require.NotNil(t, tokenGenerator1)
+
+	// If SpreadMinimizingZones is not empty, SpreadMinimizingTokenGenerator is used
+	spreadMinimizingCfg.SpreadMinimizingZones = []string{zone(1), zone(2), zone(3)}
+	cfg.SpreadMinimizingConfig = spreadMinimizingCfg
+	lifecycler, _, _, err = prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+	tokenGenerator2, ok := lifecycler.tokenGenerator.(*SpreadMinimizingTokenGenerator)
+	require.True(t, ok)
+	require.NotNil(t, tokenGenerator2)
+
+	// If SpreadMinimizingZones is not empty, but configured bad, an error is returned
+	spreadMinimizingCfg.SpreadMinimizingZones = []string{zone(2), zone(3)}
+	cfg.SpreadMinimizingConfig = spreadMinimizingCfg
+	_, _, _, err = prepareBasicLifecycler(t, cfg)
+	require.Error(t, err)
+}
 
 func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 	tests := map[string]struct {
@@ -489,7 +518,7 @@ func prepareBasicLifecyclerConfig() BasicLifecyclerConfig {
 	return BasicLifecyclerConfig{
 		ID:                  testInstanceID,
 		Addr:                "127.0.0.1:12345",
-		Zone:                "test-zone",
+		Zone:                zone(1),
 		HeartbeatPeriod:     time.Minute,
 		TokensObservePeriod: 0,
 		NumTokens:           5,

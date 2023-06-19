@@ -4,6 +4,8 @@ import (
 	"math/rand"
 	"sort"
 	"time"
+
+	"github.com/go-kit/log"
 )
 
 type TokenGenerator interface {
@@ -51,4 +53,14 @@ func (t *RandomTokenGenerator) GenerateTokens(requestedTokensCount int, allTaken
 	})
 
 	return tokens
+}
+
+// newTokenGenerator creates a new TokenGenerator for the given instanceID and zone. If a SpreadMinimizingConfig
+// is not empty, an instance of SpreadMinimizingTokenGenerator will be returned. Otherwise, an instance of
+// RandomTokenGenerator is returned.
+func newTokenGenerator(cfg SpreadMinimizingConfig, instanceID, zone string, logger log.Logger) (TokenGenerator, error) {
+	if !cfg.Empty() {
+		return NewSpreadMinimizingTokenGenerator(cfg, instanceID, zone, logger)
+	}
+	return NewRandomTokenGenerator(), nil
 }

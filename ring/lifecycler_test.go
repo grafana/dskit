@@ -33,7 +33,7 @@ func testLifecyclerConfig(ringConfig Config, id string) LifecyclerConfig {
 	lifecyclerConfig.RingConfig = ringConfig
 	lifecyclerConfig.NumTokens = 1
 	lifecyclerConfig.ID = id
-	lifecyclerConfig.Zone = "zone1"
+	lifecyclerConfig.Zone = zone(1)
 	lifecyclerConfig.FinalSleep = 0
 	lifecyclerConfig.HeartbeatPeriod = 100 * time.Millisecond
 
@@ -46,6 +46,40 @@ func checkNormalised(d interface{}, id string) bool {
 		len(desc.Ingesters) == 1 &&
 		desc.Ingesters[id].State == ACTIVE &&
 		len(desc.Ingesters[id].Tokens) == 1
+}
+
+func TestLifecycler_TokenGenerator(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	var spreadMinimizingConfig SpreadMinimizingConfig
+	flagext.DefaultValues(&ringConfig, &spreadMinimizingConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	cfg := testLifecyclerConfig(ringConfig, "instance-1")
+
+	// If SpreadMinimizingConfig is empty, RandomTokenGenerator is used
+	lifecycler, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	tokenGenerator1, ok := lifecycler.tokenGenerator.(*RandomTokenGenerator)
+	require.True(t, ok)
+	require.NotNil(t, tokenGenerator1)
+
+	// If SpreadMinimizingConfig is not empty, SpreadMinimizingTokenGenerator is used
+	spreadMinimizingConfig.SpreadMinimizingZones = []string{zone(1), zone(2), zone(3)}
+	cfg.SpreadMinimizingConfig = spreadMinimizingConfig
+	lifecycler, err = NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	tokenGenerator2, ok := lifecycler.tokenGenerator.(*SpreadMinimizingTokenGenerator)
+	require.True(t, ok)
+	require.NotNil(t, tokenGenerator2)
+
+	// If SpreadMinimizingZones is not empty, but configured bad, an error is returned
+	spreadMinimizingConfig.SpreadMinimizingZones = []string{zone(2), zone(3)}
+	cfg.SpreadMinimizingConfig = spreadMinimizingConfig
+	_, err = NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.Error(t, err)
 }
 
 func TestLifecycler_HealthyInstancesCount(t *testing.T) {

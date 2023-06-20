@@ -9,8 +9,6 @@ import (
 
 	"github.com/go-kit/log"
 
-	"github.com/grafana/dskit/flagext"
-
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -30,7 +28,6 @@ var (
 
 func TestSpreadMinimizingConfig_Empty(t *testing.T) {
 	var spreadMinimizingconfig SpreadMinimizingConfig
-	flagext.DefaultValues(&spreadMinimizingconfig)
 	require.True(t, spreadMinimizingconfig.Empty())
 
 	spreadMinimizingconfig.SpreadMinimizingZones = zones

@@ -53,33 +53,31 @@ func TestLifecycler_TokenGenerator(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	var ringConfig Config
-	var spreadMinimizingConfig SpreadMinimizingConfig
-	flagext.DefaultValues(&ringConfig, &spreadMinimizingConfig)
+	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = ringStore
 
 	cfg := testLifecyclerConfig(ringConfig, "instance-1")
 
-	// If SpreadMinimizingConfig is empty, RandomTokenGenerator is used
-	lifecycler, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(SpreadMinimizingConfig{[]string{zone(1), zone(2), zone(3)}}, cfg.ID, cfg.Zone, log.NewNopLogger())
 	require.NoError(t, err)
-	tokenGenerator1, ok := lifecycler.tokenGenerator.(*RandomTokenGenerator)
-	require.True(t, ok)
-	require.NotNil(t, tokenGenerator1)
 
-	// If SpreadMinimizingConfig is not empty, SpreadMinimizingTokenGenerator is used
-	spreadMinimizingConfig.SpreadMinimizingZones = []string{zone(1), zone(2), zone(3)}
-	cfg.SpreadMinimizingConfig = spreadMinimizingConfig
-	lifecycler, err = NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	tokenGenerator2, ok := lifecycler.tokenGenerator.(*SpreadMinimizingTokenGenerator)
-	require.True(t, ok)
-	require.NotNil(t, tokenGenerator2)
+	tests := []TokenGenerator{nil, NewRandomTokenGenerator(), spreadMinimizingTokenGenerator}
 
-	// If SpreadMinimizingZones is not empty, but configured bad, an error is returned
-	spreadMinimizingConfig.SpreadMinimizingZones = []string{zone(2), zone(3)}
-	cfg.SpreadMinimizingConfig = spreadMinimizingConfig
-	_, err = NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
-	require.Error(t, err)
+	for _, testData := range tests {
+		cfg.RingTokenGenerator = testData
+		lifecycler, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+		if testData == nil {
+			// If cfg.RingTokenGenerator is empty, RandomTokenGenerator is used
+			tokenGenerator, ok := lifecycler.tokenGenerator.(*RandomTokenGenerator)
+			require.True(t, ok)
+			require.NotNil(t, tokenGenerator)
+		} else {
+			// If cfg.RingTokenGenerator is not empty, it is used
+			require.NotNil(t, lifecycler.tokenGenerator)
+			require.Equal(t, testData, lifecycler.tokenGenerator)
+		}
+	}
 }
 
 func TestLifecycler_HealthyInstancesCount(t *testing.T) {

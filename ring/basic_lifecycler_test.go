@@ -19,8 +19,33 @@ import (
 const (
 	testRingKey    = "test"
 	testRingName   = "test"
-	testInstanceID = "test-id"
+	testInstanceID = "test-id-1"
 )
+
+func TestBasicLifecycler_GetTokenGenerator(t *testing.T) {
+	cfg := prepareBasicLifecyclerConfig()
+
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, log.NewNopLogger())
+	require.NoError(t, err)
+
+	tests := []TokenGenerator{nil, NewRandomTokenGenerator(), spreadMinimizingTokenGenerator}
+
+	for _, testData := range tests {
+		cfg.RingTokenGenerator = testData
+		lifecycler, _, _, err := prepareBasicLifecycler(t, cfg)
+		require.NoError(t, err)
+		if testData == nil {
+			// If cfg.RingTokenGenerator is empty, RandomTokenGenerator is used
+			tokenGenerator, ok := lifecycler.tokenGenerator.(*RandomTokenGenerator)
+			require.True(t, ok)
+			require.NotNil(t, tokenGenerator)
+		} else {
+			// If cfg.RingTokenGenerator is not empty, it is used
+			require.NotNil(t, lifecycler.tokenGenerator)
+			require.Equal(t, testData, lifecycler.tokenGenerator)
+		}
+	}
+}
 
 func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 	tests := map[string]struct {
@@ -489,7 +514,7 @@ func prepareBasicLifecyclerConfig() BasicLifecyclerConfig {
 	return BasicLifecyclerConfig{
 		ID:                  testInstanceID,
 		Addr:                "127.0.0.1:12345",
-		Zone:                "test-zone",
+		Zone:                zone(1),
 		HeartbeatPeriod:     time.Minute,
 		TokensObservePeriod: 0,
 		NumTokens:           5,

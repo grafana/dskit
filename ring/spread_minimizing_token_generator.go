@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
 	"golang.org/x/exp/slices"
 )
 
@@ -24,8 +25,8 @@ var (
 	errorBadInstanceIDFormat = func(instanceID string) error {
 		return fmt.Errorf("unable to extract instance id from \"%s\"", instanceID)
 	}
-	errorZoneCountTooBig = func(zonesCount int) error {
-		return fmt.Errorf("number of zones %d is too big: it should be higher than %d", zonesCount, maxZonesCount)
+	errorZoneCountOutOfBound = func(zonesCount int) error {
+		return fmt.Errorf("number of zones %d is not correct: it must be greater than 0 and less or equal than %d", zonesCount, maxZonesCount)
 	}
 	errorZoneNotValid = func(zone string) error {
 		return fmt.Errorf("zone %s is not valid", zone)
@@ -41,43 +42,36 @@ var (
 	}
 )
 
-type SpreadMinimizingConfig struct {
-	InstanceID string
-	Zone       string
-}
-
 type SpreadMinimizingTokenGenerator struct {
-	cfg        SpreadMinimizingConfig
-	instanceID int
-	zoneID     int
-	zones      []string
-	logger     log.Logger
+	instanceID            int
+	zoneID                int
+	spreadMinimizingZones []string
+	logger                log.Logger
 }
 
-func NewSpreadMinimizingTokenGenerator(cfg SpreadMinimizingConfig, zones []string, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
-	if len(zones) > maxZonesCount {
-		return nil, errorZoneCountTooBig(len(zones))
+func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZones []string, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
+	if len(spreadMinimizingZones) <= 0 || len(spreadMinimizingZones) > maxZonesCount {
+		return nil, errorZoneCountOutOfBound(len(spreadMinimizingZones))
 	}
-	sortedZones := make([]string, len(zones))
-	copy(sortedZones, zones)
+	sortedZones := make([]string, len(spreadMinimizingZones))
+	copy(sortedZones, spreadMinimizingZones)
 	if !slices.IsSorted(sortedZones) {
 		sort.Strings(sortedZones)
 	}
-	instanceID, err := parseInstanceID(cfg.InstanceID)
+	instanceID, err := parseInstanceID(instance)
 	if err != nil {
 		return nil, err
 	}
-	zoneID, err := findZoneID(cfg.Zone, sortedZones)
+	zoneID, err := findZoneID(zone, sortedZones)
 	if err != nil {
 		return nil, err
 	}
 
 	tokenGenerator := &SpreadMinimizingTokenGenerator{
-		cfg:        cfg,
-		instanceID: instanceID,
-		zoneID:     zoneID,
-		zones:      sortedZones,
-		logger:     logger,
+		instanceID:            instanceID,
+		zoneID:                zoneID,
+		spreadMinimizingZones: sortedZones,
+		logger:                logger,
 	}
 	return tokenGenerator, nil
 }
@@ -250,7 +244,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 			if highestOwnershipInstance == nil || highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
 				level.Warn(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
 				// if this happens, it means that we cannot accommodate other tokens, so we panic
-				err := fmt.Errorf("it was impossible to add %dth token for instance with id %d in zone %s because the instance with the highest ownership cannot satisfy the requested ownership %d", addedTokens+1, i, t.cfg.Zone, optimalTokenOwnership)
+				err := fmt.Errorf("it was impossible to add %dth token for instance with id %d in zone %s because the instance with the highest ownership cannot satisfy the requested ownership %d", addedTokens+1, i, t.spreadMinimizingZones[t.zoneID], optimalTokenOwnership)
 				panic(err)
 			}
 			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
@@ -266,7 +260,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 			if err != nil {
 				level.Error(t.logger).Log("msg", "it was impossible to calculate a new token because an error occurred", "err", err)
 				// if this happens, it means that we cannot accommodate additional tokens, so we panic
-				err := fmt.Errorf("it was impossible to calculate the %dth token for instance with id %d in zone %s", addedTokens+1, i, t.cfg.Zone)
+				err := fmt.Errorf("it was impossible to calculate the %dth token for instance with id %d in zone %s", addedTokens+1, i, t.spreadMinimizingZones[t.zoneID])
 				panic(err)
 			}
 			tokens = append(tokens, newToken)

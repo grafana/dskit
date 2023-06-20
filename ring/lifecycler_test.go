@@ -33,7 +33,7 @@ func testLifecyclerConfig(ringConfig Config, id string) LifecyclerConfig {
 	lifecyclerConfig.RingConfig = ringConfig
 	lifecyclerConfig.NumTokens = 1
 	lifecyclerConfig.ID = id
-	lifecyclerConfig.Zone = "zone1"
+	lifecyclerConfig.Zone = zone(1)
 	lifecyclerConfig.FinalSleep = 0
 	lifecyclerConfig.HeartbeatPeriod = 100 * time.Millisecond
 
@@ -46,6 +46,38 @@ func checkNormalised(d interface{}, id string) bool {
 		len(desc.Ingesters) == 1 &&
 		desc.Ingesters[id].State == ACTIVE &&
 		len(desc.Ingesters[id].Tokens) == 1
+}
+
+func TestLifecycler_TokenGenerator(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	cfg := testLifecyclerConfig(ringConfig, "instance-1")
+
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, log.NewNopLogger())
+	require.NoError(t, err)
+
+	tests := []TokenGenerator{nil, NewRandomTokenGenerator(), spreadMinimizingTokenGenerator}
+
+	for _, testData := range tests {
+		cfg.RingTokenGenerator = testData
+		lifecycler, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+		if testData == nil {
+			// If cfg.RingTokenGenerator is empty, RandomTokenGenerator is used
+			tokenGenerator, ok := lifecycler.tokenGenerator.(*RandomTokenGenerator)
+			require.True(t, ok)
+			require.NotNil(t, tokenGenerator)
+		} else {
+			// If cfg.RingTokenGenerator is not empty, it is used
+			require.NotNil(t, lifecycler.tokenGenerator)
+			require.Equal(t, testData, lifecycler.tokenGenerator)
+		}
+	}
 }
 
 func TestLifecycler_HealthyInstancesCount(t *testing.T) {

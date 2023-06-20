@@ -11,8 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
-	"github.com/grafana/dskit/flagext"
-
 	"golang.org/x/exp/slices"
 )
 
@@ -44,29 +42,19 @@ var (
 	}
 )
 
-type SpreadMinimizingConfig struct {
-	SpreadMinimizingZones flagext.StringSliceCSV `yaml:"spread_minimizing_zones" category:"experimental"`
-}
-
-// Empty returns true if this SpreadMinimizingConfig is empty, i.e., if it has no configuration.
-// Otherwise, it returns false.
-func (cfg *SpreadMinimizingConfig) Empty() bool {
-	return len(cfg.SpreadMinimizingZones) == 0
-}
-
 type SpreadMinimizingTokenGenerator struct {
-	cfg        SpreadMinimizingConfig
-	instanceID int
-	zoneID     int
-	logger     log.Logger
+	instanceID            int
+	zoneID                int
+	spreadMinimizingZones []string
+	logger                log.Logger
 }
 
-func NewSpreadMinimizingTokenGenerator(cfg SpreadMinimizingConfig, instance, zone string, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
-	if len(cfg.SpreadMinimizingZones) <= 0 || len(cfg.SpreadMinimizingZones) > maxZonesCount {
-		return nil, errorZoneCountOutOfBound(len(cfg.SpreadMinimizingZones))
+func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZones []string, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
+	if len(spreadMinimizingZones) <= 0 || len(spreadMinimizingZones) > maxZonesCount {
+		return nil, errorZoneCountOutOfBound(len(spreadMinimizingZones))
 	}
-	sortedZones := make([]string, len(cfg.SpreadMinimizingZones))
-	copy(sortedZones, cfg.SpreadMinimizingZones)
+	sortedZones := make([]string, len(spreadMinimizingZones))
+	copy(sortedZones, spreadMinimizingZones)
 	if !slices.IsSorted(sortedZones) {
 		sort.Strings(sortedZones)
 	}
@@ -80,10 +68,10 @@ func NewSpreadMinimizingTokenGenerator(cfg SpreadMinimizingConfig, instance, zon
 	}
 
 	tokenGenerator := &SpreadMinimizingTokenGenerator{
-		cfg:        cfg,
-		instanceID: instanceID,
-		zoneID:     zoneID,
-		logger:     logger,
+		instanceID:            instanceID,
+		zoneID:                zoneID,
+		spreadMinimizingZones: sortedZones,
+		logger:                logger,
 	}
 	return tokenGenerator, nil
 }
@@ -256,7 +244,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 			if highestOwnershipInstance == nil || highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
 				level.Warn(t.logger).Log("msg", "it was impossible to add a token because the instance with the highest ownership cannot satisfy the request", "added tokens", addedTokens+1, "highest ownership", highestOwnershipInstance.ownership, "requested ownership", optimalTokenOwnership)
 				// if this happens, it means that we cannot accommodate other tokens, so we panic
-				err := fmt.Errorf("it was impossible to add %dth token for instance with id %d in zone %s because the instance with the highest ownership cannot satisfy the requested ownership %d", addedTokens+1, i, t.cfg.SpreadMinimizingZones[t.zoneID], optimalTokenOwnership)
+				err := fmt.Errorf("it was impossible to add %dth token for instance with id %d in zone %s because the instance with the highest ownership cannot satisfy the requested ownership %d", addedTokens+1, i, t.spreadMinimizingZones[t.zoneID], optimalTokenOwnership)
 				panic(err)
 			}
 			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
@@ -272,7 +260,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 			if err != nil {
 				level.Error(t.logger).Log("msg", "it was impossible to calculate a new token because an error occurred", "err", err)
 				// if this happens, it means that we cannot accommodate additional tokens, so we panic
-				err := fmt.Errorf("it was impossible to calculate the %dth token for instance with id %d in zone %s", addedTokens+1, i, t.cfg.SpreadMinimizingZones[t.zoneID])
+				err := fmt.Errorf("it was impossible to calculate the %dth token for instance with id %d in zone %s", addedTokens+1, i, t.spreadMinimizingZones[t.zoneID])
 				panic(err)
 			}
 			tokens = append(tokens, newToken)

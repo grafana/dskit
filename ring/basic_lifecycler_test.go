@@ -25,7 +25,7 @@ const (
 func TestBasicLifecycler_GetTokenGenerator(t *testing.T) {
 	cfg := prepareBasicLifecyclerConfig()
 
-	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(SpreadMinimizingConfig{[]string{zone(1), zone(2), zone(3)}}, cfg.ID, cfg.Zone, log.NewNopLogger())
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, log.NewNopLogger())
 	require.NoError(t, err)
 
 	tests := []TokenGenerator{nil, NewRandomTokenGenerator(), spreadMinimizingTokenGenerator}

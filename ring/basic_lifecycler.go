@@ -60,7 +60,7 @@ type BasicLifecyclerConfig struct {
 
 	// If set, specifies the TokenGenerator implementation that will be used for generating tokens.
 	// Default value is nil, which means that RandomTokenGenerator is used.
-	RingTokenGenerator TokenGenerator `yaml:"-"`
+	RingTokenGenerator TokenGenerator
 }
 
 // BasicLifecycler is a basic ring lifecycler which allows to hook custom

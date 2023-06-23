@@ -3077,7 +3077,7 @@ func TestMergeTokenGroups(t *testing.T) {
 	}
 }
 
-func TestCountTokens(t *testing.T) {
+func TestCountTokensSingleZone(t *testing.T) {
 	tests := map[string]struct {
 		ring     *Desc
 		expected map[string]int
@@ -3118,6 +3118,73 @@ func TestCountTokens(t *testing.T) {
 				"ingester-1": 3000000 + (math.MaxUint32 + 1 - 9000000),
 				"ingester-2": 4000000,
 				"ingester-3": 2000000,
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, testData.ring.CountTokens())
+		})
+	}
+
+}
+
+func TestCountTokensMultiZones(t *testing.T) {
+	tests := map[string]struct {
+		ring     *Desc
+		expected map[string]int
+	}{
+		"empty ring": {
+			ring:     &Desc{},
+			expected: map[string]int{},
+		},
+		"1 instance per zone with 1 token in the ring": {
+			ring: &Desc{
+				Ingesters: map[string]InstanceDesc{
+					"ingester-zone-a-1": {Zone: "zone-a", Tokens: []uint32{1000000}},
+					"ingester-zone-b-1": {Zone: "zone-b", Tokens: []uint32{1000001}},
+					"ingester-zone-c-1": {Zone: "zone-c", Tokens: []uint32{1000002}},
+				},
+			},
+			expected: map[string]int{
+				"ingester-zone-a-1": math.MaxUint32 + 1,
+				"ingester-zone-b-1": math.MaxUint32 + 1,
+				"ingester-zone-c-1": math.MaxUint32 + 1,
+			},
+		},
+		"1 instance per zone with multiple tokens in the ring": {
+			ring: &Desc{
+				Ingesters: map[string]InstanceDesc{
+					"ingester-zone-a-1": {Zone: "zone-a", Tokens: []uint32{1000000, 2000000, 3000000}},
+					"ingester-zone-b-1": {Zone: "zone-b", Tokens: []uint32{1000001, 2000001, 3000001}},
+					"ingester-zone-c-1": {Zone: "zone-c", Tokens: []uint32{1000002, 2000002, 3000002}},
+				},
+			},
+			expected: map[string]int{
+				"ingester-zone-a-1": math.MaxUint32 + 1,
+				"ingester-zone-b-1": math.MaxUint32 + 1,
+				"ingester-zone-c-1": math.MaxUint32 + 1,
+			},
+		},
+		"multiple instances in multiple zones with multiple tokens in the ring": {
+			ring: &Desc{
+				Ingesters: map[string]InstanceDesc{
+					"ingester-zone-a-1": {Zone: "zone-a", Tokens: []uint32{1000000, 3000000, 6000000}},
+					"ingester-zone-a-2": {Zone: "zone-a", Tokens: []uint32{2000000, 4000000, 8000000}},
+					"ingester-zone-a-3": {Zone: "zone-a", Tokens: []uint32{5000000, 9000000}},
+					"ingester-zone-b-1": {Zone: "zone-b", Tokens: []uint32{1000001, 3000001, 6000001}},
+					"ingester-zone-b-2": {Zone: "zone-b", Tokens: []uint32{2000001, 4000001, 8000001}},
+					"ingester-zone-b-3": {Zone: "zone-b", Tokens: []uint32{5000001, 9000001}},
+				},
+			},
+			expected: map[string]int{
+				"ingester-zone-a-1": 3000000 + (math.MaxUint32 + 1 - 9000000),
+				"ingester-zone-a-2": 4000000,
+				"ingester-zone-a-3": 2000000,
+				"ingester-zone-b-1": 3000000 + (math.MaxUint32 + 1 - 9000000),
+				"ingester-zone-b-2": 4000000,
+				"ingester-zone-b-3": 2000000,
 			},
 		},
 	}

@@ -45,7 +45,7 @@
 * [CHANGE] Multierror: Implement `Is(error) bool`. This allows to use `multierror.MultiError` with `errors.Is()`. `MultiError` will in turn call `errors.Is()` on every error value. #254
 * [CHANGE] Cache: Remove the `context.Context` argument from the `Cache.Store` method and rename the method to `Cache.StoreAsync`. #273
 * [CHANGE] ring: make it harder to leak contexts when using `DoUntilQuorum`. #319
-* [CHANGE] memberlist: MetricsRegisterer field has been removed in favor of registrerer passed via into `NewKV` function.
+* [CHANGE] memberlist: `MetricsRegisterer` field has been removed from `memberlist.KVConfig` in favor of registrerer passed via into `NewKV` function. #327
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
@@ -139,3 +139,4 @@
 * [BUGFIX] Ring: prevent iterating the whole ring when using `ExcludedZones`. #285
 * [BUGFIX] grpcclient: fix missing `.` in flag name for initial connection window size flag. #314
 * [BUGFIX] ring.Lifecycler: Handle when previous ring state is leaving and the number of tokens has changed. #79
+* [BUGFIX] memberlist metrics: fix registration of `memberlist_client_kv_store_count` metric and disable expiration of metrics exposed by memberlist library. #327

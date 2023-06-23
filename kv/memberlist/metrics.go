@@ -171,13 +171,18 @@ func (m *KV) createAndRegisterMetrics() {
 		Help:      "Number of dropped notifications in WatchPrefix function",
 	}, []string{"prefix"})
 
-	if m.cfg.MetricsRegisterer == nil {
+	if m.registerer == nil {
 		return
 	}
 
+	m.registerer.MustRegister(m)
+
 	// memberlist uses armonmetrics package for internal usage
-	// here we configure armonmetrics to use prometheus
-	sink, err := armonprometheus.NewPrometheusSink() // there is no option to pass registrerer, this uses default
+	// here we configure armonmetrics to use prometheus.
+	opts := armonprometheus.DefaultPrometheusOpts
+	opts.Registerer = m.registerer
+
+	sink, err := armonprometheus.NewPrometheusSinkFrom(opts)
 	if err == nil {
 		cfg := armonmetrics.DefaultConfig("")
 		cfg.EnableHostname = false         // no need to put hostname into metric

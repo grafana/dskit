@@ -179,14 +179,17 @@ func (m *KV) createAndRegisterMetrics() {
 
 	// memberlist uses armonmetrics package for internal usage
 	// here we configure armonmetrics to use prometheus.
-	opts := armonprometheus.DefaultPrometheusOpts
-	opts.Registerer = m.registerer
+	opts := armonprometheus.PrometheusOpts{
+		Expiration: 0, // Don't expire metrics.
+		Registerer: m.registerer,
+	}
 
 	sink, err := armonprometheus.NewPrometheusSinkFrom(opts)
 	if err == nil {
 		cfg := armonmetrics.DefaultConfig("")
 		cfg.EnableHostname = false         // no need to put hostname into metric
 		cfg.EnableHostnameLabel = false    // no need to put hostname into labels
+		cfg.EnableServiceLabel = false     // Don't put service name into a label. (We don't set service name anyway).
 		cfg.EnableRuntimeMetrics = false   // metrics about Go runtime already provided by prometheus
 		cfg.EnableTypePrefix = true        // to make better sense of internal memberlist metrics
 		cfg.TimerGranularity = time.Second // timers are in seconds in prometheus world

@@ -48,6 +48,32 @@ func checkNormalised(d interface{}, id string) bool {
 		len(desc.Ingesters[id].Tokens) == 1
 }
 
+func TestLifecyclerConfig_Validate(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	pathToTokens := "/path/to/tokens"
+	cfg := testLifecyclerConfig(ringConfig, "instance-1")
+	cfg.TokensFilePath = pathToTokens
+
+	logger := log.NewNopLogger()
+	err := cfg.Validate(logger)
+	require.NoError(t, err)
+	require.Equal(t, pathToTokens, cfg.TokensFilePath)
+
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, log.NewNopLogger())
+	require.NoError(t, err)
+
+	cfg.RingTokenGenerator = spreadMinimizingTokenGenerator
+	err = cfg.Validate(logger)
+	require.NoError(t, err)
+	require.Empty(t, cfg.TokensFilePath)
+}
+
 func TestLifecycler_TokenGenerator(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -1266,6 +1292,96 @@ func TestJoinInJoiningState(t *testing.T) {
 			desc.Ingesters["ing1"].RegisteredTimestamp == instance1RegisteredAt.Unix() &&
 			desc.Ingesters["ing2"].RegisteredTimestamp == instance2RegisteredAt.Unix()
 	})
+}
+
+func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+
+	targetInstanceID := instanceName(2, 1)
+	targetZone := zone(1)
+	spreadMinimizingZones := []string{zone(1), zone(2), zone(3)}
+	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(targetInstanceID, targetZone, spreadMinimizingZones, log.NewNopLogger())
+	require.NoError(t, err)
+	tokensByInstanceID := tokenGenerator.generateTokensByInstanceID()
+	cfg := testLifecyclerConfig(ringConfig, targetInstanceID)
+	cfg.NumTokens = optimalTokensPerInstance
+	cfg.RingTokenGenerator = tokenGenerator
+
+	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (interface{}, bool, error) {
+		r := &Desc{
+			Ingesters: map[string]InstanceDesc{
+				instanceName(0, 1): {
+					State:  ACTIVE,
+					Tokens: tokensByInstanceID[0],
+				},
+				instanceName(1, 1): {
+					State:  ACTIVE,
+					Tokens: tokensByInstanceID[1],
+				},
+			},
+		}
+
+		return r, true, nil
+	})
+	require.NoError(t, err)
+
+	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
+	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
+
+	// Check that the lifecycler was able to join
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		d, err := r.KVClient.Get(context.Background(), ringKey)
+		require.NoError(t, err)
+
+		desc, ok := d.(*Desc)
+		if !ok {
+			return false
+		}
+		targetInstanceDesc, ok := desc.Ingesters[targetInstanceID]
+		return ok && tokensByInstanceID[2].Equals(targetInstanceDesc.Tokens)
+	})
+
+	outOfOrderInstanceID := instanceName(4, 1)
+	tokenGenerator, err = NewSpreadMinimizingTokenGenerator(outOfOrderInstanceID, targetZone, spreadMinimizingZones, log.NewNopLogger())
+	require.NoError(t, err)
+	tokensByInstanceID = tokenGenerator.generateTokensByInstanceID()
+	outOfORderCfg := testLifecyclerConfig(ringConfig, outOfOrderInstanceID)
+	outOfORderCfg.NumTokens = optimalTokensPerInstance
+	outOfORderCfg.RingTokenGenerator = tokenGenerator
+	l2, err := NewLifecycler(outOfORderCfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l2))
+	defer services.StopAndAwaitTerminated(context.Background(), l2) //nolint:errcheck
+
+	// Check that the lifecycler was able to join
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		d, err := r.KVClient.Get(context.Background(), ringKey)
+		require.NoError(t, err)
+
+		desc, ok := d.(*Desc)
+		if !ok {
+			return false
+		}
+		_, ok = desc.Ingesters[outOfOrderInstanceID]
+		return !ok
+	})
+
+}
+
+func instanceName(instanceID, zoneID int) string {
+	return fmt.Sprintf("instance-%s-%d", zone(zoneID), instanceID)
 }
 
 func TestRestoreOfZoneWhenOverwritten(t *testing.T) {

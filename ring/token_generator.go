@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+type ConditionalTokenGenerator interface {
+	TokenGenerator
+
+	// CheckConditions checks whether the given set of instances satisfies a condition provided by a specific
+	// implementation, and fails if the latter is not satisfied.
+	CheckConditions(instances map[string]InstanceDesc) error
+}
+
 type TokenGenerator interface {
 	// GenerateTokens generates at most requestedTokensCount unique tokens, none of which clashes with
 	// the given allTakenTokens, representing the set of all tokens currently present in the ring.

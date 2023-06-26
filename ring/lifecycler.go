@@ -103,12 +103,12 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 }
 
 /*
-Lifecycler is a BasicService that is responsible for publishing changes to a ring for a single instance.
+Lifecycler is a Service that is responsible for publishing changes to a ring for a single instance.
 
   - When a Lifecycler first starts, it will be in a [PENDING] state.
   - After the configured [ring.LifecyclerConfig.JoinAfter] period, it selects some random tokens and enters the [JOINING] state, creating or updating the ring as needed.
   - The lifecycler will then periodically, based on the [ring.LifecyclerConfig.ObservePeriod], attempt to verify that its tokens have been added to the ring, after which it will transition to the [ACTIVE] state.
-  - The lifecycler will broadcast heartbeats, state changes, and token changes, based on the [ring.LifecyclerConfig.HeartbeatPeriod].
+  - The lifecycler will update the key/value store with heartbeats, state changes, and token changes, based on the [ring.LifecyclerConfig.HeartbeatPeriod].
 */
 type Lifecycler struct {
 	*services.BasicService

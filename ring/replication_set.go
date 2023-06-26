@@ -89,6 +89,12 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	return results, nil
 }
 
+type DoUntilQuorumConfig struct {
+	// If true, enable request minimisation.
+	// See docs for DoUntilQuorum for more information.
+	MinimizeRequests bool
+}
+
 // DoUntilQuorum runs function f in parallel for all replicas in r.
 //
 // # Result selection
@@ -107,18 +113,18 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 //
 // # Request minimisation
 //
-// If minimizeRequests is false, DoUntilQuorum will call f for each instance in r.
+// If cfg.MinimizeRequests is false, DoUntilQuorum will call f for each instance in r.
 //
-// If minimizeRequests is true, DoUntilQuorum will initially call f for the minimum number of instances needed to reach
+// If cfg.MinimizeRequests is true, DoUntilQuorum will initially call f for the minimum number of instances needed to reach
 // the termination conditions above, and later call f for further instances if required. For example, if
 // r.MaxUnavailableZones is 1 and there are three zones, DoUntilQuorum will initially only call f for instances in two
 // zones, and only call f for instances in the remaining zone if a request in the initial two zones fails.
 //
-// If minimizeRequests is true, DoUntilQuorum will randomly select available zones / instances such that calling
+// If cfg.MinimizeRequests is true, DoUntilQuorum will randomly select available zones / instances such that calling
 // DoUntilQuorum multiple times with the same ReplicationSet should evenly distribute requests across all zones /
 // instances.
 //
-// Regardless of the value of minimizeRequests, if one of the termination conditions above is satisfied or ctx is
+// Regardless of the value of cfg.MinimizeRequests, if one of the termination conditions above is satisfied or ctx is
 // cancelled before f is called for an instance, f may not be called for that instance at all.
 //
 // # Cleanup
@@ -135,7 +141,7 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 // f will not be used.
 //
 // DoUntilQuorum cancels the context.Context passed to each invocation of f before DoUntilQuorum returns.
-func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
+func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -143,7 +149,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequest
 		return f(ctx, desc)
 	}
 
-	return DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, r, minimizeRequests, wrappedF, cleanupFunc)
+	return DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, r, cfg, wrappedF, cleanupFunc)
 }
 
 // DoUntilQuorumWithoutSuccessfulContextCancellation behaves the same as DoUntilQuorum, except it does not cancel
@@ -158,7 +164,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequest
 //     DoUntilQuorumWithoutSuccessfulContextCancellation
 //
 // Failing to do this may result in a memory leak.
-func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc, context.CancelFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
+func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
 	resultsRemaining := len(r.Instances)
 
@@ -185,7 +191,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		contextTracker = newDefaultContextTracker(ctx, r.Instances)
 	}
 
-	if minimizeRequests {
+	if cfg.MinimizeRequests {
 		resultTracker.startMinimumRequests()
 	} else {
 		resultTracker.startAllRequests()

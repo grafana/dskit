@@ -411,7 +411,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 						return res, err
 					}
 
-					actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
+					cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+					actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, cfg, wrappedF, cleanupTracker.cleanup)
 					require.ElementsMatch(t, testCase.expectedResults, actualResults)
 					require.Equal(t, testCase.expectedError, actualError)
 
@@ -472,7 +473,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZo
 				return desc.Addr, nil
 			}
 
-			actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, wrappedF, cleanupTracker.cleanup)
 			require.Empty(t, actualResults)
 			require.EqualError(t, actualError, "error from a replica-1 instance")
 
@@ -521,7 +523,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t 
 				return desc.Addr, nil
 			}
 
-			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.ElementsMatch(t, expectedResults, actualResults)
 			require.NoError(t, err)
 
@@ -565,8 +568,9 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_RunsCallsInParallel(t
 				return desc.Addr, nil
 			}
 
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
 			cleanupFunc := func(_ string) {}
-			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, false, f, cleanupFunc)
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupFunc)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"replica-1", "replica-2"}, results)
 		})
@@ -607,7 +611,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultS
 				return desc.Addr, nil
 			}
 
-			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, results, 4)
 
@@ -698,7 +703,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultS
 				return desc.Addr, nil
 			}
 
-			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, results, 5, "should only have results from instances required to meet quorum requirement")
 
@@ -791,7 +797,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_DoesNotWaitForUnneces
 				return desc.Addr, nil
 			}
 
-			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, false, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: false}
+			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.ElementsMatch(t, testCase.expectedResults, actualResults)
 			require.NoError(t, err)
 
@@ -853,7 +860,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 		return desc.Addr, nil
 	}
 
-	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(parentCtx, replicationSet, false, f, cleanupTracker.cleanup)
+	cfg := DoUntilQuorumConfig{MinimizeRequests: false}
+	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(parentCtx, replicationSet, cfg, f, cleanupTracker.cleanup)
 	require.Empty(t, results)
 	require.Equal(t, context.Canceled, err)
 
@@ -914,7 +922,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 				cancel()
 			}()
 
-			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, true, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: true}
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.Empty(t, results)
 			require.Equal(t, context.Canceled, err)
 
@@ -971,7 +980,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandli
 				return desc.Addr, nil
 			}
 
-			instancesCalled, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: true}
+			instancesCalled, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, instancesCalled, testCase.expectedResultCount)
 
@@ -1046,7 +1056,8 @@ func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
 				return desc.Addr, nil
 			}
 
-			instancesCalled, err := DoUntilQuorum(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: true}
+			instancesCalled, err := DoUntilQuorum(ctx, testCase.replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, instancesCalled, testCase.expectedResultCount)
 

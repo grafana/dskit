@@ -45,6 +45,7 @@
 * [CHANGE] Multierror: Implement `Is(error) bool`. This allows to use `multierror.MultiError` with `errors.Is()`. `MultiError` will in turn call `errors.Is()` on every error value. #254
 * [CHANGE] Cache: Remove the `context.Context` argument from the `Cache.Store` method and rename the method to `Cache.StoreAsync`. #273
 * [CHANGE] ring: make it harder to leak contexts when using `DoUntilQuorum`. #319
+* [CHANGE] ring: `CountTokens()`, used for the calculation of ownership in the ring page has been changed in such a way that when zone-awareness is enabled, it calculates the ownership per-zone. Previously zones were not taken into account. #325
 * [CHANGE] memberlist: `MetricsRegisterer` field has been removed from `memberlist.KVConfig` in favor of registrerer passed via into `NewKV` function. #327
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279

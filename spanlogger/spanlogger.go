@@ -9,8 +9,6 @@ import (
 	"github.com/opentracing/opentracing-go/ext"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/weaveworks/common/tracing"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type loggerCtxMarker struct{}
@@ -39,12 +37,6 @@ type SpanLogger struct {
 	sampled bool
 }
 
-type SpanLoggerOpentelemetry struct {
-	log.Logger
-	trace.Span
-	sampled bool
-}
-
 // New makes a new SpanLogger with a log.Logger to send logs to. The provided context will have the logger attached
 // to it and can be retrieved with FromContext.
 func New(ctx context.Context, logger log.Logger, method string, resolver TenantResolver, kvps ...interface{}) (*SpanLogger, context.Context) {
@@ -52,26 +44,7 @@ func New(ctx context.Context, logger log.Logger, method string, resolver TenantR
 	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
 		span.SetTag(TenantIDsTagName, ids)
 	}
-	lwc, sampled := withContext(ctx, logger, resolver)
-	l := &SpanLogger{
-		Logger:  log.With(lwc, "method", method),
-		Span:    span,
-		sampled: sampled,
-	}
-	if len(kvps) > 0 {
-		level.Debug(l).Log(kvps...)
-	}
-
-	ctx = context.WithValue(ctx, loggerCtxKey, logger)
-	return l, ctx
-}
-
-func NewSpanLoger(tracer trace.Tracer, ctx context.Context, logger log.Logger, method string, resolver TenantResolver, kvps ...interface{}) (SpanLoggerInterface, context.Context) {
-	ctx, sp := tracer.Start(ctx, method)
-	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
-		sp.SetAttributes(attribute.StringSlice(TenantIDsTagName, ids))
-	}
-	lwc, sampled := withContext(ctx, logger, resolver)
+	lwc, sampled := withContext(ctx, logger, resolver, false)
 	l := &SpanLogger{
 		Logger:  log.With(lwc, "method", method),
 		Span:    span,
@@ -98,7 +71,7 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 	if sp == nil {
 		sp = opentracing.NoopTracer{}.StartSpan("noop")
 	}
-	lwc, sampled := withContext(ctx, logger, resolver)
+	lwc, sampled := withContext(ctx, logger, resolver, false)
 	return &SpanLogger{
 		Logger:  lwc,
 		Span:    sp,
@@ -131,13 +104,19 @@ func (s *SpanLogger) Error(err error) error {
 	return err
 }
 
-func withContext(ctx context.Context, logger log.Logger, resolver TenantResolver) (log.Logger, bool) {
+func withContext(ctx context.Context, logger log.Logger, resolver TenantResolver, otel bool) (log.Logger, bool) {
 	userID, err := resolver.TenantID(ctx)
 	if err == nil && userID != "" {
 		logger = log.With(logger, "user", userID)
 	}
 
-	traceID, ok := tracing.ExtractSampledTraceID(ctx)
+	var traceID string
+	var ok bool
+	if otel {
+		traceID, ok = tracing.ExtractOpentelemetrySampledTraceID(ctx)
+	} else {
+		traceID, ok = tracing.ExtractSampledTraceID(ctx)
+	}
 	if !ok {
 		return logger, false
 	}

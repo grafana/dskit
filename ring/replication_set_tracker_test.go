@@ -444,6 +444,52 @@ func TestDefaultResultTracker_StartMinimumRequests_MaxErrorsIsNumberOfInstances(
 	}
 }
 
+func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
+
+	tracker := newDefaultResultTracker(instances, 2)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	countInstancesReleased := 0
+	countInstancesSignalledToStart := 0
+
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			err := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			countInstancesReleased++
+			if err == nil {
+				countInstancesSignalledToStart++
+			}
+		}()
+	}
+
+	waitForInstancesReleased := func(expected int, msg string) {
+		require.Eventually(t, func() bool {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			return countInstancesReleased == expected && countInstancesSignalledToStart == expected
+		}, time.Second, 10*time.Millisecond, msg)
+	}
+
+	waitForInstancesReleased(2, "should initially release two requests")
+	tracker.startAdditionalRequests()
+	waitForInstancesReleased(3, "should release a third request after startAdditionalRequests()")
+	tracker.startAdditionalRequests()
+	waitForInstancesReleased(4, "should release remaining request after startAdditionalRequests()")
+}
+
 func TestDefaultContextTracker(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
@@ -1118,6 +1164,56 @@ func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumber
 	case <-time.After(time.Second):
 		require.Fail(t, "gave up waiting for requests to be released")
 	}
+}
+
+func TestZoneAwareResultTracker_StartAdditionalRequests(t *testing.T) {
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-b"}
+	instance5 := InstanceDesc{Addr: "127.0.0.5", Zone: "zone-c"}
+	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
+	instance7 := InstanceDesc{Addr: "127.0.0.7", Zone: "zone-d"}
+	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
+	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
+
+	tracker := newZoneAwareResultTracker(instances, 2)
+	tracker.startMinimumRequests()
+
+	mtx := sync.RWMutex{}
+	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
+	instancesReleased := make([]*InstanceDesc, 0, len(instances))
+	for instanceIdx := range instances {
+		instanceIdx := instanceIdx
+		instance := &instances[instanceIdx]
+		go func() {
+			released := tracker.awaitStart(context.Background(), instance)
+
+			mtx.Lock()
+			defer mtx.Unlock()
+			instancesAwaitReleaseResults[instance] = released
+			instancesReleased = append(instancesReleased, instance)
+		}()
+	}
+
+	waitForZonesReleased := func(expectedZones int, msg string) {
+		expectedInstances := 2 * expectedZones
+		require.Eventually(t, func() bool {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			return len(instancesReleased) == expectedInstances
+		}, time.Second, 10*time.Millisecond, msg)
+
+		require.Equal(t, expectedInstances, nilErrorCount(instancesAwaitReleaseResults), "expected all released instances to be signalled to start")
+		require.Equal(t, expectedZones, uniqueZoneCount(instancesReleased), msg)
+	}
+
+	waitForZonesReleased(2, "should initially release two zones")
+	tracker.startAdditionalRequests()
+	waitForZonesReleased(3, "should release a third zone after startAdditionalRequests()")
+	tracker.startAdditionalRequests()
+	waitForZonesReleased(4, "should release remaining zone after startAdditionalRequests()")
 }
 
 func TestZoneAwareContextTracker(t *testing.T) {

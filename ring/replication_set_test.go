@@ -411,7 +411,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 						return res, err
 					}
 
-					actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
+					cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+					actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, cfg, wrappedF, cleanupTracker.cleanup)
 					require.ElementsMatch(t, testCase.expectedResults, actualResults)
 					require.Equal(t, testCase.expectedError, actualError)
 
@@ -472,7 +473,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZo
 				return desc.Addr, nil
 			}
 
-			actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, wrappedF, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, wrappedF, cleanupTracker.cleanup)
 			require.Empty(t, actualResults)
 			require.EqualError(t, actualError, "error from a replica-1 instance")
 
@@ -521,7 +523,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t 
 				return desc.Addr, nil
 			}
 
-			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.ElementsMatch(t, expectedResults, actualResults)
 			require.NoError(t, err)
 
@@ -565,8 +568,9 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_RunsCallsInParallel(t
 				return desc.Addr, nil
 			}
 
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
 			cleanupFunc := func(_ string) {}
-			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, false, f, cleanupFunc)
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupFunc)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"replica-1", "replica-2"}, results)
 		})
@@ -607,7 +611,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultS
 				return desc.Addr, nil
 			}
 
-			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, results, 4)
 
@@ -698,7 +703,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultS
 				return desc.Addr, nil
 			}
 
-			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, minimizeRequests, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, results, 5, "should only have results from instances required to meet quorum requirement")
 
@@ -791,7 +797,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_DoesNotWaitForUnneces
 				return desc.Addr, nil
 			}
 
-			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, false, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: false}
+			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.ElementsMatch(t, testCase.expectedResults, actualResults)
 			require.NoError(t, err)
 
@@ -853,7 +860,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 		return desc.Addr, nil
 	}
 
-	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(parentCtx, replicationSet, false, f, cleanupTracker.cleanup)
+	cfg := DoUntilQuorumConfig{MinimizeRequests: false}
+	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(parentCtx, replicationSet, cfg, f, cleanupTracker.cleanup)
 	require.Empty(t, results)
 	require.Equal(t, context.Canceled, err)
 
@@ -914,7 +922,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 				cancel()
 			}()
 
-			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, true, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: true}
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.Empty(t, results)
 			require.Equal(t, context.Canceled, err)
 
@@ -971,7 +980,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandli
 				return desc.Addr, nil
 			}
 
-			instancesCalled, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: true}
+			instancesCalled, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, instancesCalled, testCase.expectedResultCount)
 
@@ -997,6 +1007,172 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandli
 			}
 		})
 	}
+}
+
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InvalidHedgingConfig(t *testing.T) {
+	replicationSet := ReplicationSet{}
+	cfg := DoUntilQuorumConfig{
+		MinimizeRequests: true,
+		HedgingDelay:     -1 * time.Second,
+	}
+
+	f := func(ctx context.Context, desc *InstanceDesc, cancelFunc context.CancelFunc) (string, error) {
+		require.FailNow(t, "should never call f")
+		return "", nil
+	}
+
+	cleanup := func(_ string) {
+		require.FailNow(t, "should never call cleanup")
+	}
+
+	_, err := DoUntilQuorumWithoutSuccessfulContextCancellation(context.Background(), replicationSet, cfg, f, cleanup)
+	require.EqualError(t, err, "invalid DoUntilQuorumConfig: HedgingDelay must be non-negative")
+}
+
+type hedgingTestInvocation struct {
+	instance     *InstanceDesc
+	invokedAfter time.Duration
+}
+
+func instancesFor(results []hedgingTestInvocation) []*InstanceDesc {
+	instances := make([]*InstanceDesc, 0, len(results))
+
+	for _, result := range results {
+		instances = append(instances, result.instance)
+	}
+
+	return instances
+}
+
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_Hedging_ZoneAware(t *testing.T) {
+	replicationSet := ReplicationSet{
+		Instances: []InstanceDesc{
+			{Addr: "instance-1", Zone: "zone-a"},
+			{Addr: "instance-2", Zone: "zone-a"},
+			{Addr: "instance-3", Zone: "zone-b"},
+			{Addr: "instance-4", Zone: "zone-b"},
+			{Addr: "instance-5", Zone: "zone-c"},
+			{Addr: "instance-6", Zone: "zone-c"},
+			{Addr: "instance-7", Zone: "zone-d"},
+			{Addr: "instance-8", Zone: "zone-d"},
+		},
+		MaxUnavailableZones: 2,
+	}
+
+	defer goleak.VerifyNone(t)
+
+	ctx := context.Background()
+	cleanupTracker := newCleanupTracker(t, 4)
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(replicationSet.Instances))
+	mtx := sync.RWMutex{}
+	invocations := make([]hedgingTestInvocation, 0, len(replicationSet.Instances))
+	startedAt := time.Now()
+
+	f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+		result := hedgingTestInvocation{
+			instance:     desc,
+			invokedAfter: time.Since(startedAt),
+		}
+
+		cleanupTracker.trackCall(ctx, desc, cancel)
+
+		mtx.Lock()
+		invocations = append(invocations, result)
+		mtx.Unlock()
+
+		wg.Done()
+		wg.Wait()
+
+		return desc.Addr, nil
+	}
+
+	cfg := DoUntilQuorumConfig{MinimizeRequests: true, HedgingDelay: time.Second}
+	successfulInstances, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
+	require.NoError(t, err)
+	require.Len(t, successfulInstances, 4)
+
+	cleanupTracker.collectCleanedUpInstances()
+	cleanupTracker.assertCorrectCleanup(successfulInstances, cleanupTracker.cleanedUpInstances)
+
+	require.ElementsMatch(t, append(successfulInstances, cleanupTracker.cleanedUpInstances...), []string{"instance-1", "instance-2", "instance-3", "instance-4", "instance-5", "instance-6", "instance-7", "instance-8"}, "all instances should be called")
+
+	require.Equal(t, 2, uniqueZoneCount(instancesFor(invocations[0:4])), "should initially release instances from two zones")
+	require.Equal(t, 1, uniqueZoneCount(instancesFor(invocations[4:6])), "should release one zone after first delay")
+	require.Equal(t, 1, uniqueZoneCount(instancesFor(invocations[6:8])), "should release one zone after first delay")
+
+	tolerance := float64((100 * time.Millisecond).Nanoseconds())
+
+	for _, result := range invocations[0:4] {
+		require.InDelta(t, 0, result.invokedAfter, tolerance, "expected first four requests to be released immediately")
+	}
+
+	for _, result := range invocations[4:6] {
+		require.InDelta(t, cfg.HedgingDelay, result.invokedAfter, tolerance, "expected next zone to be released after hedging delay")
+	}
+
+	for _, result := range invocations[6:8] {
+		require.InDelta(t, 2*cfg.HedgingDelay, result.invokedAfter, tolerance, "expected final zone to be released after another hedging delay")
+	}
+}
+
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_Hedging_NonZoneAware(t *testing.T) {
+	replicationSet := ReplicationSet{
+		Instances: []InstanceDesc{
+			{Addr: "instance-1"},
+			{Addr: "instance-2"},
+			{Addr: "instance-3"},
+			{Addr: "instance-4"},
+		},
+		MaxErrors: 2,
+	}
+
+	defer goleak.VerifyNone(t)
+
+	ctx := context.Background()
+	cleanupTracker := newCleanupTracker(t, 2)
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(replicationSet.Instances))
+	mtx := sync.RWMutex{}
+	invocations := make([]hedgingTestInvocation, 0, len(replicationSet.Instances))
+	startedAt := time.Now()
+
+	f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+		result := hedgingTestInvocation{
+			instance:     desc,
+			invokedAfter: time.Since(startedAt),
+		}
+
+		cleanupTracker.trackCall(ctx, desc, cancel)
+
+		mtx.Lock()
+		invocations = append(invocations, result)
+		mtx.Unlock()
+
+		wg.Done()
+		wg.Wait()
+
+		return desc.Addr, nil
+	}
+
+	cfg := DoUntilQuorumConfig{MinimizeRequests: true, HedgingDelay: time.Second}
+	successfulInstances, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
+	require.NoError(t, err)
+	require.Len(t, successfulInstances, 2)
+
+	cleanupTracker.collectCleanedUpInstances()
+	cleanupTracker.assertCorrectCleanup(successfulInstances, cleanupTracker.cleanedUpInstances)
+
+	require.ElementsMatch(t, append(successfulInstances, cleanupTracker.cleanedUpInstances...), []string{"instance-1", "instance-2", "instance-3", "instance-4"}, "all instances should be called")
+
+	tolerance := float64((100 * time.Millisecond).Nanoseconds())
+
+	require.InDelta(t, 0, invocations[0].invokedAfter, tolerance, "expected first request to be released immediately")
+	require.InDelta(t, 0, invocations[1].invokedAfter, tolerance, "expected second request to be released immediately")
+	require.InDelta(t, cfg.HedgingDelay, invocations[2].invokedAfter, tolerance, "expected next request to be released after hedging delay")
+	require.InDelta(t, 2*cfg.HedgingDelay, invocations[3].invokedAfter, tolerance, "expected final request to be released after another hedging delay")
 }
 
 func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
@@ -1046,7 +1222,8 @@ func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
 				return desc.Addr, nil
 			}
 
-			instancesCalled, err := DoUntilQuorum(ctx, testCase.replicationSet, true, f, cleanupTracker.cleanup)
+			cfg := DoUntilQuorumConfig{MinimizeRequests: true}
+			instancesCalled, err := DoUntilQuorum(ctx, testCase.replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.NoError(t, err)
 			require.Len(t, instancesCalled, testCase.expectedResultCount)
 

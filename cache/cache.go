@@ -90,9 +90,10 @@ const (
 )
 
 type BackendConfig struct {
-	Backend   string                `yaml:"backend"`
-	Memcached MemcachedClientConfig `yaml:"memcached"`
-	Redis     RedisClientConfig     `yaml:"redis"`
+	Backend       string                `yaml:"backend"`
+	Memcached     MemcachedClientConfig `yaml:"memcached"`
+	Redis         RedisClientConfig     `yaml:"redis"`
+	Opentelemetry bool                  `yaml:"opentelemetry"`
 }
 
 // Validate the config.

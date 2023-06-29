@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1476,6 +1477,29 @@ func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 	val, err = kv.Get(key, codec)
 	require.NoError(t, err)
 	assert.Equal(t, msg, val)
+}
+
+func TestMetricsRegistration(t *testing.T) {
+	c := dataCodec{}
+
+	cfg := KVConfig{}
+	cfg.Codecs = append(cfg.Codecs, c)
+
+	reg := prometheus.NewPedanticRegistry()
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
+	err := kv.CAS(context.Background(), "test", c, func(in interface{}) (out interface{}, retry bool, err error) {
+		return &data{Members: map[string]member{
+			"member": {},
+		}}, true, nil
+	})
+	require.NoError(t, err)
+
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP memberlist_client_kv_store_count Number of values in KV Store
+			# TYPE memberlist_client_kv_store_count gauge
+			memberlist_client_kv_store_count 1
+	`), "memberlist_client_kv_store_count"))
+
 }
 
 func decodeDataFromMarshalledKeyValuePair(t *testing.T, marshalledKVP []byte, key string, codec dataCodec) *data {

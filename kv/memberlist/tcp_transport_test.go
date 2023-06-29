@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -44,7 +45,7 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 				testData.setup(t, &cfg)
 			}
 
-			transport, err := NewTCPTransport(cfg, logger)
+			transport, err := NewTCPTransport(cfg, logger, nil)
 			require.NoError(t, err)
 
 			_, err = transport.WriteTo([]byte("test"), testData.remoteAddr)
@@ -83,7 +84,7 @@ func TestFinalAdvertiseAddr(t *testing.T) {
 			cfg.BindAddrs = testData.bindAddrs
 			cfg.BindPort = testData.bindPort
 
-			transport, err := NewTCPTransport(cfg, logger)
+			transport, err := NewTCPTransport(cfg, logger, prometheus.NewPedanticRegistry())
 			require.NoError(t, err)
 
 			ip, port, err := transport.FinalAdvertiseAddr(testData.advertiseAddr, testData.bindPort)

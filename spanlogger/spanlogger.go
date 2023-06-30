@@ -2,13 +2,16 @@ package spanlogger
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/weaveworks/common/tracing"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type loggerCtxMarker struct{}
@@ -31,23 +34,37 @@ var (
 )
 
 // SpanLogger unifies tracing and logging, to reduce repetition.
+func withContext(ctx context.Context, logger log.Logger, resolver TenantResolver) (log.Logger, bool) {
+	userID, err := resolver.TenantID(ctx)
+	if err == nil && userID != "" {
+		logger = log.With(logger, "user", userID)
+	}
+	traceID, ok := tracing.ExtractSampledTraceID(ctx)
+	if !ok {
+		return logger, false
+	}
+
+	return log.With(logger, "traceID", traceID), true
+}
+
 type SpanLogger struct {
 	log.Logger
-	opentracing.Span
+	trace.Span
 	sampled bool
 }
 
 // New makes a new SpanLogger with a log.Logger to send logs to. The provided context will have the logger attached
 // to it and can be retrieved with FromContext.
 func New(ctx context.Context, logger log.Logger, method string, resolver TenantResolver, kvps ...interface{}) (*SpanLogger, context.Context) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, method)
+	ctx, sp := otel.Tracer("").Start(ctx, method)
+	defer sp.End()
 	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
-		span.SetTag(TenantIDsTagName, ids)
+		sp.SetAttributes(attribute.StringSlice(TenantIDsTagName, ids))
 	}
-	lwc, sampled := withContext(ctx, logger, resolver, false)
+	lwc, sampled := withContext(ctx, logger, resolver)
 	l := &SpanLogger{
 		Logger:  log.With(lwc, "method", method),
-		Span:    span,
+		Span:    sp,
 		sampled: sampled,
 	}
 	if len(kvps) > 0 {
@@ -67,11 +84,8 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 	if !ok {
 		logger = fallback
 	}
-	sp := opentracing.SpanFromContext(ctx)
-	if sp == nil {
-		sp = opentracing.NoopTracer{}.StartSpan("noop")
-	}
-	lwc, sampled := withContext(ctx, logger, resolver, false)
+	sp := trace.SpanFromContext(ctx)
+	lwc, sampled := withContext(ctx, logger, resolver)
 	return &SpanLogger{
 		Logger:  lwc,
 		Span:    sp,
@@ -86,11 +100,11 @@ func (s *SpanLogger) Log(kvps ...interface{}) error {
 	if !s.sampled {
 		return nil
 	}
-	fields, err := otlog.InterleavedKVToFields(kvps...)
+	fields, err := convertKVToAttributes(kvps...)
 	if err != nil {
 		return err
 	}
-	s.Span.LogFields(fields...)
+	s.AddEvent("log", trace.WithAttributes(fields...))
 	return nil
 }
 
@@ -99,27 +113,42 @@ func (s *SpanLogger) Error(err error) error {
 	if err == nil || !s.sampled {
 		return err
 	}
-	ext.Error.Set(s.Span, true)
-	s.Span.LogFields(otlog.Error(err))
+	s.Span.SetStatus(codes.Error, "")
+	s.Span.RecordError(err)
 	return err
 }
 
-func withContext(ctx context.Context, logger log.Logger, resolver TenantResolver, otel bool) (log.Logger, bool) {
-	userID, err := resolver.TenantID(ctx)
-	if err == nil && userID != "" {
-		logger = log.With(logger, "user", userID)
+// convertKVToAttributes converts keyValues to a slice of attribute.KeyValue
+func convertKVToAttributes(keyValues ...interface{}) ([]attribute.KeyValue, error) {
+	if len(keyValues)%2 != 0 {
+		return nil, fmt.Errorf("non-even keyValues len: %d", len(keyValues))
 	}
+	fields := make([]attribute.KeyValue, len(keyValues)/2)
+	for i := 0; i*2 < len(keyValues); i++ {
+		key, ok := keyValues[i*2].(string)
+		if !ok {
+			return nil, fmt.Errorf("non-string key (pair #%d): %T", i, keyValues[i*2])
+		}
+		value := keyValues[i*2+1]
+		typedVal := reflect.ValueOf(value)
 
-	var traceID string
-	var ok bool
-	if otel {
-		traceID, ok = tracing.ExtractOpentelemetrySampledTraceID(ctx)
-	} else {
-		traceID, ok = tracing.ExtractSampledTraceID(ctx)
+		switch typedVal.Kind() {
+		case reflect.Bool:
+			fields[i] = attribute.Bool(key, typedVal.Bool())
+		case reflect.String:
+			fields[i] = attribute.String(key, typedVal.String())
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			fields[i] = attribute.Int(key, int(typedVal.Int()))
+		case reflect.Float32, reflect.Float64:
+			fields[i] = attribute.Float64(key, typedVal.Float())
+		default:
+			if typedVal.Kind() == reflect.Ptr && typedVal.IsNil() {
+				fields[i] = attribute.String(key, "nil")
+				continue
+			}
+			// When in doubt, coerce to a string
+			fields[i] = attribute.String(key, fmt.Sprintf("%v", value))
+		}
 	}
-	if !ok {
-		return logger, false
-	}
-
-	return log.With(logger, "traceID", traceID), true
+	return fields, nil
 }

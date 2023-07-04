@@ -37,7 +37,7 @@ var (
 	errorLowerAndUpperBoundModulo = func(optimalTokenOwnership uint32, token ringToken) error {
 		return fmt.Errorf("calculation of a new token between %d and %d with optimal token ownership %d was impossible: lower and upper bounds must be congruent modulo maximal allowed number of zones %d", token.prevToken, token.token, optimalTokenOwnership, maxZonesCount)
 	}
-	errorDistanceBetweenTokensNotBigEnough = func(optimalTokenOwnership, ownership int, token ringToken) error {
+	errorDistanceBetweenTokensNotBigEnough = func(optimalTokenOwnership int, ownership int64, token ringToken) error {
 		return fmt.Errorf("calculation of a new token between %d and %d with optimal token ownership %d was impossible: distance between lower and upper bound %d is not big enough", token.prevToken, token.token, optimalTokenOwnership, ownership)
 	}
 )
@@ -122,7 +122,7 @@ func (t *SpreadMinimizingTokenGenerator) calculateNewToken(token ringToken, opti
 		return 0, errorLowerAndUpperBoundModulo(optimalTokenOwnership, token)
 	}
 	ownership := tokenDistance(token.prevToken, token.token)
-	if ownership <= int(optimalTokenOwnership) {
+	if ownership <= int64(optimalTokenOwnership) {
 		return 0, errorDistanceBetweenTokensNotBigEnough(int(optimalTokenOwnership), ownership, token)
 	}
 	// In the present approach tokens of successive zones are immediate successors of the tokens in

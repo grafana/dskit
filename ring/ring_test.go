@@ -901,8 +901,10 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 				"instance-10": {Addr: "127.0.0.10", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
 				"instance-11": {Addr: "127.0.0.11", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
 			},
-			expectedAddresses: []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5",
-				"127.0.0.6", "127.0.0.7", "127.0.0.8", "127.0.0.9", "127.0.0.10", "127.0.0.11"},
+			expectedAddresses: []string{
+				"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5",
+				"127.0.0.6", "127.0.0.7", "127.0.0.8", "127.0.0.9", "127.0.0.10", "127.0.0.11",
+			},
 			replicationFactor:           5,
 			expectedMaxErrors:           0,
 			expectedMaxUnavailableZones: 2,
@@ -1555,9 +1557,7 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 		userID         = "user-1"
 	)
 
-	var (
-		now = time.Now()
-	)
+	now := time.Now()
 
 	type event struct {
 		what         eventType
@@ -2590,8 +2590,8 @@ func TestRing_Get_NoMemoryAllocations(t *testing.T) {
 // generateTokensLinear returns tokens with a linear distribution.
 func generateTokensLinear(instanceID, numInstances, numTokens int) []uint32 {
 	tokens := make([]uint32, 0, numTokens)
-	step := math.MaxUint32 / numTokens
-	offset := (step / numInstances) * instanceID
+	step := int64(math.MaxUint32 / int64(numTokens))
+	offset := (step / int64(numInstances)) * int64(instanceID)
 
 	for t := offset; t <= math.MaxUint32; t += step {
 		tokens = append(tokens, uint32(t))
@@ -3080,11 +3080,11 @@ func TestMergeTokenGroups(t *testing.T) {
 func TestCountTokensSingleZone(t *testing.T) {
 	tests := map[string]struct {
 		ring     *Desc
-		expected map[string]int
+		expected map[string]int64
 	}{
 		"empty ring": {
 			ring:     &Desc{},
-			expected: map[string]int{},
+			expected: map[string]int64{},
 		},
 		"1 instance with 1 token in the ring": {
 			ring: &Desc{
@@ -3092,7 +3092,7 @@ func TestCountTokensSingleZone(t *testing.T) {
 					"ingester-1": {Tokens: []uint32{1000000}},
 				},
 			},
-			expected: map[string]int{
+			expected: map[string]int64{
 				"ingester-1": math.MaxUint32 + 1,
 			},
 		},
@@ -3102,7 +3102,7 @@ func TestCountTokensSingleZone(t *testing.T) {
 					"ingester-1": {Tokens: []uint32{1000000, 2000000, 3000000}},
 				},
 			},
-			expected: map[string]int{
+			expected: map[string]int64{
 				"ingester-1": math.MaxUint32 + 1,
 			},
 		},
@@ -3114,8 +3114,8 @@ func TestCountTokensSingleZone(t *testing.T) {
 					"ingester-3": {Tokens: []uint32{5000000, 9000000}},
 				},
 			},
-			expected: map[string]int{
-				"ingester-1": 3000000 + (math.MaxUint32 + 1 - 9000000),
+			expected: map[string]int64{
+				"ingester-1": 3000000 + (int64(math.MaxUint32) + 1 - 9000000),
 				"ingester-2": 4000000,
 				"ingester-3": 2000000,
 			},
@@ -3127,17 +3127,16 @@ func TestCountTokensSingleZone(t *testing.T) {
 			assert.Equal(t, testData.expected, testData.ring.CountTokens())
 		})
 	}
-
 }
 
 func TestCountTokensMultiZones(t *testing.T) {
 	tests := map[string]struct {
 		ring     *Desc
-		expected map[string]int
+		expected map[string]int64
 	}{
 		"empty ring": {
 			ring:     &Desc{},
-			expected: map[string]int{},
+			expected: map[string]int64{},
 		},
 		"1 instance per zone with 1 token in the ring": {
 			ring: &Desc{
@@ -3147,7 +3146,7 @@ func TestCountTokensMultiZones(t *testing.T) {
 					"ingester-zone-c-1": {Zone: "zone-c", Tokens: []uint32{1000002}},
 				},
 			},
-			expected: map[string]int{
+			expected: map[string]int64{
 				"ingester-zone-a-1": math.MaxUint32 + 1,
 				"ingester-zone-b-1": math.MaxUint32 + 1,
 				"ingester-zone-c-1": math.MaxUint32 + 1,
@@ -3161,10 +3160,10 @@ func TestCountTokensMultiZones(t *testing.T) {
 					"ingester-zone-c-1": {Zone: "zone-c", Tokens: []uint32{1000002, 2000002, 3000002}},
 				},
 			},
-			expected: map[string]int{
-				"ingester-zone-a-1": math.MaxUint32 + 1,
-				"ingester-zone-b-1": math.MaxUint32 + 1,
-				"ingester-zone-c-1": math.MaxUint32 + 1,
+			expected: map[string]int64{
+				"ingester-zone-a-1": int64(math.MaxUint32) + 1,
+				"ingester-zone-b-1": int64(math.MaxUint32) + 1,
+				"ingester-zone-c-1": int64(math.MaxUint32) + 1,
 			},
 		},
 		"multiple instances in multiple zones with multiple tokens in the ring": {
@@ -3178,11 +3177,11 @@ func TestCountTokensMultiZones(t *testing.T) {
 					"ingester-zone-b-3": {Zone: "zone-b", Tokens: []uint32{5000001, 9000001}},
 				},
 			},
-			expected: map[string]int{
-				"ingester-zone-a-1": 3000000 + (math.MaxUint32 + 1 - 9000000),
+			expected: map[string]int64{
+				"ingester-zone-a-1": 3000000 + (int64(math.MaxUint32) + 1 - 9000000),
 				"ingester-zone-a-2": 4000000,
 				"ingester-zone-a-3": 2000000,
-				"ingester-zone-b-1": 3000000 + (math.MaxUint32 + 1 - 9000000),
+				"ingester-zone-b-1": 3000000 + (int64(math.MaxUint32) + 1 - 9000000),
 				"ingester-zone-b-2": 4000000,
 				"ingester-zone-b-3": 2000000,
 			},
@@ -3194,5 +3193,4 @@ func TestCountTokensMultiZones(t *testing.T) {
 			assert.Equal(t, testData.expected, testData.ring.CountTokens())
 		})
 	}
-
 }

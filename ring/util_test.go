@@ -390,7 +390,7 @@ func TestGetTokenDistance(t *testing.T) {
 	tests := map[string]struct {
 		from     uint32
 		to       uint32
-		expected int
+		expected int64
 	}{
 		"whole ring between token and itself": {
 			from:     10,

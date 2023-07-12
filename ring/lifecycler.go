@@ -102,6 +102,19 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.BoolVar(&cfg.EnableInet6, prefix+"enable-inet6", false, "Enable IPv6 support. Required to make use of IP addresses from IPv6 interfaces.")
 }
 
+// Validate checks the consistency of LifecyclerConfig, and fails if this cannot be achieved.
+func (cfg *LifecyclerConfig) Validate() error {
+	_, ok := cfg.RingTokenGenerator.(*SpreadMinimizingTokenGenerator)
+	if ok {
+		// If cfg.RingTokenGenerator is a SpreadMinimizingTokenGenerator, we must ensure that
+		// the tokens are not loaded from file.
+		if cfg.TokensFilePath != "" {
+			return errors.New("you can't configure the tokens file path when using the spread minimizing token strategy. Please set the tokens file path to an empty string")
+		}
+	}
+	return nil
+}
+
 /*
 Lifecycler is a Service that is responsible for publishing changes to a ring for a single instance.
 
@@ -156,19 +169,6 @@ type Lifecycler struct {
 	logger            log.Logger
 }
 
-// Validate checks the consistency of LifecyclerConfig, and fails if this cannot be achieved.
-func (cfg *LifecyclerConfig) Validate(logger log.Logger) error {
-	_, ok := cfg.RingTokenGenerator.(*SpreadMinimizingTokenGenerator)
-	if ok {
-		// If cfg.RingTokenGenerator is a SpreadMinimizingTokenGenerator, we must ensure that
-		// the tokens are not loaded from file.
-		warn := fmt.Sprintf("spread minimizing token strategy does not support loading and storing tokens to a file. Configuration %q set to %q will be ignored", "tokens-file-path", cfg.TokensFilePath)
-		level.Warn(logger).Log("warn", warn)
-		cfg.TokensFilePath = ""
-	}
-	return nil
-}
-
 // NewLifecycler creates new Lifecycler. It must be started via StartAsync.
 func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringName, ringKey string, flushOnShutdown bool, logger log.Logger, reg prometheus.Registerer) (*Lifecycler, error) {
 	addr, err := GetInstanceAddr(cfg.Addr, cfg.InfNames, logger, cfg.EnableInet6)
@@ -200,7 +200,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 	}
 
 	// We validate cfg before we create a Lifecycler.
-	err = cfg.Validate(logger)
+	err = cfg.Validate()
 	if err != nil {
 		return nil, err
 	}
@@ -782,19 +782,16 @@ func (i *Lifecycler) compareTokens(fromRing Tokens) bool {
 func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) error {
 	var ringDesc *Desc
 
-	err := i.KVStore.CAS(ctx, i.RingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	err := i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	if err != nil {
+		level.Error(i.logger).Log("msg", "there was a problem while checking whether this instance could join the ring - will continue anyway", "err", err)
+	}
+
+	err = i.KVStore.CAS(ctx, i.RingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		if in == nil {
 			ringDesc = NewDesc()
 		} else {
 			ringDesc = in.(*Desc)
-		}
-
-		conditionalTokenGenerator, ok := i.tokenGenerator.(ConditionalTokenGenerator)
-		if ok {
-			conditionErr := conditionalTokenGenerator.CheckConditions(ringDesc.GetIngesters())
-			if conditionErr != nil {
-				return nil, true, conditionErr
-			}
 		}
 
 		// At this point, we should not have any tokens, and we should be in PENDING state.

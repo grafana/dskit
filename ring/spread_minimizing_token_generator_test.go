@@ -177,7 +177,7 @@ func TestSpreadMinimizingTokenGenerator_NewSpreadMinimizingTokenGenerator(t *tes
 
 	for _, testData := range tests {
 		instance := fmt.Sprintf("instance-%s-1", testData.zone)
-		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, testData.zone, testData.spreadMinimizingZones, log.NewNopLogger())
+		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, testData.zone, testData.spreadMinimizingZones, true, 0, log.NewNopLogger())
 		if testData.expectedError != nil {
 			require.Error(t, err)
 			require.Equal(t, testData.expectedError, err)
@@ -474,11 +474,21 @@ func TestSpreadMinimizingTokenGenerator_GetMissingTokens(t *testing.T) {
 	}
 }
 
-func TestSpreadMinimizingTokenGenerator_CheckConditions(t *testing.T) {
-	instanceID := 128
+func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 	zone := zones[0]
+
+	// the first instance can always join
+	firstInstance := fmt.Sprintf("instance-%s-%d", zone, 0)
+	tokenGenerator := createSpreadMinimizingTokenGenerator(t, firstInstance, zone, zones)
+	tokenGenerator.canJoinEnabled = true
+	tokenGenerator.canJoinTimeout = 1 * time.Second
+	err := tokenGenerator.CanJoin(nil)
+	require.NoError(t, err)
+
+	instanceID := 128
 	targetInstance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
-	tokenGenerator := createSpreadMinimizingTokenGenerator(t, targetInstance, zone, zones)
+	tokenGenerator = createSpreadMinimizingTokenGenerator(t, targetInstance, zone, zones)
+	tokenGenerator.canJoinTimeout = 1 * time.Second
 	// this is the set of all sorted tokens assigned to instance
 	allTokens := tokenGenerator.generateTokensByInstanceID()
 	require.Len(t, allTokens, instanceID+1)
@@ -486,27 +496,44 @@ func TestSpreadMinimizingTokenGenerator_CheckConditions(t *testing.T) {
 	ringDesc := &Desc{}
 	for i := 0; i < instanceID; i++ {
 		instance := fmt.Sprintf("instance-%s-%d", zone, i)
-		var state InstanceState
+		var (
+			state  InstanceState
+			tokens Tokens
+		)
 		if i <= instanceID-2 {
 			state = ACTIVE
+			tokens = allTokens[i]
 		} else {
 			state = PENDING
+			tokens = nil
 		}
-		ringDesc.AddIngester(instance, instance, zone, allTokens[i], state, time.Now())
+		ringDesc.AddIngester(instance, instance, zone, tokens, state, time.Now())
 	}
 
 	instances := ringDesc.GetIngesters()
-	pendingInstance := fmt.Sprintf("instance-%s-%d", zone, instanceID-1)
+	pendingInstanceID := instanceID - 1
+	pendingInstance := fmt.Sprintf("instance-%s-%d", zone, pendingInstanceID)
 	pendingInstanceDesc, ok := instances[pendingInstance]
 	require.True(t, ok)
-	require.Equal(t, PENDING, pendingInstanceDesc.GetState())
-	err := tokenGenerator.CheckConditions(ringDesc.GetIngesters())
+	require.Len(t, pendingInstanceDesc.GetTokens(), 0)
+
+	// if canJoinEnabled is false, the check is skipped
+	tokenGenerator.canJoinEnabled = false
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	require.NoError(t, err)
+
+	// if canJoinEnabled is true, the check returns an error because not all previous instances have tokens
+	tokenGenerator.canJoinEnabled = true
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
 	require.Error(t, err)
 	require.Equal(t, errorPreviousInstance(pendingInstance, targetInstance), err)
 
+	// if canJoinEnabled is true, the check returns nil all instances have tokens
+	tokenGenerator.canJoinEnabled = true
 	pendingInstanceDesc.State = ACTIVE
+	pendingInstanceDesc.Tokens = allTokens[pendingInstanceID]
 	ringDesc.Ingesters[pendingInstance] = pendingInstanceDesc
-	err = tokenGenerator.CheckConditions(ringDesc.GetIngesters())
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
 	require.NoError(t, err)
 }
 
@@ -546,7 +573,7 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 }
 
 func createSpreadMinimizingTokenGenerator(t testing.TB, instance, zone string, zones []string) *SpreadMinimizingTokenGenerator {
-	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, zones, log.NewLogfmtLogger(os.Stdout))
+	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, zones, true, 0, log.NewLogfmtLogger(os.Stdout))
 	require.NoError(t, err)
 	require.NotNil(t, tokenGenerator)
 	return tokenGenerator

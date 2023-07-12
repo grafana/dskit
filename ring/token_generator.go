@@ -6,19 +6,15 @@ import (
 	"time"
 )
 
-type ConditionalTokenGenerator interface {
-	TokenGenerator
-
-	// CheckConditions checks whether the given set of instances satisfies a condition provided by a specific
-	// implementation, and fails if the latter is not satisfied.
-	CheckConditions(instances map[string]InstanceDesc) error
-}
-
 type TokenGenerator interface {
 	// GenerateTokens generates at most requestedTokensCount unique tokens, none of which clashes with
 	// the given allTakenTokens, representing the set of all tokens currently present in the ring.
 	// Generated tokens are sorted.
 	GenerateTokens(requestedTokensCount int, allTakenTokens []uint32) Tokens
+
+	// CanJoin checks whether the instance owning this TokenGenerator can join the set of the given instances satisfies,
+	// and fails if it is not possible.
+	CanJoin(instances map[string]InstanceDesc) error
 }
 
 type RandomTokenGenerator struct{}
@@ -59,4 +55,8 @@ func (t *RandomTokenGenerator) GenerateTokens(requestedTokensCount int, allTaken
 	})
 
 	return tokens
+}
+
+func (t *RandomTokenGenerator) CanJoin(_ map[string]InstanceDesc) error {
+	return nil
 }

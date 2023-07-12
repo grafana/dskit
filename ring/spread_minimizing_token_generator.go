@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -30,7 +31,7 @@ var (
 		return fmt.Errorf("impossible to find the instance preceding %q, because it is the first instance", instanceID)
 	}
 	errorPreviousInstance = func(requiredInstanceID, instanceID string) error {
-		return fmt.Errorf("impossible to find instance %q requested by the current instance %q, or it is not in a valid state", requiredInstanceID, instanceID)
+		return fmt.Errorf("impossible to find instance %q requested by the current instance %q, or %q has no registered tokens", requiredInstanceID, instanceID, requiredInstanceID)
 	}
 	errorZoneCountOutOfBound = func(zonesCount int) error {
 		return fmt.Errorf("number of zones %d is not correct: it must be greater than 0 and less or equal than %d", zonesCount, maxZonesCount)
@@ -54,10 +55,12 @@ type SpreadMinimizingTokenGenerator struct {
 	instance              string
 	zoneID                int
 	spreadMinimizingZones []string
+	canJoinEnabled        bool
+	canJoinTimeout        time.Duration
 	logger                log.Logger
 }
 
-func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZones []string, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
+func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZones []string, canJoinEnabled bool, canJoinTimeout time.Duration, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
 	if len(spreadMinimizingZones) <= 0 || len(spreadMinimizingZones) > maxZonesCount {
 		return nil, errorZoneCountOutOfBound(len(spreadMinimizingZones))
 	}
@@ -80,6 +83,8 @@ func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZo
 		instance:              instance,
 		zoneID:                zoneID,
 		spreadMinimizingZones: sortedZones,
+		canJoinEnabled:        canJoinEnabled,
+		canJoinTimeout:        canJoinTimeout,
 		logger:                logger,
 	}
 	return tokenGenerator, nil
@@ -333,17 +338,26 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() map[int]To
 	return tokensByInstanceID
 }
 
-func (t *SpreadMinimizingTokenGenerator) CheckConditions(instances map[string]InstanceDesc) error {
-	prevInstance, err := previousInstance(t.instance)
-	if err != nil {
-		if errors.Is(err, errorNoPreviousInstance(t.instance)) {
+func (t *SpreadMinimizingTokenGenerator) CanJoin(instances map[string]InstanceDesc) error {
+	if !t.canJoinEnabled {
+		return nil
+	}
+
+	var err error
+	start := time.Now()
+	for time.Since(start) < t.canJoinTimeout {
+		prevInstance, prevInstanceErr := previousInstance(t.instance)
+		if prevInstanceErr != nil {
+			if errors.Is(err, errorNoPreviousInstance(t.instance)) {
+				return nil
+			}
+			continue
+		}
+		instanceDesc, ok := instances[prevInstance]
+		if ok && len(instanceDesc.Tokens) != 0 {
 			return nil
 		}
-		return err
+		err = errorPreviousInstance(prevInstance, t.instance)
 	}
-	instanceDesc, ok := instances[prevInstance]
-	if !ok || instanceDesc.State == PENDING {
-		return errorPreviousInstance(prevInstance, t.instance)
-	}
-	return nil
+	return err
 }

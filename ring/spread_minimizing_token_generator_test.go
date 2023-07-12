@@ -86,7 +86,7 @@ func TestSpreadMinimizingTokenGenerator_PreviousInstanceID(t *testing.T) {
 		},
 		"instance-zone-0 has no previous instance": {
 			instanceID:    "instance-zone-0",
-			expectedError: errorNoPreviousInstance("instance-zone-0"),
+			expectedError: errorNoPreviousInstance,
 		},
 		"instance-zone-c is not valid": {
 			instanceID:    "instance-zone-c",

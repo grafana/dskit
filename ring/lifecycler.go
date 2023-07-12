@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
@@ -778,15 +779,42 @@ func (i *Lifecycler) compareTokens(fromRing Tokens) bool {
 	return true
 }
 
+func (i *Lifecycler) canJoin(ctx context.Context) error {
+	desc, err := i.KVStore.Get(ctx, i.RingKey)
+	if err != nil {
+		return fmt.Errorf("error getting the ring from the KV store: %s", err)
+	}
+
+	ringDesc, ok := desc.(*Desc)
+	if !ok || ringDesc == nil {
+		return fmt.Errorf("no ring returned from the KV store")
+	}
+
+	retries := backoff.New(ctx, backoff.Config{
+		MinBackoff: 10 * time.Second,
+		MaxBackoff: 1 * time.Minute,
+		MaxRetries: 5,
+	})
+
+	for retries.Ongoing() {
+		err := i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
+		if err == nil {
+			break
+		}
+		retries.Wait()
+	}
+
+	return retries.Err()
+}
+
 // autoJoin selects random tokens & moves state to targetState
 func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) error {
-	var ringDesc *Desc
-
-	err := i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	err := i.canJoin(ctx)
 	if err != nil {
 		level.Error(i.logger).Log("msg", "there was a problem while checking whether this instance could join the ring - will continue anyway", "err", err)
 	}
 
+	var ringDesc *Desc
 	err = i.KVStore.CAS(ctx, i.RingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		if in == nil {
 			ringDesc = NewDesc()

@@ -27,9 +27,8 @@ var (
 	errorBadInstanceIDFormat = func(instanceID string) error {
 		return fmt.Errorf("unable to extract instance id from %q", instanceID)
 	}
-	errorNoPreviousInstance = func(instanceID string) error {
-		return fmt.Errorf("impossible to find the instance preceding %q, because it is the first instance", instanceID)
-	}
+	errorNoPreviousInstance = fmt.Errorf("impossible to find the instance preceding the target instance, because it is the first instance")
+
 	errorPreviousInstance = func(requiredInstanceID, instanceID string) error {
 		return fmt.Errorf("impossible to find instance %q requested by the current instance %q, or %q has no registered tokens", requiredInstanceID, instanceID, requiredInstanceID)
 	}
@@ -113,7 +112,7 @@ func previousInstance(instanceID string) (string, error) {
 		return "", err
 	}
 	if id == 0 {
-		return "", errorNoPreviousInstance(instanceID)
+		return "", errorNoPreviousInstance
 	}
 	return fmt.Sprintf("%s-%d", parts[1], id-1), nil
 }
@@ -343,21 +342,16 @@ func (t *SpreadMinimizingTokenGenerator) CanJoin(instances map[string]InstanceDe
 		return nil
 	}
 
-	var err error
-	start := time.Now()
-	for time.Since(start) < t.canJoinTimeout {
-		prevInstance, prevInstanceErr := previousInstance(t.instance)
-		if prevInstanceErr != nil {
-			if errors.Is(err, errorNoPreviousInstance(t.instance)) {
-				return nil
-			}
-			continue
-		}
-		instanceDesc, ok := instances[prevInstance]
-		if ok && len(instanceDesc.Tokens) != 0 {
+	prevInstance, err := previousInstance(t.instance)
+	if err != nil {
+		if errors.Is(err, errorNoPreviousInstance) {
 			return nil
 		}
-		err = errorPreviousInstance(prevInstance, t.instance)
+		return err
 	}
-	return err
+	instanceDesc, ok := instances[prevInstance]
+	if ok && len(instanceDesc.Tokens) != 0 {
+		return nil
+	}
+	return errorPreviousInstance(prevInstance, t.instance)
 }

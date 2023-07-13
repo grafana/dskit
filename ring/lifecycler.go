@@ -779,17 +779,7 @@ func (i *Lifecycler) compareTokens(fromRing Tokens) bool {
 	return true
 }
 
-func (i *Lifecycler) canJoin(ctx context.Context) error {
-	desc, err := i.KVStore.Get(ctx, i.RingKey)
-	if err != nil {
-		return fmt.Errorf("error getting the ring from the KV store: %s", err)
-	}
-
-	ringDesc, ok := desc.(*Desc)
-	if !ok || ringDesc == nil {
-		return fmt.Errorf("no ring returned from the KV store")
-	}
-
+func (i *Lifecycler) waitBeforeJoining(ctx context.Context) error {
 	retries := backoff.New(ctx, backoff.Config{
 		MinBackoff: 10 * time.Second,
 		MaxBackoff: 1 * time.Minute,
@@ -797,7 +787,16 @@ func (i *Lifecycler) canJoin(ctx context.Context) error {
 	})
 
 	for retries.Ongoing() {
-		err := i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
+		desc, err := i.KVStore.Get(ctx, i.RingKey)
+		if err != nil {
+			return fmt.Errorf("error getting the ring from the KV store: %s", err)
+		}
+
+		ringDesc, ok := desc.(*Desc)
+		if !ok || ringDesc == nil {
+			return fmt.Errorf("no ring returned from the KV store")
+		}
+		err = i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
 		if err == nil {
 			break
 		}
@@ -809,7 +808,7 @@ func (i *Lifecycler) canJoin(ctx context.Context) error {
 
 // autoJoin selects random tokens & moves state to targetState
 func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) error {
-	err := i.canJoin(ctx)
+	err := i.waitBeforeJoining(ctx)
 	if err != nil {
 		level.Error(i.logger).Log("msg", "there was a problem while checking whether this instance could join the ring - will continue anyway", "err", err)
 	}

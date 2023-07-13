@@ -64,7 +64,7 @@ func TestLifecyclerConfig_Validate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pathToTokens, cfg.TokensFilePath)
 
-	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true, 0, log.NewNopLogger())
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true, log.NewNopLogger())
 	require.NoError(t, err)
 
 	cfg.RingTokenGenerator = spreadMinimizingTokenGenerator
@@ -82,7 +82,7 @@ func TestLifecycler_TokenGenerator(t *testing.T) {
 
 	cfg := testLifecyclerConfig(ringConfig, "instance-1")
 
-	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true, 0, log.NewNopLogger())
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true, log.NewNopLogger())
 	require.NoError(t, err)
 
 	tests := []TokenGenerator{nil, NewRandomTokenGenerator(), spreadMinimizingTokenGenerator}
@@ -1308,7 +1308,7 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 	targetInstanceID := instanceName(2, 1)
 	targetZone := zone(1)
 	spreadMinimizingZones := []string{zone(1), zone(2), zone(3)}
-	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(targetInstanceID, targetZone, spreadMinimizingZones, true, 0, log.NewNopLogger())
+	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(targetInstanceID, targetZone, spreadMinimizingZones, true, log.NewNopLogger())
 	require.NoError(t, err)
 	tokensByInstanceID := tokenGenerator.generateTokensByInstanceID()
 	cfg := testLifecyclerConfig(ringConfig, targetInstanceID)
@@ -1352,7 +1352,7 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 	})
 
 	outOfOrderInstanceID := instanceName(4, 1)
-	tokenGenerator, err = NewSpreadMinimizingTokenGenerator(outOfOrderInstanceID, targetZone, spreadMinimizingZones, true, 0, log.NewNopLogger())
+	tokenGenerator, err = NewSpreadMinimizingTokenGenerator(outOfOrderInstanceID, targetZone, spreadMinimizingZones, true, log.NewNopLogger())
 	require.NoError(t, err)
 	tokensByInstanceID = tokenGenerator.generateTokensByInstanceID()
 	outOfORderCfg := testLifecyclerConfig(ringConfig, outOfOrderInstanceID)

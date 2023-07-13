@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -55,11 +54,10 @@ type SpreadMinimizingTokenGenerator struct {
 	zoneID                int
 	spreadMinimizingZones []string
 	canJoinEnabled        bool
-	canJoinTimeout        time.Duration
 	logger                log.Logger
 }
 
-func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZones []string, canJoinEnabled bool, canJoinTimeout time.Duration, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
+func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZones []string, canJoinEnabled bool, logger log.Logger) (*SpreadMinimizingTokenGenerator, error) {
 	if len(spreadMinimizingZones) <= 0 || len(spreadMinimizingZones) > maxZonesCount {
 		return nil, errorZoneCountOutOfBound(len(spreadMinimizingZones))
 	}
@@ -83,7 +81,6 @@ func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZo
 		zoneID:                zoneID,
 		spreadMinimizingZones: sortedZones,
 		canJoinEnabled:        canJoinEnabled,
-		canJoinTimeout:        canJoinTimeout,
 		logger:                logger,
 	}
 	return tokenGenerator, nil

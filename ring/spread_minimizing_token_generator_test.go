@@ -177,7 +177,7 @@ func TestSpreadMinimizingTokenGenerator_NewSpreadMinimizingTokenGenerator(t *tes
 
 	for _, testData := range tests {
 		instance := fmt.Sprintf("instance-%s-1", testData.zone)
-		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, testData.zone, testData.spreadMinimizingZones, true, 0, log.NewNopLogger())
+		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, testData.zone, testData.spreadMinimizingZones, true, log.NewNopLogger())
 		if testData.expectedError != nil {
 			require.Error(t, err)
 			require.Equal(t, testData.expectedError, err)
@@ -481,14 +481,12 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 	firstInstance := fmt.Sprintf("instance-%s-%d", zone, 0)
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, firstInstance, zone, zones)
 	tokenGenerator.canJoinEnabled = true
-	tokenGenerator.canJoinTimeout = 1 * time.Second
 	err := tokenGenerator.CanJoin(nil)
 	require.NoError(t, err)
 
 	instanceID := 128
 	targetInstance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
 	tokenGenerator = createSpreadMinimizingTokenGenerator(t, targetInstance, zone, zones)
-	tokenGenerator.canJoinTimeout = 1 * time.Second
 	// this is the set of all sorted tokens assigned to instance
 	allTokens := tokenGenerator.generateTokensByInstanceID()
 	require.Len(t, allTokens, instanceID+1)
@@ -573,7 +571,7 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 }
 
 func createSpreadMinimizingTokenGenerator(t testing.TB, instance, zone string, zones []string) *SpreadMinimizingTokenGenerator {
-	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, zones, true, 0, log.NewLogfmtLogger(os.Stdout))
+	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, zones, true, log.NewLogfmtLogger(os.Stdout))
 	require.NoError(t, err)
 	require.NotNil(t, tokenGenerator)
 	return tokenGenerator

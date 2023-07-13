@@ -524,7 +524,7 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 	tokenGenerator.canJoinEnabled = true
 	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
 	require.Error(t, err)
-	require.Equal(t, errorPreviousInstance(pendingInstance, targetInstance), err)
+	require.Equal(t, errorMissingPreviousInstance(pendingInstance), err)
 
 	// if canJoinEnabled is true, the check returns nil all instances have tokens
 	tokenGenerator.canJoinEnabled = true

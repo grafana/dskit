@@ -28,8 +28,8 @@ var (
 	}
 	errorNoPreviousInstance = fmt.Errorf("impossible to find the instance preceding the target instance, because it is the first instance")
 
-	errorPreviousInstance = func(requiredInstanceID, instanceID string) error {
-		return fmt.Errorf("impossible to find instance %q requested by the current instance %q, or %q has no registered tokens", requiredInstanceID, instanceID, requiredInstanceID)
+	errorMissingPreviousInstance = func(requiredInstanceID string) error {
+		return fmt.Errorf("the instance %q has not been registered to the ring or has no tokens yet", requiredInstanceID)
 	}
 	errorZoneCountOutOfBound = func(zonesCount int) error {
 		return fmt.Errorf("number of zones %d is not correct: it must be greater than 0 and less or equal than %d", zonesCount, maxZonesCount)
@@ -350,7 +350,7 @@ func (t *SpreadMinimizingTokenGenerator) CanJoin(instances map[string]InstanceDe
 	if ok && len(instanceDesc.Tokens) != 0 {
 		return nil
 	}
-	return errorPreviousInstance(prevInstance, t.instance)
+	return errorMissingPreviousInstance(prevInstance)
 }
 
 func (t *SpreadMinimizingTokenGenerator) CanJoinEnabled() bool {

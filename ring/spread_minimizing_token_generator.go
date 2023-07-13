@@ -352,3 +352,7 @@ func (t *SpreadMinimizingTokenGenerator) CanJoin(instances map[string]InstanceDe
 	}
 	return errorPreviousInstance(prevInstance, t.instance)
 }
+
+func (t *SpreadMinimizingTokenGenerator) CanJoinEnabled() bool {
+	return t.canJoinEnabled
+}

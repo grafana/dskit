@@ -1292,7 +1292,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	})
 }
 
-func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
+func TestWaitBeforeJoining(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -1305,26 +1305,16 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
-	targetInstanceID := instanceName(2, 1)
-	targetZone := zone(1)
-	spreadMinimizingZones := []string{zone(1), zone(2), zone(3)}
-	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(targetInstanceID, targetZone, spreadMinimizingZones, true, log.NewNopLogger())
-	require.NoError(t, err)
-	tokensByInstanceID := tokenGenerator.generateTokensByInstanceID()
-	cfg := testLifecyclerConfig(ringConfig, targetInstanceID)
-	cfg.NumTokens = optimalTokensPerInstance
-	cfg.RingTokenGenerator = tokenGenerator
-
 	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (interface{}, bool, error) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				instanceName(0, 1): {
 					State:  ACTIVE,
-					Tokens: tokensByInstanceID[0],
+					Tokens: []uint32{1, 2, 3},
 				},
 				instanceName(1, 1): {
 					State:  ACTIVE,
-					Tokens: tokensByInstanceID[1],
+					Tokens: []uint32{4, 5, 6},
 				},
 			},
 		}
@@ -1333,49 +1323,136 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
-	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
+	targetZone := zone(1)
+	spreadMinimizingZones := []string{zone(1), zone(2), zone(3)}
+	canJoinTimeout := 5 * time.Second
+	spreadMinimizingTokenGenerator := func(targetInstanceID string, canJoinEnabled bool) TokenGenerator {
+		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(targetInstanceID, targetZone, spreadMinimizingZones, canJoinEnabled, log.NewNopLogger())
+		require.NoError(t, err)
+		return tokenGenerator
+	}
 
-	// Check that the lifecycler was able to join
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		d, err := r.KVClient.Get(context.Background(), ringKey)
+	tests := map[string]struct {
+		targetInstanceID string
+		tokenGenerator   TokenGenerator
+		timeoutRequired  bool
+		ctx              context.Context
+	}{
+		"RandomTokenGenerator never returns errors": {
+			targetInstanceID: instanceName(3, 1),
+			tokenGenerator:   NewRandomTokenGenerator(),
+			ctx:              context.Background(),
+		},
+		"SpreadMinimizingTokenGenerator with CanJoinEnabled=false never returns errors": {
+			targetInstanceID: instanceName(3, 1),
+			tokenGenerator:   spreadMinimizingTokenGenerator(instanceName(2, 1), false),
+			ctx:              context.Background(),
+		},
+		"SpreadMinimizingTokenGenerator with CanJoinEnabled=true returns nil when the first instance joins": {
+			targetInstanceID: instanceName(0, 1),
+			tokenGenerator:   spreadMinimizingTokenGenerator(instanceName(0, 1), true),
+			ctx:              context.Background(),
+		},
+		"SpreadMinimizingTokenGenerator with CanJoinEnabled=true returns nil after timeout when order of instances is not correct": {
+			targetInstanceID: instanceName(3, 1),
+			tokenGenerator:   spreadMinimizingTokenGenerator(instanceName(3, 1), true),
+			ctx:              context.Background(),
+			timeoutRequired:  true,
+		},
+		"SpreadMinimizingTokenGenerator with CanJoinEnabled=true returns nil before timeout when order of instances is correct": {
+			targetInstanceID: instanceName(2, 1),
+			tokenGenerator:   spreadMinimizingTokenGenerator(instanceName(2, 1), true),
+			ctx:              context.Background(),
+		},
+	}
+
+	for _, testData := range tests {
+		targetInstanceID := testData.targetInstanceID
+		cfg := testLifecyclerConfig(ringConfig, targetInstanceID)
+		cfg.NumTokens = optimalTokensPerInstance
+		cfg.RingTokenGenerator = testData.tokenGenerator
+		l, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+		l.canJoinTimeout = canJoinTimeout
+		require.NoError(t, services.StartAndAwaitRunning(testData.ctx, l))
+		defer services.StopAndAwaitTerminated(context.Background(), l) //nolint:errcheck
+
+		start := time.Now()
+		err = l.waitBeforeJoining(testData.ctx)
 		require.NoError(t, err)
 
-		desc, ok := d.(*Desc)
-		if !ok {
-			return false
+		if testData.timeoutRequired {
+			require.GreaterOrEqual(t, time.Since(start), canJoinTimeout)
+		} else {
+			require.Less(t, time.Since(start), canJoinTimeout)
 		}
-		targetInstanceDesc, ok := desc.Ingesters[targetInstanceID]
-		return ok && tokensByInstanceID[2].Equals(targetInstanceDesc.Tokens)
-	})
+	}
+}
 
-	outOfOrderInstanceID := instanceName(4, 1)
-	tokenGenerator, err = NewSpreadMinimizingTokenGenerator(outOfOrderInstanceID, targetZone, spreadMinimizingZones, true, log.NewNopLogger())
-	require.NoError(t, err)
-	tokensByInstanceID = tokenGenerator.generateTokensByInstanceID()
-	outOfORderCfg := testLifecyclerConfig(ringConfig, outOfOrderInstanceID)
-	outOfORderCfg.NumTokens = optimalTokensPerInstance
-	outOfORderCfg.RingTokenGenerator = tokenGenerator
-	l2, err := NewLifecycler(outOfORderCfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l2))
-	defer services.StopAndAwaitTerminated(context.Background(), l2) //nolint:errcheck
+func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
+	canJoinTimeout := 2 * time.Second
+	inOrderInstancesStatuses := []bool{true, false}
+	for _, inOrderInstances := range inOrderInstancesStatuses {
+		ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	// Check that the lifecycler was able to join
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		d, err := r.KVClient.Get(context.Background(), ringKey)
+		var ringConfig Config
+		flagext.DefaultValues(&ringConfig)
+		ringConfig.KVStore.Mock = ringStore
+
+		r, err := New(ringConfig, "ingester", ringKey, log.NewNopLogger(), nil)
 		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+		defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
-		desc, ok := d.(*Desc)
-		if !ok {
-			return false
+		if inOrderInstances {
+			err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (interface{}, bool, error) {
+				r := &Desc{
+					Ingesters: map[string]InstanceDesc{
+						instanceName(0, 1): {
+							State:  ACTIVE,
+							Tokens: []uint32{1, 2, 3},
+						},
+						instanceName(1, 1): {
+							State:  ACTIVE,
+							Tokens: []uint32{4, 5, 6},
+						},
+					},
+				}
+
+				return r, true, nil
+			})
+			require.NoError(t, err)
 		}
-		_, ok = desc.Ingesters[outOfOrderInstanceID]
-		return !ok
-	})
 
+		targetInstanceID := instanceName(2, 1)
+		targetZone := zone(1)
+		spreadMinimizingZones := []string{zone(1), zone(2), zone(3)}
+		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(targetInstanceID, targetZone, spreadMinimizingZones, true, log.NewNopLogger())
+		require.NoError(t, err)
+		cfg := testLifecyclerConfig(ringConfig, targetInstanceID)
+		cfg.NumTokens = optimalTokensPerInstance
+		cfg.RingTokenGenerator = tokenGenerator
+
+		l, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		l.canJoinTimeout = canJoinTimeout
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), l))
+		defer services.StopAndAwaitTerminated(context.Background(), l) //nolint:errcheck
+
+		// Check that the lifecycler was able to join
+		test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+			d, err := r.KVClient.Get(context.Background(), ringKey)
+			require.NoError(t, err)
+
+			desc, ok := d.(*Desc)
+			if !ok {
+				return false
+			}
+			_, ok = desc.Ingesters[targetInstanceID]
+			return ok
+		})
+	}
 }
 
 func instanceName(instanceID, zoneID int) string {

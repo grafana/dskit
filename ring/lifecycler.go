@@ -165,6 +165,8 @@ type Lifecycler struct {
 	zonesCount            int
 
 	tokenGenerator TokenGenerator
+	// needed for testing purposes only
+	canJoinTimeout time.Duration
 
 	lifecyclerMetrics *LifecyclerMetrics
 	logger            log.Logger
@@ -221,6 +223,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		actorChan:             make(chan func()),
 		state:                 PENDING,
 		tokenGenerator:        tokenGenerator,
+		canJoinTimeout:        5 * time.Minute,
 		lifecyclerMetrics:     NewLifecyclerMetrics(ringName, reg),
 		logger:                logger,
 	}
@@ -780,37 +783,55 @@ func (i *Lifecycler) compareTokens(fromRing Tokens) bool {
 }
 
 func (i *Lifecycler) waitBeforeJoining(ctx context.Context) error {
-	retries := backoff.New(ctx, backoff.Config{
-		MinBackoff: 10 * time.Second,
-		MaxBackoff: 1 * time.Minute,
-		MaxRetries: 5,
+	if !i.tokenGenerator.CanJoinEnabled() {
+		return nil
+	}
+
+	level.Info(i.logger).Log("msg", "waiting to be able to join the ring started", "ring", i.RingName)
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, i.canJoinTimeout)
+	defer cancel()
+	retries := backoff.New(ctxWithTimeout, backoff.Config{
+		MinBackoff: 1 * time.Second,
+		MaxBackoff: 1 * time.Second,
+		MaxRetries: 0,
 	})
 
-	for retries.Ongoing() {
-		desc, err := i.KVStore.Get(ctx, i.RingKey)
-		if err != nil {
-			return fmt.Errorf("error getting the ring from the KV store: %s", err)
+	var lastError error
+	for ; retries.Ongoing(); retries.Wait() {
+		var desc interface{}
+		desc, lastError = i.KVStore.Get(ctxWithTimeout, i.RingKey)
+		if lastError != nil {
+			lastError = fmt.Errorf("error getting the ring from the KV store: %s", lastError)
+			continue
 		}
 
 		ringDesc, ok := desc.(*Desc)
 		if !ok || ringDesc == nil {
-			return fmt.Errorf("no ring returned from the KV store")
+			lastError = fmt.Errorf("no ring returned from the KV store")
+			continue
 		}
-		err = i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
-		if err == nil {
-			break
+		lastError = i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
+		if lastError == nil {
+			level.Info(i.logger).Log("msg", "it is now possible to join the ring", "ring", i.RingName)
+			return nil
 		}
-		retries.Wait()
 	}
 
-	return retries.Err()
+	if lastError == nil {
+		lastError = retries.Err()
+	}
+	level.Error(i.logger).Log("msg", "there was a problem while checking whether this instance could join the ring - will continue anyway", "err", lastError)
+	return ctx.Err()
 }
 
 // autoJoin selects random tokens & moves state to targetState
 func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) error {
 	err := i.waitBeforeJoining(ctx)
 	if err != nil {
-		level.Error(i.logger).Log("msg", "there was a problem while checking whether this instance could join the ring - will continue anyway", "err", err)
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
 	}
 
 	var ringDesc *Desc

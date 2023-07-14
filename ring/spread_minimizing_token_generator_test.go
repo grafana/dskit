@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 
@@ -61,6 +62,49 @@ func TestSpreadMinimizingTokenGenerator_ParseInstanceID(t *testing.T) {
 		} else {
 			require.NoError(t, err)
 			require.Equal(t, testData.expectedID, id)
+		}
+	}
+}
+
+func TestSpreadMinimizingTokenGenerator_PreviousInstanceID(t *testing.T) {
+	tests := map[string]struct {
+		instanceID         string
+		expectedInstanceID string
+		expectedError      error
+	}{
+		"previous instance of instance-zone-a-10 is instance-zone-a-9": {
+			instanceID:         "instance-zone-a-10",
+			expectedInstanceID: "instance-zone-a-9",
+		},
+		"previous instance of instance-zone-b-1 is instance-zone-b-0": {
+			instanceID:         "instance-zone-b-1",
+			expectedInstanceID: "instance-zone-b-0",
+		},
+		"previous instance of store-gateway-zone-c-1000 is store-gateway-zone-c-999": {
+			instanceID:         "store-gateway-zone-c-1000",
+			expectedInstanceID: "store-gateway-zone-c-999",
+		},
+		"instance-zone-0 has no previous instance": {
+			instanceID:    "instance-zone-0",
+			expectedError: errorNoPreviousInstance,
+		},
+		"instance-zone-c is not valid": {
+			instanceID:    "instance-zone-c",
+			expectedError: errorBadInstanceIDFormat("instance-zone-c"),
+		},
+		"empty instance is not valid": {
+			instanceID:    "",
+			expectedError: errorBadInstanceIDFormat(""),
+		},
+	}
+	for _, testData := range tests {
+		id, err := previousInstance(testData.instanceID)
+		if testData.expectedError != nil {
+			require.Error(t, err)
+			require.Equal(t, testData.expectedError, err)
+		} else {
+			require.NoError(t, err)
+			require.Equal(t, testData.expectedInstanceID, id)
 		}
 	}
 }
@@ -133,7 +177,7 @@ func TestSpreadMinimizingTokenGenerator_NewSpreadMinimizingTokenGenerator(t *tes
 
 	for _, testData := range tests {
 		instance := fmt.Sprintf("instance-%s-1", testData.zone)
-		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, testData.zone, testData.spreadMinimizingZones, log.NewNopLogger())
+		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, testData.zone, testData.spreadMinimizingZones, true, log.NewNopLogger())
 		if testData.expectedError != nil {
 			require.Error(t, err)
 			require.Equal(t, testData.expectedError, err)
@@ -430,6 +474,67 @@ func TestSpreadMinimizingTokenGenerator_GetMissingTokens(t *testing.T) {
 	}
 }
 
+func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
+	zone := zones[0]
+
+	// the first instance can always join
+	firstInstance := fmt.Sprintf("instance-%s-%d", zone, 0)
+	tokenGenerator := createSpreadMinimizingTokenGenerator(t, firstInstance, zone, zones)
+	tokenGenerator.canJoinEnabled = true
+	err := tokenGenerator.CanJoin(nil)
+	require.NoError(t, err)
+
+	instanceID := 128
+	targetInstance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
+	tokenGenerator = createSpreadMinimizingTokenGenerator(t, targetInstance, zone, zones)
+	// this is the set of all sorted tokens assigned to instance
+	allTokens := tokenGenerator.generateTokensByInstanceID()
+	require.Len(t, allTokens, instanceID+1)
+
+	ringDesc := &Desc{}
+	for i := 0; i < instanceID; i++ {
+		instance := fmt.Sprintf("instance-%s-%d", zone, i)
+		var (
+			state  InstanceState
+			tokens Tokens
+		)
+		if i <= instanceID-2 {
+			state = ACTIVE
+			tokens = allTokens[i]
+		} else {
+			state = PENDING
+			tokens = nil
+		}
+		ringDesc.AddIngester(instance, instance, zone, tokens, state, time.Now())
+	}
+
+	instances := ringDesc.GetIngesters()
+	pendingInstanceID := instanceID - 1
+	pendingInstance := fmt.Sprintf("instance-%s-%d", zone, pendingInstanceID)
+	pendingInstanceDesc, ok := instances[pendingInstance]
+	require.True(t, ok)
+	require.Len(t, pendingInstanceDesc.GetTokens(), 0)
+
+	// if canJoinEnabled is false, the check is skipped
+	tokenGenerator.canJoinEnabled = false
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	require.NoError(t, err)
+
+	// if canJoinEnabled is true, the check returns an error because not all previous instances have tokens
+	tokenGenerator.canJoinEnabled = true
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	require.Error(t, err)
+	require.Equal(t, errorMissingPreviousInstance(pendingInstance), err)
+
+	// if canJoinEnabled is true, the check returns nil all instances have tokens
+	tokenGenerator.canJoinEnabled = true
+	pendingInstanceDesc.State = ACTIVE
+	pendingInstanceDesc.Tokens = allTokens[pendingInstanceID]
+	ringDesc.Ingesters[pendingInstance] = pendingInstanceDesc
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	require.NoError(t, err)
+}
+
 func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerInstance int) (map[uint32]*instanceInfo, map[string][]uint32) {
 	instanceByToken := make(map[uint32]*instanceInfo, (maxInstanceID+1)*tokensPerInstance*len(zones))
 	tokenSetsByZone := make(map[string][][]uint32, len(zones))
@@ -466,7 +571,7 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 }
 
 func createSpreadMinimizingTokenGenerator(t testing.TB, instance, zone string, zones []string) *SpreadMinimizingTokenGenerator {
-	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, zones, log.NewLogfmtLogger(os.Stdout))
+	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, zones, true, log.NewLogfmtLogger(os.Stdout))
 	require.NoError(t, err)
 	require.NotNil(t, tokenGenerator)
 	return tokenGenerator

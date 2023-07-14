@@ -2559,6 +2559,36 @@ func BenchmarkRing_Get(b *testing.B) {
 	}
 }
 
+func TestRing_GetWithRF(t *testing.T) {
+	ringDesc := &Desc{Ingesters: generateRingInstances(16, 1, 128)}
+	ring := Ring{
+		cfg: Config{
+			HeartbeatTimeout:     time.Hour,
+			ZoneAwarenessEnabled: false,
+			SubringCacheDisabled: true,
+			ReplicationFactor:    3,
+		},
+		ringDesc:             ringDesc,
+		ringTokens:           ringDesc.GetTokens(),
+		ringTokensByZone:     ringDesc.getTokensByZone(),
+		ringInstanceByToken:  ringDesc.getTokensInfo(),
+		ringZones:            getZones(ringDesc.getTokensByZone()),
+		shuffledSubringCache: map[subringCacheKey]*Ring{},
+		strategy:             NewDefaultReplicationStrategy(),
+		lastTopologyChange:   time.Now(),
+	}
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// test a dynamic RF >= cfg.RF and dynamic RF <= max instances
+	for i := 3; i <= 16; i++ {
+		buf, bufHosts, bufZones := MakeBuffersForGet()
+		rs, err := ring.GetWithRF(r.Uint32(), Write, buf, bufHosts, bufZones, i)
+		assert.Equal(t, i, len(rs.Instances))
+		assert.NoError(t, err)
+	}
+}
+
 func TestRing_Get_NoMemoryAllocations(t *testing.T) {
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: generateRingInstances(3, 3, 128)}

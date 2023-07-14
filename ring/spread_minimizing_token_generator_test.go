@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -593,4 +592,23 @@ func registeredOwnershipByZone(instancesPerZone int, instanceByToken map[uint32]
 		}
 	}
 	return ownershipByInstanceByZone
+}
+
+type spreadMinimizingTokenGeneratorWithDelay struct {
+	SpreadMinimizingTokenGenerator
+	canJoinDelay time.Duration
+}
+
+func newSpreadMinimizingTokenGeneratorWithDelay(instance, zone string, spreadMinimizingZones []string, canJoinEnabled bool, canJoinDelay time.Duration, logger log.Logger) (*spreadMinimizingTokenGeneratorWithDelay, error) {
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, spreadMinimizingZones, canJoinEnabled, logger)
+	if err != nil {
+		return nil, err
+	}
+	result := &spreadMinimizingTokenGeneratorWithDelay{*spreadMinimizingTokenGenerator, canJoinDelay}
+	return result, nil
+}
+
+func (t *spreadMinimizingTokenGeneratorWithDelay) CanJoin(instances map[string]InstanceDesc) error {
+	time.Sleep(t.canJoinDelay)
+	return t.SpreadMinimizingTokenGenerator.CanJoin(instances)
 }

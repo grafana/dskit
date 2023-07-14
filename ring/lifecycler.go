@@ -788,7 +788,7 @@ func (i *Lifecycler) waitBeforeJoining(ctx context.Context) error {
 		return nil
 	}
 
-	level.Info(i.logger).Log("msg", "waiting to be able to join the ring", "ring", i.RingName, "timeout", i.canJoinTimeout)
+	level.Info(i.logger).Log("msg", "waiting to be able to join the ring", "ring", i.RingName, "id", i.cfg.ID, "timeout", i.canJoinTimeout)
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, i.canJoinTimeout)
 	defer cancel()
@@ -814,7 +814,7 @@ func (i *Lifecycler) waitBeforeJoining(ctx context.Context) error {
 		}
 		lastError = i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
 		if lastError == nil {
-			level.Info(i.logger).Log("msg", "it is now possible to join the ring", "ring", i.RingName, "retries", retries.NumRetries())
+			level.Info(i.logger).Log("msg", "it is now possible to join the ring", "ring", i.RingName, "id", i.cfg.ID, "retries", retries.NumRetries())
 			return nil
 		}
 	}
@@ -822,7 +822,7 @@ func (i *Lifecycler) waitBeforeJoining(ctx context.Context) error {
 	if lastError == nil {
 		lastError = retries.Err()
 	}
-	level.Warn(i.logger).Log("msg", "there was a problem while checking whether this instance could join the ring - will continue anyway", "err", lastError)
+	level.Warn(i.logger).Log("msg", "there was a problem while checking whether this instance could join the ring - will continue anyway", "ring", i.RingName, "id", i.cfg.ID, "err", lastError)
 
 	// Return error only in case the parent context has been cancelled.
 	// In all other cases, we just want to swallow the error and move on.

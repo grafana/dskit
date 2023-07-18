@@ -1419,9 +1419,8 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
 	var (
-		start                               = time.Now()
-		firstInstanceRegistrationTimestamp  = start
-		secondInstanceRegistrationTimestamp = start
+		firstInstanceRegistrationTimestamp  time.Time
+		secondInstanceRegistrationTimestamp time.Time
 		firstInstanceID                     = instanceName(0, 1)
 		secondInstanceID                    = instanceName(1, 1)
 		wg                                  sync.WaitGroup
@@ -1488,6 +1487,9 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 
 	wg.Wait()
 
+	// Ensure that both instances registered in the ring
+	require.False(t, firstInstanceRegistrationTimestamp.IsZero())
+	require.False(t, secondInstanceRegistrationTimestamp.IsZero())
 	// Ensure that the instance with id 0 registered in the ring before the instance with id 1
 	require.True(t, firstInstanceRegistrationTimestamp.Before(secondInstanceRegistrationTimestamp))
 }

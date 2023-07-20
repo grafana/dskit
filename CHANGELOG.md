@@ -47,6 +47,7 @@
 * [CHANGE] ring: make it harder to leak contexts when using `DoUntilQuorum`. #319
 * [CHANGE] ring: `CountTokens()`, used for the calculation of ownership in the ring page has been changed in such a way that when zone-awareness is enabled, it calculates the ownership per-zone. Previously zones were not taken into account. #325
 * [CHANGE] memberlist: `MetricsRegisterer` field has been removed from `memberlist.KVConfig` in favor of registrerer passed via into `NewKV` function. #327
+* [CHANGE] gRPC client: use default connect timeout of 5s, and therefore enable default connect backoff max delay of 5s. #332
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.

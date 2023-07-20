@@ -191,7 +191,7 @@ func SimpleMemberlistKV(bindaddr string, bindport int, joinmembers []string) *me
 
 }
 
-// SimpleRing returns an instance of `ring.Ring` as a service. Starting and Stopping the service is upto the caller.
+// SimpleRing returns an instance of `ring.Ring` as a service. Starting and stopping the service is up to the caller.
 func SimpleRing(store kv.Client) (*ring.Ring, error) {
 	var config ring.Config
 	flagext.DefaultValues(&config)

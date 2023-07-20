@@ -37,7 +37,7 @@ e.g: https://127.0.0.1:8100/kv
 
 ![Memberlist Status Page](./images/local-memberlist.png)
 
-7. You can also get the `ring` infomartion as a client.
+7. You can also get the `ring` information as a client.
 
 ```
 ./local -mode=client

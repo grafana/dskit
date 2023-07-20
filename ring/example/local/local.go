@@ -161,7 +161,7 @@ func SimpleMemberlistKV(bindaddr string, bindport int, joinmembers []string) *me
 	// `ring.GetCode()` uses default, which is protobuf.
 	config.Codecs = []codec.Codec{ring.GetCodec()}
 
-	// TCPTransport defines what addr and port this particular peer should listen for.
+	// TCPTransport defines what addr and port this particular peer should listen on.
 	config.TCPTransport = memberlist.TCPTransportConfig{
 		BindPort:  bindport,
 		BindAddrs: []string{bindaddr},

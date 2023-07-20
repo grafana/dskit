@@ -25,7 +25,7 @@ go build local.go
 
 5. Check the ring page
 
-Go to ring page of one of the peer. Each peer's ring page should show all the peers in the ring. Should look something like below.
+Go to ring page of one of the peers. Each peer's ring page should show all the peers in the ring. Should look something like below.
 
 e.g: http://127.0.0.1:8100/ring
 

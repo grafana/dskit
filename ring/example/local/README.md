@@ -1,6 +1,6 @@
 ## Build local cluster using `Ring`
 
-This examples uses `loopback` interface to build a ring of multiple process locally.
+This examples uses `loopback` interface to build a ring of multiple processes locally.
 
 ### Usage
 

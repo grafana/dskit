@@ -18,7 +18,7 @@ go build local.go
 3. Start another peer in different terminal
 
 ```
-./local -bindaddr=127.0.0.2 -join-members=127.0.0.1
+./local -bindaddr=127.0.0.2 -join-member=127.0.0.1
 ```
 
 4. You can start as many peers as you want with different loopback bindaddr.

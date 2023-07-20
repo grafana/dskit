@@ -167,9 +167,9 @@ func SimpleMemberlistKV(bindaddr string, bindport int, joinmembers []string) *me
 		BindAddrs: []string{bindaddr},
 	}
 
-	// joinmembers is the address of peer who is already in the memberlist group.
-	// Usually be provided if this peer is trying to join existing cluster.
-	// Generally you start very first peer without `joinmembers`, but start every
+	// joinmembers are the addresses of peers who are already in the memberlist group.
+	// Usually provided if this peer is trying to join an existing cluster.
+	// Generally you start the very first peer without `joinmembers`, but start all
 	// other peers with at least one `joinmembers`.
 	if len(joinmembers) > 0 {
 		config.JoinMembers = joinmembers

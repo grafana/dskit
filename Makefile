@@ -16,12 +16,18 @@ ifeq ($(UNAME_S), Darwin)
 	PROTO_ZIP=protoc-3.6.1-osx-x86_64.zip
 endif
 
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help: ## Display this help and any documented user-facing targets. Other undocumented targets may be present in the Makefile.
+	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  %-50s %s\n", $$1, $$2 } /^##@/ { printf "\n%s\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
 .PHONY: test
-test:
+test: ## Runs Go tests
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
 .PHONY: lint
-lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint
+lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint ## Runs misspell, golangci-lint, and faillint
 	misspell -error README.md CONTRIBUTING.md LICENSE
 
 	# Configured via .golangci.yml.
@@ -38,30 +44,30 @@ lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint
 		./...
 
 .PHONY: clean
-clean:
+clean: ## Removes the .tools/ directory
 	@# go mod makes the modules read-only, so before deletion we need to make them deleteable
 	@chmod -R u+rwX .tools 2> /dev/null || true
 	rm -rf .tools/
 
 .PHONY: mod-check
-mod-check:
+mod-check: ## Git diffs the go mod files
 	GO111MODULE=on go mod download
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
 	@git diff --exit-code -- go.sum go.mod
 
 .PHONY: clean-protos
-clean-protos:
+clean-protos: ## Removes the proto files
 	rm -rf $(PROTO_GOS)
 
 .PHONY: protos
-protos: .tools/bin/protoc .tools/bin/protoc-gen-gogoslick .tools/bin/protoc-gen-go $(PROTO_GOS)
+protos: .tools/bin/protoc .tools/bin/protoc-gen-gogoslick .tools/bin/protoc-gen-go $(PROTO_GOS) ## Creates proto files
 
 %.pb.go:
 	.tools/protoc/bin/protoc -I $(GOPATH):./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
 .PHONY: check-protos
-check-protos: clean-protos protos
+check-protos: clean-protos protos ## Re-generates protos and git diffs them
 	@git diff --exit-code -- $(PROTO_GOS)
 
 .tools:
@@ -71,10 +77,10 @@ check-protos: clean-protos protos
 	GOPATH=$(CURDIR)/.tools go install github.com/client9/misspell/cmd/misspell@v0.3.4
 
 .tools/bin/faillint: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.10.0
+	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.11.0
 
 .tools/bin/golangci-lint: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.47.3
+	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.53.2
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")

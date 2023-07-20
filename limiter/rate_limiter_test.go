@@ -1,6 +1,7 @@
 package limiter
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -65,6 +66,48 @@ func TestRateLimiter_AllowN(t *testing.T) {
 	assert.Equal(t, true, limiter.AllowN(now.Add(time.Second), "tenant-2", 2))
 }
 
+func TestRateLimiter_WaitN(t *testing.T) {
+	strategy := &staticLimitStrategy{tenants: map[string]struct {
+		limit float64
+		burst int
+	}{
+		"tenant": {limit: 4, burst: 5}, // 1 every 0.25 seconds
+	}}
+
+	limiter := NewRateLimiter(strategy, time.Second)
+
+	ctx := context.Background()
+
+	// Firt 5 should be allowed instantly
+	start := time.Now()
+	assert.Nil(t, limiter.WaitN(ctx, "tenant", 3))
+	assert.Nil(t, limiter.WaitN(ctx, "tenant", 2))
+	assert.LessOrEqual(t, time.Since(start), 1*time.Millisecond)
+
+	// 6th should wait for ~0.25 seconds
+	start = time.Now()
+	assert.Nil(t, limiter.WaitN(ctx, "tenant", 1))
+	assert.InEpsilon(t, time.Since(start), 250*time.Millisecond, 0.1)
+
+	// Can't request more than the burst size
+	assert.NotNil(t, limiter.WaitN(ctx, "tenant", 6))
+
+	// Context's deadline should be honored
+	assert.Nil(t, limiter.WaitN(ctx, "tenant", 1))
+	ctxWithDeadline, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	assert.NotNil(t, limiter.WaitN(ctxWithDeadline, "tenant", 1))
+
+	// Context's cancel should be honored
+	assert.Nil(t, limiter.WaitN(ctx, "tenant", 1))
+	ctxToCancel, cancel := context.WithCancel(ctx)
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+	assert.NotNil(t, limiter.WaitN(ctxToCancel, "tenant", 1))
+}
+
 func BenchmarkRateLimiter_CustomMultiTenant(b *testing.B) {
 	strategy := &increasingLimitStrategy{}
 	limiter := NewRateLimiter(strategy, 10*time.Second)
@@ -93,12 +136,12 @@ type increasingLimitStrategy struct {
 	burst int
 }
 
-func (s *increasingLimitStrategy) Limit(tenantID string) float64 {
+func (s *increasingLimitStrategy) Limit(_ string) float64 {
 	s.limit++
 	return s.limit
 }
 
-func (s *increasingLimitStrategy) Burst(tenantID string) int {
+func (s *increasingLimitStrategy) Burst(_ string) int {
 	s.burst++
 	return s.burst
 }

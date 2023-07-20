@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -44,7 +45,7 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 				testData.setup(t, &cfg)
 			}
 
-			transport, err := NewTCPTransport(cfg, logger)
+			transport, err := NewTCPTransport(cfg, logger, nil)
 			require.NoError(t, err)
 
 			_, err = transport.WriteTo([]byte("test"), testData.remoteAddr)
@@ -56,6 +57,41 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 			if testData.unexpectedLogs != "" {
 				assert.NotContains(t, logs.String(), testData.unexpectedLogs)
 			}
+		})
+	}
+}
+
+func TestFinalAdvertiseAddr(t *testing.T) {
+	tests := map[string]struct {
+		advertiseAddr string
+		bindAddrs     []string
+		bindPort      int
+	}{
+		"should not fail with local address specified": {
+			advertiseAddr: "127.0.0.1",
+			bindAddrs:     []string{"localhost"},
+			bindPort:      0,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
+
+			cfg := TCPTransportConfig{}
+			flagext.DefaultValues(&cfg)
+			cfg.BindAddrs = testData.bindAddrs
+			cfg.BindPort = testData.bindPort
+
+			transport, err := NewTCPTransport(cfg, logger, prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
+
+			ip, port, err := transport.FinalAdvertiseAddr(testData.advertiseAddr, testData.bindPort)
+			require.NoError(t, err)
+			require.Equal(t, testData.advertiseAddr, ip.String())
+			require.Equal(t, testData.bindPort, port)
+
 		})
 	}
 }

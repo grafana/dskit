@@ -2,7 +2,8 @@ package cache
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"hash/crc32"
 	"net"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 	t.Run("no allocator", func(t *testing.T) {
 		client, backend, err := setup()
 		require.NoError(t, err)
-		require.NoError(t, client.SetAsync(context.Background(), "foo", []byte("bar"), 10*time.Second))
+		require.NoError(t, client.SetAsync("foo", []byte("bar"), 10*time.Second))
 		require.NoError(t, client.wait())
 
 		ctx := context.Background()
@@ -47,13 +48,57 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 	t.Run("with allocator", func(t *testing.T) {
 		client, backend, err := setup()
 		require.NoError(t, err)
-		require.NoError(t, client.SetAsync(context.Background(), "foo", []byte("bar"), 10*time.Second))
+		require.NoError(t, client.SetAsync("foo", []byte("bar"), 10*time.Second))
 		require.NoError(t, client.wait())
 
 		res := client.GetMulti(context.Background(), []string{"foo"}, WithAllocator(&nopAllocator{}))
 		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
 		require.Equal(t, 1, backend.allocations)
 	})
+}
+
+func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
+	mockSelector := &mockServerSelector{
+		servers: []mockServer{
+			{addr: "127.0.0.1"},
+			{addr: "127.0.0.2"},
+			{addr: "127.0.0.3"},
+			{addr: "127.0.0.4"},
+			{addr: "127.0.0.5"},
+			{addr: "127.0.0.6"},
+			{addr: "127.0.0.7"},
+			{addr: "127.0.0.8"},
+		},
+	}
+
+	client, err := newMemcachedClient(
+		log.NewNopLogger(),
+		newMockMemcachedClientBackend(),
+		mockSelector,
+		MemcachedClientConfig{
+			Addresses:           []string{"localhost"},
+			MaxAsyncConcurrency: 1,
+			MaxAsyncBufferSize:  10,
+		},
+		prometheus.NewPedanticRegistry(),
+		"test",
+	)
+
+	if err != nil {
+		b.Fatal("unexpected error creating memcachedClient", err)
+	}
+
+	const numKeys = 10_000
+
+	keys := make([]string, numKeys)
+	for i := 0; i < numKeys; i++ {
+		keys[i] = fmt.Sprintf("some-key:%d", i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		client.sortKeysByServer(keys)
+	}
 }
 
 type mockMemcachedClientBackend struct {
@@ -99,17 +144,36 @@ func (m *mockMemcachedClientBackend) Delete(key string) error {
 
 func (m *mockMemcachedClientBackend) Close() {}
 
-type mockServerSelector struct{}
+type mockServer struct {
+	addr string
+}
 
-func (m mockServerSelector) SetServers(_ ...string) error {
+func (m mockServer) Network() string {
+	return "tcp"
+}
+
+func (m mockServer) String() string {
+	return m.addr
+}
+
+type mockServerSelector struct {
+	servers []mockServer
+}
+
+func (s *mockServerSelector) PickServer(key string) (net.Addr, error) {
+	cs := crc32.ChecksumIEEE([]byte(key))
+	return s.servers[cs%uint32(len(s.servers))], nil
+}
+func (s *mockServerSelector) Each(f func(net.Addr) error) error {
+	for _, srv := range s.servers {
+		if err := f(srv); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
-
-func (m mockServerSelector) PickServer(key string) (net.Addr, error) {
-	return nil, errors.New("mock server selector")
-}
-
-func (m mockServerSelector) Each(f func(net.Addr) error) error {
+func (s *mockServerSelector) SetServers(_ ...string) error {
 	return nil
 }
 

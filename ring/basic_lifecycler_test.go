@@ -19,8 +19,33 @@ import (
 const (
 	testRingKey    = "test"
 	testRingName   = "test"
-	testInstanceID = "test-id"
+	testInstanceID = "test-id-1"
 )
+
+func TestBasicLifecycler_GetTokenGenerator(t *testing.T) {
+	cfg := prepareBasicLifecyclerConfig()
+
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true, log.NewNopLogger())
+	require.NoError(t, err)
+
+	tests := []TokenGenerator{nil, NewRandomTokenGenerator(), spreadMinimizingTokenGenerator}
+
+	for _, testData := range tests {
+		cfg.RingTokenGenerator = testData
+		lifecycler, _, _, err := prepareBasicLifecycler(t, cfg)
+		require.NoError(t, err)
+		if testData == nil {
+			// If cfg.RingTokenGenerator is empty, RandomTokenGenerator is used
+			tokenGenerator, ok := lifecycler.tokenGenerator.(*RandomTokenGenerator)
+			require.True(t, ok)
+			require.NotNil(t, tokenGenerator)
+		} else {
+			// If cfg.RingTokenGenerator is not empty, it is used
+			require.NotNil(t, lifecycler.tokenGenerator)
+			require.Equal(t, testData, lifecycler.tokenGenerator)
+		}
+	}
+}
 
 func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 	tests := map[string]struct {
@@ -197,6 +222,7 @@ func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 
 	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
 	require.NoError(t, err)
+	require.Equal(t, cfg.KeepInstanceInTheRingOnShutdown, lifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
 		return ACTIVE, Tokens{1, 2, 3, 4, 5}
@@ -228,6 +254,49 @@ func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 	assert.Equal(t, LEAVING, inst.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, Tokens(inst.GetTokens()))
 	assert.Equal(t, cfg.Zone, inst.GetZone())
+}
+
+func TestBasicLifecycler_UnregisterFromTheRingOnStop(t *testing.T) {
+	ctx := context.Background()
+	cfg := prepareBasicLifecyclerConfig()
+	cfg.KeepInstanceInTheRingOnShutdown = true
+
+	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+	require.Equal(t, cfg.KeepInstanceInTheRingOnShutdown, lifecycler.ShouldKeepInstanceInTheRingOnShutdown())
+
+	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
+		return ACTIVE, Tokens{1, 2, 3, 4, 5}
+	}
+	delegate.onStopping = func(lifecycler *BasicLifecycler) {
+		require.NoError(t, lifecycler.changeState(context.Background(), LEAVING))
+	}
+
+	// check that after StartAndAwaitRunning the instance is up and running
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+	assert.Equal(t, ACTIVE, lifecycler.GetState())
+	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
+	assert.True(t, lifecycler.IsRegistered())
+	assert.NotZero(t, lifecycler.GetRegisteredAt())
+	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
+	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+
+	// set instance to be unregsitered on StopAndAwaitTerminated
+	lifecycler.SetKeepInstanceInTheRingOnShutdown(false)
+
+	// check that after StopAndAwaitTerminated the instance is unregistered
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
+	assert.NotEqual(t, ACTIVE, lifecycler.GetState())
+	assert.NotEqual(t, LEAVING, lifecycler.GetState())
+	assert.Equal(t, Tokens{}, lifecycler.GetTokens())
+	assert.False(t, lifecycler.IsRegistered())
+	assert.Zero(t, lifecycler.GetRegisteredAt())
+	assert.Equal(t, 0.0, testutil.ToFloat64(lifecycler.metrics.tokensOwned))
+	assert.Equal(t, 0.0, testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+
+	// Assert on the instance is in the ring.
+	_, ok := getInstanceFromStore(t, store, testInstanceID)
+	assert.False(t, ok)
 }
 
 func TestBasicLifecycler_HeartbeatWhileRunning(t *testing.T) {
@@ -369,6 +438,7 @@ func TestBasicLifecycler_TokensObservePeriod(t *testing.T) {
 
 	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
 	require.NoError(t, err)
+	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
 		return ACTIVE, Tokens{1, 2, 3, 4, 5}
@@ -444,7 +514,7 @@ func prepareBasicLifecyclerConfig() BasicLifecyclerConfig {
 	return BasicLifecyclerConfig{
 		ID:                  testInstanceID,
 		Addr:                "127.0.0.1:12345",
-		Zone:                "test-zone",
+		Zone:                zone(1),
 		HeartbeatPeriod:     time.Minute,
 		TokensObservePeriod: 0,
 		NumTokens:           5,

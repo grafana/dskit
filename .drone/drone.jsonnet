@@ -1,11 +1,12 @@
 local supported_golang_versions = [
   '1.18.4',
   '1.19.3',
+  '1.20.4',
 ];
 
 local images = {
   golang(version):: 'golang:%s' % version,
-  default:: self.golang(supported_golang_versions[0]),
+  default:: self.golang(supported_golang_versions[std.length(supported_golang_versions)-1]),
 };
 
 local pipeline = {
@@ -14,6 +15,8 @@ local pipeline = {
     name: name,
   },
 };
+
+local depends_on(step) = { depends_on+: [step] };
 
 local step = {
   make(target, commands=[]):: {
@@ -26,7 +29,7 @@ local step = {
     name: 'make-test (go %s)' % golang_version,
     image: images.golang(golang_version),
     commands: ['make test'],
-  },
+  } + depends_on('make-lint'),
 };
 
 local test_steps = [step.test(v) for v in supported_golang_versions];
@@ -36,7 +39,7 @@ local test_steps = [step.test(v) for v in supported_golang_versions];
     steps:
       [
         step.make('mod-check'),
-        step.make('lint'),
+        step.make('lint') + depends_on('make-mod-check'),
       ] +
       test_steps +
       [
@@ -46,7 +49,7 @@ local test_steps = [step.test(v) for v in supported_golang_versions];
             'apt-get update && apt-get -y install unzip',
             'go mod vendor',
           ]
-        ),
+        ) + depends_on('make-mod-check'),
       ],
   },
 ]

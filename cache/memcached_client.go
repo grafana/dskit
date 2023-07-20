@@ -1,9 +1,14 @@
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
 package cache
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	dstls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/gate"
@@ -67,6 +73,9 @@ type MemcachedClientConfig struct {
 	// Timeout specifies the socket read/write timeout.
 	Timeout time.Duration `yaml:"timeout"`
 
+	// ConnectTimeout specifies the connection timeout.
+	ConnectTimeout time.Duration `yaml:"connect_timeout"`
+
 	// MinIdleConnectionsHeadroomPercentage specifies the minimum number of idle connections
 	// to keep open as a percentage of the number of recently used idle connections.
 	// If negative, idle connections are kept open indefinitely.
@@ -96,11 +105,18 @@ type MemcachedClientConfig struct {
 	// MaxItemSize specifies the maximum size of an item stored in memcached, in bytes.
 	// Items bigger than MaxItemSize are skipped. If set to 0, no maximum size is enforced.
 	MaxItemSize int `yaml:"max_item_size" category:"advanced"`
+
+	// TLSEnabled enables connecting to Memcached with TLS.
+	TLSEnabled bool `yaml:"tls_enabled" category:"advanced"`
+
+	// TLS to use to connect to the Memcached server.
+	TLS dstls.ClientConfig `yaml:",inline"`
 }
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&c.Addresses, prefix+"addresses", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
 	f.DurationVar(&c.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
+	f.DurationVar(&c.ConnectTimeout, prefix+"connect-timeout", 200*time.Millisecond, "The connection timeout.")
 	f.Float64Var(&c.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
 	f.IntVar(&c.MaxIdleConnections, prefix+"max-idle-connections", 100, "The maximum number of idle connections that will be maintained per address.")
 	f.IntVar(&c.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
@@ -108,6 +124,8 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxGetMultiConcurrency, prefix+"max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
 	f.IntVar(&c.MaxGetMultiBatchSize, prefix+"max-get-multi-batch-size", 100, "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.")
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
+	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
+	c.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
 func (c *MemcachedClientConfig) Validate() error {
@@ -173,8 +191,23 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 
 	client := memcache.NewFromSelector(selector)
 	client.Timeout = config.Timeout
+	client.ConnectTimeout = config.ConnectTimeout
 	client.MinIdleConnsHeadroomPercentage = config.MinIdleConnectionsHeadroomPercentage
 	client.MaxIdleConns = config.MaxIdleConnections
+
+	if config.TLSEnabled {
+		cfg, err := config.TLS.GetTLSConfig()
+		if err != nil {
+			return nil, errors.Wrapf(err, "TLS configuration")
+		}
+
+		client.DialTimeout = func(network, address string, timeout time.Duration) (net.Conn, error) {
+			base := new(net.Dialer)
+			base.Timeout = timeout
+
+			return tls.DialWithDialer(base, network, address, cfg)
+		}
+	}
 
 	if reg != nil {
 		reg = prometheus.WrapRegistererWith(prometheus.Labels{labelCacheName: name}, reg)
@@ -192,7 +225,7 @@ func newMemcachedClient(
 ) (*memcachedClient, error) {
 	legacyRegister := prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 	reg = prometheus.WrapRegistererWith(
-		prometheus.Labels{labelCacheBackend: backendMemcached},
+		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
 	backwardCompatibleRegs := promregistry.TeeRegisterer{legacyRegister, reg}
@@ -260,8 +293,8 @@ func (c *memcachedClient) Stop() {
 	c.client.Close()
 }
 
-func (c *memcachedClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(ctx, key, value, ttl, func(ctx context.Context, key string, buf []byte, ttl time.Duration) error {
+func (c *memcachedClient) SetAsync(key string, value []byte, ttl time.Duration) error {
+	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
 		return c.client.Set(&memcache.Item{
 			Key:        key,
 			Value:      value,
@@ -296,6 +329,9 @@ func (c *memcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 	options := toMemcacheOptions(opts...)
 	batches, err := c.getMultiBatched(ctx, keys, options...)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		level.Warn(c.logger).Log("msg", "failed to fetch items from memcached", "numKeys", len(keys), "firstKey", keys[0], "err", err)
 
 		// In case we have both results and an error, it means some batch requests
@@ -458,7 +494,7 @@ func (c *memcachedClient) sortKeysByServer(keys []string) []string {
 		bucketed[addrString] = append(bucketed[addrString], key)
 	}
 
-	var out []string
+	out := make([]string, 0, len(keys))
 	for srv := range bucketed {
 		out = append(out, bucketed[srv]...)
 	}

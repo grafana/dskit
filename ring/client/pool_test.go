@@ -21,7 +21,7 @@ type mockClient struct {
 	status grpc_health_v1.HealthCheckResponse_ServingStatus
 }
 
-func (i mockClient) Check(ctx context.Context, in *grpc_health_v1.HealthCheckRequest, opts ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
+func (i mockClient) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest, _ ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
 	if !i.happy {
 		return nil, fmt.Errorf("Fail")
 	}
@@ -32,7 +32,7 @@ func (i mockClient) Close() error {
 	return nil
 }
 
-func (i mockClient) Watch(ctx context.Context, in *grpc_health_v1.HealthCheckRequest, opts ...grpc.CallOption) (grpc_health_v1.Health_WatchClient, error) {
+func (i mockClient) Watch(_ context.Context, _ *grpc_health_v1.HealthCheckRequest, _ ...grpc.CallOption) (grpc_health_v1.Health_WatchClient, error) {
 	return nil, status.Error(codes.Unimplemented, "Watching is not supported")
 }
 

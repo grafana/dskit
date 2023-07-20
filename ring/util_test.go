@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -17,9 +18,9 @@ type RingMock struct {
 	mock.Mock
 }
 
-func (r *RingMock) Collect(ch chan<- prometheus.Metric) {}
+func (r *RingMock) Collect(_ chan<- prometheus.Metric) {}
 
-func (r *RingMock) Describe(ch chan<- *prometheus.Desc) {}
+func (r *RingMock) Describe(_ chan<- *prometheus.Desc) {}
 
 func (r *RingMock) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
 	args := r.Called(key, op, bufDescs, bufHosts, bufZones)
@@ -59,42 +60,11 @@ func (r *RingMock) ShuffleShardWithLookback(identifier string, size int, lookbac
 	return args.Get(0).(ReadRing)
 }
 
-func (r *RingMock) HasInstance(instanceID string) bool {
+func (r *RingMock) HasInstance(_ string) bool {
 	return true
 }
 
-func (r *RingMock) CleanupShuffleShardCache(identifier string) {}
-
-func TestGenerateTokens(t *testing.T) {
-	tokens := GenerateTokens(1000000, nil)
-
-	dups := make(map[uint32]int)
-
-	for ix, v := range tokens {
-		if ox, ok := dups[v]; ok {
-			t.Errorf("Found duplicate token %d, tokens[%d]=%d, tokens[%d]=%d", v, ix, tokens[ix], ox, tokens[ox])
-		} else {
-			dups[v] = ix
-		}
-	}
-}
-
-func TestGenerateTokens_IgnoresOldTokens(t *testing.T) {
-	first := GenerateTokens(1000000, nil)
-	second := GenerateTokens(1000000, first)
-
-	dups := make(map[uint32]bool)
-
-	for _, v := range first {
-		dups[v] = true
-	}
-
-	for _, v := range second {
-		if dups[v] {
-			t.Fatal("GenerateTokens returned old token")
-		}
-	}
-}
+func (r *RingMock) CleanupShuffleShardCache(_ string) {}
 
 func createStartingRing() *Ring {
 	// Init the ring.
@@ -414,4 +384,43 @@ func TestWaitInstanceState_ExitsAfterActualStateEqualsState(t *testing.T) {
 
 	assert.Nil(t, err)
 	ring.AssertNumberOfCalls(t, "GetInstanceState", 1)
+}
+
+func TestGetTokenDistance(t *testing.T) {
+	tests := map[string]struct {
+		from     uint32
+		to       uint32
+		expected int64
+	}{
+		"whole ring between token and itself": {
+			from:     10,
+			to:       10,
+			expected: math.MaxUint32 + 1,
+		},
+		"10 tokens from 0 to 10": {
+			from:     0,
+			to:       10,
+			expected: 10,
+		},
+		"10 tokens from math.MaxUint32 - 10 to math.MaxUint32": {
+			from:     math.MaxUint32 - 10,
+			to:       math.MaxUint32,
+			expected: 10,
+		},
+		"1 token from math.MaxUint32 and 0": {
+			from:     math.MaxUint32,
+			to:       0,
+			expected: 1,
+		},
+		"21 tokens from math.MaxUint32 - 10 to 10": {
+			from:     math.MaxUint32 - 10,
+			to:       10,
+			expected: 21,
+		},
+	}
+
+	for _, testData := range tests {
+		distance := tokenDistance(testData.from, testData.to)
+		require.Equal(t, testData.expected, distance)
+	}
 }

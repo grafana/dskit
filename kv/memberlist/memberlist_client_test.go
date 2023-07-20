@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1007,7 +1008,7 @@ func generateTokens(numTokens int) []uint32 {
 
 type distributedCounter map[string]int
 
-func (dc distributedCounter) Merge(mergeable Mergeable, localCAS bool) (Mergeable, error) {
+func (dc distributedCounter) Merge(mergeable Mergeable, _ bool) (Mergeable, error) {
 	if mergeable == nil {
 		return nil, nil
 	}
@@ -1041,7 +1042,7 @@ func (dc distributedCounter) MergeContent() []string {
 	return out
 }
 
-func (dc distributedCounter) RemoveTombstones(limit time.Time) (_, _ int) {
+func (dc distributedCounter) RemoveTombstones(_ time.Time) (_, _ int) {
 	// nothing to do
 	return
 }
@@ -1478,6 +1479,29 @@ func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 	assert.Equal(t, msg, val)
 }
 
+func TestMetricsRegistration(t *testing.T) {
+	c := dataCodec{}
+
+	cfg := KVConfig{}
+	cfg.Codecs = append(cfg.Codecs, c)
+
+	reg := prometheus.NewPedanticRegistry()
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
+	err := kv.CAS(context.Background(), "test", c, func(in interface{}) (out interface{}, retry bool, err error) {
+		return &data{Members: map[string]member{
+			"member": {},
+		}}, true, nil
+	})
+	require.NoError(t, err)
+
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP memberlist_client_kv_store_count Number of values in KV Store
+			# TYPE memberlist_client_kv_store_count gauge
+			memberlist_client_kv_store_count 1
+	`), "memberlist_client_kv_store_count"))
+
+}
+
 func decodeDataFromMarshalledKeyValuePair(t *testing.T, marshalledKVP []byte, key string, codec dataCodec) *data {
 	kvp := KeyValuePair{}
 	require.NoError(t, kvp.Unmarshal(marshalledKVP))
@@ -1533,7 +1557,7 @@ func poll(t testing.TB, d time.Duration, want interface{}, have func() interface
 type testLogger struct {
 }
 
-func (l testLogger) Log(keyvals ...interface{}) error {
+func (l testLogger) Log(_ ...interface{}) error {
 	return nil
 }
 
@@ -1541,7 +1565,7 @@ type dnsProviderMock struct {
 	resolved []string
 }
 
-func (p *dnsProviderMock) Resolve(ctx context.Context, addrs []string) error {
+func (p *dnsProviderMock) Resolve(_ context.Context, addrs []string) error {
 	p.resolved = addrs
 	return nil
 }
@@ -1555,7 +1579,7 @@ type delayedDNSProviderMock struct {
 	delay    int
 }
 
-func (p *delayedDNSProviderMock) Resolve(ctx context.Context, addrs []string) error {
+func (p *delayedDNSProviderMock) Resolve(_ context.Context, addrs []string) error {
 	if p.delay == 0 {
 		p.resolved = make([]string, len(addrs))
 		for _, addr := range addrs {

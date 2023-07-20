@@ -43,7 +43,15 @@
 * [CHANGE] Memberlist: cluster label verification feature (`-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled`) is now marked as stable. #222
 * [CHANGE] Cache: Switch Memcached backend to use `github.com/grafana/gomemcache` repository instead of `github.com/bradfitz/gomemcache`. #248
 * [CHANGE] Multierror: Implement `Is(error) bool`. This allows to use `multierror.MultiError` with `errors.Is()`. `MultiError` will in turn call `errors.Is()` on every error value. #254
-* [FEATURE] Cache: Add support for configuring a Redis cache backend. #268
+* [CHANGE] Cache: Remove the `context.Context` argument from the `Cache.Store` method and rename the method to `Cache.StoreAsync`. #273
+* [CHANGE] ring: make it harder to leak contexts when using `DoUntilQuorum`. #319
+* [CHANGE] ring: `CountTokens()`, used for the calculation of ownership in the ring page has been changed in such a way that when zone-awareness is enabled, it calculates the ownership per-zone. Previously zones were not taken into account. #325
+* [CHANGE] memberlist: `MetricsRegisterer` field has been removed from `memberlist.KVConfig` in favor of registrerer passed via into `NewKV` function. #327
+* [CHANGE] gRPC client: use default connect timeout of 5s, and therefore enable default connect backoff max delay of 5s. #332
+* [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
+* [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
+* [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
+* [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274
 * [ENHANCEMENT] Add middleware package. #38
 * [ENHANCEMENT] Add the ring package #45
 * [ENHANCEMENT] Add limiter package. #41
@@ -103,6 +111,20 @@
   * `<prefix>_cache_requests_total{backend="[memcached|redis]",...}`
 * [ENHANCEMENT] Lifecycler: Added `InstancesInZoneCount` and `InstancesCount` functions returning respectively the total number of instances in the ring and the number of instances in the ring that are registered in lifecycler's zone, updated during the last heartbeat period. #270
 * [ENHANCEMENT] Memcached: add `MinIdleConnectionsHeadroomPercentage` support. It configures the minimum number of idle connections to keep open as a percentage of the number of recently used idle connections. If negative (default), idle connections are kept open indefinitely. #269
+* [ENHANCEMENT] Memcached: Add support for using TLS or mTLS with Memcached based caching. #278
+* [ENHANCEMENT] Ring: improve performance of shuffle sharding computation. #281
+* [ENHANCEMENT] Add option to enable IPv6 address detection in ring and memberlist handling. #185
+* [ENHANCEMENT] Ring: cache results of shuffle sharding with lookback where possible. #283 #295
+* [ENHANCEMENT] BasicLifecycler: functions `ShouldKeepInstanceInTheRingOnShutdown` and `SetKeepInstanceInTheRingOnShutdown` for checking and setting whether instances should be kept in the ring or unregistered on shutdown have been added. #290
+* [ENHANCEMENT] Ring: add `DoUntilQuorum` method. #293
+* [ENHANCEMENT] Ring: add `ReplicationSet.ZoneCount()` method. #298
+* [ENHANCEMENT] Ring: add request minimization to `DoUntilQuorum` method. #306
+* [ENHANCEMENT] grpcclient: add `<prefix>.initial-stream-window-size` and `<prefix>.initial-connection-window-size` configuration flags to alter HTTP flow control options for a gRPC client. #312
+* [ENHANCEMENT] Added `TokenGenerator` interface with `RandomTokenGenerator` (generating random tokens), and `SpreadMinimizingTokenGenerator` (generating tokens with almost even distribution) implementation. By default `RandomTokenGenerator` is used. #321
+* [ENHANCEMENT] Lifecycler: Added `RingTokenGenerator` configuration that specifies the `TokenGenerator` implementation that is used for token generation. Default value is nil, meaning that `RandomTokenGenerator` is used. #323
+* [ENHANCEMENT] BasicLifecycler: Added `RingTokenGenerator` configuration that specifies the `TokenGenerator` implementation that is used for token generation. Default value is nil, meaning that `RandomTokenGenerator` is used. #323
+* [ENHANCEMENT] Ring: add support for hedging to `DoUntilQuorum` when request minimization is enabled. #330
+* [ENHANCEMENT] Lifecycler: allow instances to register in ascending order of ids in case of spread minimizing token generation strategy. #326
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
@@ -117,3 +139,8 @@
 * [BUGFIX] Ring status page: display 100% ownership as "100%", rather than "1e+02%". #231
 * [BUGFIX] Memberlist: fix crash when methods from `memberlist.Delegate` interface are called on `*memberlist.KV` before the service is fully started. #244
 * [BUGFIX] runtimeconfig: Fix `runtime_config_last_reload_successful` metric after recovery from bad config with exact same config hash as before. #262
+* [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #282
+* [BUGFIX] Ring: prevent iterating the whole ring when using `ExcludedZones`. #285
+* [BUGFIX] grpcclient: fix missing `.` in flag name for initial connection window size flag. #314
+* [BUGFIX] ring.Lifecycler: Handle when previous ring state is leaving and the number of tokens has changed. #79
+* [BUGFIX] memberlist metrics: fix registration of `memberlist_client_kv_store_count` metric and disable expiration of metrics exposed by memberlist library. #327

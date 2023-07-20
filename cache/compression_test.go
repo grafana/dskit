@@ -52,13 +52,13 @@ func TestSnappyCache(t *testing.T) {
 			"b": []byte("value-b"),
 		}
 
-		c.Store(ctx, expected, time.Hour)
+		c.StoreAsync(expected, time.Hour)
 		assert.Equal(t, expected, c.Fetch(ctx, []string{"a", "b", "c"}))
 	})
 
 	t.Run("Fetch() should skip entries failing to decode", func(t *testing.T) {
-		c.Store(ctx, map[string][]byte{"a": []byte("value-a")}, time.Hour)
-		backend.Store(ctx, map[string][]byte{"b": []byte("value-b")}, time.Hour)
+		c.StoreAsync(map[string][]byte{"a": []byte("value-a")}, time.Hour)
+		backend.StoreAsync(map[string][]byte{"b": []byte("value-b")}, time.Hour)
 
 		expected := map[string][]byte{
 			"a": []byte("value-a"),

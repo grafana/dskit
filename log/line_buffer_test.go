@@ -28,7 +28,7 @@ func BenchmarkLineBuffered(b *testing.B) {
 	for i := 1; i <= 2048; i *= 2 {
 		f := outFile(b)
 
-		bufLog := NewLineBufferedLogger(f, uint32(i),
+		bufLog := NewBufferedLogger(f, uint32(i),
 			WithFlushPeriod(flushPeriod),
 			WithPrellocatedBuffer(bufferSize),
 		)
@@ -85,7 +85,7 @@ func BenchmarkLineDiscard(b *testing.B) {
 
 func TestLineBufferedConcurrency(t *testing.T) {
 	t.Parallel()
-	bufLog := NewLineBufferedLogger(io.Discard, 32,
+	bufLog := NewBufferedLogger(io.Discard, 32,
 		WithFlushPeriod(flushPeriod),
 		WithPrellocatedBuffer(bufferSize),
 	)
@@ -104,7 +104,7 @@ func TestOnFlushCallback(t *testing.T) {
 		flushedEntries += int(entries)
 	}
 
-	bufLog := NewLineBufferedLogger(&buf, 2,
+	bufLog := NewBufferedLogger(&buf, 2,
 		WithFlushPeriod(flushPeriod),
 		WithPrellocatedBuffer(bufferSize),
 		WithFlushCallback(callback),

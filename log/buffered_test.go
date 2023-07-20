@@ -23,8 +23,8 @@ const (
 	bufferSize  = 10e6
 )
 
-// BenchmarkLineBuffered creates line-buffered loggers of various capacities to see which perform best.
-func BenchmarkLineBuffered(b *testing.B) {
+// BenchmarkBuffered creates buffered loggers of various capacities to see which perform best.
+func BenchmarkBuffered(b *testing.B) {
 	for i := 1; i <= 2048; i *= 2 {
 		f := outFile(b)
 
@@ -58,8 +58,8 @@ func BenchmarkLineBuffered(b *testing.B) {
 	}
 }
 
-// BenchmarkLineUnbuffered should perform roughly equivalently to a line-buffered logger with a capacity of 1.
-func BenchmarkLineUnbuffered(b *testing.B) {
+// BenchmarkUnbuffered should perform roughly equivalently to a buffered logger with a capacity of 1.
+func BenchmarkUnbuffered(b *testing.B) {
 	b.ReportAllocs()
 
 	f := outFile(b)
@@ -83,7 +83,7 @@ func BenchmarkLineDiscard(b *testing.B) {
 	benchmarkRunner(b, l, baseMessage)
 }
 
-func TestLineBufferedConcurrency(t *testing.T) {
+func TestBufferedConcurrency(t *testing.T) {
 	t.Parallel()
 	bufLog := NewBufferedLogger(io.Discard, 32,
 		WithFlushPeriod(flushPeriod),
@@ -127,7 +127,7 @@ func TestOnFlushCallback(t *testing.T) {
 // We cannot use stdout/stderr since we need to read the contents afterwards to validate, and we have to write to a file
 // to benchmark the impact of write() syscalls.
 func outFile(b *testing.B) *os.File {
-	f, err := os.CreateTemp(b.TempDir(), "linebuffer*")
+	f, err := os.CreateTemp(b.TempDir(), "buffered*")
 	require.NoErrorf(b, err, "cannot create test file")
 
 	return f

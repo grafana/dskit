@@ -113,15 +113,15 @@ func NewBufferedLogger(w io.Writer, cap uint32, opts ...BufferedLoggerOption) *B
 
 // threadsafeBuffer wraps the non-threadsafe bytes.Buffer.
 type threadsafeBuffer struct {
-	sync.RWMutex
+	sync.Mutex
 
 	buf *bytes.Buffer
 }
 
 // Read reads up to len(p) bytes into p. It returns the number of bytes read (0 <= n <= len(p)) and any error encountered.
 func (t *threadsafeBuffer) Read(p []byte) (n int, err error) {
-	t.RLock()
-	defer t.RUnlock()
+	t.Lock()
+	defer t.Unlock()
 
 	return t.buf.Read(p)
 }

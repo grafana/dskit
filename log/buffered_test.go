@@ -104,8 +104,8 @@ func TestOnFlushCallback(t *testing.T) {
 		flushedEntries += int(entries)
 	}
 
+	// Do NOT specify a flush period because we want to be in control of the flushes done by this test.
 	bufLog := NewBufferedLogger(&buf, 2,
-		WithFlushPeriod(flushPeriod),
 		WithPrellocatedBuffer(bufferSize),
 		WithFlushCallback(callback),
 	)

@@ -116,6 +116,9 @@ func TestOnFlushCallback(t *testing.T) {
 	// first flush
 	require.NoError(t, l.Log("line"))
 
+	// pre-condition check: the last Log() call should have flushed previous entries.
+	require.Equal(t, uint32(1), bufLog.Size())
+
 	// force a second
 	require.NoError(t, bufLog.Flush())
 

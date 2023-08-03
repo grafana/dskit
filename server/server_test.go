@@ -131,7 +131,9 @@ func TestDefaultAddresses(t *testing.T) {
 		w.WriteHeader(204)
 	})
 
-	go server.Run()
+	go func() {
+		require.NoError(t, server.Run())
+	}()
 	defer server.Shutdown()
 
 	conn, err := grpc.Dial("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -173,7 +175,9 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
-	go server.Run()
+	go func() {
+		require.NoError(t, server.Run())
+	}()
 
 	conn, err := grpc.Dial("localhost:1234", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
@@ -312,7 +316,9 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 		_ = cancelableSleep(r.Context(), time.Second*10)
 	})
 
-	go server.Run()
+	go func() {
+		require.NoError(t, server.Run())
+	}()
 
 	callThenCancel := func(f func(ctx context.Context) error) error {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -507,7 +513,9 @@ func TestMiddlewareLogging(t *testing.T) {
 		w.WriteHeader(500)
 	})
 
-	go server.Run()
+	go func() {
+		require.NoError(t, server.Run())
+	}()
 	defer server.Shutdown()
 
 	req, err := http.NewRequest("GET", "http://127.0.0.1:9192/error500", nil)
@@ -549,13 +557,16 @@ func TestTLSServer(t *testing.T) {
 	require.NoError(t, err)
 
 	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World!"))
+		_, err := w.Write([]byte("Hello World!"))
+		require.NoError(t, err)
 	})
 
 	fakeServer := FakeServer{}
 	RegisterFakeServerServer(server.GRPC, fakeServer)
 
-	go server.Run()
+	go func() {
+		require.NoError(t, server.Run())
+	}()
 	defer server.Shutdown()
 
 	clientCert, err := tls.LoadX509KeyPair("certs/client.crt", "certs/client.key")
@@ -650,7 +661,9 @@ func TestLogSourceIPs(t *testing.T) {
 		w.WriteHeader(500)
 	})
 
-	go server.Run()
+	go func() {
+		require.NoError(t, server.Run())
+	}()
 	defer server.Shutdown()
 
 	require.Empty(t, fake.sourceIPs)

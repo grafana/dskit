@@ -112,12 +112,12 @@ func (b *nonFlushingBadResponseLoggingWriter) getWriteError() error {
 
 func (b *nonFlushingBadResponseLoggingWriter) captureResponseBody(data []byte) {
 	if len(data) > b.bodyBytesLeft {
-		b.buffer.Write(data[:b.bodyBytesLeft])
-		io.WriteString(b.buffer, "...")
+		_, _ = b.buffer.Write(data[:b.bodyBytesLeft])
+		_, _ = io.WriteString(b.buffer, "...")
 		b.bodyBytesLeft = 0
 		b.logBody = false
 	} else {
-		b.buffer.Write(data)
+		_, _ = b.buffer.Write(data)
 		b.bodyBytesLeft -= len(data)
 	}
 }

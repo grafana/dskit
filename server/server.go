@@ -248,9 +248,9 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	httpListener = middleware.CountingListener(httpListener, metrics.TcpConnections.WithLabelValues("http"))
+	httpListener = middleware.CountingListener(httpListener, metrics.TCPConnections.WithLabelValues("http"))
 
-	metrics.TcpConnectionsLimit.WithLabelValues("http").Set(float64(cfg.HTTPConnLimit))
+	metrics.TCPConnectionsLimit.WithLabelValues("http").Set(float64(cfg.HTTPConnLimit))
 	if cfg.HTTPConnLimit > 0 {
 		httpListener = netutil.LimitListener(httpListener, cfg.HTTPConnLimit)
 	}
@@ -272,9 +272,9 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	grpcListener = middleware.CountingListener(grpcListener, metrics.TcpConnections.WithLabelValues("grpc"))
+	grpcListener = middleware.CountingListener(grpcListener, metrics.TCPConnections.WithLabelValues("grpc"))
 
-	metrics.TcpConnectionsLimit.WithLabelValues("grpc").Set(float64(cfg.GRPCConnLimit))
+	metrics.TCPConnectionsLimit.WithLabelValues("grpc").Set(float64(cfg.GRPCConnLimit))
 	if cfg.GRPCConnLimit > 0 {
 		grpcListener = netutil.LimitListener(grpcListener, cfg.GRPCConnLimit)
 	}
@@ -375,7 +375,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		grpcOptions = append(grpcOptions, grpc.Creds(grpcCreds))
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
-	grpcOnHttpServer := grpc.NewServer(grpcOptions...)
+	grpcOnHTTPServer := grpc.NewServer(grpcOptions...)
 
 	// Setup HTTP server
 	var router *mux.Router
@@ -451,7 +451,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		HTTP:             router,
 		HTTPServer:       httpServer,
 		GRPC:             grpcServer,
-		GRPCOnHTTPServer: grpcOnHttpServer,
+		GRPCOnHTTPServer: grpcOnHTTPServer,
 		Log:              logger,
 		Registerer:       cfg.registererOrDefault(),
 		Gatherer:         gatherer,
@@ -559,6 +559,6 @@ func (s *Server) Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.ServerGracefulShutdownTimeout)
 	defer cancel() // releases resources if httpServer.Shutdown completes before timeout elapses
 
-	s.HTTPServer.Shutdown(ctx)
+	_ = s.HTTPServer.Shutdown(ctx)
 	s.GRPC.GracefulStop()
 }

@@ -14,8 +14,8 @@ import (
 )
 
 type Metrics struct {
-	TcpConnections      *prometheus.GaugeVec
-	TcpConnectionsLimit *prometheus.GaugeVec
+	TCPConnections      *prometheus.GaugeVec
+	TCPConnectionsLimit *prometheus.GaugeVec
 	RequestDuration     *prometheus.HistogramVec
 	ReceivedMessageSize *prometheus.HistogramVec
 	SentMessageSize     *prometheus.HistogramVec
@@ -24,12 +24,12 @@ type Metrics struct {
 
 func NewServerMetrics(cfg Config) *Metrics {
 	return &Metrics{
-		TcpConnections: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		TCPConnections: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "tcp_connections",
 			Help:      "Current number of accepted TCP connections.",
 		}, []string{"protocol"}),
-		TcpConnectionsLimit: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		TCPConnectionsLimit: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "tcp_connections_limit",
 			Help:      "The max number of TCP connections that can be accepted (0 means no limit).",
@@ -65,8 +65,8 @@ func NewServerMetrics(cfg Config) *Metrics {
 
 func (s *Metrics) MustRegister(registerer prometheus.Registerer) {
 	registerer.MustRegister(
-		s.TcpConnections,
-		s.TcpConnectionsLimit,
+		s.TCPConnections,
+		s.TCPConnectionsLimit,
 		s.RequestDuration,
 		s.ReceivedMessageSize,
 		s.SentMessageSize,

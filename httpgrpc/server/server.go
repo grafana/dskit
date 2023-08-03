@@ -106,9 +106,9 @@ func ParseURL(unparsed string) (string, error) {
 			return "", err
 		}
 		parts := strings.SplitN(host, ".", 3)
-		service, namespace, domain := parts[0], "default", ""
+		service, domain := parts[0], ""
 		if len(parts) > 1 {
-			namespace = parts[1]
+			namespace := parts[1]
 			domain = "." + namespace
 		}
 		if len(parts) > 2 {
@@ -178,7 +178,7 @@ func WriteResponse(w http.ResponseWriter, resp *httpgrpc.HTTPResponse) error {
 func WriteError(w http.ResponseWriter, err error) {
 	resp, ok := httpgrpc.HTTPResponseFromError(err)
 	if ok {
-		WriteResponse(w, resp)
+		_ = WriteResponse(w, resp)
 	} else {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

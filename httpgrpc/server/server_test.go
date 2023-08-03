@@ -30,7 +30,7 @@ type testServer struct {
 	grpcServer *grpc.Server
 }
 
-func newTestServer(handler http.Handler) (*testServer, error) {
+func newTestServer(t *testing.T, handler http.Handler) (*testServer, error) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -43,14 +43,17 @@ func newTestServer(handler http.Handler) (*testServer, error) {
 	}
 
 	httpgrpc.RegisterHTTPServer(server.grpcServer, server.Server)
-	go server.grpcServer.Serve(lis)
+	go func() {
+		require.NoError(t, server.grpcServer.Serve(lis))
+	}()
 
 	return server, nil
 }
 
 func TestBasic(t *testing.T) {
-	server, err := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "world")
+	server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := fmt.Fprint(w, "world")
+		require.NoError(t, err)
 	}))
 	require.NoError(t, err)
 	defer server.grpcServer.GracefulStop()
@@ -70,7 +73,7 @@ func TestBasic(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	server, err := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Does a Fprintln, injecting a newline.
 		http.Error(w, "foo", http.StatusInternalServerError)
 	}))
@@ -121,10 +124,11 @@ func TestTracePropagation(t *testing.T) {
 	require.NoError(t, err)
 	defer closer.Close()
 
-	server, err := newTestServer(middleware.Tracer{}.Wrap(
+	server, err := newTestServer(t, middleware.Tracer{}.Wrap(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			span := opentracing.SpanFromContext(r.Context())
-			fmt.Fprint(w, span.BaggageItem("name"))
+			_, err := fmt.Fprint(w, span.BaggageItem("name"))
+			require.NoError(t, err)
 		}),
 	))
 

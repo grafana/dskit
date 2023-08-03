@@ -11,15 +11,15 @@ func Noop() Interface {
 
 type noop struct{}
 
-func (noop) Debugf(format string, args ...interface{}) {}
-func (noop) Debugln(args ...interface{})               {}
-func (noop) Infof(format string, args ...interface{})  {}
-func (noop) Infoln(args ...interface{})                {}
-func (noop) Warnf(format string, args ...interface{})  {}
-func (noop) Warnln(args ...interface{})                {}
-func (noop) Errorf(format string, args ...interface{}) {}
-func (noop) Errorln(args ...interface{})               {}
-func (noop) WithField(key string, value interface{}) Interface {
+func (noop) Debugf(string, ...interface{}) {}
+func (noop) Debugln(...interface{})        {}
+func (noop) Infof(string, ...interface{})  {}
+func (noop) Infoln(...interface{})         {}
+func (noop) Warnf(string, ...interface{})  {}
+func (noop) Warnln(...interface{})         {}
+func (noop) Errorf(string, ...interface{}) {}
+func (noop) Errorln(...interface{})        {}
+func (noop) WithField(string, interface{}) Interface {
 	return noop{}
 }
 func (noop) WithFields(Fields) Interface {

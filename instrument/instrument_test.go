@@ -38,12 +38,12 @@ func (c *spyCollector) Register() {
 }
 
 // Before collects for the upcoming request.
-func (c *spyCollector) Before(ctx context.Context, method string, start time.Time) {
+func (c *spyCollector) Before(context.Context, string, time.Time) {
 	c.before = true
 }
 
 // After collects when the request is done.
-func (c *spyCollector) After(ctx context.Context, method, statusCode string, start time.Time) {
+func (c *spyCollector) After(_ context.Context, _, statusCode string, _ time.Time) {
 	c.after = true
 	c.afterCode = statusCode
 }
@@ -51,10 +51,11 @@ func (c *spyCollector) After(ctx context.Context, method, statusCode string, sta
 func TestCollectedRequest(t *testing.T) {
 	c := &spyCollector{}
 	fcalled := false
-	instrument.CollectedRequest(context.Background(), "test", c, nil, func(_ context.Context) error {
+	err := instrument.CollectedRequest(context.Background(), "test", c, nil, func(_ context.Context) error {
 		fcalled = true
 		return nil
 	})
+	assert.NoError(t, err)
 	assert.True(t, fcalled)
 	assert.True(t, c.before)
 	assert.True(t, c.after)
@@ -63,9 +64,10 @@ func TestCollectedRequest(t *testing.T) {
 
 func TestCollectedRequest_Error(t *testing.T) {
 	c := &spyCollector{}
-	instrument.CollectedRequest(context.Background(), "test", c, nil, func(_ context.Context) error {
+	err := instrument.CollectedRequest(context.Background(), "test", c, nil, func(_ context.Context) error {
 		return errors.New("boom")
 	})
+	assert.EqualError(t, err, "boom")
 	assert.True(t, c.before)
 	assert.True(t, c.after)
 	assert.Equal(t, "500", c.afterCode)

@@ -19,7 +19,7 @@ type Format struct {
 
 // RegisterFlags adds the log format flag to the provided flagset.
 func (f *Format) RegisterFlags(fs *flag.FlagSet) {
-	f.Set("logfmt")
+	_ = f.Set("logfmt")
 	fs.Var(f, "log.format", "Output log messages in the given format. Valid formats: [logfmt, json]")
 }
 

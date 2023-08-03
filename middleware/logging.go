@@ -23,7 +23,7 @@ type Log struct {
 	LogRequestHeaders        bool // LogRequestHeaders true -> dump http headers at debug log level
 	LogRequestAtInfoLevel    bool // LogRequestAtInfoLevel true -> log requests at info log level
 	SourceIPs                *SourceIPExtractor
-	HttpHeadersToExclude     map[string]bool
+	HTTPHeadersToExclude     map[string]bool
 }
 
 var defaultExcludedHeaders = map[string]bool{
@@ -46,7 +46,7 @@ func NewLogMiddleware(log log.Interface, logRequestHeaders bool, logRequestAtInf
 		LogRequestHeaders:     logRequestHeaders,
 		LogRequestAtInfoLevel: logRequestAtInfoLevel,
 		SourceIPs:             sourceIPs,
-		HttpHeadersToExclude:  httpHeadersToExclude,
+		HTTPHeadersToExclude:  httpHeadersToExclude,
 	}
 }
 
@@ -75,7 +75,7 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		uri := r.RequestURI // capture the URI before running next, as it may get rewritten
 		requestLog := l.logWithRequest(r)
 		// Log headers before running 'next' in case other interceptors change the data.
-		headers, err := dumpRequest(r, l.HttpHeadersToExclude)
+		headers, err := dumpRequest(r, l.HTTPHeadersToExclude)
 		if err != nil {
 			headers = nil
 			requestLog.Errorf("Could not dump request headers: %v", err)

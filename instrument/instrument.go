@@ -57,7 +57,7 @@ func (c *HistogramCollector) Register() {
 }
 
 // Before collects for the upcoming request.
-func (c *HistogramCollector) Before(ctx context.Context, method string, start time.Time) {
+func (c *HistogramCollector) Before(context.Context, string, time.Time) {
 }
 
 // After collects when the request is done.
@@ -135,13 +135,13 @@ func (c *JobCollector) Register() {
 }
 
 // Before collects for the upcoming request.
-func (c *JobCollector) Before(ctx context.Context, method string, start time.Time) {
+func (c *JobCollector) Before(_ context.Context, method string, start time.Time) {
 	c.start.WithLabelValues(method).Set(float64(start.UTC().Unix()))
 	c.started.WithLabelValues(method).Inc()
 }
 
 // After collects when the request is done.
-func (c *JobCollector) After(ctx context.Context, method, statusCode string, start time.Time) {
+func (c *JobCollector) After(_ context.Context, method, statusCode string, start time.Time) {
 	end := time.Now()
 	c.end.WithLabelValues(method, statusCode).Set(float64(end.UTC().Unix()))
 	c.duration.WithLabelValues(method, statusCode).Set(end.Sub(start).Seconds())

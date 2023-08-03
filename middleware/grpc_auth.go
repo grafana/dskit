@@ -33,7 +33,7 @@ func StreamClientUserHeaderInterceptor(ctx context.Context, desc *grpc.StreamDes
 }
 
 // ServerUserHeaderInterceptor propagates the user ID from the gRPC metadata back to our context.
-func ServerUserHeaderInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+func ServerUserHeaderInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	_, ctx, err := user.ExtractFromGRPCRequest(ctx)
 	if err != nil {
 		return nil, err

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestBadResponseLoggingWriter(t *testing.T) {
@@ -31,7 +33,8 @@ func TestBadResponseLoggingWriter(t *testing.T) {
 			wrapped.WriteHeader(tc.statusCode)
 		case tc.statusCode < 300 && tc.data != "":
 			wrapped.WriteHeader(tc.statusCode)
-			wrapped.Write([]byte(tc.data))
+			_, err := wrapped.Write([]byte(tc.data))
+			require.NoError(t, err)
 		default:
 			http.Error(wrapped, tc.data, tc.statusCode)
 		}

@@ -133,7 +133,6 @@ func runClient() {
 	defer services.StopAndAwaitTerminated(ctx, ringsvc)
 
 	for {
-
 		time.Sleep(1 * time.Second)
 
 		replicas, err := ringsvc.GetAllHealthy(ring.Read)
@@ -150,7 +149,7 @@ func runClient() {
 
 }
 
-// SimpleMemberlistKV returns a memberlist KV as a service. Starting and Stopping the service is upto the caller.
+// SimpleMemberlistKV returns a memberlist KV as a service. Starting and stopping the service is up to the caller.
 // Caller can create an instance `kv.Client` from returned service by explicity calling `.GetMemberlistKV()`
 // which can be used as dependency to create a ring or ring lifecycler.
 func SimpleMemberlistKV(bindaddr string, bindport int, joinmembers []string) *memberlist.KVInitService {
@@ -158,7 +157,7 @@ func SimpleMemberlistKV(bindaddr string, bindport int, joinmembers []string) *me
 	flagext.DefaultValues(&config)
 
 	// Codecs is used to tell memberlist library how to serialize/de-serialize the messages between peers.
-	// `ring.GetCode()` uses default, which is protobuf.
+	// `ring.GetCodec()` uses default, which is protobuf.
 	config.Codecs = []codec.Codec{ring.GetCodec()}
 
 	// TCPTransport defines what addr and port this particular peer should listen on.

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -34,7 +35,8 @@ func (c *fakeListener) Accept() (net.Conn, error) {
 }
 
 func TestCountingListener(t *testing.T) {
-	g := prometheus.NewGauge(prometheus.GaugeOpts{
+	reg := prometheus.NewPedanticRegistry()
+	g := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Namespace: "test",
 		Name:      "gauge",
 	})

@@ -2,6 +2,8 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Weaveworks Ltd.
 
+//lint:file-ignore faillint Changing from prometheus to promauto package would be a breaking change for consumers
+
 package instrument
 
 import (

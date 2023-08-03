@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -26,25 +27,22 @@ import (
 func TestGrpcStats(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
-	received := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	received := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "received_payload_bytes",
 		Help:    "Size of received gRPC messages",
 		Buckets: BodySizeBuckets,
 	}, []string{"method", "route"})
-	require.NoError(t, reg.Register(received))
 
-	sent := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	sent := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "sent_payload_bytes",
 		Help:    "Size of sent gRPC",
 		Buckets: BodySizeBuckets,
 	}, []string{"method", "route"})
-	require.NoError(t, reg.Register(sent))
 
-	inflightRequests := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	inflightRequests := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "inflight_requests",
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
-	require.NoError(t, reg.Register(inflightRequests))
 
 	stats := NewStatsHandler(received, sent, inflightRequests)
 
@@ -120,25 +118,22 @@ func TestGrpcStats(t *testing.T) {
 func TestGrpcStatsStreaming(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
-	received := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	received := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "received_payload_bytes",
 		Help:    "Size of received gRPC messages",
 		Buckets: BodySizeBuckets,
 	}, []string{"method", "route"})
-	require.NoError(t, reg.Register(received))
 
-	sent := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	sent := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "sent_payload_bytes",
 		Help:    "Size of sent gRPC",
 		Buckets: BodySizeBuckets,
 	}, []string{"method", "route"})
-	require.NoError(t, reg.Register(sent))
 
-	inflightRequests := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	inflightRequests := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "inflight_requests",
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
-	require.NoError(t, reg.Register(inflightRequests))
 
 	stats := NewStatsHandler(received, sent, inflightRequests)
 

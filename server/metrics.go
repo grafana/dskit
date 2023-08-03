@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/middleware"
@@ -23,18 +24,20 @@ type Metrics struct {
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
+	reg := promauto.With(cfg.registererOrDefault())
+
 	return &Metrics{
-		TCPConnections: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		TCPConnections: reg.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "tcp_connections",
 			Help:      "Current number of accepted TCP connections.",
 		}, []string{"protocol"}),
-		TCPConnectionsLimit: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		TCPConnectionsLimit: reg.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "tcp_connections_limit",
 			Help:      "The max number of TCP connections that can be accepted (0 means no limit).",
 		}, []string{"protocol"}),
-		RequestDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		RequestDuration: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace:                       cfg.MetricsNamespace,
 			Name:                            "request_duration_seconds",
 			Help:                            "Time (in seconds) spent serving HTTP requests.",
@@ -43,33 +46,22 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route", "status_code", "ws"}),
-		ReceivedMessageSize: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		ReceivedMessageSize: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "request_message_bytes",
 			Help:      "Size (in bytes) of messages received in the request.",
 			Buckets:   middleware.BodySizeBuckets,
 		}, []string{"method", "route"}),
-		SentMessageSize: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		SentMessageSize: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "response_message_bytes",
 			Help:      "Size (in bytes) of messages sent in response.",
 			Buckets:   middleware.BodySizeBuckets,
 		}, []string{"method", "route"}),
-		InflightRequests: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		InflightRequests: reg.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "inflight_requests",
 			Help:      "Current number of inflight requests.",
 		}, []string{"method", "route"}),
 	}
-}
-
-func (s *Metrics) MustRegister(registerer prometheus.Registerer) {
-	registerer.MustRegister(
-		s.TCPConnections,
-		s.TCPConnectionsLimit,
-		s.RequestDuration,
-		s.ReceivedMessageSize,
-		s.SentMessageSize,
-		s.InflightRequests,
-	)
 }

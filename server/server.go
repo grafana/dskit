@@ -216,7 +216,6 @@ type Server struct {
 // New makes a new Server. It will panic if the metrics cannot be registered.
 func New(cfg Config) (*Server, error) {
 	metrics := NewServerMetrics(cfg)
-	metrics.MustRegister(cfg.registererOrDefault())
 	return newServer(cfg, metrics)
 }
 

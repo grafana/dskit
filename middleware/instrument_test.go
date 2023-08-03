@@ -1,3 +1,7 @@
+// Provenance-includes-location: https://github.com/weaveworks/common/blob/main/middleware/instrument_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Weaveworks Ltd.
+
 package middleware_test
 
 import (

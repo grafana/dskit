@@ -1,3 +1,7 @@
+// Provenance-includes-location: https://github.com/weaveworks/common/blob/main/instrument/instrument_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Weaveworks Ltd.
+
 package instrument_test
 
 import (

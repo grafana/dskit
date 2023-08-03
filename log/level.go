@@ -1,4 +1,8 @@
-package logging
+// Provenance-includes-location: https://github.com/weaveworks/common/blob/main/logging/level.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Weaveworks Ltd.
+
+package log
 
 // Copy-pasted from prometheus/common/promlog.
 // Copyright 2017 The Prometheus Authors

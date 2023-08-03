@@ -1,4 +1,8 @@
-package logging
+// Provenance-includes-location: https://github.com/weaveworks/common/blob/main/logging/noop.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Weaveworks Ltd.
+
+package log
 
 // Noop logger.
 func Noop() Interface {

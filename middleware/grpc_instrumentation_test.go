@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/grafana/dskit/httpgrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/grafana/dskit/httpgrpc"
 )
 
 func TestErrorCode_NoError(t *testing.T) {

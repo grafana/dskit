@@ -19,12 +19,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/grafana/dskit/server"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/grafana/dskit/server"
 
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/crypto/tls"

@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+
 	grpcUtils "github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 func observe(ctx context.Context, hist *prometheus.HistogramVec, method string, err error, duration time.Duration) {

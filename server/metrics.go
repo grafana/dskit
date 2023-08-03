@@ -5,10 +5,12 @@
 package server
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/middleware"
-	"time"
 )
 
 type Metrics struct {

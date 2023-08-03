@@ -6,6 +6,7 @@ import (
 	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/grafana/dskit/instrument"
 )
 

@@ -18,11 +18,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/grafana/dskit/httpgrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	dsmath "github.com/grafana/dskit/internal/math"
 	"github.com/grafana/dskit/internal/slices"
 	"github.com/grafana/dskit/kv"

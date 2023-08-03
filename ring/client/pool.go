@@ -10,7 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/user"
+	"github.com/grafana/dskit/user"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/dskit/concurrency"

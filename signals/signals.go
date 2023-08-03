@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/weaveworks/common/logging"
+	"github.com/grafana/dskit/log"
 )
 
 // SignalReceiver represents a subsystem/server/... that can be stopped or
@@ -23,13 +23,13 @@ type SignalReceiver interface {
 // On SIGINT or SIGTERM it will exit, on SIGQUIT it
 // will dump goroutine stacks to the Logger.
 type Handler struct {
-	log       logging.Interface
+	log       log.Interface
 	receivers []SignalReceiver
 	quit      chan struct{}
 }
 
 // NewHandler makes a new Handler.
-func NewHandler(log logging.Interface, receivers ...SignalReceiver) *Handler {
+func NewHandler(log log.Interface, receivers ...SignalReceiver) *Handler {
 	return &Handler{
 		log:       log,
 		receivers: receivers,
@@ -72,6 +72,6 @@ func (h *Handler) Loop() {
 // SignalHandlerLoop blocks until it receives a SIGINT, SIGTERM or SIGQUIT.
 // For SIGINT and SIGTERM, it exits; for SIGQUIT is print a goroutine stack
 // dump.
-func SignalHandlerLoop(log logging.Interface, ss ...SignalReceiver) {
+func SignalHandlerLoop(log log.Interface, ss ...SignalReceiver) {
 	NewHandler(log, ss...).Loop()
 }

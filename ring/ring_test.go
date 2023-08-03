@@ -18,7 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 

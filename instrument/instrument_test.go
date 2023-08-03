@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/weaveworks/common/instrument"
+	"github.com/grafana/dskit/instrument"
 )
 
 func TestNewHistogramCollector(t *testing.T) {

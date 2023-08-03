@@ -11,14 +11,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/weaveworks/common/logging"
-	"github.com/weaveworks/common/tracing"
-	"github.com/weaveworks/common/user"
+	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/tracing"
+	"github.com/grafana/dskit/user"
 )
 
 // Log middleware logs http requests
 type Log struct {
-	Log                      logging.Interface
+	Log                      log.Interface
 	DisableRequestSuccessLog bool
 	LogRequestHeaders        bool // LogRequestHeaders true -> dump http headers at debug log level
 	LogRequestAtInfoLevel    bool // LogRequestAtInfoLevel true -> log requests at info log level
@@ -32,7 +32,7 @@ var defaultExcludedHeaders = map[string]bool{
 	"Authorization": true,
 }
 
-func NewLogMiddleware(log logging.Interface, logRequestHeaders bool, logRequestAtInfoLevel bool, sourceIPs *SourceIPExtractor, headersList []string) Log {
+func NewLogMiddleware(log log.Interface, logRequestHeaders bool, logRequestAtInfoLevel bool, sourceIPs *SourceIPExtractor, headersList []string) Log {
 	httpHeadersToExclude := map[string]bool{}
 	for header := range defaultExcludedHeaders {
 		httpHeadersToExclude[header] = true
@@ -51,7 +51,7 @@ func NewLogMiddleware(log logging.Interface, logRequestHeaders bool, logRequestA
 }
 
 // logWithRequest information from the request and context as fields.
-func (l Log) logWithRequest(r *http.Request) logging.Interface {
+func (l Log) logWithRequest(r *http.Request) log.Interface {
 	localLog := l.Log
 	traceID, ok := tracing.ExtractTraceID(r.Context())
 	if ok {
@@ -129,7 +129,7 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 // Logging middleware logs each HTTP request method, path, response code and
 // duration for all HTTP requests.
 var Logging = Log{
-	Log: logging.Global(),
+	Log: log.Global(),
 }
 
 func dumpRequest(req *http.Request, httpHeadersToExclude map[string]bool) ([]byte, error) {

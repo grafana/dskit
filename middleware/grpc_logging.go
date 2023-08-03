@@ -11,9 +11,9 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
-	grpcUtils "github.com/weaveworks/common/grpc"
-	"github.com/weaveworks/common/logging"
-	"github.com/weaveworks/common/user"
+	grpcUtils "github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/user"
 )
 
 const (
@@ -28,7 +28,7 @@ type OptionalLogging interface {
 
 // GRPCServerLog logs grpc requests, errors, and latency.
 type GRPCServerLog struct {
-	Log logging.Interface
+	Log log.Interface
 	// WithRequest will log the entire request rather than just the error
 	WithRequest              bool
 	DisableRequestSuccessLog bool
@@ -46,7 +46,7 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		return resp, err
 	}
 
-	entry := user.LogWith(ctx, s.Log).WithFields(logging.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
+	entry := user.LogWith(ctx, s.Log).WithFields(log.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
 	if err != nil {
 		if s.WithRequest {
 			entry = entry.WithField("request", req)
@@ -70,7 +70,7 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 		return nil
 	}
 
-	entry := user.LogWith(ss.Context(), s.Log).WithFields(logging.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
+	entry := user.LogWith(ss.Context(), s.Log).WithFields(log.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
 	if err != nil {
 		if grpcUtils.IsCanceled(err) {
 			entry.WithField(errorKey, err).Debugln(gRPC)

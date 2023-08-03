@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	grpcUtils "github.com/weaveworks/common/grpc"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/instrument"
+	grpcUtils "github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/instrument"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

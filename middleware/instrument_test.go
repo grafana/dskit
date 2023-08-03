@@ -7,7 +7,7 @@ package middleware_test
 import (
 	"testing"
 
-	"github.com/weaveworks/common/middleware"
+	"github.com/grafana/dskit/middleware"
 )
 
 func TestMakeLabelValue(t *testing.T) {

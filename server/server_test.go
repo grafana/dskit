@@ -28,10 +28,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/logging"
-	"github.com/weaveworks/common/middleware"
 	"golang.org/x/net/context"
+
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/middleware"
 )
 
 type FakeServer struct{}
@@ -485,7 +486,7 @@ func TestRunReturnsError(t *testing.T) {
 
 // Test to see what the logging of a 500 error looks like
 func TestMiddlewareLogging(t *testing.T) {
-	var level logging.Level
+	var level log.Level
 	require.NoError(t, level.Set("info"))
 	cfg := Config{
 		HTTPListenNetwork:             DefaultNetwork,
@@ -516,7 +517,7 @@ func TestMiddlewareLogging(t *testing.T) {
 }
 
 func TestTLSServer(t *testing.T) {
-	var level logging.Level
+	var level log.Level
 	require.NoError(t, level.Set("info"))
 
 	cmd := exec.Command("bash", "certs/genCerts.sh", "certs", "1")
@@ -614,7 +615,7 @@ func (f *FakeLogger) Errorln(_ ...interface{})          {}
 func (f *FakeLogger) Warnf(_ string, _ ...interface{}) {}
 func (f *FakeLogger) Warnln(_ ...interface{})          {}
 
-func (f *FakeLogger) WithField(key string, value interface{}) logging.Interface {
+func (f *FakeLogger) WithField(key string, value interface{}) log.Interface {
 	if key == "sourceIPs" {
 		f.sourceIPs = value.(string)
 	}
@@ -622,12 +623,12 @@ func (f *FakeLogger) WithField(key string, value interface{}) logging.Interface 
 	return f
 }
 
-func (f *FakeLogger) WithFields(_ logging.Fields) logging.Interface {
+func (f *FakeLogger) WithFields(_ log.Fields) log.Interface {
 	return f
 }
 
 func TestLogSourceIPs(t *testing.T) {
-	var level logging.Level
+	var level log.Level
 	require.NoError(t, level.Set("debug"))
 	fake := FakeLogger{}
 	cfg := Config{

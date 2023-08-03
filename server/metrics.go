@@ -6,8 +6,8 @@ package server
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/instrument"
-	"github.com/weaveworks/common/middleware"
+	"github.com/grafana/dskit/instrument"
+	"github.com/grafana/dskit/middleware"
 	"time"
 )
 

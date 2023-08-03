@@ -28,11 +28,11 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/weaveworks/common/httpgrpc"
-	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
-	"github.com/weaveworks/common/logging"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/signals"
+	"github.com/grafana/dskit/httpgrpc"
+	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/signals"
 )
 
 // Listen on the named network
@@ -113,15 +113,15 @@ type Config struct {
 	GRPCServerMinTimeBetweenPings      time.Duration `yaml:"grpc_server_min_time_between_pings"`
 	GRPCServerPingWithoutStreamAllowed bool          `yaml:"grpc_server_ping_without_stream_allowed"`
 
-	LogFormat                    logging.Format    `yaml:"log_format"`
-	LogLevel                     logging.Level     `yaml:"log_level"`
-	Log                          logging.Interface `yaml:"-"`
-	LogSourceIPs                 bool              `yaml:"log_source_ips_enabled"`
-	LogSourceIPsHeader           string            `yaml:"log_source_ips_header"`
-	LogSourceIPsRegex            string            `yaml:"log_source_ips_regex"`
-	LogRequestHeaders            bool              `yaml:"log_request_headers"`
-	LogRequestAtInfoLevel        bool              `yaml:"log_request_at_info_level_enabled"`
-	LogRequestExcludeHeadersList string            `yaml:"log_request_exclude_headers_list"`
+	LogFormat                    log.Format    `yaml:"log_format"`
+	LogLevel                     log.Level     `yaml:"log_level"`
+	Log                          log.Interface `yaml:"-"`
+	LogSourceIPs                 bool          `yaml:"log_source_ips_enabled"`
+	LogSourceIPsHeader           string        `yaml:"log_source_ips_header"`
+	LogSourceIPsRegex            string        `yaml:"log_source_ips_regex"`
+	LogRequestHeaders            bool          `yaml:"log_request_headers"`
+	LogRequestAtInfoLevel        bool          `yaml:"log_request_at_info_level_enabled"`
+	LogRequestExcludeHeadersList string        `yaml:"log_request_exclude_headers_list"`
 
 	// If not set, default signal handler is used.
 	SignalHandler SignalHandler `yaml:"-"`
@@ -208,7 +208,7 @@ type Server struct {
 	HTTP       *mux.Router
 	HTTPServer *http.Server
 	GRPC       *grpc.Server
-	Log        logging.Interface
+	Log        log.Interface
 	Registerer prometheus.Registerer
 	Gatherer   prometheus.Gatherer
 }
@@ -229,9 +229,9 @@ func NewWithMetrics(cfg Config, metrics *Metrics) (*Server, error) {
 func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	// If user doesn't supply a logging implementation, by default instantiate
 	// logrus.
-	log := cfg.Log
-	if log == nil {
-		log = logging.NewLogrus(cfg.LogLevel)
+	logger := cfg.Log
+	if logger == nil {
+		logger = log.NewLogrus(cfg.LogLevel)
 	}
 
 	gatherer := cfg.Gatherer
@@ -320,11 +320,11 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		}
 	}
 
-	log.WithField("http", httpListener.Addr()).WithField("grpc", grpcListener.Addr()).Infof("server listening on addresses")
+	logger.WithField("http", httpListener.Addr()).WithField("grpc", grpcListener.Addr()).Infof("server listening on addresses")
 
 	// Setup gRPC server
 	serverLog := middleware.GRPCServerLog{
-		Log:                      log,
+		Log:                      logger,
 		WithRequest:              !cfg.ExcludeRequestInLog,
 		DisableRequestSuccessLog: cfg.DisableRequestSuccessLog,
 	}
@@ -401,7 +401,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		}
 	}
 
-	defaultLogMiddleware := middleware.NewLogMiddleware(log, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, sourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
+	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, sourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
 	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
 
 	defaultHTTPMiddleware := []middleware.Interface{
@@ -437,7 +437,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 
 	handler := cfg.SignalHandler
 	if handler == nil {
-		handler = signals.NewHandler(log)
+		handler = signals.NewHandler(logger)
 	}
 
 	return &Server{
@@ -452,7 +452,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		HTTPServer:       httpServer,
 		GRPC:             grpcServer,
 		GRPCOnHTTPServer: grpcOnHttpServer,
-		Log:              log,
+		Log:              logger,
 		Registerer:       cfg.registererOrDefault(),
 		Gatherer:         gatherer,
 	}, nil

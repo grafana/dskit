@@ -14,9 +14,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	oldcontext "golang.org/x/net/context"
 
-	"github.com/weaveworks/common/grpc"
-	"github.com/weaveworks/common/tracing"
-	"github.com/weaveworks/common/user"
+	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/tracing"
+	"github.com/grafana/dskit/user"
 )
 
 // DefBuckets are histogram buckets for the response time (in seconds)
@@ -172,7 +172,7 @@ func CollectedRequest(ctx context.Context, method string, col Collector, toStatu
 	col.After(newCtx, method, toStatusCode(err), start)
 
 	if err != nil {
-		if !grpc.IsCanceled(err) {
+		if !grpcutil.IsCanceled(err) {
 			ext.Error.Set(sp, true)
 		}
 		sp.LogFields(otlog.Error(err))

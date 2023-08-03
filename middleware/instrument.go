@@ -15,7 +15,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/weaveworks/common/instrument"
+	"github.com/grafana/dskit/instrument"
 )
 
 const mb = 1024 * 1024

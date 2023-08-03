@@ -16,7 +16,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/weaveworks/common/logging"
+	"github.com/grafana/dskit/log"
 )
 
 func TestBadWriteLogging(t *testing.T) {
@@ -39,7 +39,7 @@ func TestBadWriteLogging(t *testing.T) {
 		logrusLogger.Level = logrus.DebugLevel
 
 		loggingMiddleware := Log{
-			Log: logging.Logrus(logrusLogger),
+			Log: log.Logrus(logrusLogger),
 		}
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, "<html><body>Hello World!</body></html>")
@@ -82,7 +82,7 @@ func TestDisabledSuccessfulRequestsLogging(t *testing.T) {
 		logrusLogger.Level = logrus.DebugLevel
 
 		loggingMiddleware := Log{
-			Log:                      logging.Logrus(logrusLogger),
+			Log:                      log.Logrus(logrusLogger),
 			DisableRequestSuccessLog: tc.disableLog,
 		}
 
@@ -127,7 +127,7 @@ func TestLoggingRequestsAtInfoLevel(t *testing.T) {
 		logrusLogger.Level = logrus.DebugLevel
 
 		loggingMiddleware := Log{
-			Log:                   logging.Logrus(logrusLogger),
+			Log:                   log.Logrus(logrusLogger),
 			LogRequestAtInfoLevel: true,
 		}
 		handler := func(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
 			logrusLogger.Out = buf
 			logrusLogger.Level = logrus.DebugLevel
 
-			loggingMiddleware := NewLogMiddleware(logging.Logrus(logrusLogger), true, false, nil, tc.excludeHeaderList)
+			loggingMiddleware := NewLogMiddleware(log.Logrus(logrusLogger), true, false, nil, tc.excludeHeaderList)
 
 			handler := func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, "<html><body>Hello world!</body></html>")

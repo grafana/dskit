@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	"github.com/weaveworks/common/logging"
+	dskit_log "github.com/grafana/dskit/log"
 )
 
 func BenchmarkGRPCServerLog_UnaryServerInterceptor_NoError(b *testing.B) {
-	logger := logging.GoKit(level.NewFilter(log.NewNopLogger(), level.AllowError()))
+	logger := dskit_log.GoKit(level.NewFilter(log.NewNopLogger(), level.AllowError()))
 	l := GRPCServerLog{Log: logger, WithRequest: false, DisableRequestSuccessLog: true}
 	ctx := context.Background()
 	info := &grpc.UnaryServerInfo{FullMethod: "Test"}
@@ -64,7 +64,7 @@ func TestGrpcLogging(t *testing.T) {
 	}} {
 		t.Run("", func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
-			logger := logging.GoKit(log.NewLogfmtLogger(buf))
+			logger := dskit_log.GoKit(log.NewLogfmtLogger(buf))
 			l := GRPCServerLog{Log: logger, WithRequest: true, DisableRequestSuccessLog: false}
 
 			handler := func(ctx context.Context, req interface{}) (interface{}, error) {

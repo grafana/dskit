@@ -4,7 +4,7 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/middleware"
+	"github.com/grafana/dskit/middleware"
 	"google.golang.org/grpc"
 )
 

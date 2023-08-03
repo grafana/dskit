@@ -21,9 +21,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/logging"
-	"github.com/weaveworks/common/middleware"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/middleware"
 )
 
 // Server implements HTTPServer.  HTTPServer is a generated interface that gRPC
@@ -189,7 +189,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if tracer := opentracing.GlobalTracer(); tracer != nil {
 		if span := opentracing.SpanFromContext(r.Context()); span != nil {
 			if err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(r.Header)); err != nil {
-				logging.Global().Warnf("Failed to inject tracing headers into request: %v", err)
+				log.Global().Warnf("Failed to inject tracing headers into request: %v", err)
 			}
 		}
 	}

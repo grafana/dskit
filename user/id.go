@@ -7,7 +7,7 @@ package user
 import (
 	"golang.org/x/net/context"
 
-	"github.com/weaveworks/common/errors"
+	"github.com/grafana/dskit/errors"
 )
 
 type contextKey int

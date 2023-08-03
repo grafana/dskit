@@ -12,7 +12,6 @@ import (
 	"github.com/opentracing/opentracing-go/ext"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
-	oldcontext "golang.org/x/net/context"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tracing"
@@ -188,22 +187,4 @@ func ErrorCode(err error) string {
 		return "200"
 	}
 	return "500"
-}
-
-// TimeRequestHistogram runs 'f' and records how long it took in the given Prometheus
-// histogram metric. If 'f' returns successfully, record a "200". Otherwise, record
-// "500".  It will also emit an OpenTracing span if you have a global tracer configured.
-//
-// Deprecated: Use CollectedRequest()
-func TimeRequestHistogram(ctx oldcontext.Context, method string, metric *prometheus.HistogramVec, f func(context.Context) error) error {
-	return CollectedRequest(ctx, method, NewHistogramCollector(metric), ErrorCode, f)
-}
-
-// TimeRequestHistogramStatus runs 'f' and records how long it took in the given Prometheus
-// histogram metric. If 'f' returns successfully, record a "200". Otherwise, record
-// "500".  It will also emit an OpenTracing span if you have a global tracer configured.
-//
-// Deprecated: Use CollectedRequest()
-func TimeRequestHistogramStatus(ctx oldcontext.Context, method string, metric *prometheus.HistogramVec, toStatusCode func(error) string, f func(context.Context) error) error {
-	return CollectedRequest(ctx, method, NewHistogramCollector(metric), toStatusCode, f)
 }

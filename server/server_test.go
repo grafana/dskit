@@ -6,6 +6,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -28,7 +29,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/log"

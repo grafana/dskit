@@ -5,10 +5,10 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"time"
 
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
 	grpcUtils "github.com/grafana/dskit/grpcutil"

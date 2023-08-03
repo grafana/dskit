@@ -5,6 +5,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -22,7 +23,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/exporter-toolkit/web"
 	"github.com/soheilhy/cmux"
-	"golang.org/x/net/context"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

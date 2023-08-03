@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package server;
 
-option go_package = "github.com/weaveworks/common/server";
-
 import "google/protobuf/empty.proto";
 
 service FakeServer {

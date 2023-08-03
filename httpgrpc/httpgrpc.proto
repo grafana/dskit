@@ -11,7 +11,6 @@ option (gogoproto.goproto_stringer_all) = false;
 option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
-option go_package = "github.com/weaveworks/common/httpgrpc";
 
 service HTTP {
   rpc Handle(HTTPRequest) returns (HTTPResponse) {};

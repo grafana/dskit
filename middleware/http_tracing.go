@@ -18,6 +18,8 @@ import (
 // than the one which implements Websockets. (No semver on nethttp)
 var _ = nethttp.MWURLTagFunc
 
+type HttpgppcForwardedKey struct{}
+
 // Tracer is a middleware which traces incoming requests.
 type Tracer struct {
 	RouteMatcher RouteMatcher
@@ -96,6 +98,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		urlPath := r.URL.Path
 		userAgent := r.Header.Get("User-Agent")
 
+		parentSpan := opentracing.SpanFromContext(ctx)
 		// tag parent httpgrpc.HTTP/Handle server span, if it exists
 		if parentSpan != nil {
 			parentSpan.SetTag(string(ext.HTTPUrl), urlPath)

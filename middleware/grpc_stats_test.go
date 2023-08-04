@@ -52,11 +52,11 @@ func TestGrpcStats(t *testing.T) {
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
+	grpc_health_v1.RegisterHealthServer(serv, health.NewServer())
+
 	go func() {
 		require.NoError(t, serv.Serve(listener))
 	}()
-
-	grpc_health_v1.RegisterHealthServer(serv, health.NewServer())
 
 	closed := false
 	conn, err := grpc.Dial(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -143,11 +143,11 @@ func TestGrpcStatsStreaming(t *testing.T) {
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
+	middleware_test.RegisterEchoServerServer(serv, &halfEcho{log: t.Log})
+
 	go func() {
 		require.NoError(t, serv.Serve(listener))
 	}()
-
-	middleware_test.RegisterEchoServerServer(serv, &halfEcho{log: t.Log})
 
 	conn, err := grpc.Dial(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(10e6), grpc.MaxCallSendMsgSize(10e6)))
 	require.NoError(t, err)

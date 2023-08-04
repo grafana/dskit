@@ -3,3 +3,7 @@ vendor
 .idea
 .vscode
 .DS_Store
+server/certs/*.key
+server/certs/*.crt
+server/certs/*.csr
+server/certs/*.srl

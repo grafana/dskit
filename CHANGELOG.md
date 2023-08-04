@@ -127,6 +127,7 @@
 * [ENHANCEMENT] BasicLifecycler: Added `RingTokenGenerator` configuration that specifies the `TokenGenerator` implementation that is used for token generation. Default value is nil, meaning that `RandomTokenGenerator` is used. #323
 * [ENHANCEMENT] Ring: add support for hedging to `DoUntilQuorum` when request minimization is enabled. #330
 * [ENHANCEMENT] Lifecycler: allow instances to register in ascending order of ids in case of spread minimizing token generation strategy. #326
+* [ENHANCEMENT] Remove dependency on `github.com/weaveworks/common` package by migrating code to a corresponding package in `github.com/grafana/dskit`. #342
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

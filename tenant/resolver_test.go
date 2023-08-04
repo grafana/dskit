@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/dskit/user"
 )
 
 func strptr(s string) *string {

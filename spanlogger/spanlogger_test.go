@@ -10,7 +10,8 @@ import (
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/dskit/user"
 )
 
 func TestSpanLogger_Log(t *testing.T) {

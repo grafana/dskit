@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package middleware;
+
+option go_package = "middleware_test";
+
+service EchoServer {
+    rpc Process(stream Msg) returns (stream Msg) {};
+}
+
+message Msg {
+    bytes body = 1;
+}

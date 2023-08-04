@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	grpcUtils "github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
 )
@@ -24,7 +25,7 @@ func observe(ctx context.Context, hist *prometheus.HistogramVec, method string, 
 	if err != nil {
 		if errResp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 			respStatus = strconv.Itoa(int(errResp.Code))
-		} else if grpcUtils.IsCanceled(err) {
+		} else if grpcutil.IsCanceled(err) {
 			respStatus = "cancel"
 		} else {
 			respStatus = "error"
@@ -70,20 +71,50 @@ func StreamClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.Str
 	) (grpc.ClientStream, error) {
 		start := time.Now()
 		stream, err := streamer(ctx, desc, cc, method, opts...)
-		return &instrumentedClientStream{
-			metric:       metric,
-			start:        start,
-			method:       method,
-			ClientStream: stream,
-		}, err
+		s := &instrumentedClientStream{
+			metric:        metric,
+			start:         start,
+			method:        method,
+			serverStreams: desc.ServerStreams,
+			finished:      atomic.NewBool(false),
+			finishedChan:  make(chan struct{}),
+			ClientStream:  stream,
+		}
+		s.awaitCompletion(ctx)
+		return s, err
 	}
 }
 
+// This implementation is heavily inspired by github.com/opentracing-contrib/go-grpc's openTracingClientStream.
 type instrumentedClientStream struct {
-	metric *prometheus.HistogramVec
-	start  time.Time
-	method string
+	metric        *prometheus.HistogramVec
+	start         time.Time
+	method        string
+	serverStreams bool
+	finished      *atomic.Bool
+	finishedChan  chan struct{}
 	grpc.ClientStream
+}
+
+func (s *instrumentedClientStream) awaitCompletion(ctx context.Context) {
+	go func() {
+		select {
+		case <-s.finishedChan:
+			// Stream has finished for another reason, nothing more to do.
+		case <-ctx.Done():
+			s.finish(ctx.Err())
+		}
+	}()
+}
+
+func (s *instrumentedClientStream) finish(err error) {
+	if !s.finished.CompareAndSwap(false, true) {
+		return
+	}
+
+	close(s.finishedChan)
+
+	s.metric.WithLabelValues(s.method, errorCode(err)).Observe(time.Since(s.start).Seconds())
 }
 
 func (s *instrumentedClientStream) SendMsg(m interface{}) error {
@@ -92,25 +123,25 @@ func (s *instrumentedClientStream) SendMsg(m interface{}) error {
 		return nil
 	}
 
-	if err == io.EOF {
-		s.metric.WithLabelValues(s.method, errorCode(nil)).Observe(time.Since(s.start).Seconds())
-	} else {
-		s.metric.WithLabelValues(s.method, errorCode(err)).Observe(time.Since(s.start).Seconds())
-	}
-
+	s.finish(err)
 	return err
 }
 
 func (s *instrumentedClientStream) RecvMsg(m interface{}) error {
 	err := s.ClientStream.RecvMsg(m)
+	if !s.serverStreams {
+		// Unary server: this is the only message we'll receive, so the stream has ended.
+		s.finish(err)
+	}
+
 	if err == nil {
 		return nil
 	}
 
 	if err == io.EOF {
-		s.metric.WithLabelValues(s.method, errorCode(nil)).Observe(time.Since(s.start).Seconds())
+		s.finish(nil)
 	} else {
-		s.metric.WithLabelValues(s.method, errorCode(err)).Observe(time.Since(s.start).Seconds())
+		s.finish(err)
 	}
 
 	return err
@@ -119,9 +150,17 @@ func (s *instrumentedClientStream) RecvMsg(m interface{}) error {
 func (s *instrumentedClientStream) Header() (metadata.MD, error) {
 	md, err := s.ClientStream.Header()
 	if err != nil {
-		s.metric.WithLabelValues(s.method, errorCode(err)).Observe(time.Since(s.start).Seconds())
+		s.finish(err)
 	}
 	return md, err
+}
+
+func (s *instrumentedClientStream) CloseSend() error {
+	err := s.ClientStream.CloseSend()
+	if err != nil {
+		s.finish(err)
+	}
+	return err
 }
 
 // errorCode converts an error into an error code string.
@@ -133,7 +172,7 @@ func errorCode(err error) string {
 	if errResp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		statusFamily := int(errResp.Code / 100)
 		return strconv.Itoa(statusFamily) + "xx"
-	} else if grpcUtils.IsCanceled(err) {
+	} else if grpcutil.IsCanceled(err) {
 		return "cancel"
 	} else {
 		return "error"

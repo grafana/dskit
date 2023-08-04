@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
@@ -84,16 +83,16 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, prefix string) {
 
 // NewClient returns a new Client.
 func NewClient(cfg Config, codec codec.Codec, logger log.Logger, registerer prometheus.Registerer) (*Client, error) {
-	client, err := consul.NewClient(&consul.Config{
-		Address: cfg.Host,
-		Token:   cfg.ACLToken.String(),
-		Scheme:  "http",
-		HttpClient: &http.Client{
-			Transport: cleanhttp.DefaultPooledTransport(),
-			// See https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/
-			Timeout: cfg.HTTPClientTimeout,
-		},
-	})
+	config := &consul.Config{
+		Address:   cfg.Host,
+		Token:     cfg.ACLToken.String(),
+		Scheme:    "http",
+		Transport: cleanhttp.DefaultPooledTransport(),
+	}
+	client, err := consul.NewClient(config)
+	// See https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/
+	config.HttpClient.Timeout = cfg.HTTPClientTimeout
+
 	if err != nil {
 		return nil, err
 	}

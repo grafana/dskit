@@ -27,16 +27,6 @@
          "depends_on": [
             "make-lint"
          ],
-         "image": "golang:1.18.4",
-         "name": "make-test (go 1.18.4)"
-      },
-      {
-         "commands": [
-            "make test"
-         ],
-         "depends_on": [
-            "make-lint"
-         ],
          "image": "golang:1.19.3",
          "name": "make-test (go 1.19.3)"
       },
@@ -66,6 +56,6 @@
 }
 ---
 kind: signature
-hmac: ba2e91169a3cbf382b561c4dacfb5919852c86b5af7614d9621f260228164234
+hmac: ee344abb0ee88da8a963ac73a95cbdb417f8612b23e6d329cb5ab55da16a6a46
 
 ...

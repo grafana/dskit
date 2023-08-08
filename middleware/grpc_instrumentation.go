@@ -132,6 +132,7 @@ func (s *instrumentedClientStream) RecvMsg(m interface{}) error {
 	if !s.serverStreams {
 		// Unary server: this is the only message we'll receive, so the stream has ended.
 		s.finish(err)
+		return err
 	}
 
 	if err == nil {

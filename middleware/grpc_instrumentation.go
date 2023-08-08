@@ -127,8 +127,9 @@ func (s *instrumentedClientStream) finish(err error) {
 
 func (s *instrumentedClientStream) SendMsg(m interface{}) error {
 	err := s.stream.SendMsg(m)
-	if err == nil {
-		return nil
+	if err == nil || err == io.EOF {
+		// If SendMsg returns io.EOF, the true error is available from RecvMsg, so we shouldn't consider the stream failed at this point.
+		return err
 	}
 
 	s.finish(err)

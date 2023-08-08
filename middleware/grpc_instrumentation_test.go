@@ -84,8 +84,13 @@ func TestStreamClientInstrumentInterceptor_SendMsg(t *testing.T) {
 	require.NoError(t, err)
 	requireNoRequestMetrics(t, reg)
 
-	mockStream.sendMsgError = errors.New("something went wrong")
+	mockStream.sendMsgError = io.EOF
 	err = stream.SendMsg("message 2")
+	require.Equal(t, io.EOF, err)
+	requireNoRequestMetrics(t, reg) // If SendMsg returns io.EOF, the true error is available from RecvMsg, so we shouldn't consider the stream failed at this point.
+
+	mockStream.sendMsgError = errors.New("something went wrong")
+	err = stream.SendMsg("message 3")
 	require.Equal(t, mockStream.sendMsgError, err)
 	requireRequestMetrics(t, reg, "error", 1)
 

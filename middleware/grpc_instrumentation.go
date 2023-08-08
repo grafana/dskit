@@ -78,7 +78,7 @@ func StreamClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.Str
 			serverStreams: desc.ServerStreams,
 			finished:      atomic.NewBool(false),
 			finishedChan:  make(chan struct{}),
-			ClientStream:  stream,
+			stream:        stream,
 		}
 		s.awaitCompletion(ctx)
 		return s, err
@@ -93,7 +93,15 @@ type instrumentedClientStream struct {
 	serverStreams bool
 	finished      *atomic.Bool
 	finishedChan  chan struct{}
-	grpc.ClientStream
+	stream        grpc.ClientStream
+}
+
+func (s *instrumentedClientStream) Trailer() metadata.MD {
+	return s.stream.Trailer()
+}
+
+func (s *instrumentedClientStream) Context() context.Context {
+	return s.stream.Context()
 }
 
 func (s *instrumentedClientStream) awaitCompletion(ctx context.Context) {
@@ -118,7 +126,7 @@ func (s *instrumentedClientStream) finish(err error) {
 }
 
 func (s *instrumentedClientStream) SendMsg(m interface{}) error {
-	err := s.ClientStream.SendMsg(m)
+	err := s.stream.SendMsg(m)
 	if err == nil {
 		return nil
 	}
@@ -128,7 +136,7 @@ func (s *instrumentedClientStream) SendMsg(m interface{}) error {
 }
 
 func (s *instrumentedClientStream) RecvMsg(m interface{}) error {
-	err := s.ClientStream.RecvMsg(m)
+	err := s.stream.RecvMsg(m)
 	if !s.serverStreams {
 		// Unary server: this is the only message we'll receive, so the stream has ended.
 		s.finish(err)
@@ -149,7 +157,7 @@ func (s *instrumentedClientStream) RecvMsg(m interface{}) error {
 }
 
 func (s *instrumentedClientStream) Header() (metadata.MD, error) {
-	md, err := s.ClientStream.Header()
+	md, err := s.stream.Header()
 	if err != nil {
 		s.finish(err)
 	}
@@ -157,7 +165,7 @@ func (s *instrumentedClientStream) Header() (metadata.MD, error) {
 }
 
 func (s *instrumentedClientStream) CloseSend() error {
-	err := s.ClientStream.CloseSend()
+	err := s.stream.CloseSend()
 	if err != nil {
 		s.finish(err)
 	}

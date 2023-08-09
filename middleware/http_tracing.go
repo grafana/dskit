@@ -64,6 +64,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		parentSpan := opentracing.SpanFromContext(ctx)
 		if parentSpan, ok := parentSpan.(*jaeger.Span); ok {
 			if parentSpan.OperationName() != httpGRPCHandleMethod {
+				next.ServeHTTP(w, r)
 				return
 			}
 		}

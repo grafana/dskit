@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -19,8 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
+	"github.com/uber/jaeger-client-go"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -768,6 +772,59 @@ func TestLogSourceIPs(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, fake.sourceIPs, "127.0.0.1")
+}
+
+func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
+	jaegerTrace := jaegercfg.Configuration{}
+	closer, err := jaegerTrace.InitGlobalTracer("test")
+	require.NoError(t, err)
+	defer closer.Close()
+
+	var cfg Config
+	cfg.HTTPListenPort = 9090
+	cfg.GRPCListenAddress = "localhost"
+	cfg.GRPCListenPort = 1234
+	cfg.Router = middleware.InitHTTPGRPCMiddleware(mux.NewRouter())
+
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	server.HTTP.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		span := opentracing.SpanFromContext(r.Context()).(*jaeger.Span)
+		_, err := fmt.Fprint(w, span.OperationName())
+		require.NoError(t, err)
+	})
+	server.HTTP.HandleFunc("/hello/{pathParam}", func(w http.ResponseWriter, r *http.Request) {
+		span := opentracing.SpanFromContext(r.Context()).(*jaeger.Span)
+		_, err := fmt.Fprint(w, span.OperationName())
+		require.NoError(t, err)
+	})
+
+	go func() {
+		require.NoError(t, server.Run())
+	}()
+
+	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/hello", nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, "HTTP GET - hello", string(body))
+	}
+	{
+		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/hello/world", nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, "HTTP GET - hello_pathparam", string(body))
+	}
+
+	server.Shutdown()
+
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {

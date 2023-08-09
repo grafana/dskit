@@ -55,9 +55,10 @@ type HTTPGRPCTracer struct {
 }
 
 // InitHTTPGRPCMiddleware initializes gorilla/mux-compatible HTTP middleware
-func InitHTTPGRPCMiddleware(router *mux.Router) {
+func InitHTTPGRPCMiddleware(router *mux.Router) *mux.Router {
 	middleware := HTTPGRPCTracer{RouteMatcher: router}
 	router.Use(middleware.Wrap)
+	return router
 }
 
 // Wrap implements Interface
@@ -82,11 +83,13 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		url := r.URL.String()
 		userAgent := r.Header.Get("User-Agent")
 
-		// tag parent httpgrpc.HTTP/Handle server span
-		parentSpan.SetTag(string(ext.HTTPUrl), url)
-		parentSpan.SetTag(string(ext.HTTPMethod), method)
-		parentSpan.SetTag("http.route", matchedRoute)
-		parentSpan.SetTag("http.user_agent", userAgent)
+		// tag parent httpgrpc.HTTP/Handle server span, if it exists
+		if parentSpan != nil {
+			parentSpan.SetTag(string(ext.HTTPUrl), url)
+			parentSpan.SetTag(string(ext.HTTPMethod), method)
+			parentSpan.SetTag("http.route", matchedRoute)
+			parentSpan.SetTag("http.user_agent", userAgent)
+		}
 
 		// create and start child HTTP span
 		// mirroring opentracing-contrib/go-stdlib/nethttp approach

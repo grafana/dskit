@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,11 +21,11 @@ import (
 	"testing"
 	"time"
 
+	httpgrpcServer "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
 	"github.com/uber/jaeger-client-go"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -775,56 +776,120 @@ func TestLogSourceIPs(t *testing.T) {
 }
 
 func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
-	jaegerTrace := jaegercfg.Configuration{}
-	closer, err := jaegerTrace.InitGlobalTracer("test")
-	require.NoError(t, err)
+	tracer, closer := jaeger.NewTracer(
+		"test",
+		jaeger.NewConstSampler(true),
+		jaeger.NewInMemoryReporter(),
+	)
+	opentracing.SetGlobalTracer(tracer)
 	defer closer.Close()
 
 	var cfg Config
 	cfg.HTTPListenPort = 9090
 	cfg.GRPCListenAddress = "localhost"
 	cfg.GRPCListenPort = 1234
+	cfg.GPRCServerMaxRecvMsgSize = 4 * 1024 * 1024
+	cfg.GRPCServerMaxSendMsgSize = 4 * 1024 * 1024
 	cfg.Router = middleware.InitHTTPGRPCMiddleware(mux.NewRouter())
 
 	server, err := New(cfg)
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+	type tracingSpanJSON struct {
+		OperationName string
+		Tags          map[string]interface{}
+	}
+
+	writeSpanOperationNameHandleFunc := func(w http.ResponseWriter, r *http.Request) {
 		span := opentracing.SpanFromContext(r.Context()).(*jaeger.Span)
+		spanTags := map[string]interface{}{}
+		for k, v := range span.Tags() {
+			spanTags[k] = v
+		}
+
+		jsonSpan := tracingSpanJSON{
+			OperationName: span.OperationName(),
+			Tags:          spanTags,
+		}
+		json.NewEncoder(w).Encode(jsonSpan)
 		_, err := fmt.Fprint(w, span.OperationName())
 		require.NoError(t, err)
-	})
-	server.HTTP.HandleFunc("/hello/{pathParam}", func(w http.ResponseWriter, r *http.Request) {
-		span := opentracing.SpanFromContext(r.Context()).(*jaeger.Span)
-		_, err := fmt.Fprint(w, span.OperationName())
-		require.NoError(t, err)
-	})
+	}
+
+	server.HTTP.HandleFunc("/hello", writeSpanOperationNameHandleFunc)
+	server.HTTP.HandleFunc("/hello/{pathParam}", writeSpanOperationNameHandleFunc)
 
 	go func() {
 		require.NoError(t, server.Run())
 	}()
 
+	helloRouteURL := "http://127.0.0.1:9090/hello"
+	helloRouteName := "hello"
+	expectedTagsHelloRoute := map[string]interface{}{
+		"component":       "net/http",
+		"span.kind":       "server",
+		"http.url":        helloRouteURL,
+		"http.method":     "GET",
+		"http.route":      helloRouteName,
+		"http.user_agent": "",
+	}
+	helloPathParamRouteURL := "http://127.0.0.1:9090/hello/world"
+	helloPathParamRouteName := "hello_pathparam"
+	expectedTagsHelloPathParamRoute := map[string]interface{}{
+		"component":       "net/http",
+		"span.kind":       "server",
+		"http.url":        helloPathParamRouteURL,
+		"http.method":     "GET",
+		"http.route":      helloPathParamRouteName,
+		"http.user_agent": "",
+	}
+
+	target := server.GRPCListenAddr()
+	conn, err := grpc.Dial(
+		target.String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)),
+	)
+	require.NoError(t, err)
+	defer conn.Close()
+	client := httpgrpc.NewHTTPClient(conn)
+
+	emulateHTTPGRPCPRoxy := func(
+		client httpgrpc.HTTPClient, req *http.Request,
+	) (*httpgrpc.HTTPResponse, error) {
+		require.NoError(t, err)
+		req.RequestURI = req.URL.String()
+		grpcReq, err := httpgrpcServer.HTTPRequest(req)
+		require.NoError(t, err)
+		return client.Handle(req.Context(), grpcReq)
+	}
+
 	{
-		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/hello", nil)
+		req, err := http.NewRequest(
+			"GET", helloRouteURL, bytes.NewReader([]byte{}),
+		)
+		resp, err := emulateHTTPGRPCPRoxy(client, req)
 		require.NoError(t, err)
-		resp, err := http.DefaultClient.Do(req)
+		var bodyJSON tracingSpanJSON
+		err = json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&bodyJSON)
 		require.NoError(t, err)
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		require.Equal(t, "HTTP GET - hello", string(body))
+		require.Equal(t, "HTTP GET - hello", bodyJSON.OperationName)
+		require.Equal(t, expectedTagsHelloRoute, bodyJSON.Tags)
 	}
 	{
-		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/hello/world", nil)
+		req, err := http.NewRequest(
+			"GET", helloPathParamRouteURL, bytes.NewReader([]byte{}),
+		)
+		resp, err := emulateHTTPGRPCPRoxy(client, req)
 		require.NoError(t, err)
-		resp, err := http.DefaultClient.Do(req)
+		var bodyJSON tracingSpanJSON
+		err = json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&bodyJSON)
 		require.NoError(t, err)
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		require.Equal(t, "HTTP GET - hello_pathparam", string(body))
+		require.Equal(t, "HTTP GET - hello_pathparam", bodyJSON.OperationName)
+		require.Equal(t, expectedTagsHelloPathParamRoute, bodyJSON.Tags)
 	}
 
 	server.Shutdown()
-
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {

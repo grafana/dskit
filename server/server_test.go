@@ -790,6 +790,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 	cfg.GPRCServerMaxRecvMsgSize = 4 * 1024 * 1024
 	cfg.GRPCServerMaxSendMsgSize = 4 * 1024 * 1024
 	cfg.Router = middleware.InitHTTPGRPCMiddleware(mux.NewRouter())
+	cfg.MetricsNamespace = "testing_httpgrpc_tracing"
 
 	server, err := New(cfg)
 	require.NoError(t, err)

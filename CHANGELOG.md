@@ -53,6 +53,7 @@
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
 * [FEATURE] Add `flagext.ParseFlagsAndArguments()` and `flagext.ParseFlagsWithoutArguments()` utilities. #341
+* [FEATURE] Add a rate limited logger `rateLimitedLogger`, used by `middleware.Log` for limiting the rate of logging errors `502` and `503`. The rate limit is configurable via the newly introduced `-server.log-error-rate` CLI flag. #352
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
 * [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274
 * [ENHANCEMENT] Add middleware package. #38

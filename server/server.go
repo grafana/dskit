@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/exporter-toolkit/web"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -120,6 +121,7 @@ type Config struct {
 	LogFormat                    log.Format    `yaml:"log_format"`
 	LogLevel                     log.Level     `yaml:"log_level"`
 	Log                          log.Interface `yaml:"-"`
+	LogErrorRate                 int           `yaml:"log_error_rate"`
 	LogSourceIPs                 bool          `yaml:"log_source_ips_enabled"`
 	LogSourceIPsHeader           string        `yaml:"log_source_ips_header"`
 	LogSourceIPsRegex            string        `yaml:"log_source_ips_regex"`
@@ -177,6 +179,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Base path to serve all API routes from (e.g. /v1/)")
 	cfg.LogFormat.RegisterFlags(f)
 	cfg.LogLevel.RegisterFlags(f)
+	f.IntVar(&cfg.LogErrorRate, "server.log-error-rate", 0, "The rate limit for logging errors. When 0 there is no rate limit.")
 	f.BoolVar(&cfg.LogSourceIPs, "server.log-source-ips-enabled", false, "Optionally log the source IPs.")
 	f.StringVar(&cfg.LogSourceIPsHeader, "server.log-source-ips-header", "", "Header field storing the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used")
 	f.StringVar(&cfg.LogSourceIPsRegex, "server.log-source-ips-regex", "", "Regex for matching the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used")
@@ -412,7 +415,12 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		}
 	}
 
-	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, sourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
+	var highVolumeErrorLog log.Interface
+	if cfg.LogErrorRate > 0 {
+		highVolumeErrorLog = log.NewRateLimitedLogger(logger, rate.Limit(cfg.LogErrorRate), 10)
+	}
+
+	defaultLogMiddleware := middleware.NewLogMiddleware(logger, highVolumeErrorLog, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, sourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
 	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
 
 	defaultHTTPMiddleware := []middleware.Interface{

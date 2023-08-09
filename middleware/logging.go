@@ -19,6 +19,7 @@ import (
 // Log middleware logs http requests
 type Log struct {
 	Log                      log.Interface
+	HighVolumeErrorLog       log.Interface
 	DisableRequestSuccessLog bool
 	LogRequestHeaders        bool // LogRequestHeaders true -> dump http headers at debug log level
 	LogRequestAtInfoLevel    bool // LogRequestAtInfoLevel true -> log requests at info log level
@@ -32,7 +33,7 @@ var defaultExcludedHeaders = map[string]bool{
 	"Authorization": true,
 }
 
-func NewLogMiddleware(log log.Interface, logRequestHeaders bool, logRequestAtInfoLevel bool, sourceIPs *SourceIPExtractor, headersList []string) Log {
+func NewLogMiddleware(log log.Interface, highVolumeErrorLog log.Interface, logRequestHeaders bool, logRequestAtInfoLevel bool, sourceIPs *SourceIPExtractor, headersList []string) Log {
 	httpHeadersToExclude := map[string]bool{}
 	for header := range defaultExcludedHeaders {
 		httpHeadersToExclude[header] = true
@@ -43,6 +44,7 @@ func NewLogMiddleware(log log.Interface, logRequestHeaders bool, logRequestAtInf
 
 	return Log{
 		Log:                   log,
+		HighVolumeErrorLog:    highVolumeErrorLog,
 		LogRequestHeaders:     logRequestHeaders,
 		LogRequestAtInfoLevel: logRequestAtInfoLevel,
 		SourceIPs:             sourceIPs,
@@ -50,22 +52,47 @@ func NewLogMiddleware(log log.Interface, logRequestHeaders bool, logRequestAtInf
 	}
 }
 
-// logWithRequest information from the request and context as fields.
-func (l Log) logWithRequest(r *http.Request) log.Interface {
-	localLog := l.Log
+// logsWithFields returns this Log's Log and HighVolumeErrorLog instances enriched
+// with the details from the request and context as fields.
+// If any of the instances is not set, the corresponding returned value is nil.
+func (l Log) logsWithFields(r *http.Request) (log.Interface, log.Interface) {
+	logWithRequest := l.logWithFields(r, l.Log)
+	highVolumeErrorLogWithRequest := l.logWithFields(r, l.HighVolumeErrorLog)
+
+	return logWithRequest, highVolumeErrorLogWithRequest
+}
+
+// logWithFields enriches the given log.Interface instance with the details from
+// the request and context as fields. If the former is nil, nil is returned.
+func (l Log) logWithFields(r *http.Request, logger log.Interface) log.Interface {
+	logWithFields := logger
+	if logWithFields == nil {
+		return nil
+	}
 	traceID, ok := tracing.ExtractTraceID(r.Context())
 	if ok {
-		localLog = localLog.WithField("traceID", traceID)
+		logWithFields = logWithFields.WithField("traceID", traceID)
 	}
 
 	if l.SourceIPs != nil {
 		ips := l.SourceIPs.Get(r)
 		if ips != "" {
-			localLog = localLog.WithField("sourceIPs", ips)
+			logWithFields = logWithFields.WithField("sourceIPs", ips)
 		}
 	}
 
-	return user.LogWith(r.Context(), localLog)
+	return user.LogWith(r.Context(), logWithFields)
+}
+
+// logHighVolumeError logs details about the error passed as input.
+// If the passed highVolumeErrorLog is set, the error is logged there at Warn level.
+// Otherwise, the error is logged by using the passed log, at Debug level.
+func (l Log) logHighVolumeError(highVolumeErrorLog, log log.Interface, format string, args ...interface{}) {
+	if highVolumeErrorLog != nil {
+		highVolumeErrorLog.Warnf(format, args...)
+	} else {
+		log.Debugf(format, args...)
+	}
 }
 
 // Wrap implements Middleware
@@ -73,12 +100,12 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		begin := time.Now()
 		uri := r.RequestURI // capture the URI before running next, as it may get rewritten
-		requestLog := l.logWithRequest(r)
+		requestLogger, highVolumeErrorLogger := l.logsWithFields(r)
 		// Log headers before running 'next' in case other interceptors change the data.
 		headers, err := dumpRequest(r, l.HTTPHeadersToExclude)
 		if err != nil {
 			headers = nil
-			requestLog.Errorf("Could not dump request headers: %v", err)
+			requestLogger.Errorf("Could not dump request headers: %v", err)
 		}
 		var buf bytes.Buffer
 		wrapped := newBadResponseLoggingWriter(w, &buf)
@@ -89,12 +116,12 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		if writeErr != nil {
 			if errors.Is(writeErr, context.Canceled) {
 				if l.LogRequestAtInfoLevel {
-					requestLog.Infof("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
+					requestLogger.Infof("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
 				} else {
-					requestLog.Debugf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
+					requestLogger.Debugf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
 				}
 			} else {
-				requestLog.Warnf("%s %s %s, error: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
+				requestLogger.Warnf("%s %s %s, error: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)
 			}
 
 			return
@@ -105,23 +132,28 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		case statusCode >= 200 && statusCode < 300 && l.DisableRequestSuccessLog:
 			return
 
-		case 100 <= statusCode && statusCode < 500 || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable:
+		case 100 <= statusCode && statusCode < 500:
 			if l.LogRequestAtInfoLevel {
-				requestLog.Infof("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
-
 				if l.LogRequestHeaders && headers != nil {
-					requestLog.Infof("ws: %v; %s", IsWSHandshakeRequest(r), string(headers))
+					requestLogger.Infof("%s %s (%d) %s ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers))
+				} else {
+					requestLogger.Infof("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
 				}
-				return
+			} else {
+				if l.LogRequestHeaders && headers != nil {
+					requestLogger.Debugf("%s %s (%d) %s ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers))
+				} else {
+					requestLogger.Debugf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
+				}
 			}
-
-			requestLog.Debugf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
+		case statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable:
 			if l.LogRequestHeaders && headers != nil {
-				requestLog.Debugf("ws: %v; %s", IsWSHandshakeRequest(r), string(headers))
+				l.logHighVolumeError(highVolumeErrorLogger, requestLogger, "%s %s (%d) %s ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers))
+			} else {
+				l.logHighVolumeError(highVolumeErrorLogger, requestLogger, "%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
 			}
 		default:
-			requestLog.Warnf("%s %s (%d) %s Response: %q ws: %v; %s",
-				r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers)
+			requestLogger.Warnf("%s %s (%d) %s Response: %q ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers)
 		}
 	})
 }

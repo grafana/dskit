@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -21,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	httpgrpcServer "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
@@ -37,6 +35,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/httpgrpc"
+	httpgrpcServer "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 )
@@ -800,31 +799,30 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		Tags          map[string]interface{}
 	}
 
-	writeSpanOperationNameHandleFunc := func(w http.ResponseWriter, r *http.Request) {
+	writeSpanToBodyHandleFunc := func(w http.ResponseWriter, r *http.Request) {
 		span := opentracing.SpanFromContext(r.Context()).(*jaeger.Span)
-		spanTags := map[string]interface{}{}
-		for k, v := range span.Tags() {
-			spanTags[k] = v
-		}
-
 		jsonSpan := tracingSpanJSON{
 			OperationName: span.OperationName(),
-			Tags:          spanTags,
+			Tags:          span.Tags(),
 		}
-		json.NewEncoder(w).Encode(jsonSpan)
-		_, err := fmt.Fprint(w, span.OperationName())
+		err := json.NewEncoder(w).Encode(jsonSpan)
 		require.NoError(t, err)
 	}
 
-	server.HTTP.HandleFunc("/hello", writeSpanOperationNameHandleFunc)
-	server.HTTP.HandleFunc("/hello/{pathParam}", writeSpanOperationNameHandleFunc)
+	helloRouteName := "hello"
+	// explicitly-named routes are labeled with the provided route name
+	server.HTTP.NewRoute().Name(helloRouteName).Path("/hello").HandlerFunc(writeSpanToBodyHandleFunc)
+
+	helloPathParamRouteTmpl := "/hello/{pathParam}"
+	// unnamed routes have their registered path template converted to a Prometheus-compatible label value
+	helloPathParamRouteLabel := middleware.MakeLabelValue(helloPathParamRouteTmpl)
+	server.HTTP.HandleFunc(helloPathParamRouteTmpl, writeSpanToBodyHandleFunc)
 
 	go func() {
 		require.NoError(t, server.Run())
 	}()
 
 	helloRouteURL := "http://127.0.0.1:9090/hello"
-	helloRouteName := "hello"
 	expectedTagsHelloRoute := map[string]interface{}{
 		"component":       "net/http",
 		"span.kind":       "server",
@@ -834,13 +832,12 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		"http.user_agent": "",
 	}
 	helloPathParamRouteURL := "http://127.0.0.1:9090/hello/world"
-	helloPathParamRouteName := "hello_pathparam"
 	expectedTagsHelloPathParamRoute := map[string]interface{}{
 		"component":       "net/http",
 		"span.kind":       "server",
 		"http.url":        helloPathParamRouteURL,
 		"http.method":     "GET",
-		"http.route":      helloPathParamRouteName,
+		"http.route":      helloPathParamRouteLabel,
 		"http.user_agent": "",
 	}
 
@@ -854,6 +851,8 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 	defer conn.Close()
 	client := httpgrpc.NewHTTPClient(conn)
 
+	// emulateHTTPGRPCPRoxy mimics the usage of the Server type as a load balancing proxy,
+	// wrapping http requests into gRPC requests to utilize gRPC load balancing capabilities
 	emulateHTTPGRPCPRoxy := func(
 		client httpgrpc.HTTPClient, req *http.Request,
 	) (*httpgrpc.HTTPResponse, error) {

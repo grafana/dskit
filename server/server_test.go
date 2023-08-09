@@ -799,6 +799,15 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		Tags          map[string]interface{}
 	}
 
+	// writeSpanToBodyHandleFunc provides a way to test tracing by dumping the data
+	// from the requests' currently-active span data into a structured JSON body.
+	//
+	// HTTPGRPCTracer's parent Span tagging cannot be tested with current tracer implementations;
+	// tagging the parentSpan depends on methods only available on the Jaeger tracer, which limits
+	// introspection in tests as jaeger.Tracer can only access the current span, not the parent.
+	//
+	// MockTracer from opentracing/opentracing-go provides visibility into all completed spans for
+	// testing, but does not implement the jaeger operations needed to tag the parent span
 	writeSpanToBodyHandleFunc := func(w http.ResponseWriter, r *http.Request) {
 		span := opentracing.SpanFromContext(r.Context()).(*jaeger.Span)
 		jsonSpan := tracingSpanJSON{
@@ -867,6 +876,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		req, err := http.NewRequest(
 			"GET", helloRouteURL, bytes.NewReader([]byte{}),
 		)
+		require.NoError(t, err)
 		resp, err := emulateHTTPGRPCPRoxy(client, req)
 		require.NoError(t, err)
 		var bodyJSON tracingSpanJSON
@@ -879,6 +889,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		req, err := http.NewRequest(
 			"GET", helloPathParamRouteURL, bytes.NewReader([]byte{}),
 		)
+		require.NoError(t, err)
 		resp, err := emulateHTTPGRPCPRoxy(client, req)
 		require.NoError(t, err)
 		var bodyJSON tracingSpanJSON

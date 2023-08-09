@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gorilla/mux"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -51,6 +52,12 @@ const httpGRPCHandleMethod = "/httpgrpc.HTTP/Handle"
 // HTTPGRPCTracer is a middleware which traces incoming requests.
 type HTTPGRPCTracer struct {
 	RouteMatcher RouteMatcher
+}
+
+// InitHTTPGRPCMiddleware initializes gorilla/mux-compatible HTTP middleware
+func InitHTTPGRPCMiddleware(router *mux.Router) {
+	middleware := HTTPGRPCTracer{RouteMatcher: router}
+	router.Use(middleware.Wrap)
 }
 
 // Wrap implements Interface

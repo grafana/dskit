@@ -54,6 +54,7 @@
 * [FEATURE] Add `log.BufferedLogger` type. #338
 * [FEATURE] Add `flagext.ParseFlagsAndArguments()` and `flagext.ParseFlagsWithoutArguments()` utilities. #341
 * [FEATURE] Add `log.RateLimitedLogger` for limiting the rate of logging. The `logger_rate_limit_discarded_log_lines_total` metrics traces the total number of discarded log lines per level. #352
+* [FEATURE] Add `middleware.HTTPGRPCTracer` for more detailed server-side tracing spans and tags on `httpgrpc.HTTP/Handle` requests>>>>>>> 5cb64fe (changelog)
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
 * [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274
 * [ENHANCEMENT] Add middleware package. #38

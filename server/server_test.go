@@ -820,13 +820,16 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 	}
 
 	helloRouteName := "hello"
-	// explicitly-named routes are labeled with the provided route name
+	// explicitly-named routes will be labeled using the provided route name
 	server.HTTP.NewRoute().Name(helloRouteName).Path("/hello").HandlerFunc(writeSpanToBodyHandleFunc)
 
 	helloPathParamRouteTmpl := "/hello/{pathParam}"
-	// unnamed routes have their registered path template converted to a Prometheus-compatible label value
-	helloPathParamRouteLabel := middleware.MakeLabelValue(helloPathParamRouteTmpl)
+	// unnamed routes will be labeled with their registered path template
 	server.HTTP.HandleFunc(helloPathParamRouteTmpl, writeSpanToBodyHandleFunc)
+
+	// extracted route names or path templates are converted to a Prometheus-compatible label value
+	expectedHelloRouteLabel := middleware.MakeLabelValue(helloRouteName)
+	expectedHelloPathParamRouteLabel := middleware.MakeLabelValue(helloPathParamRouteTmpl)
 
 	go func() {
 		require.NoError(t, server.Run())
@@ -838,7 +841,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		"span.kind":       "server",
 		"http.url":        helloRouteURL,
 		"http.method":     "GET",
-		"http.route":      helloRouteName,
+		"http.route":      expectedHelloRouteLabel,
 		"http.user_agent": "",
 	}
 	helloPathParamRouteURL := "http://127.0.0.1/hello/world"
@@ -847,7 +850,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		"span.kind":       "server",
 		"http.url":        helloPathParamRouteURL,
 		"http.method":     "GET",
-		"http.route":      helloPathParamRouteLabel,
+		"http.route":      expectedHelloPathParamRouteLabel,
 		"http.user_agent": "",
 	}
 
@@ -862,7 +865,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 	client := httpgrpc.NewHTTPClient(conn)
 
 	// emulateHTTPGRPCPRoxy mimics the usage of the Server type as a load balancing proxy,
-	// wrapping http requests into gRPC requests to utilize gRPC load balancing capabilities
+	// wrapping http requests into gRPC requests to utilize gRPC load balancing features
 	emulateHTTPGRPCPRoxy := func(
 		client httpgrpc.HTTPClient, req *http.Request,
 	) (*httpgrpc.HTTPResponse, error) {
@@ -883,7 +886,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		var bodyJSON tracingSpanJSON
 		err = json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&bodyJSON)
 		require.NoError(t, err)
-		require.Equal(t, "HTTP GET - hello", bodyJSON.OperationName)
+		require.Equal(t, "HTTP GET - "+expectedHelloRouteLabel, bodyJSON.OperationName)
 		require.Equal(t, expectedTagsHelloRoute, bodyJSON.Tags)
 	}
 	{
@@ -896,7 +899,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		var bodyJSON tracingSpanJSON
 		err = json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&bodyJSON)
 		require.NoError(t, err)
-		require.Equal(t, "HTTP GET - hello_pathparam", bodyJSON.OperationName)
+		require.Equal(t, "HTTP GET - "+expectedHelloPathParamRouteLabel, bodyJSON.OperationName)
 		require.Equal(t, expectedTagsHelloPathParamRoute, bodyJSON.Tags)
 	}
 

@@ -784,7 +784,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 	defer closer.Close()
 
 	var cfg Config
-	cfg.HTTPListenPort = 9090
+	cfg.HTTPListenPort = 9099
 	cfg.GRPCListenAddress = "localhost"
 	cfg.GRPCListenPort = 1234
 	cfg.GPRCServerMaxRecvMsgSize = 4 * 1024 * 1024
@@ -832,7 +832,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		require.NoError(t, server.Run())
 	}()
 
-	helloRouteURL := "http://127.0.0.1:9090/hello"
+	helloRouteURL := "http://127.0.0.1/hello"
 	expectedTagsHelloRoute := map[string]interface{}{
 		"component":       "net/http",
 		"span.kind":       "server",
@@ -841,7 +841,7 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 		"http.route":      helloRouteName,
 		"http.user_agent": "",
 	}
-	helloPathParamRouteURL := "http://127.0.0.1:9090/hello/world"
+	helloPathParamRouteURL := "http://127.0.0.1/hello/world"
 	expectedTagsHelloPathParamRoute := map[string]interface{}{
 		"component":       "net/http",
 		"span.kind":       "server",

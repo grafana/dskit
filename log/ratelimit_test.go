@@ -1,59 +1,176 @@
 package log
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-type counterLogger struct {
-	count int
-}
-
-func (c *counterLogger) Debugf(_ string, _ ...interface{}) { c.count++ }
-func (c *counterLogger) Debugln(_ ...interface{})          { c.count++ }
-func (c *counterLogger) Infof(_ string, _ ...interface{})  { c.count++ }
-func (c *counterLogger) Infoln(_ ...interface{})           { c.count++ }
-func (c *counterLogger) Warnf(_ string, _ ...interface{})  { c.count++ }
-func (c *counterLogger) Warnln(_ ...interface{})           { c.count++ }
-func (c *counterLogger) Errorf(_ string, _ ...interface{}) { c.count++ }
-func (c *counterLogger) Errorln(_ ...interface{})          { c.count++ }
-func (c *counterLogger) WithField(_ string, _ interface{}) Interface {
-	return c
-}
-func (c *counterLogger) WithFields(Fields) Interface {
-	return c
-}
-
 func TestRateLimitedLoggerLogs(t *testing.T) {
-	c := &counterLogger{}
-	r := NewRateLimitedLogger(c, 1, 1)
+	buf := bytes.NewBuffer(nil)
+	c := newCounterLogger(buf)
+	reg := prometheus.NewPedanticRegistry()
+	r := NewRateLimitedLogger(c, 1, 1, reg)
 
-	r.Errorln("asdf")
+	r.Errorln("Error will be logged")
 	assert.Equal(t, 1, c.count)
+
+	logContains := []string{"error", "Error will be logged"}
+	c.verify(t, logContains)
 }
 
 func TestRateLimitedLoggerLimits(t *testing.T) {
-	c := &counterLogger{}
-	r := NewRateLimitedLogger(c, 2, 2)
+	buf := bytes.NewBuffer(nil)
+	c := newCounterLogger(buf)
+	reg := prometheus.NewPedanticRegistry()
+	r := NewRateLimitedLogger(c, 2, 2, reg)
 
-	r.Errorln("asdf")
-	r.Infoln("asdf")
-	r.Debugln("asdf")
+	r.Errorln("error 1 will be logged")
+	assert.Equal(t, 1, c.count)
+	c.verify(t, []string{"error", "error 1 will be logged"})
+
+	r.Infoln("info 1 will be logged")
 	assert.Equal(t, 2, c.count)
+	c.verify(t, []string{"info", "info 1 will be logged"})
+
+	r.Debugln("debug 1 will be discarded")
+	assert.Equal(t, 2, c.count)
+
+	r.Warnln("warning 1 will be discarded")
+	assert.Equal(t, 2, c.count)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP rate_limit_logger_discarded_log_lines_total Total number of discarded log lines per level.
+		# TYPE rate_limit_logger_discarded_log_lines_total counter
+        rate_limit_logger_discarded_log_lines_total{level="debug"} 1
+        rate_limit_logger_discarded_log_lines_total{level="warning"} 1
+	`)))
+
+	// we wait 1 second, so the next group of lines can be logged
 	time.Sleep(time.Second)
-	r.Infoln("asdf")
+	r.Debugln("debug 2 will be logged")
 	assert.Equal(t, 3, c.count)
+	c.verify(t, []string{"debug", "debug 2 will be logged"})
+
+	r.Infoln("info 2 will be logged")
+	assert.Equal(t, 4, c.count)
+	c.verify(t, []string{"info", "info 2 will be logged"})
+
+	r.Errorln("error 2 will be discarded")
+	assert.Equal(t, 4, c.count)
+
+	r.Warnln("warning 2 will be discarded")
+	assert.Equal(t, 4, c.count)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP rate_limit_logger_discarded_log_lines_total Total number of discarded log lines per level.
+		# TYPE rate_limit_logger_discarded_log_lines_total counter
+        rate_limit_logger_discarded_log_lines_total{level="debug"} 1
+        rate_limit_logger_discarded_log_lines_total{level="error"} 1
+        rate_limit_logger_discarded_log_lines_total{level="warning"} 2
+	`)))
 }
 
 func TestRateLimitedLoggerWithFields(t *testing.T) {
-	c := &counterLogger{}
-	r := NewRateLimitedLogger(c, 1, 1)
-	r2 := r.WithField("key", "value")
+	buf := bytes.NewBuffer(nil)
+	c := newCounterLogger(buf)
+	reg := prometheus.NewPedanticRegistry()
+	logger := NewRateLimitedLogger(c, 0.0001, 1, reg)
+	loggerWithFields := logger.WithField("key", "value")
 
-	r.Errorf("asdf")
-	r2.Errorln("asdf")
-	r2.Warnln("asdf")
+	loggerWithFields.Errorln("Error will be logged")
 	assert.Equal(t, 1, c.count)
+	c.verify(t, []string{"key", "value", "error", "Error will be logged"})
+
+	logger.Infoln("Info will not be logged")
+	loggerWithFields.Debugln("Debug will not be logged")
+	loggerWithFields.Warnln("Warning will not be logged")
+	assert.Equal(t, 1, c.count)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP rate_limit_logger_discarded_log_lines_total Total number of discarded log lines per level.
+		# TYPE rate_limit_logger_discarded_log_lines_total counter
+        rate_limit_logger_discarded_log_lines_total{level="info"} 1
+        rate_limit_logger_discarded_log_lines_total{level="debug"} 1
+        rate_limit_logger_discarded_log_lines_total{level="warning"} 1
+	`)))
+}
+
+type counterLogger struct {
+	logger Interface
+	buf    *bytes.Buffer
+	count  int
+}
+
+func (c *counterLogger) Debugf(format string, args ...interface{}) {
+	c.logger.Debugf(format, args...)
+	c.count++
+}
+
+func (c *counterLogger) Debugln(args ...interface{}) {
+	c.logger.Debugln(args...)
+	c.count++
+}
+
+func (c *counterLogger) Infof(format string, args ...interface{}) {
+	c.logger.Infof(format, args...)
+	c.count++
+}
+
+func (c *counterLogger) Infoln(args ...interface{}) {
+	c.logger.Infoln(args...)
+	c.count++
+}
+
+func (c *counterLogger) Warnf(format string, args ...interface{}) {
+	c.logger.Warnf(format, args...)
+	c.count++
+}
+
+func (c *counterLogger) Warnln(args ...interface{}) {
+	c.logger.Warnln(args...)
+	c.count++
+}
+
+func (c *counterLogger) Errorf(format string, args ...interface{}) {
+	c.logger.Errorf(format, args...)
+	c.count++
+}
+
+func (c *counterLogger) Errorln(args ...interface{}) {
+	c.logger.Errorln(args...)
+	c.count++
+}
+
+func (c *counterLogger) WithField(key string, value interface{}) Interface {
+	c.logger = c.logger.WithField(key, value)
+	return c
+}
+
+func (c *counterLogger) WithFields(fields Fields) Interface {
+	c.logger = c.logger.WithFields(fields)
+	return c
+}
+
+func (c *counterLogger) verify(t *testing.T, logContains []string) {
+	for _, content := range logContains {
+		require.True(t, bytes.Contains(c.buf.Bytes(), []byte(content)))
+	}
+}
+
+func newCounterLogger(buf *bytes.Buffer) *counterLogger {
+	logrusLogger := logrus.New()
+	logrusLogger.Out = buf
+	logrusLogger.Level = logrus.DebugLevel
+	return &counterLogger{
+		logger: Logrus(logrusLogger),
+		buf:    buf,
+	}
 }

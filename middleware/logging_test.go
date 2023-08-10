@@ -183,7 +183,7 @@ func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
 			logrusLogger.Out = buf
 			logrusLogger.Level = logrus.DebugLevel
 
-			loggingMiddleware := NewLogMiddleware(log.Logrus(logrusLogger), nil, true, false, nil, tc.excludeHeaderList)
+			loggingMiddleware := NewLogMiddleware(log.Logrus(logrusLogger), true, false, nil, tc.excludeHeaderList)
 
 			handler := func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, "<html><body>Hello world!</body></html>")
@@ -203,74 +203,6 @@ func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
 				require.NotContains(t, output, header)
 			}
 		})
-	}
-}
-
-func TestLoggingRequestsWithError(t *testing.T) {
-	for _, tc := range []struct {
-		err                error
-		statusCode         int
-		highVolumeErrorLog bool
-		logContains        []string
-	}{{
-		err:         errors.New("Bad Gateway"),
-		statusCode:  502,
-		logContains: []string{"debug", "GET http://example.com/foo (502)"},
-	}, {
-		err:                errors.New("Bad Gateway"),
-		statusCode:         502,
-		highVolumeErrorLog: true,
-		logContains:        []string{"warning", "GET http://example.com/foo (502)"},
-	}, {
-		err:         errors.New("Service Unavailable"),
-		statusCode:  503,
-		logContains: []string{"debug", "GET http://example.com/foo (503)"},
-	}, {
-		err:                errors.New("Service Unavailable"),
-		statusCode:         503,
-		highVolumeErrorLog: true,
-		logContains:        []string{"warning", "GET http://example.com/foo (503)"},
-	}, {
-		err:         errors.New("Gateway Timeout"),
-		statusCode:  504,
-		logContains: []string{"warning", "GET http://example.com/foo (504)"},
-	}} {
-		buf := bytes.NewBuffer(nil)
-		logrusLogger := logrus.New()
-		logrusLogger.Out = buf
-		logrusLogger.Level = logrus.DebugLevel
-
-		var highVolumeErrorLog log.Interface
-		if tc.highVolumeErrorLog {
-			highVolumeErrorLog = log.NewRateLimitedLogger(log.Logrus(logrusLogger), 1, 1)
-		}
-
-		loggingMiddleware := Log{
-			Log:                   log.Logrus(logrusLogger),
-			HighVolumeErrorLog:    highVolumeErrorLog,
-			LogRequestAtInfoLevel: true,
-		}
-		handler := func(w http.ResponseWriter, r *http.Request) {
-			if tc.err == nil {
-				_, _ = io.WriteString(w, "<html><body>Hello World!</body></html>")
-			} else {
-				w.WriteHeader(tc.statusCode)
-			}
-		}
-		loggingHandler := loggingMiddleware.Wrap(http.HandlerFunc(handler))
-
-		req := httptest.NewRequest("GET", "http://example.com/foo", nil)
-		recorder := httptest.NewRecorder()
-
-		w := errorWriter{
-			err: tc.err,
-			w:   recorder,
-		}
-		loggingHandler.ServeHTTP(w, req)
-
-		for _, content := range tc.logContains {
-			require.True(t, bytes.Contains(buf.Bytes(), []byte(content)))
-		}
 	}
 }
 

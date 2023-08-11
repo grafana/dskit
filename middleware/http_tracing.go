@@ -130,7 +130,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 			startSpanOpts = append(
 				startSpanOpts,
 				opentracing.SpanReference{
-					Type:              opentracing.SpanReferenceType(1),
+					Type:              opentracing.ChildOfRef,
 					ReferencedContext: parentSpan.Context(),
 				})
 		}

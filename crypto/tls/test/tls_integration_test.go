@@ -355,7 +355,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 	// TODO: Investigate why we don't really receive the error about the
 	// bad certificate from the server side and just see connection
 	// closed/reset instead
-	badCertErr := errorContainsString("remote error: tls: bad certificate")
+	badCertErr := errorContainsString(badCertificateErrorMessage)
 	newIntegrationClientServer(
 		t,
 		cfg,

@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/weaveworks/common/fs"
+	"github.com/grafana/dskit/fs"
 )
 
 type mockInode struct{}

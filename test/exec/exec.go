@@ -9,7 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/weaveworks/common/exec"
+	"github.com/grafana/dskit/exec"
 )
 
 type mockCmd struct {

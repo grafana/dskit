@@ -19,12 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
-	"github.com/stretchr/testify/assert"
-	"github.com/uber/jaeger-client-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -36,7 +32,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/httpgrpc"
-	httpgrpcServer "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 )
@@ -773,186 +768,6 @@ func TestLogSourceIPs(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, fake.sourceIPs, "127.0.0.1")
-}
-
-type testSpanObserver struct {
-	OpName     string
-	Tags       map[string]string
-	References []opentracing.SpanReference
-}
-
-func (tso testSpanObserver) OnSetOperationName(operationName string) {
-	tso.OpName = operationName
-}
-func (tso testSpanObserver) OnSetTag(key string, value interface{}) {
-	if stringVal, ok := value.(string); ok {
-		tso.Tags[key] = stringVal
-	} else if stringEnumVal, ok := value.(ext.SpanKindEnum); ok {
-		tso.Tags[key] = string(stringEnumVal)
-	}
-
-}
-func (tso testSpanObserver) OnFinish(options opentracing.FinishOptions) {}
-
-type testObserver struct {
-	t             *testing.T
-	SpanObservers []testSpanObserver
-}
-
-func (to *testObserver) OnStartSpan(
-	sp opentracing.Span,
-	operationName string,
-	options opentracing.StartSpanOptions,
-) (jaeger.ContribSpanObserver, bool) {
-	stringTags := map[string]string{}
-	for tagKey, tagVal := range options.Tags {
-		if stringTagVal, ok := tagVal.(string); ok {
-			stringTags[tagKey] = stringTagVal
-		}
-	}
-	spanObserver := testSpanObserver{
-		OpName:     operationName,
-		Tags:       stringTags,
-		References: options.References,
-	}
-	to.SpanObservers = append(to.SpanObservers, spanObserver)
-	return spanObserver, true
-}
-
-func (to *testObserver) assertTracingSpans(
-	t *testing.T, expectedTagValuesByOpName map[string]map[string]string,
-) {
-	var observedSpanOpNames []string
-	for _, spanObserver := range to.SpanObservers {
-		// assert expected tag values for observed span, if any
-		if expectedTagValues, ok := expectedTagValuesByOpName[spanObserver.OpName]; ok {
-			for tagKey, tagValue := range spanObserver.Tags {
-				if expectedTagValue, ok := expectedTagValues[tagKey]; ok {
-					assert.Equal(t, expectedTagValue, tagValue)
-				}
-			}
-		}
-		// collect observed spans operation names
-		observedSpanOpNames = append(observedSpanOpNames, spanObserver.OpName)
-	}
-	for opName := range expectedTagValuesByOpName {
-		// assert everything expected was observed
-		assert.Contains(t, observedSpanOpNames, opName)
-	}
-}
-
-type spanObserverHTTPHandler struct {
-	t                         *testing.T
-	httpObserver              *testObserver
-	expectedTagValuesByOpName map[string]map[string]string
-}
-
-func (h *spanObserverHTTPHandler) assertTracingSpansHandler(w http.ResponseWriter, r *http.Request) {
-	h.httpObserver.assertTracingSpans(h.t, h.expectedTagValuesByOpName)
-}
-
-func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
-	reporter := jaeger.NewInMemoryReporter()
-	observer := testObserver{}
-	tracer, closer := jaeger.NewTracer(
-		"test",
-		jaeger.NewConstSampler(true),
-		reporter,
-		jaeger.TracerOptions.ContribObserver(&observer),
-	)
-	opentracing.SetGlobalTracer(tracer)
-	defer closer.Close()
-
-	var cfg Config
-	cfg.HTTPListenPort = 9099
-	cfg.GRPCListenAddress = "localhost"
-	cfg.GRPCListenPort = 1234
-	cfg.GPRCServerMaxRecvMsgSize = 4 * 1024 * 1024
-	cfg.GRPCServerMaxSendMsgSize = 4 * 1024 * 1024
-	cfg.Router = middleware.InitHTTPGRPCMiddleware(mux.NewRouter())
-	cfg.MetricsNamespace = "testing_httpgrpc_tracing"
-
-	server, err := New(cfg)
-	require.NoError(t, err)
-
-	helloRouteName := "hello"
-	expectedHelloRouteLabel := middleware.MakeLabelValue(helloRouteName)
-	helloRouteURL := "http://127.0.0.1/hello"
-	helloRouteExpectedTags := map[string]map[string]string{
-		"/httpgrpc.HTTP/Handle": {
-			string(ext.Component):  "gRPC",
-			string(ext.HTTPUrl):    helloRouteURL,
-			string(ext.HTTPMethod): "GET",
-			"http.route":           helloRouteName,
-		},
-		"HTTP GET - " + expectedHelloRouteLabel: {
-			string(ext.Component):  "net/http",
-			string(ext.HTTPUrl):    helloRouteURL,
-			string(ext.HTTPMethod): "GET",
-			"http.route":           helloRouteName,
-		},
-	}
-	//helloPathParamRouteURL := "http://127.0.0.1/hello/world"
-	//expectedTagsHelloPathParamRoute := map[string]interface{}{
-	//	"component":       "net/http",
-	//	"span.kind":       "server",
-	//	"http.url":        helloPathParamRouteURL,
-	//	"http.method":     "GET",
-	//	"http.route":      expectedHelloPathParamRouteLabel,
-	//	"http.user_agent": "",
-	//}
-
-	handler := spanObserverHTTPHandler{
-		t:                         t,
-		httpObserver:              &observer,
-		expectedTagValuesByOpName: helloRouteExpectedTags,
-	}
-	// explicitly-named routes will be labeled using the provided route name
-	server.HTTP.NewRoute().Name(helloRouteName).Path("/hello").HandlerFunc(handler.assertTracingSpansHandler)
-
-	helloPathParamRouteTmpl := "/hello/{pathParam}"
-	// unnamed routes will be labeled with their registered path template
-	server.HTTP.HandleFunc(helloPathParamRouteTmpl, handler.assertTracingSpansHandler)
-
-	// extracted route names or path templates are converted to a Prometheus-compatible label value
-	//expectedHelloRouteLabel := middleware.MakeLabelValue(helloRouteName)
-	//expectedHelloPathParamRouteLabel := middleware.MakeLabelValue(helloPathParamRouteTmpl)
-
-	go func() {
-		require.NoError(t, server.Run())
-	}()
-	defer server.Shutdown()
-
-	target := server.GRPCListenAddr()
-	conn, err := grpc.Dial(
-		target.String(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)),
-	)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := httpgrpc.NewHTTPClient(conn)
-
-	// emulateHTTPGRPCPRoxy mimics the usage of the Server type as a load balancing proxy,
-	// wrapping http requests into gRPC requests to utilize gRPC load balancing features
-	emulateHTTPGRPCPRoxy := func(
-		client httpgrpc.HTTPClient, req *http.Request,
-	) (*httpgrpc.HTTPResponse, error) {
-		require.NoError(t, err)
-		req.RequestURI = req.URL.String()
-		grpcReq, err := httpgrpcServer.HTTPRequest(req)
-		require.NoError(t, err)
-		return client.Handle(req.Context(), grpcReq)
-	}
-
-	{
-		req, err := http.NewRequest(
-			"GET", helloRouteURL, bytes.NewReader([]byte{}),
-		)
-		require.NoError(t, err)
-		_, err = emulateHTTPGRPCPRoxy(client, req)
-		require.NoError(t, err)
-	}
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {

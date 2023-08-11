@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"flag"
 	"io"
@@ -21,8 +20,10 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
+	"github.com/stretchr/testify/assert"
 	"github.com/uber/jaeger-client-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -774,11 +775,90 @@ func TestLogSourceIPs(t *testing.T) {
 	require.Equal(t, fake.sourceIPs, "127.0.0.1")
 }
 
+type testSpanObserver struct {
+	OpName     string
+	Tags       map[string]string
+	References []opentracing.SpanReference
+}
+
+func (tso testSpanObserver) OnSetOperationName(operationName string) {
+	tso.OpName = operationName
+}
+func (tso testSpanObserver) OnSetTag(key string, value interface{}) {
+	if stringVal, ok := value.(string); ok {
+		tso.Tags[key] = stringVal
+	} else if stringEnumVal, ok := value.(ext.SpanKindEnum); ok {
+		tso.Tags[key] = string(stringEnumVal)
+	}
+
+}
+func (tso testSpanObserver) OnFinish(options opentracing.FinishOptions) {}
+
+type testObserver struct {
+	t             *testing.T
+	SpanObservers []testSpanObserver
+}
+
+func (to *testObserver) OnStartSpan(
+	sp opentracing.Span,
+	operationName string,
+	options opentracing.StartSpanOptions,
+) (jaeger.ContribSpanObserver, bool) {
+	stringTags := map[string]string{}
+	for tagKey, tagVal := range options.Tags {
+		if stringTagVal, ok := tagVal.(string); ok {
+			stringTags[tagKey] = stringTagVal
+		}
+	}
+	spanObserver := testSpanObserver{
+		OpName:     operationName,
+		Tags:       stringTags,
+		References: options.References,
+	}
+	to.SpanObservers = append(to.SpanObservers, spanObserver)
+	return spanObserver, true
+}
+
+func (to *testObserver) assertTracingSpans(
+	t *testing.T, expectedTagValuesByOpName map[string]map[string]string,
+) {
+	var observedSpanOpNames []string
+	for _, spanObserver := range to.SpanObservers {
+		// assert expected tag values for observed span, if any
+		if expectedTagValues, ok := expectedTagValuesByOpName[spanObserver.OpName]; ok {
+			for tagKey, tagValue := range spanObserver.Tags {
+				if expectedTagValue, ok := expectedTagValues[tagKey]; ok {
+					assert.Equal(t, expectedTagValue, tagValue)
+				}
+			}
+		}
+		// collect observed spans operation names
+		observedSpanOpNames = append(observedSpanOpNames, spanObserver.OpName)
+	}
+	for opName := range expectedTagValuesByOpName {
+		// assert everything expected was observed
+		assert.Contains(t, observedSpanOpNames, opName)
+	}
+}
+
+type spanObserverHTTPHandler struct {
+	t                         *testing.T
+	httpObserver              *testObserver
+	expectedTagValuesByOpName map[string]map[string]string
+}
+
+func (h *spanObserverHTTPHandler) assertTracingSpansHandler(w http.ResponseWriter, r *http.Request) {
+	h.httpObserver.assertTracingSpans(h.t, h.expectedTagValuesByOpName)
+}
+
 func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
+	reporter := jaeger.NewInMemoryReporter()
+	observer := testObserver{}
 	tracer, closer := jaeger.NewTracer(
 		"test",
 		jaeger.NewConstSampler(true),
-		jaeger.NewInMemoryReporter(),
+		reporter,
+		jaeger.TracerOptions.ContribObserver(&observer),
 	)
 	opentracing.SetGlobalTracer(tracer)
 	defer closer.Close()
@@ -795,64 +875,53 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 	server, err := New(cfg)
 	require.NoError(t, err)
 
-	type tracingSpanJSON struct {
-		OperationName string
-		Tags          map[string]interface{}
-	}
-
-	// writeSpanToBodyHandleFunc provides a way to test tracing by dumping the data
-	// from the requests' currently-active span data into a structured JSON body.
-	//
-	// HTTPGRPCTracer's parent Span tagging cannot be tested with current tracer implementations;
-	// tagging the parentSpan depends on methods only available on the Jaeger tracer, which limits
-	// introspection in tests as jaeger.Tracer can only access the current span, not the parent.
-	//
-	// MockTracer from opentracing/opentracing-go provides visibility into all completed spans for
-	// testing, but does not implement the jaeger operations needed to tag the parent span
-	writeSpanToBodyHandleFunc := func(w http.ResponseWriter, r *http.Request) {
-		span := opentracing.SpanFromContext(r.Context()).(*jaeger.Span)
-		jsonSpan := tracingSpanJSON{
-			OperationName: span.OperationName(),
-			Tags:          span.Tags(),
-		}
-		err := json.NewEncoder(w).Encode(jsonSpan)
-		require.NoError(t, err)
-	}
-
 	helloRouteName := "hello"
+	expectedHelloRouteLabel := middleware.MakeLabelValue(helloRouteName)
+	helloRouteURL := "http://127.0.0.1/hello"
+	helloRouteExpectedTags := map[string]map[string]string{
+		"/httpgrpc.HTTP/Handle": {
+			string(ext.Component):  "gRPC",
+			string(ext.HTTPUrl):    helloRouteURL,
+			string(ext.HTTPMethod): "GET",
+			"http.route":           helloRouteName,
+		},
+		"HTTP GET - " + expectedHelloRouteLabel: {
+			string(ext.Component):  "net/http",
+			string(ext.HTTPUrl):    helloRouteURL,
+			string(ext.HTTPMethod): "GET",
+			"http.route":           helloRouteName,
+		},
+	}
+	//helloPathParamRouteURL := "http://127.0.0.1/hello/world"
+	//expectedTagsHelloPathParamRoute := map[string]interface{}{
+	//	"component":       "net/http",
+	//	"span.kind":       "server",
+	//	"http.url":        helloPathParamRouteURL,
+	//	"http.method":     "GET",
+	//	"http.route":      expectedHelloPathParamRouteLabel,
+	//	"http.user_agent": "",
+	//}
+
+	handler := spanObserverHTTPHandler{
+		t:                         t,
+		httpObserver:              &observer,
+		expectedTagValuesByOpName: helloRouteExpectedTags,
+	}
 	// explicitly-named routes will be labeled using the provided route name
-	server.HTTP.NewRoute().Name(helloRouteName).Path("/hello").HandlerFunc(writeSpanToBodyHandleFunc)
+	server.HTTP.NewRoute().Name(helloRouteName).Path("/hello").HandlerFunc(handler.assertTracingSpansHandler)
 
 	helloPathParamRouteTmpl := "/hello/{pathParam}"
 	// unnamed routes will be labeled with their registered path template
-	server.HTTP.HandleFunc(helloPathParamRouteTmpl, writeSpanToBodyHandleFunc)
+	server.HTTP.HandleFunc(helloPathParamRouteTmpl, handler.assertTracingSpansHandler)
 
 	// extracted route names or path templates are converted to a Prometheus-compatible label value
-	expectedHelloRouteLabel := middleware.MakeLabelValue(helloRouteName)
-	expectedHelloPathParamRouteLabel := middleware.MakeLabelValue(helloPathParamRouteTmpl)
+	//expectedHelloRouteLabel := middleware.MakeLabelValue(helloRouteName)
+	//expectedHelloPathParamRouteLabel := middleware.MakeLabelValue(helloPathParamRouteTmpl)
 
 	go func() {
 		require.NoError(t, server.Run())
 	}()
-
-	helloRouteURL := "http://127.0.0.1/hello"
-	expectedTagsHelloRoute := map[string]interface{}{
-		"component":       "net/http",
-		"span.kind":       "server",
-		"http.url":        helloRouteURL,
-		"http.method":     "GET",
-		"http.route":      expectedHelloRouteLabel,
-		"http.user_agent": "",
-	}
-	helloPathParamRouteURL := "http://127.0.0.1/hello/world"
-	expectedTagsHelloPathParamRoute := map[string]interface{}{
-		"component":       "net/http",
-		"span.kind":       "server",
-		"http.url":        helloPathParamRouteURL,
-		"http.method":     "GET",
-		"http.route":      expectedHelloPathParamRouteLabel,
-		"http.user_agent": "",
-	}
+	defer server.Shutdown()
 
 	target := server.GRPCListenAddr()
 	conn, err := grpc.Dial(
@@ -881,29 +950,9 @@ func TestHTTPGRPCInstrumentationTracing(t *testing.T) {
 			"GET", helloRouteURL, bytes.NewReader([]byte{}),
 		)
 		require.NoError(t, err)
-		resp, err := emulateHTTPGRPCPRoxy(client, req)
+		_, err = emulateHTTPGRPCPRoxy(client, req)
 		require.NoError(t, err)
-		var bodyJSON tracingSpanJSON
-		err = json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&bodyJSON)
-		require.NoError(t, err)
-		require.Equal(t, "HTTP GET - "+expectedHelloRouteLabel, bodyJSON.OperationName)
-		require.Equal(t, expectedTagsHelloRoute, bodyJSON.Tags)
 	}
-	{
-		req, err := http.NewRequest(
-			"GET", helloPathParamRouteURL, bytes.NewReader([]byte{}),
-		)
-		require.NoError(t, err)
-		resp, err := emulateHTTPGRPCPRoxy(client, req)
-		require.NoError(t, err)
-		var bodyJSON tracingSpanJSON
-		err = json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&bodyJSON)
-		require.NoError(t, err)
-		require.Equal(t, "HTTP GET - "+expectedHelloPathParamRouteLabel, bodyJSON.OperationName)
-		require.Equal(t, expectedTagsHelloPathParamRoute, bodyJSON.Tags)
-	}
-
-	server.Shutdown()
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {

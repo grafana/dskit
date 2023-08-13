@@ -6,15 +6,11 @@ package log
 
 import (
 	"flag"
-
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 // Format is a settable identifier for the output format of logs
 type Format struct {
-	s      string
-	Logrus logrus.Formatter
+	s string
 }
 
 // RegisterFlags adds the log format flag to the provided flagset.
@@ -43,14 +39,6 @@ func (f Format) MarshalYAML() (interface{}, error) {
 
 // Set updates the value of the output format.  Implements flag.Value
 func (f *Format) Set(s string) error {
-	switch s {
-	case "logfmt":
-		f.Logrus = &logrus.JSONFormatter{}
-	case "json":
-		f.Logrus = &logrus.JSONFormatter{}
-	default:
-		return errors.Errorf("unrecognized log format %q", s)
-	}
 	f.s = s
 	return nil
 }

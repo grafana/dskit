@@ -5,6 +5,7 @@
 package log
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -12,7 +13,7 @@ import (
 )
 
 func BenchmarkDebugf(b *testing.B) {
-	lvl := Level{Gokit: level.AllowInfo()}
+	lvl := Level{Option: level.AllowInfo()}
 	g := log.NewNopLogger()
 	logger := addStandardFields(g, lvl)
 	// Simulate the parameters used in middleware/logging.go
@@ -24,6 +25,6 @@ func BenchmarkDebugf(b *testing.B) {
 	)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		logger.Debugf("%s %s (%d) %s", method, uri, statusCode, duration)
+		level.Debug(logger).Log("msg", fmt.Sprintf("%s %s (%d) %v", method, uri, statusCode, duration))
 	}
 }

@@ -7,12 +7,14 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"google.golang.org/grpc"
 
 	grpcUtils "github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/user"
 )
 
@@ -28,7 +30,7 @@ type OptionalLogging interface {
 
 // GRPCServerLog logs grpc requests, errors, and latency.
 type GRPCServerLog struct {
-	Log log.Interface
+	Log log.Logger
 	// WithRequest will log the entire request rather than just the error
 	WithRequest              bool
 	DisableRequestSuccessLog bool
@@ -46,18 +48,19 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		return resp, err
 	}
 
-	entry := user.LogWith(ctx, s.Log).WithFields(log.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
+	entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", time.Since(begin))
 	if err != nil {
 		if s.WithRequest {
-			entry = entry.WithField("request", req)
+			entry = log.With(entry, "request", req)
 		}
+		entry = log.With(entry, errorKey, err)
 		if grpcUtils.IsCanceled(err) {
-			entry.WithField(errorKey, err).Debugln(gRPC)
+			level.Debug(entry).Log("msg", gRPC)
 		} else {
-			entry.WithField(errorKey, err).Warnln(gRPC)
+			level.Warn(entry).Log("msg", gRPC)
 		}
 	} else {
-		entry.Debugf("%s (success)", gRPC)
+		level.Debug(entry).Log("msg", fmt.Sprintf("%s (success)", gRPC))
 	}
 	return resp, err
 }
@@ -70,15 +73,16 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 		return nil
 	}
 
-	entry := user.LogWith(ss.Context(), s.Log).WithFields(log.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
+	entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", time.Since(begin))
 	if err != nil {
+		entry = log.With(entry, errorKey, err)
 		if grpcUtils.IsCanceled(err) {
-			entry.WithField(errorKey, err).Debugln(gRPC)
+			level.Debug(entry).Log("msg", gRPC)
 		} else {
-			entry.WithField(errorKey, err).Warnln(gRPC)
+			level.Warn(entry).Log("msg", gRPC)
 		}
 	} else {
-		entry.Debugf("%s (success)", gRPC)
+		level.Debug(entry).Log("msg", fmt.Sprintf("%s (success)", gRPC))
 	}
 	return err
 }

@@ -7,20 +7,21 @@ package user
 import (
 	"context"
 
-	"github.com/grafana/dskit/log"
+	"github.com/go-kit/log"
 )
 
 // LogWith returns user and org information from the context as log fields.
-func LogWith(ctx context.Context, log log.Interface) log.Interface {
+func LogWith(ctx context.Context, logger log.Logger) log.Logger {
 	userID, err := ExtractUserID(ctx)
+	logergWithFields := logger
 	if err == nil {
-		log = log.WithField("userID", userID)
+		logergWithFields = log.With(logergWithFields, "userID", userID)
 	}
 
 	orgID, err := ExtractOrgID(ctx)
 	if err == nil {
-		log = log.WithField("orgID", orgID)
+		logergWithFields = log.With(logergWithFields, "orgID", orgID)
 	}
 
-	return log
+	return logergWithFields
 }

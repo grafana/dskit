@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	gokit_log "github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
 	"google.golang.org/grpc"
@@ -84,6 +85,9 @@ func TestTCPv4Network(t *testing.T) {
 		GRPCListenPort:    9291,
 	}
 	t.Run("http", func(t *testing.T) {
+		var level log.Level
+		require.NoError(t, level.Set("info"))
+		cfg.LogLevel = level
 		cfg.MetricsNamespace = "testing_http_tcp4"
 		srv, err := New(cfg)
 		require.NoError(t, err)
@@ -462,6 +466,9 @@ func TestRunReturnsError(t *testing.T) {
 	}
 	t.Run("http", func(t *testing.T) {
 		cfg.MetricsNamespace = "testing_http"
+		var level log.Level
+		require.NoError(t, level.Set("info"))
+		cfg.LogLevel = level
 		srv, err := New(cfg)
 		require.NoError(t, err)
 
@@ -555,6 +562,7 @@ func TestTLSServer(t *testing.T) {
 		GRPCListenNetwork: DefaultNetwork,
 		GRPCListenAddress: "localhost",
 		GRPCListenPort:    9194,
+		LogLevel:          level,
 	}
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -651,6 +659,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 		GRPCListenNetwork: DefaultNetwork,
 		GRPCListenAddress: "localhost",
 		GRPCListenPort:    9194,
+		LogLevel:          level,
 	}
 	server, err := New(cfg)
 	defer server.Shutdown()
@@ -708,37 +717,35 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 }
 
 type FakeLogger struct {
-	sourceIPs string
+	logger gokit_log.Logger
+	buf    *bytes.Buffer
 }
 
-func (f *FakeLogger) Debugf(_ string, _ ...interface{}) {}
-func (f *FakeLogger) Debugln(_ ...interface{})          {}
-
-func (f *FakeLogger) Infof(_ string, _ ...interface{}) {}
-func (f *FakeLogger) Infoln(_ ...interface{})          {}
-
-func (f *FakeLogger) Errorf(_ string, _ ...interface{}) {}
-func (f *FakeLogger) Errorln(_ ...interface{})          {}
-
-func (f *FakeLogger) Warnf(_ string, _ ...interface{}) {}
-func (f *FakeLogger) Warnln(_ ...interface{})          {}
-
-func (f *FakeLogger) WithField(key string, value interface{}) log.Interface {
-	if key == "sourceIPs" {
-		f.sourceIPs = value.(string)
+func newFakeLogger(level log.Level) *FakeLogger {
+	buf := bytes.NewBuffer(nil)
+	log := log.NewGoKitWriter(level, buf)
+	return &FakeLogger{
+		logger: log,
+		buf:    buf,
 	}
-
-	return f
 }
 
-func (f *FakeLogger) WithFields(_ log.Fields) log.Interface {
-	return f
+func (f *FakeLogger) Log(keyvals ...interface{}) error {
+	return f.logger.Log(keyvals...)
+}
+
+func (f *FakeLogger) assertContains(t *testing.T, content string) {
+	require.True(t, bytes.Contains(f.buf.Bytes(), []byte(content)))
+}
+
+func (f *FakeLogger) assertNotContains(t *testing.T, content string) {
+	require.False(t, bytes.Contains(f.buf.Bytes(), []byte(content)))
 }
 
 func TestLogSourceIPs(t *testing.T) {
 	var level log.Level
-	require.NoError(t, level.Set("debug"))
-	fake := FakeLogger{}
+	require.NoError(t, level.Set("info"))
+	logger := newFakeLogger(level)
 	cfg := Config{
 		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
@@ -748,7 +755,7 @@ func TestLogSourceIPs(t *testing.T) {
 		HTTPMiddleware:    []middleware.Interface{middleware.Logging},
 		MetricsNamespace:  "testing_mux",
 		LogLevel:          level,
-		Log:               &fake,
+		Log:               logger,
 		LogSourceIPs:      true,
 	}
 	server, err := New(cfg)
@@ -763,17 +770,19 @@ func TestLogSourceIPs(t *testing.T) {
 	}()
 	defer server.Shutdown()
 
-	require.Empty(t, fake.sourceIPs)
+	logger.assertNotContains(t, "sourceIPs")
 
 	req, err := http.NewRequest("GET", "http://127.0.0.1:9195/error500", nil)
 	require.NoError(t, err)
 	_, err = http.DefaultClient.Do(req)
 	require.NoError(t, err)
 
-	require.Equal(t, fake.sourceIPs, "127.0.0.1")
+	logger.assertContains(t, "sourceIPs=127.0.0.1")
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {
+	var level log.Level
+	require.NoError(t, level.Set("info"))
 	cfg := Config{
 		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
@@ -781,6 +790,7 @@ func TestStopWithDisabledSignalHandling(t *testing.T) {
 		GRPCListenNetwork: DefaultNetwork,
 		GRPCListenAddress: "localhost",
 		GRPCListenPort:    9199,
+		LogLevel:          level,
 	}
 
 	var test = func(t *testing.T, metricsNamespace string, handler SignalHandler) {

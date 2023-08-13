@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	gokit_log "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
@@ -117,15 +119,15 @@ type Config struct {
 	GRPCServerMinTimeBetweenPings      time.Duration `yaml:"grpc_server_min_time_between_pings"`
 	GRPCServerPingWithoutStreamAllowed bool          `yaml:"grpc_server_ping_without_stream_allowed"`
 
-	LogFormat                    log.Format    `yaml:"log_format"`
-	LogLevel                     log.Level     `yaml:"log_level"`
-	Log                          log.Interface `yaml:"-"`
-	LogSourceIPs                 bool          `yaml:"log_source_ips_enabled"`
-	LogSourceIPsHeader           string        `yaml:"log_source_ips_header"`
-	LogSourceIPsRegex            string        `yaml:"log_source_ips_regex"`
-	LogRequestHeaders            bool          `yaml:"log_request_headers"`
-	LogRequestAtInfoLevel        bool          `yaml:"log_request_at_info_level_enabled"`
-	LogRequestExcludeHeadersList string        `yaml:"log_request_exclude_headers_list"`
+	LogFormat                    log.Format       `yaml:"log_format"`
+	LogLevel                     log.Level        `yaml:"log_level"`
+	Log                          gokit_log.Logger `yaml:"-"`
+	LogSourceIPs                 bool             `yaml:"log_source_ips_enabled"`
+	LogSourceIPsHeader           string           `yaml:"log_source_ips_header"`
+	LogSourceIPsRegex            string           `yaml:"log_source_ips_regex"`
+	LogRequestHeaders            bool             `yaml:"log_request_headers"`
+	LogRequestAtInfoLevel        bool             `yaml:"log_request_at_info_level_enabled"`
+	LogRequestExcludeHeadersList string           `yaml:"log_request_exclude_headers_list"`
 
 	// If not set, default signal handler is used.
 	SignalHandler SignalHandler `yaml:"-"`
@@ -212,7 +214,7 @@ type Server struct {
 	HTTP       *mux.Router
 	HTTPServer *http.Server
 	GRPC       *grpc.Server
-	Log        log.Interface
+	Log        gokit_log.Logger
 	Registerer prometheus.Registerer
 	Gatherer   prometheus.Gatherer
 }
@@ -230,11 +232,10 @@ func NewWithMetrics(cfg Config, metrics *Metrics) (*Server, error) {
 }
 
 func newServer(cfg Config, metrics *Metrics) (*Server, error) {
-	// If user doesn't supply a logging implementation, by default instantiate
-	// logrus.
+	// If user doesn't supply a logging implementation, by default instantiate go-kit.
 	logger := cfg.Log
 	if logger == nil {
-		logger = log.NewLogrus(cfg.LogLevel)
+		logger = log.NewGoKit(cfg.LogLevel)
 	}
 
 	gatherer := cfg.Gatherer
@@ -331,7 +332,8 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		}
 	}
 
-	logger.WithField("http", httpListener.Addr()).WithField("grpc", grpcListener.Addr()).Infof("server listening on addresses")
+	loggerWithFields := gokit_log.With(logger, "http", httpListener.Addr(), "grpc", grpcListener.Addr())
+	level.Info(loggerWithFields).Log("msg", "server listening on addresses")
 
 	// Setup gRPC server
 	serverLog := middleware.GRPCServerLog{

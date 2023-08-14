@@ -25,7 +25,7 @@ require (
 	github.com/hashicorp/go-metrics v0.5.1
 	github.com/hashicorp/go-sockaddr v1.0.2
 	github.com/hashicorp/golang-lru/v2 v2.0.5
-	github.com/hashicorp/memberlist v0.3.1
+	github.com/hashicorp/memberlist v0.5.0
 	github.com/miekg/dns v1.1.50
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 	github.com/opentracing-contrib/go-stdlib v1.0.0

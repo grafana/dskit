@@ -92,15 +92,12 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		if writeErr != nil {
 			if errors.Is(writeErr, context.Canceled) {
 				if l.LogRequestAtInfoLevel {
-					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", []interface{}{r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers})
-					level.Info(requestLog).Log("msg", lazySprintf)
+					level.Info(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
 				} else {
-					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", []interface{}{r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers})
-					level.Debug(requestLog).Log("msg", lazySprintf)
+					level.Debug(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
 				}
 			} else {
-				lazySprintf := dskit_log.NewGokitLazySprintf("%s %s %s, error: %s ws: %v; %s", []interface{}{r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers})
-				level.Warn(requestLog).Log("msg", lazySprintf)
+				level.Warn(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, error: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
 			}
 
 			return
@@ -114,32 +111,21 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		case 100 <= statusCode && statusCode < 500 || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable:
 			if l.LogRequestAtInfoLevel {
 				if l.LogRequestHeaders && headers != nil {
-					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s ws: %v; %s", []interface{}{r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers)})
-					level.Info(requestLog).Log("msg", lazySprintf)
+					level.Info(requestLog).Log("msg", dskit_log.LazySprintf("%s %s (%d) %s ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers)))
 				} else {
-					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s", []interface{}{r.Method, uri, statusCode, time.Since(begin)})
-					level.Info(requestLog).Log("msg", lazySprintf)
+					level.Info(requestLog).Log("msg", dskit_log.LazySprintf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin)))
 				}
 			} else {
 				if l.LogRequestHeaders && headers != nil {
-					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s ws: %v; %s", []interface{}{r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers)})
-					level.Debug(requestLog).Log("msg", lazySprintf)
+					level.Debug(requestLog).Log("msg", dskit_log.LazySprintf("%s %s (%d) %s ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers)))
 				} else {
-					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s", []interface{}{r.Method, uri, statusCode, time.Since(begin)})
-					level.Debug(requestLog).Log("msg", lazySprintf)
+					level.Debug(requestLog).Log("msg", dskit_log.LazySprintf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin)))
 				}
 			}
 		default:
-			lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s Response: %q ws: %v; %s", []interface{}{r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers})
-			level.Warn(requestLog).Log("msg", lazySprintf)
+			level.Warn(requestLog).Log("msg", dskit_log.LazySprintf("%s %s (%d) %s Response: %q ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers))
 		}
 	})
-}
-
-// Logging middleware logs each HTTP request method, path, response code and
-// duration for all HTTP requests.
-var Logging = Log{
-	Log: dskit_log.Global(),
 }
 
 func dumpRequest(req *http.Request, httpHeadersToExclude map[string]bool) ([]byte, error) {

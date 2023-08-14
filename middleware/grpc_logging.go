@@ -55,15 +55,13 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		if s.WithRequest {
 			entry = log.With(entry, "request", req)
 		}
-		entry = log.With(entry, errorKey, err)
 		if grpcUtils.IsCanceled(err) {
-			level.Debug(entry).Log("msg", gRPC)
+			level.Debug(entry).Log("msg", gRPC, errorKey, err)
 		} else {
-			level.Warn(entry).Log("msg", gRPC)
+			level.Warn(entry).Log("msg", gRPC, errorKey, err)
 		}
 	} else {
-		lazySprintf := dskit_log.NewGokitLazySprintf("%s (success)", []interface{}{gRPC})
-		level.Debug(entry).Log("msg", lazySprintf)
+		level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
 	}
 	return resp, err
 }
@@ -78,15 +76,13 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 
 	entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", time.Since(begin))
 	if err != nil {
-		entry = log.With(entry, errorKey, err)
 		if grpcUtils.IsCanceled(err) {
-			level.Debug(entry).Log("msg", gRPC)
+			level.Debug(entry).Log("msg", gRPC, errorKey, err)
 		} else {
-			level.Warn(entry).Log("msg", gRPC)
+			level.Warn(entry).Log("msg", gRPC, errorKey, err)
 		}
 	} else {
-		lazySprintf := dskit_log.NewGokitLazySprintf("%s (success)", []interface{}{gRPC})
-		level.Debug(entry).Log("msg", lazySprintf)
+		level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
 	}
 	return err
 }

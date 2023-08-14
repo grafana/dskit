@@ -15,10 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func BenchmarkDebugf(b *testing.B) {
-	lvl := Level{Option: level.AllowInfo()}
+func BenchmarkLazySprintf(b *testing.B) {
 	g := log.NewNopLogger()
-	logger := addStandardFields(g, lvl)
+	logger := addStandardFields(g)
 	// Simulate the parameters used in middleware/logging.go
 	var (
 		method     = "method"
@@ -28,11 +27,11 @@ func BenchmarkDebugf(b *testing.B) {
 	)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		level.Debug(logger).Log("msg", fmt.Sprintf("%s %s (%d) %v", method, uri, statusCode, duration))
+		level.Debug(logger).Log("msg", LazySprintf("%s %s (%d) %v", method, uri, statusCode, duration))
 	}
 }
 
-func TestSprintf(t *testing.T) {
+func TestLazySprintf(t *testing.T) {
 	tests := map[string]struct {
 		id     int
 		lvl    string
@@ -59,35 +58,34 @@ func TestSprintf(t *testing.T) {
 		logger := NewGoKitWithFields(lvl, buf)
 		now := time.Now()
 		expectedMessage := fmt.Sprintf(test.format, test.id, now)
-		lazySprintf := newFakeGokitLazySprintf("debug %d has been logged %v", []interface{}{test.id, now})
+		lazySprintf := newLazySprintfWithCount("debug %d has been logged %v", []interface{}{test.id, now})
 		level.Debug(logger).Log("msg", lazySprintf)
 		if test.lvl == "debug" {
 			require.True(t, bytes.Contains(buf.Bytes(), []byte(expectedMessage)))
-			require.Equal(t, 1, lazySprintf.countSprintf)
+			require.Equal(t, 1, lazySprintf.count)
 		} else {
 			require.False(t, bytes.Contains(buf.Bytes(), []byte(expectedMessage)))
-			require.Equal(t, 0, lazySprintf.countSprintf)
+			require.Equal(t, 0, lazySprintf.count)
 		}
 	}
 }
 
-type fakeGokitLazySprintf struct {
-	next         gokitLazySprintf
-	countSprintf int
+type lazySprintfWithCount struct {
+	next  Sprintf
+	count int
 }
 
-func newFakeGokitLazySprintf(format string, args []interface{}) *fakeGokitLazySprintf {
-	return &fakeGokitLazySprintf{
-		gokitLazySprintf{
-			format:  format,
-			args:    args,
-			sprintf: fmt.Sprintf,
+func newLazySprintfWithCount(format string, args []interface{}) *lazySprintfWithCount {
+	return &lazySprintfWithCount{
+		Sprintf{
+			format: format,
+			args:   args,
 		},
 		0,
 	}
 }
 
-func (f *fakeGokitLazySprintf) String() string {
-	f.countSprintf++
+func (f *lazySprintfWithCount) String() string {
+	f.count++
 	return f.next.String()
 }

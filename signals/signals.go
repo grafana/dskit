@@ -12,6 +12,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
+	dskit_log "github.com/grafana/dskit/log"
 )
 
 // SignalReceiver represents a subsystem/server/... that can be stopped or
@@ -64,7 +66,7 @@ func (h *Handler) Loop() {
 				return
 			case syscall.SIGQUIT:
 				stacklen := runtime.Stack(buf, true)
-				level.Info(h.log).Log("msg", "=== received SIGQUIT ===\n*** goroutine dump...\n%s\n*** end", buf[:stacklen])
+				level.Info(h.log).Log("msg", dskit_log.LazySprintf("=== received SIGQUIT ===\n*** goroutine dump...\n%s\n*** end", buf[:stacklen]))
 			}
 		}
 	}

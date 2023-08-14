@@ -333,8 +333,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		}
 	}
 
-	loggerWithFields := gokit_log.With(logger, "http", httpListener.Addr(), "grpc", grpcListener.Addr())
-	level.Info(loggerWithFields).Log("msg", "server listening on addresses")
+	level.Info(logger).Log("msg", "server listening on addresses", "http", httpListener.Addr(), "grpc", grpcListener.Addr())
 
 	// Setup gRPC server
 	serverLog := middleware.GRPCServerLog{

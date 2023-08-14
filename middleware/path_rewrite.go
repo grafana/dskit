@@ -33,8 +33,7 @@ func (p pathRewrite) Wrap(next http.Handler) http.Handler {
 		r.URL.RawPath = p.regexp.ReplaceAllString(r.URL.EscapedPath(), p.replacement)
 		path, err := url.PathUnescape(r.URL.RawPath)
 		if err != nil {
-			lazySprintf := log.NewGokitLazySprintf("got invalid url-encoded path %v after applying path rewrite %v: %v", []interface{}{r.URL.RawPath, p})
-			level.Error(log.Global()).Log("msg", lazySprintf, "err", err)
+			level.Error(log.Global()).Log("msg", log.LazySprintf("got invalid url-encoded path %v after applying path rewrite %v: %v", r.URL.RawPath, p), "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}

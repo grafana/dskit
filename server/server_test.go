@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -529,25 +530,26 @@ func TestTLSServer(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
 
-	cmd := exec.Command("bash", "certs/genCerts.sh", "certs", "1")
-	err := cmd.Run()
-	require.NoError(t, err)
+	certsDir := t.TempDir()
+	cmd := exec.Command("bash", filepath.Join("certs", "genCerts.sh"), certsDir, "1")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
 
 	cfg := Config{
 		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",
 		HTTPListenPort:    9193,
 		HTTPTLSConfig: TLSConfig{
-			TLSCertPath: "certs/server.crt",
-			TLSKeyPath:  "certs/server.key",
+			TLSCertPath: filepath.Join(certsDir, "server.crt"),
+			TLSKeyPath:  filepath.Join(certsDir, "server.key"),
 			ClientAuth:  "RequireAndVerifyClientCert",
-			ClientCAs:   "certs/root.crt",
+			ClientCAs:   filepath.Join(certsDir, "root.crt"),
 		},
 		GRPCTLSConfig: TLSConfig{
-			TLSCertPath: "certs/server.crt",
-			TLSKeyPath:  "certs/server.key",
+			TLSCertPath: filepath.Join(certsDir, "server.crt"),
+			TLSKeyPath:  filepath.Join(certsDir, "server.key"),
 			ClientAuth:  "VerifyClientCertIfGiven",
-			ClientCAs:   "certs/root.crt",
+			ClientCAs:   filepath.Join(certsDir, "root.crt"),
 		},
 		MetricsNamespace:  "testing_tls",
 		GRPCListenNetwork: DefaultNetwork,
@@ -570,7 +572,7 @@ func TestTLSServer(t *testing.T) {
 	}()
 	defer server.Shutdown()
 
-	clientCert, err := tls.LoadX509KeyPair("certs/client.crt", "certs/client.key")
+	clientCert, err := tls.LoadX509KeyPair(filepath.Join(certsDir, "client.crt"), filepath.Join(certsDir, "client.key"))
 	require.NoError(t, err)
 
 	caCert, err := os.ReadFile(cfg.HTTPTLSConfig.ClientCAs)
@@ -615,17 +617,18 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
 
-	cmd := exec.Command("bash", "certs/genCerts.sh", "certs", "1")
+	certsDir := t.TempDir()
+	cmd := exec.Command("bash", filepath.Join("certs", "genCerts.sh"), certsDir, "1")
 	err := cmd.Run()
 	require.NoError(t, err)
 
-	cert, err := os.ReadFile("certs/server.crt")
+	cert, err := os.ReadFile(filepath.Join(certsDir, "server.crt"))
 	require.NoError(t, err)
 
-	key, err := os.ReadFile("certs/server.key")
+	key, err := os.ReadFile(filepath.Join(certsDir, "server.key"))
 	require.NoError(t, err)
 
-	clientCAs, err := os.ReadFile("certs/root.crt")
+	clientCAs, err := os.ReadFile(filepath.Join(certsDir, "root.crt"))
 	require.NoError(t, err)
 
 	cfg := Config{
@@ -666,7 +669,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 		require.NoError(t, server.Run())
 	}()
 
-	clientCert, err := tls.LoadX509KeyPair("certs/client.crt", "certs/client.key")
+	clientCert, err := tls.LoadX509KeyPair(filepath.Join(certsDir, "client.crt"), filepath.Join(certsDir, "client.key"))
 	require.NoError(t, err)
 
 	caCertPool := x509.NewCertPool()

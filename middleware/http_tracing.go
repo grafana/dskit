@@ -49,7 +49,7 @@ func (t Tracer) Wrap(next http.Handler) http.Handler {
 
 const httpGRPCHandleMethod = "/httpgrpc.HTTP/Handle"
 
-// HTTPGRPCTracer is a middleware which traces incoming requests.
+// HTTPGRPCTracer is a middleware which traces incoming httpgrpc requests.
 type HTTPGRPCTracer struct {
 	RouteMatcher RouteMatcher
 }
@@ -58,8 +58,11 @@ type HTTPGRPCTracer struct {
 //
 // HTTPGRPCTracer is specific to the server-side handling of HTTP requests which were
 // wrapped into gRPC requests and routed through the httpgrpc.HTTP/Handle gRPC.
-// HTTPGRPCTracer.Wrap does not need to be attached to server.Config.HTTPMiddleware, which
-// uses Tracer.Wrap for the standard case of direct HTTP requests not routed through gRPC.
+//
+// HTTPGRPCTracer.Wrap must be attached to the same mux.Router assigned to dskit/server.Config.Router
+// but it does not need to be attached to dskit/server.Config.HTTPMiddleware.
+// dskit/server.Config.HTTPMiddleware is applied to direct HTTP requests not routed through gRPC;
+// the server utilizes the default http middleware Tracer.Wrap for those standard http requests.
 func InitHTTPGRPCMiddleware(router *mux.Router) *mux.Router {
 	middleware := HTTPGRPCTracer{RouteMatcher: router}
 	router.Use(middleware.Wrap)
@@ -91,7 +94,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		ctx := r.Context()
 		tracer := opentracing.GlobalTracer()
 
-		// skip spans which were not forwarded from non-httpgrpc.HTTP/Handle spans;
+		// skip spans which were not forwarded from httpgrpc.HTTP/Handle spans;
 		// standard http spans started directly from the HTTP server are presumed to
 		// already be instrumented by Tracer.Wrap
 		parentSpan := opentracing.SpanFromContext(ctx)

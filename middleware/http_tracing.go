@@ -86,6 +86,7 @@ func InitHTTPGRPCMiddleware(router *mux.Router) *mux.Router {
 // Parent span tagging depends on using a Jaeger tracer for now to check the parent span's
 // OperationName(), which is not available on the generic opentracing Tracer interface.
 func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
+	httpOperationNameFunc := makeHTTPOperationNameFunc(hgt.RouteMatcher)
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		tracer := opentracing.GlobalTracer()
@@ -117,7 +118,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 
 		// create and start child HTTP span
 		// mirroring opentracing-contrib/go-stdlib/nethttp.Middleware span name and tags
-		childSpanName := makeHTTPOperationNameFunc(hgt.RouteMatcher)(r)
+		childSpanName := httpOperationNameFunc(r)
 		startSpanOpts := []opentracing.StartSpanOption{
 			ext.SpanKindRPCServer,
 			opentracing.Tag{Key: string(ext.Component), Value: "net/http"},

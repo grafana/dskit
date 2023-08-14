@@ -134,6 +134,7 @@
 * [ENHANCEMENT] Remove dependency on `github.com/weaveworks/common` package by migrating code to a corresponding package in `github.com/grafana/dskit`. #342
 * [ENHANCEMENT] Add ability to pass TLS certificates and keys inline when configuring server-side TLS. #349
 * [ENHANCEMENT] Migrate `github.com/weaveworks/common/aws` and `github.com/weaveworks/common/test` packages to corresponding packages in `github.com/grafana/dskit`. #356
+* [ENHANCEMENT] Ring: optionally emit logs and trace events in `DoUntilQuorum`. #361
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

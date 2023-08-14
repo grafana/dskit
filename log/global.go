@@ -19,7 +19,3 @@ func Global() log.Logger {
 func SetGlobal(logger log.Logger) {
 	global = logger
 }
-
-func Log(keyvals ...interface{}) error {
-	return global.Log(keyvals...)
-}

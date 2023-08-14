@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -82,7 +81,7 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		headers, err := dumpRequest(r, l.HTTPHeadersToExclude)
 		if err != nil {
 			headers = nil
-			level.Error(requestLog).Log("err", fmt.Sprintf("could not dump request headers: %v", err))
+			level.Error(requestLog).Log("msg", "could not dump request headers", "err", err)
 		}
 		var buf bytes.Buffer
 		wrapped := newBadResponseLoggingWriter(w, &buf)
@@ -93,12 +92,15 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		if writeErr != nil {
 			if errors.Is(writeErr, context.Canceled) {
 				if l.LogRequestAtInfoLevel {
-					level.Info(requestLog).Log("msg", fmt.Sprintf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
+					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", []interface{}{r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers})
+					level.Info(requestLog).Log("msg", lazySprintf)
 				} else {
-					level.Debug(requestLog).Log("msg", fmt.Sprintf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
+					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", []interface{}{r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers})
+					level.Debug(requestLog).Log("msg", lazySprintf)
 				}
 			} else {
-				level.Warn(requestLog).Log("msg", fmt.Sprintf("%s %s %s, error: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
+				lazySprintf := dskit_log.NewGokitLazySprintf("%s %s %s, error: %s ws: %v; %s", []interface{}{r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers})
+				level.Warn(requestLog).Log("msg", lazySprintf)
 			}
 
 			return
@@ -112,19 +114,24 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		case 100 <= statusCode && statusCode < 500 || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable:
 			if l.LogRequestAtInfoLevel {
 				if l.LogRequestHeaders && headers != nil {
-					level.Info(requestLog).Log("msg", fmt.Sprintf("%s %s (%d) %s ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers)))
+					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s ws: %v; %s", []interface{}{r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers)})
+					level.Info(requestLog).Log("msg", lazySprintf)
 				} else {
-					level.Info(requestLog).Log("msg", fmt.Sprintf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin)))
+					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s", []interface{}{r.Method, uri, statusCode, time.Since(begin)})
+					level.Info(requestLog).Log("msg", lazySprintf)
 				}
 			} else {
 				if l.LogRequestHeaders && headers != nil {
-					level.Debug(requestLog).Log("msg", fmt.Sprintf("%s %s (%d) %s ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers)))
+					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s ws: %v; %s", []interface{}{r.Method, uri, statusCode, time.Since(begin), IsWSHandshakeRequest(r), string(headers)})
+					level.Debug(requestLog).Log("msg", lazySprintf)
 				} else {
-					level.Debug(requestLog).Log("msg", fmt.Sprintf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin)))
+					lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s", []interface{}{r.Method, uri, statusCode, time.Since(begin)})
+					level.Debug(requestLog).Log("msg", lazySprintf)
 				}
 			}
 		default:
-			level.Warn(requestLog).Log("msg", fmt.Sprintf("%s %s (%d) %s Response: %q ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers))
+			lazySprintf := dskit_log.NewGokitLazySprintf("%s %s (%d) %s Response: %q ws: %v; %s", []interface{}{r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers})
+			level.Warn(requestLog).Log("msg", lazySprintf)
 		}
 	})
 }

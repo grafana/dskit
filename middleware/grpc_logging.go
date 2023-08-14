@@ -7,11 +7,13 @@ package middleware
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
+	dskit_log "github.com/grafana/dskit/log"
+
 	"google.golang.org/grpc"
 
 	grpcUtils "github.com/grafana/dskit/grpcutil"
@@ -60,7 +62,8 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 			level.Warn(entry).Log("msg", gRPC)
 		}
 	} else {
-		level.Debug(entry).Log("msg", fmt.Sprintf("%s (success)", gRPC))
+		lazySprintf := dskit_log.NewGokitLazySprintf("%s (success)", []interface{}{gRPC})
+		level.Debug(entry).Log("msg", lazySprintf)
 	}
 	return resp, err
 }
@@ -82,7 +85,8 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 			level.Warn(entry).Log("msg", gRPC)
 		}
 	} else {
-		level.Debug(entry).Log("msg", fmt.Sprintf("%s (success)", gRPC))
+		lazySprintf := dskit_log.NewGokitLazySprintf("%s (success)", []interface{}{gRPC})
+		level.Debug(entry).Log("msg", lazySprintf)
 	}
 	return err
 }

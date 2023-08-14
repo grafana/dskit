@@ -5,6 +5,7 @@
 package log
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -12,14 +13,34 @@ import (
 	"github.com/go-kit/log/level"
 )
 
-// NewGoKitFormat creates a new log.Logger whose format can be "json" or "logfmt".
-func NewGoKitFormat(l Level, format string) log.Logger {
-	var logger log.Logger
-	if format == "json" {
-		logger = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
-	} else {
-		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+const (
+	LogfmtFormat = "logfmt"
+)
+
+// NewGoKit creates a new GoKit logger with the given level, format and writer.
+// If the given writer is nil, os.Stderr is used.
+// If the given format is nil, logfmt is used.
+func NewGoKit(lvl Level, format string, writer io.Writer) log.Logger {
+	logger := newGoKit(format, writer)
+	return level.NewFilter(logger, lvl.Option)
+}
+
+func newGoKit(format string, writer io.Writer) log.Logger {
+	if writer == nil {
+		writer = log.NewSyncWriter(os.Stderr)
 	}
+	if format == "json" {
+		return log.NewJSONLogger(writer)
+	}
+	return log.NewLogfmtLogger(writer)
+}
+
+// NewGoKitWithFields creates a new GoKit logger with the given level and writer,
+// enriched with the "ts" and the "caller" fields for test purposes.
+// The "logfmt" format is used.
+// If the given writer is nil, os.Stderr is used.
+func NewGoKitWithFields(l Level, writer io.Writer) log.Logger {
+	logger := newGoKit(LogfmtFormat, writer)
 	return addStandardFields(logger, l)
 }
 
@@ -29,13 +50,24 @@ func addStandardFields(logger log.Logger, l Level) log.Logger {
 	return level.NewFilter(logger, l.Option)
 }
 
-// NewGoKit creates a new GoKit logger with the "logfmt" format.
-func NewGoKit(l Level) log.Logger {
-	return NewGoKitFormat(l, "logfmt")
+type lazySprintf interface {
+	String() string
 }
 
-// NewGoKitWriter creates a new GoKit logger with the passed level and writer.
-func NewGoKitWriter(l Level, writer io.Writer) log.Logger {
-	logger := log.NewLogfmtLogger(writer)
-	return addStandardFields(logger, l)
+type gokitLazySprintf struct {
+	format  string
+	args    []interface{}
+	sprintf func(string, ...any) string
+}
+
+func NewGokitLazySprintf(format string, args []interface{}) lazySprintf {
+	return &gokitLazySprintf{
+		format:  format,
+		args:    args,
+		sprintf: fmt.Sprintf,
+	}
+}
+
+func (s *gokitLazySprintf) String() string {
+	return s.sprintf(s.format, s.args...)
 }

@@ -24,7 +24,7 @@ func Setup(logLevel string) error {
 		return err
 	}*/
 
-	logger := NewGoKitWriter(level, os.Stderr)
+	logger := NewGoKit(level, "logfmt", os.Stderr)
 	SetGlobal(logger)
 	return nil
 }

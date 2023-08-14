@@ -13,15 +13,14 @@ import (
 // LogWith returns user and org information from the context as log fields.
 func LogWith(ctx context.Context, logger log.Logger) log.Logger {
 	userID, err := ExtractUserID(ctx)
-	logergWithFields := logger
 	if err == nil {
-		logergWithFields = log.With(logergWithFields, "userID", userID)
+		logger = log.With(logger, "userID", userID)
 	}
 
 	orgID, err := ExtractOrgID(ctx)
 	if err == nil {
-		logergWithFields = log.With(logergWithFields, "orgID", orgID)
+		logger = log.With(logger, "orgID", orgID)
 	}
 
-	return logergWithFields
+	return logger
 }

@@ -105,12 +105,12 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		// extract relevant span & tag data from request
 		method := r.Method
 		matchedRoute := getRouteName(hgt.RouteMatcher, r)
-		url := r.URL.String()
+		urlPath := r.URL.Path
 		userAgent := r.Header.Get("User-Agent")
 
 		// tag parent httpgrpc.HTTP/Handle server span, if it exists
 		if parentSpan != nil {
-			parentSpan.SetTag(string(ext.HTTPUrl), url)
+			parentSpan.SetTag(string(ext.HTTPUrl), urlPath)
 			parentSpan.SetTag(string(ext.HTTPMethod), method)
 			parentSpan.SetTag("http.route", matchedRoute)
 			parentSpan.SetTag("http.user_agent", userAgent)
@@ -122,7 +122,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		startSpanOpts := []opentracing.StartSpanOption{
 			ext.SpanKindRPCServer,
 			opentracing.Tag{Key: string(ext.Component), Value: "net/http"},
-			opentracing.Tag{Key: string(ext.HTTPUrl), Value: url},
+			opentracing.Tag{Key: string(ext.HTTPUrl), Value: urlPath},
 			opentracing.Tag{Key: string(ext.HTTPMethod), Value: method},
 			opentracing.Tag{Key: "http.route", Value: matchedRoute},
 			opentracing.Tag{Key: "http.user_agent", Value: userAgent},

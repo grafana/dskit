@@ -24,7 +24,7 @@ require (
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-sockaddr v1.0.2
-	github.com/hashicorp/golang-lru v0.5.4
+	github.com/hashicorp/golang-lru/v2 v2.0.5
 	github.com/hashicorp/memberlist v0.3.1
 	github.com/miekg/dns v1.1.50
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
@@ -77,6 +77,7 @@ require (
 	github.com/hashicorp/go-msgpack v0.5.5 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
+	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/serf v0.9.7 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect

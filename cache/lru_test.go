@@ -42,8 +42,8 @@ func TestLRUCache_StoreFetchDelete(t *testing.T) {
 	// Ensure we cache back entries from the underlying cache.
 	item, ok := lru.lru.Get("buzz")
 	require.True(t, ok)
-	require.Equal(t, []byte("buzz"), item.(*Item).Data)
-	require.True(t, time.Until(item.(*Item).ExpiresAt) > 1*time.Hour)
+	require.Equal(t, []byte("buzz"), item.Data)
+	require.True(t, time.Until(item.ExpiresAt) > 1*time.Hour)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cache_memory_items_count Total number of items currently in the in-memory cache.

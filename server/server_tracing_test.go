@@ -17,6 +17,7 @@ import (
 
 	"github.com/grafana/dskit/httpgrpc"
 	httpgrpcServer "github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 )
 
@@ -201,6 +202,9 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			cfg.GRPCServerMaxSendMsgSize = 4 * 1024 * 1024
 			cfg.Router = middleware.InitHTTPGRPCMiddleware(mux.NewRouter())
 			cfg.MetricsNamespace = "testing_httpgrpc_tracing_" + middleware.MakeLabelValue(testName)
+			var lvl log.Level
+			require.NoError(t, lvl.Set("info"))
+			cfg.LogLevel = lvl
 
 			server, err := New(cfg)
 			require.NoError(t, err)

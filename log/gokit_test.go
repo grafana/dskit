@@ -12,12 +12,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 )
 
 func BenchmarkLazySprintf(b *testing.B) {
 	g := log.NewNopLogger()
-	logger := addStandardFields(g)
+	logger := level.NewFilter(addStandardFields(g), level.AllowInfo())
 	// Simulate the parameters used in middleware/logging.go
 	var (
 		method     = "method"
@@ -55,10 +56,10 @@ func TestLazySprintf(t *testing.T) {
 		var lvl Level
 		require.NoError(t, lvl.Set(test.lvl))
 		buf.Reset()
-		logger := NewGoKitWithFields(lvl, buf)
+		logger := NewGoKitLogFmt(lvl, buf)
 		now := time.Now()
 		expectedMessage := fmt.Sprintf(test.format, test.id, now)
-		lazySprintf := newLazySprintfWithCount("debug %d has been logged %v", []interface{}{test.id, now})
+		lazySprintf := newLazySprintfWithCount("debug %d has been logged %v", test.id, now)
 		level.Debug(logger).Log("msg", lazySprintf)
 		if test.lvl == "debug" {
 			require.True(t, bytes.Contains(buf.Bytes(), []byte(expectedMessage)))
@@ -70,12 +71,41 @@ func TestLazySprintf(t *testing.T) {
 	}
 }
 
+func TestNewGoKitWithFields(t *testing.T) {
+	buf := bytes.NewBuffer(nil)
+	var lvl Level
+	require.NoError(t, lvl.Set("info"))
+	rateLimitedCfg := &RateLimitedLoggerCfg{
+		LogsPerSecond:      1,
+		LogsPerSecondBurst: 2,
+		Registry:           prometheus.DefaultRegisterer,
+	}
+	now := log.DefaultTimestampUTC()
+	fields := NewFields("ts", now, "caller", log.Caller(5))
+	logger := NewGoKitWithFields(lvl, LogfmtFormat, buf, rateLimitedCfg, fields)
+	for i := 0; i < 1000; i++ {
+		level.Info(logger).Log("msg", LazySprintf("info %d", i))
+		level.Debug(logger).Log("msg", LazySprintf("debug %d", i))
+	}
+
+	format := "ts=%s caller=gokit_test.go:%d level=%s msg=\"info %d\""
+	for i := 0; i < 1000; i++ {
+		if i < 2 {
+			require.True(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 87, "info", i))))
+		} else {
+			require.False(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 87, "info", i))))
+		}
+
+		require.False(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 88, "debug", i))))
+	}
+}
+
 type lazySprintfWithCount struct {
 	next  Sprintf
 	count int
 }
 
-func newLazySprintfWithCount(format string, args []interface{}) *lazySprintfWithCount {
+func newLazySprintfWithCount(format string, args ...interface{}) *lazySprintfWithCount {
 	return &lazySprintfWithCount{
 		Sprintf{
 			format: format,

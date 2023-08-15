@@ -8,6 +8,12 @@ import (
 	"golang.org/x/time/rate"
 )
 
+type RateLimitedLoggerCfg struct {
+	LogsPerSecond      float64
+	LogsPerSecondBurst int
+	Registry           prometheus.Registerer
+}
+
 type RateLimitedLogger struct {
 	next    log.Logger
 	limiter *rate.Limiter
@@ -20,15 +26,15 @@ type RateLimitedLogger struct {
 
 // NewRateLimitedLogger returns a log.Logger that is limited to the given number of logs per second,
 // with the given burst size.
-func NewRateLimitedLogger(logger log.Logger, logsPerSecond rate.Limit, burstSize int, reg prometheus.Registerer) log.Logger {
-	discardedLogLinesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+func NewRateLimitedLogger(logger log.Logger, cfg RateLimitedLoggerCfg) log.Logger {
+	discardedLogLinesCounter := promauto.With(cfg.Registry).NewCounterVec(prometheus.CounterOpts{
 		Name: "logger_rate_limit_discarded_log_lines_total",
 		Help: "Total number of discarded log lines per level.",
 	}, []string{"level"})
 
 	return &RateLimitedLogger{
 		next:                          logger,
-		limiter:                       rate.NewLimiter(logsPerSecond, burstSize),
+		limiter:                       rate.NewLimiter(rate.Limit(cfg.LogsPerSecond), cfg.LogsPerSecondBurst),
 		discardedInfoLogLinesCounter:  discardedLogLinesCounter.WithLabelValues(level.InfoValue().String()),
 		discardedDebugLogLinesCounter: discardedLogLinesCounter.WithLabelValues(level.DebugValue().String()),
 		discardedWarnLogLinesCounter:  discardedLogLinesCounter.WithLabelValues(level.WarnValue().String()),

@@ -199,7 +199,8 @@ func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 			"level":    level.DebugValue(),
-			"msg":      "starting request to instance as part of initial set",
+			"msg":      "starting request to instance",
+			"reason":   "initial requests",
 			"instance": instance.Addr,
 		})
 	}
@@ -256,7 +257,8 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 		for instance := range instancesAwaitReleaseResults {
 			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 				"level":    level.DebugValue(),
-				"msg":      "starting request to instance as part of initial set",
+				"msg":      "starting request to instance",
+				"reason":   "initial requests",
 				"instance": instance.Addr,
 			})
 		}
@@ -350,7 +352,8 @@ func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAl
 	for _, instance := range instancesReleased[0:2] {
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 			"level":    level.DebugValue(),
-			"msg":      "starting request to instance as part of initial set",
+			"msg":      "starting request to instance",
+			"reason":   "initial requests",
 			"instance": instance.Addr,
 		})
 	}
@@ -364,7 +367,8 @@ func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAl
 		},
 		map[interface{}]interface{}{
 			"level":    level.DebugValue(),
-			"msg":      "starting request to instance due to failure of other instance",
+			"msg":      "starting request to instance",
+			"reason":   "failure of other instance",
 			"instance": instancesReleased[2].Addr,
 		},
 	)
@@ -541,12 +545,14 @@ func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
 	expectedLogMessages := []map[interface{}]interface{}{
 		{
 			"level":    level.DebugValue(),
-			"msg":      "starting request to instance as part of initial set",
+			"msg":      "starting request to instance",
+			"reason":   "initial requests",
 			"instance": instancesReleased[0].Addr,
 		},
 		{
 			"level":    level.DebugValue(),
-			"msg":      "starting request to instance as part of initial set",
+			"msg":      "starting request to instance",
+			"reason":   "initial requests",
 			"instance": instancesReleased[1].Addr,
 		},
 	}
@@ -556,7 +562,8 @@ func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
 	waitForInstancesReleased(3, "should release a third request after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 		"level":    level.DebugValue(),
-		"msg":      "starting request to instance due to hedging",
+		"msg":      "starting request to instance",
+		"reason":   "hedging",
 		"instance": instancesReleased[2].Addr,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
@@ -565,7 +572,8 @@ func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
 	waitForInstancesReleased(4, "should release remaining request after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 		"level":    level.DebugValue(),
-		"msg":      "starting request to instance due to hedging",
+		"msg":      "starting request to instance",
+		"reason":   "hedging",
 		"instance": instancesReleased[3].Addr,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
@@ -828,9 +836,10 @@ func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
 
 	for _, zone := range []string{"zone-a", "zone-b", "zone-c"} {
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-			"level": level.DebugValue(),
-			"msg":   "starting requests to zone as part of initial set",
-			"zone":  zone,
+			"level":  level.DebugValue(),
+			"msg":    "starting requests to zone",
+			"reason": "initial requests",
+			"zone":   zone,
 		})
 	}
 
@@ -891,9 +900,10 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			tracker.done(&instance2, nil)
 
 			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-				"level": level.DebugValue(),
-				"msg":   "starting requests to zone as part of initial set",
-				"zone":  "zone-a",
+				"level":  level.DebugValue(),
+				"msg":    "starting requests to zone",
+				"reason": "initial requests",
+				"zone":   "zone-a",
 			})
 		}
 
@@ -903,9 +913,10 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			tracker.done(&instance4, nil)
 
 			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-				"level": level.DebugValue(),
-				"msg":   "starting requests to zone as part of initial set",
-				"zone":  "zone-b",
+				"level":  level.DebugValue(),
+				"msg":    "starting requests to zone",
+				"reason": "initial requests",
+				"zone":   "zone-b",
 			})
 		}
 
@@ -915,9 +926,10 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			tracker.done(&instance6, nil)
 
 			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-				"level": level.DebugValue(),
-				"msg":   "starting requests to zone as part of initial set",
-				"zone":  "zone-c",
+				"level":  level.DebugValue(),
+				"msg":    "starting requests to zone",
+				"reason": "initial requests",
+				"zone":   "zone-c",
 			})
 		}
 
@@ -986,9 +998,10 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 
 	for _, zone := range uniqueZones(instancesReleased) {
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-			"level": level.DebugValue(),
-			"msg":   "starting requests to zone as part of initial set",
-			"zone":  zone,
+			"level":  level.DebugValue(),
+			"msg":    "starting requests to zone",
+			"reason": "initial requests",
+			"zone":   zone,
 		})
 	}
 
@@ -1015,9 +1028,10 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 			"err":             errors.New("something went wrong"),
 		},
 		map[interface{}]interface{}{
-			"level": level.DebugValue(),
-			"msg":   "starting requests to zone due to failure of other zone",
-			"zone":  instancesReleased[4].Zone,
+			"level":  level.DebugValue(),
+			"msg":    "starting requests to zone",
+			"reason": "failure of other zone",
+			"zone":   instancesReleased[4].Zone,
 		},
 	)
 
@@ -1361,14 +1375,16 @@ func TestZoneAwareResultTracker_StartAdditionalRequests(t *testing.T) {
 	initialZones := uniqueZones(instancesReleased)
 	expectedLogMessages := []map[interface{}]interface{}{
 		{
-			"level": level.DebugValue(),
-			"msg":   "starting requests to zone as part of initial set",
-			"zone":  initialZones[0],
+			"level":  level.DebugValue(),
+			"msg":    "starting requests to zone",
+			"reason": "initial requests",
+			"zone":   initialZones[0],
 		},
 		{
-			"level": level.DebugValue(),
-			"msg":   "starting requests to zone as part of initial set",
-			"zone":  initialZones[1],
+			"level":  level.DebugValue(),
+			"msg":    "starting requests to zone",
+			"reason": "initial requests",
+			"zone":   initialZones[1],
 		},
 	}
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
@@ -1376,18 +1392,20 @@ func TestZoneAwareResultTracker_StartAdditionalRequests(t *testing.T) {
 	tracker.startAdditionalRequests()
 	waitForZonesReleased(3, "should release a third zone after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-		"level": level.DebugValue(),
-		"msg":   "starting requests to zone due to hedging",
-		"zone":  instancesReleased[4].Zone,
+		"level":  level.DebugValue(),
+		"msg":    "starting requests to zone",
+		"reason": "hedging",
+		"zone":   instancesReleased[4].Zone,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 
 	tracker.startAdditionalRequests()
 	waitForZonesReleased(4, "should release remaining zone after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-		"level": level.DebugValue(),
-		"msg":   "starting requests to zone due to hedging",
-		"zone":  instancesReleased[6].Zone,
+		"level":  level.DebugValue(),
+		"msg":    "starting requests to zone",
+		"reason": "hedging",
+		"zone":   instancesReleased[6].Zone,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 }

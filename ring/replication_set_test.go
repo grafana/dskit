@@ -9,12 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 
 	"github.com/grafana/dskit/internal/slices"
+	"github.com/grafana/dskit/spanlogger"
 )
 
 func TestReplicationSet_GetAddresses(t *testing.T) {
@@ -393,7 +395,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 				t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
 					defer goleak.VerifyNone(t)
 
-					ctx := context.Background()
+					logger := &testLogger{}
+					spanLogger, ctx := spanlogger.New(context.Background(), logger, "DoUntilQuorum test", dummyTenantResolver{})
 					cleanupTracker := newCleanupTracker(t, testCase.maxCleanupCalls)
 					mtx := sync.RWMutex{}
 					successfulInstances := []*InstanceDesc{}
@@ -411,7 +414,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 						return res, err
 					}
 
-					cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+					cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests, Logger: spanLogger}
 					actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, testCase.replicationSet, cfg, wrappedF, cleanupTracker.cleanup)
 					require.ElementsMatch(t, testCase.expectedResults, actualResults)
 					require.Equal(t, testCase.expectedError, actualError)
@@ -431,6 +434,18 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 
 					cleanupTracker.collectCleanedUpInstancesWithExpectedCount(len(expectedCleanup))
 					cleanupTracker.assertCorrectCleanup(testCase.expectedResults, expectedCleanup)
+
+					if testCase.expectedError == nil {
+						require.Contains(t, logger.messages, map[interface{}]interface{}{
+							"level": level.DebugValue(),
+							"msg":   "quorum reached",
+						})
+					} else {
+						require.Contains(t, logger.messages, map[interface{}]interface{}{
+							"level": level.ErrorValue(),
+							"msg":   "cancelling all requests because quorum cannot be reached",
+						})
+					}
 				})
 			}
 		})
@@ -454,26 +469,31 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZo
 		t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
 			defer goleak.VerifyNone(t)
 
-			ctx := context.Background()
+			logger := &testLogger{}
+			spanLogger, ctx := spanlogger.New(context.Background(), logger, "DoUntilQuorum test", dummyTenantResolver{})
 			cleanupTracker := newCleanupTracker(t, 3)
 			mtx := sync.RWMutex{}
 			expectedCleanup := []string{}
+			zonesCalled := []string{}
 
 			wrappedF := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
 				cleanupTracker.trackCall(ctx, desc, cancel)
+
+				mtx.Lock()
+				defer mtx.Unlock()
+
+				zonesCalled = append(zonesCalled, desc.Zone)
 
 				if strings.HasSuffix(desc.Addr, "replica-1") {
 					return "", errors.New("error from a replica-1 instance")
 				}
 
-				mtx.Lock()
-				defer mtx.Unlock()
 				expectedCleanup = append(expectedCleanup, desc.Addr)
 
 				return desc.Addr, nil
 			}
 
-			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests, Logger: spanLogger}
 			actualResults, actualError := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, wrappedF, cleanupTracker.cleanup)
 			require.Empty(t, actualResults)
 			require.EqualError(t, actualError, "error from a replica-1 instance")
@@ -482,6 +502,11 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZo
 			defer mtx.RUnlock()
 			cleanupTracker.collectCleanedUpInstancesWithExpectedCount(len(expectedCleanup))
 			cleanupTracker.assertCorrectCleanup([]string{}, expectedCleanup)
+
+			require.Contains(t, logger.messages, map[interface{}]interface{}{
+				"level": level.ErrorValue(),
+				"msg":   "cancelling all requests because quorum cannot be reached",
+			})
 		})
 	}
 }
@@ -827,6 +852,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 	defer goleak.VerifyNone(t)
 
 	parentCtx, parentCancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
+	logger := &testLogger{}
+	spanLogger, ctx := spanlogger.New(parentCtx, logger, "DoUntilQuorum test", dummyTenantResolver{})
 
 	replicationSet := ReplicationSet{
 		Instances: []InstanceDesc{
@@ -860,13 +887,25 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 		return desc.Addr, nil
 	}
 
-	cfg := DoUntilQuorumConfig{MinimizeRequests: false}
-	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(parentCtx, replicationSet, cfg, f, cleanupTracker.cleanup)
+	cfg := DoUntilQuorumConfig{
+		MinimizeRequests: false,
+		Logger:           spanLogger,
+	}
+
+	results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 	require.Empty(t, results)
 	require.Equal(t, context.Canceled, err)
 
 	cleanupTracker.collectCleanedUpInstances()
 	cleanupTracker.assertCorrectCleanup(nil, []string{"instance-1", "instance-2", "instance-3"})
+
+	expectedLogMessage := map[interface{}]interface{}{
+		"level": level.DebugValue(),
+		"msg":   "parent context done, returning",
+		"err":   context.Canceled,
+	}
+
+	require.Contains(t, logger.messages, expectedLogMessage)
 }
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling_WithMinimizeRequests(t *testing.T) {
@@ -893,8 +932,11 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 		t.Run(name, func(t *testing.T) {
 			defer goleak.VerifyNone(t)
 
-			ctx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
+			parentCtx, cancel := context.WithCancel(context.WithValue(context.Background(), testContextKey, "this-is-the-value-from-the-parent"))
 			cleanupTracker := newCleanupTracker(t, 2)
+
+			logger := &testLogger{}
+			spanLogger, ctx := spanlogger.New(parentCtx, logger, "DoUntilQuorum test", dummyTenantResolver{})
 
 			wg := sync.WaitGroup{}
 			wg.Add(2)
@@ -922,7 +964,10 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 				cancel()
 			}()
 
-			cfg := DoUntilQuorumConfig{MinimizeRequests: true}
+			cfg := DoUntilQuorumConfig{
+				MinimizeRequests: true,
+				Logger:           spanLogger,
+			}
 			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
 			require.Empty(t, results)
 			require.Equal(t, context.Canceled, err)
@@ -931,6 +976,14 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 			require.Len(t, calledInstances, 2)
 			cleanupTracker.collectCleanedUpInstances()
 			cleanupTracker.assertCorrectCleanup(nil, calledInstances)
+
+			expectedLogMessage := map[interface{}]interface{}{
+				"level": level.DebugValue(),
+				"msg":   "parent context done, returning",
+				"err":   context.Canceled,
+			}
+
+			require.Equal(t, expectedLogMessage, logger.messages[len(logger.messages)-1])
 		})
 	}
 }
@@ -1490,4 +1543,42 @@ func BenchmarkReplicationSetZoneCount(b *testing.B) {
 			})
 		}
 	}
+}
+
+type dummyTenantResolver struct{}
+
+func (d dummyTenantResolver) TenantID(context.Context) (string, error) {
+	return "test-tenant-id", nil
+}
+
+func (d dummyTenantResolver) TenantIDs(context.Context) ([]string, error) {
+	return []string{"test-tenant-id"}, nil
+}
+
+type testLogger struct {
+	messages []map[interface{}]interface{}
+}
+
+func (l *testLogger) Log(keyvals ...interface{}) error {
+	if len(keyvals)%2 != 0 {
+		panic("mismatched key-value pairs logged to testLogger")
+	}
+
+	msg := map[interface{}]interface{}{}
+
+	for i := 0; i < len(keyvals); i += 2 {
+		key := keyvals[i]
+		value := keyvals[i+1]
+
+		if key == "user" || key == "method" {
+			// These keys are added automatically by spanlogger, but they're not interesting for our tests.
+			continue
+		}
+
+		msg[key] = value
+	}
+
+	l.messages = append(l.messages, msg)
+
+	return nil
 }

@@ -564,6 +564,79 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t 
 	}
 }
 
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImmediatelyOnSingleFailure(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	replicationSet := ReplicationSet{
+		Instances: []InstanceDesc{
+			{Addr: "zone-a-replica-1", Zone: "zone-a"},
+			{Addr: "zone-a-replica-2", Zone: "zone-a"},
+			{Addr: "zone-b-replica-1", Zone: "zone-b"},
+			{Addr: "zone-b-replica-2", Zone: "zone-b"},
+			{Addr: "zone-c-replica-1", Zone: "zone-c"},
+			{Addr: "zone-c-replica-2", Zone: "zone-c"},
+		},
+		MaxUnavailableZones: 1,
+	}
+
+	ctx := context.Background()
+	cleanupTracker := newCleanupTracker(t, 1)
+	failingZone := ""
+	failingZoneSawCancelledContext := false
+	waitForFailingZoneToSeeCancelledContext := make(chan struct{})
+	mtx := sync.RWMutex{}
+
+	f := func(ctx context.Context, instance *InstanceDesc, cancel context.CancelFunc) (string, error) {
+		cleanupTracker.trackCall(ctx, instance, cancel)
+
+		mtx.Lock()
+
+		if failingZone == "" {
+			failingZone = instance.Zone
+		}
+
+		mtx.Unlock()
+
+		if instance.Zone == failingZone {
+			// If this instance is in the failing zone:
+			// - if it's replica-1, return an error to trigger the cancellation of the zone
+			// - if it's replica-2, wait for this instance's context to be cancelled before returning
+
+			if strings.HasSuffix(instance.Addr, "-replica-1") {
+				return "", errors.New("this is the failing instance")
+			} else {
+				select {
+				case <-ctx.Done():
+					close(waitForFailingZoneToSeeCancelledContext)
+					failingZoneSawCancelledContext = true
+				case <-time.After(time.Second):
+					close(waitForFailingZoneToSeeCancelledContext)
+					require.FailNow(t, "other instance in failing zone gave up waiting for its context to be cancelled")
+				}
+			}
+		} else {
+			// If this instance is not in the failing zone, wait until the failing zone's context is cancelled before returning to avoid races.
+			select {
+			case <-waitForFailingZoneToSeeCancelledContext:
+				// Nothing more to do.
+			case <-time.After(2 * time.Second):
+				require.FailNowf(t, "%s gave up waiting for instance in failing zone to report its context had been cancelled", instance.Addr)
+			}
+		}
+
+		return instance.Addr, nil
+	}
+
+	cfg := DoUntilQuorumConfig{MinimizeRequests: true}
+	actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
+	require.NoError(t, err)
+
+	require.True(t, failingZoneSawCancelledContext)
+
+	cleanupTracker.collectCleanedUpInstances()
+	cleanupTracker.assertCorrectCleanup(actualResults, []string{failingZone + "-replica-2"})
+}
+
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_RunsCallsInParallel(t *testing.T) {
 	for _, minimizeRequests := range []bool{true, false} {
 		t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {

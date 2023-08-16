@@ -10,75 +10,31 @@ import (
 	"os"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 )
 
 const (
 	LogfmtFormat = "logfmt"
+	JSONFormat   = "json"
 )
 
-type Fields []interface{}
-
-func NewFields(fields ...interface{}) Fields {
-	return fields
-}
-
-func (f Fields) empty() bool {
-	return len(f) == 0
-}
-
-// NewGoKit creates a new GoKit logger with the given level, format and writer,
-// enriched with the standard "ts" and "caller" fields.
+// NewGoKit creates a new GoKit logger with the given format and writer.
 // If the given writer is nil, os.Stderr is used.
 // If the given format is nil, logfmt is used.
-func NewGoKit(lvl Level, format string, writer io.Writer) log.Logger {
-	logger := newGoKit(format, writer, nil)
-	logger = addStandardFields(logger)
-	return level.NewFilter(logger, lvl.Option)
-}
-
-// NewGoKitLogFmt creates a new GoKit logger with the given level and writer,
-// enriched with the standard "ts" and "caller" fields.
-// The "logfmt" format is used.
-// If the given writer is nil, os.Stderr is used.
-func NewGoKitLogFmt(l Level, writer io.Writer) log.Logger {
-	return NewGoKit(l, "logfmt", writer)
-}
-
-// NewGoKitWithFields creates a new GoKit logger configured with the given level, format, writer and
-// rate limit-related configuration, enriched with the given fields.
-// If the given format is nil, logfmt is used.
-// If the given writer is nil, os.Stderr is used.
-// If the given rate limit configuration is nil, no rate limited logger is created.
-// If the given fields are empty, no fields are added.
-func NewGoKitWithFields(lvl Level, format string, writer io.Writer, rateLimitedCfg *RateLimitedLoggerCfg, fields Fields) log.Logger {
-	logger := newGoKit(format, writer, rateLimitedCfg)
-	if !fields.empty() {
-		logger = log.With(logger, fields...)
-	}
-	return level.NewFilter(logger, lvl.Option)
-}
-
-func newGoKit(format string, writer io.Writer, rateLimitedCfg *RateLimitedLoggerCfg) log.Logger {
-	var logger log.Logger
+// No additional fields nor filters are added to the created logger, and
+// if they are required, the caller is expected to add them.
+func NewGoKit(format string, writer io.Writer) log.Logger {
 	if writer == nil {
 		writer = log.NewSyncWriter(os.Stderr)
 	}
-	if format == "json" {
-		logger = log.NewJSONLogger(writer)
-	} else {
-		logger = log.NewLogfmtLogger(writer)
+	if format == JSONFormat {
+		return log.NewJSONLogger(writer)
 	}
-	if rateLimitedCfg != nil {
-		logger = NewRateLimitedLogger(logger, *rateLimitedCfg)
-	}
-	return logger
+	return log.NewLogfmtLogger(writer)
 }
 
 // stand-alone for test purposes
 func addStandardFields(logger log.Logger) log.Logger {
-	fields := NewFields("ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
-	return log.With(logger, fields...)
+	return log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
 }
 
 type Sprintf struct {

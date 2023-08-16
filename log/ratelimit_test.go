@@ -18,12 +18,7 @@ func TestRateLimitedLoggerLogs(t *testing.T) {
 	buf := bytes.NewBuffer(nil)
 	c := newCounterLogger(buf)
 	reg := prometheus.NewPedanticRegistry()
-	cfg := RateLimitedLoggerCfg{
-		LogsPerSecond:      1,
-		LogsPerSecondBurst: 1,
-		Registry:           reg,
-	}
-	r := NewRateLimitedLogger(c, cfg)
+	r := NewRateLimitedLogger(c, 1, 1, reg)
 
 	level.Error(r).Log("msg", "error will be logged")
 	assert.Equal(t, 1, c.count)
@@ -45,12 +40,7 @@ func TestRateLimitedLoggerLimits(t *testing.T) {
 	buf := bytes.NewBuffer(nil)
 	c := newCounterLogger(buf)
 	reg := prometheus.NewPedanticRegistry()
-	cfg := RateLimitedLoggerCfg{
-		LogsPerSecond:      2,
-		LogsPerSecondBurst: 2,
-		Registry:           reg,
-	}
-	r := NewRateLimitedLogger(c, cfg)
+	r := NewRateLimitedLogger(c, 2, 2, reg)
 
 	level.Error(r).Log("msg", "error 1 will be logged")
 	assert.Equal(t, 1, c.count)
@@ -109,12 +99,7 @@ func TestRateLimitedLoggerWithFields(t *testing.T) {
 	buf := bytes.NewBuffer(nil)
 	c := newCounterLogger(buf)
 	reg := prometheus.NewPedanticRegistry()
-	cfg := RateLimitedLoggerCfg{
-		LogsPerSecond:      1,
-		LogsPerSecondBurst: 1,
-		Registry:           reg,
-	}
-	logger := NewRateLimitedLogger(c, cfg)
+	logger := NewRateLimitedLogger(c, 1, 1, reg)
 	loggerWithFields := log.With(logger, "key", "value")
 
 	level.Error(loggerWithFields).Log("msg", "error will be logged")

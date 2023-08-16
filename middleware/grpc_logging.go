@@ -21,8 +21,7 @@ import (
 )
 
 const (
-	gRPC     = "gRPC"
-	errorKey = "err"
+	gRPC = "gRPC"
 )
 
 // An error can implement ShouldLog() to control whether GRPCServerLog will log.
@@ -56,9 +55,9 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 			entry = log.With(entry, "request", req)
 		}
 		if grpcUtils.IsCanceled(err) {
-			level.Debug(entry).Log("msg", gRPC, errorKey, err)
+			level.Debug(entry).Log("msg", gRPC, "err", err)
 		} else {
-			level.Warn(entry).Log("msg", gRPC, errorKey, err)
+			level.Warn(entry).Log("msg", gRPC, "err", err)
 		}
 	} else {
 		level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
@@ -77,9 +76,9 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 	entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", time.Since(begin))
 	if err != nil {
 		if grpcUtils.IsCanceled(err) {
-			level.Debug(entry).Log("msg", gRPC, errorKey, err)
+			level.Debug(entry).Log("msg", gRPC, "err", err)
 		} else {
-			level.Warn(entry).Log("msg", gRPC, errorKey, err)
+			level.Warn(entry).Log("msg", gRPC, "err", err)
 		}
 	} else {
 		level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))

@@ -53,10 +53,11 @@ func TestLazySprintf(t *testing.T) {
 	buf := bytes.NewBuffer(nil)
 
 	for _, test := range tests {
+		buf.Reset()
+		logger := NewGoKit(LogfmtFormat, buf)
 		var lvl Level
 		require.NoError(t, lvl.Set(test.lvl))
-		buf.Reset()
-		logger := NewGoKitLogFmt(lvl, buf)
+		logger = level.NewFilter(logger, lvl.Option)
 		now := time.Now()
 		expectedMessage := fmt.Sprintf(test.format, test.id, now)
 		lazySprintf := newLazySprintfWithCount("debug %d has been logged %v", test.id, now)
@@ -71,32 +72,32 @@ func TestLazySprintf(t *testing.T) {
 	}
 }
 
-func TestNewGoKitWithFields(t *testing.T) {
+func TestNewGoKitWithRateLimitedAndFields(t *testing.T) {
 	buf := bytes.NewBuffer(nil)
 	var lvl Level
 	require.NoError(t, lvl.Set("info"))
-	rateLimitedCfg := &RateLimitedLoggerCfg{
-		LogsPerSecond:      1,
-		LogsPerSecondBurst: 2,
-		Registry:           prometheus.DefaultRegisterer,
-	}
 	now := log.DefaultTimestampUTC()
-	fields := NewFields("ts", now, "caller", log.Caller(5))
-	logger := NewGoKitWithFields(lvl, LogfmtFormat, buf, rateLimitedCfg, fields)
+	logger := NewGoKit(LogfmtFormat, buf)
+
+	rateLimitedLogger := NewRateLimitedLogger(logger, 1, 2, prometheus.DefaultRegisterer)
+
+	rateLimitedLogger = log.With(rateLimitedLogger, "ts", now, "caller", log.Caller(5))
+	rateLimitedLogger = level.NewFilter(rateLimitedLogger, lvl.Option)
+
 	for i := 0; i < 1000; i++ {
-		level.Info(logger).Log("msg", LazySprintf("info %d", i))
-		level.Debug(logger).Log("msg", LazySprintf("debug %d", i))
+		level.Info(rateLimitedLogger).Log("msg", LazySprintf("info %d", i))
+		level.Debug(rateLimitedLogger).Log("msg", LazySprintf("debug %d", i))
 	}
 
 	format := "ts=%s caller=gokit_test.go:%d level=%s msg=\"info %d\""
 	for i := 0; i < 1000; i++ {
 		if i < 2 {
-			require.True(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 87, "info", i))))
+			require.True(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 88, "info", i))))
 		} else {
-			require.False(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 87, "info", i))))
+			require.False(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 88, "info", i))))
 		}
 
-		require.False(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 88, "debug", i))))
+		require.False(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(format, now, 89, "debug", i))))
 	}
 }
 

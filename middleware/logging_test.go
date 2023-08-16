@@ -33,9 +33,7 @@ func TestBadWriteLogging(t *testing.T) {
 		logContains: []string{"debug", "GET http://example.com/foo (200)"},
 	}} {
 		buf := bytes.NewBuffer(nil)
-		var level log.Level
-		require.NoError(t, level.Set("debug"))
-		logger := log.NewGoKitLogFmt(level, buf)
+		logger := log.NewGoKit(log.LogfmtFormat, buf)
 
 		loggingMiddleware := Log{
 			Log: logger,
@@ -76,11 +74,9 @@ func TestDisabledSuccessfulRequestsLogging(t *testing.T) {
 		},
 	} {
 		buf := bytes.NewBuffer(nil)
-		var level log.Level
-		require.NoError(t, level.Set("debug"))
 
 		loggingMiddleware := Log{
-			Log:                      log.NewGoKitLogFmt(level, buf),
+			Log:                      log.NewGoKit(log.LogfmtFormat, buf),
 			DisableRequestSuccessLog: tc.disableLog,
 		}
 
@@ -121,11 +117,9 @@ func TestLoggingRequestsAtInfoLevel(t *testing.T) {
 		logContains: []string{"info", "GET http://example.com/foo (200)"},
 	}} {
 		buf := bytes.NewBuffer(nil)
-		var level log.Level
-		require.NoError(t, level.Set("debug"))
 
 		loggingMiddleware := Log{
-			Log:                   log.NewGoKitLogFmt(level, buf),
+			Log:                   log.NewGoKit(log.LogfmtFormat, buf),
 			LogRequestAtInfoLevel: true,
 		}
 		handler := func(w http.ResponseWriter, r *http.Request) {
@@ -176,10 +170,8 @@ func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
-			var level log.Level
-			require.NoError(t, level.Set("debug"))
 
-			loggingMiddleware := NewLogMiddleware(log.NewGoKitLogFmt(level, buf), true, false, nil, tc.excludeHeaderList)
+			loggingMiddleware := NewLogMiddleware(log.NewGoKit(log.LogfmtFormat, buf), true, false, nil, tc.excludeHeaderList)
 
 			handler := func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, "<html><body>Hello world!</body></html>")

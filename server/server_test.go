@@ -721,9 +721,9 @@ type FakeLogger struct {
 	buf    *bytes.Buffer
 }
 
-func newFakeLogger(level log.Level) *FakeLogger {
+func newFakeLogger() *FakeLogger {
 	buf := bytes.NewBuffer(nil)
-	log := log.NewGoKitLogFmt(level, buf)
+	log := log.NewGoKit(log.LogfmtFormat, buf)
 	return &FakeLogger{
 		logger: log,
 		buf:    buf,
@@ -745,7 +745,7 @@ func (f *FakeLogger) assertNotContains(t *testing.T, content string) {
 func TestLogSourceIPs(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
-	logger := newFakeLogger(level)
+	logger := newFakeLogger()
 	cfg := Config{
 		HTTPListenNetwork: DefaultNetwork,
 		HTTPListenAddress: "localhost",

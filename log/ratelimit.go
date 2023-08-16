@@ -26,15 +26,15 @@ type RateLimitedLogger struct {
 
 // NewRateLimitedLogger returns a log.Logger that is limited to the given number of logs per second,
 // with the given burst size.
-func NewRateLimitedLogger(logger log.Logger, cfg RateLimitedLoggerCfg) log.Logger {
-	discardedLogLinesCounter := promauto.With(cfg.Registry).NewCounterVec(prometheus.CounterOpts{
+func NewRateLimitedLogger(logger log.Logger, logsPerSecond float64, logsPerSecondBurst int, registry prometheus.Registerer) log.Logger {
+	discardedLogLinesCounter := promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 		Name: "logger_rate_limit_discarded_log_lines_total",
 		Help: "Total number of discarded log lines per level.",
 	}, []string{"level"})
 
 	return &RateLimitedLogger{
 		next:                          logger,
-		limiter:                       rate.NewLimiter(rate.Limit(cfg.LogsPerSecond), cfg.LogsPerSecondBurst),
+		limiter:                       rate.NewLimiter(rate.Limit(logsPerSecond), logsPerSecondBurst),
 		discardedInfoLogLinesCounter:  discardedLogLinesCounter.WithLabelValues(level.InfoValue().String()),
 		discardedDebugLogLinesCounter: discardedLogLinesCounter.WithLabelValues(level.DebugValue().String()),
 		discardedWarnLogLinesCounter:  discardedLogLinesCounter.WithLabelValues(level.WarnValue().String()),

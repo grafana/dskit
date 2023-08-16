@@ -236,7 +236,8 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	// If user doesn't supply a logging implementation, by default instantiate go-kit.
 	logger := cfg.Log
 	if logger == nil {
-		logger = log.NewGoKit(log.LogfmtFormat, os.Stderr)
+		writer := gokit_log.NewSyncWriter(os.Stderr)
+		logger = log.NewGoKitWithLevel(cfg.LogLevel, cfg.LogFormat, writer)
 	}
 
 	gatherer := cfg.Gatherer

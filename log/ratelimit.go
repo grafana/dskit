@@ -8,12 +8,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type RateLimitedLoggerCfg struct {
-	LogsPerSecond      float64
-	LogsPerSecondBurst int
-	Registry           prometheus.Registerer
-}
-
 type RateLimitedLogger struct {
 	next    log.Logger
 	limiter *rate.Limiter

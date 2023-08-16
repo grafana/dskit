@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 const (
@@ -30,6 +31,14 @@ func NewGoKit(format string, writer io.Writer) log.Logger {
 		return log.NewJSONLogger(writer)
 	}
 	return log.NewLogfmtLogger(writer)
+}
+
+// NewGoKitWithLevel creates a new GoKit logger with the given level, format and writer.
+// If the given writer is nil, os.Stderr is used.
+// If the given format is nil, logfmt is used.
+func NewGoKitWithLevel(lvl Level, format string, writer io.Writer) log.Logger {
+	logger := NewGoKit(format, writer)
+	return level.NewFilter(logger, lvl.Option)
 }
 
 // stand-alone for test purposes

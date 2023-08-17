@@ -723,7 +723,7 @@ type FakeLogger struct {
 
 func newFakeLogger() *FakeLogger {
 	buf := bytes.NewBuffer(nil)
-	log := log.NewGoKit(log.LogfmtFormat, buf)
+	log := log.NewGoKitWithWriter(log.LogfmtFormat, buf)
 	return &FakeLogger{
 		logger: log,
 		buf:    buf,

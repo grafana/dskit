@@ -54,7 +54,7 @@ func TestLazySprintf(t *testing.T) {
 
 	for _, test := range tests {
 		buf.Reset()
-		logger := NewGoKit(LogfmtFormat, buf)
+		logger := NewGoKitWithWriter(LogfmtFormat, buf)
 		var lvl Level
 		require.NoError(t, lvl.Set(test.lvl))
 		logger = level.NewFilter(logger, lvl.Option)
@@ -77,7 +77,7 @@ func TestNewGoKitWithRateLimitedAndFields(t *testing.T) {
 	var lvl Level
 	require.NoError(t, lvl.Set("info"))
 	now := log.DefaultTimestampUTC()
-	logger := NewGoKit(LogfmtFormat, buf)
+	logger := NewGoKitWithWriter(LogfmtFormat, buf)
 
 	rateLimitedLogger := NewRateLimitedLogger(logger, 1, 2, prometheus.DefaultRegisterer)
 

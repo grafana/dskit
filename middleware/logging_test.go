@@ -13,10 +13,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/require"
-
 	"github.com/grafana/dskit/log"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestBadWriteLogging(t *testing.T) {
@@ -28,18 +27,16 @@ func TestBadWriteLogging(t *testing.T) {
 		logContains: []string{"debug", "request cancelled: context canceled"},
 	}, {
 		err:         errors.New("yolo"),
-		logContains: []string{"warning", "error: yolo"},
+		logContains: []string{"warn", "error: yolo"},
 	}, {
 		err:         nil,
 		logContains: []string{"debug", "GET http://example.com/foo (200)"},
 	}} {
 		buf := bytes.NewBuffer(nil)
-		logrusLogger := logrus.New()
-		logrusLogger.Out = buf
-		logrusLogger.Level = logrus.DebugLevel
+		logger := log.NewGoKitWithWriter(log.LogfmtFormat, buf)
 
 		loggingMiddleware := Log{
-			Log: log.Logrus(logrusLogger),
+			Log: logger,
 		}
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(w, "<html><body>Hello World!</body></html>")
@@ -77,12 +74,9 @@ func TestDisabledSuccessfulRequestsLogging(t *testing.T) {
 		},
 	} {
 		buf := bytes.NewBuffer(nil)
-		logrusLogger := logrus.New()
-		logrusLogger.Out = buf
-		logrusLogger.Level = logrus.DebugLevel
 
 		loggingMiddleware := Log{
-			Log:                      log.Logrus(logrusLogger),
+			Log:                      log.NewGoKitWithWriter(log.LogfmtFormat, buf),
 			DisableRequestSuccessLog: tc.disableLog,
 		}
 
@@ -123,12 +117,9 @@ func TestLoggingRequestsAtInfoLevel(t *testing.T) {
 		logContains: []string{"info", "GET http://example.com/foo (200)"},
 	}} {
 		buf := bytes.NewBuffer(nil)
-		logrusLogger := logrus.New()
-		logrusLogger.Out = buf
-		logrusLogger.Level = logrus.DebugLevel
 
 		loggingMiddleware := Log{
-			Log:                   log.Logrus(logrusLogger),
+			Log:                   log.NewGoKitWithWriter(log.LogfmtFormat, buf),
 			LogRequestAtInfoLevel: true,
 		}
 		handler := func(w http.ResponseWriter, r *http.Request) {
@@ -179,11 +170,8 @@ func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
-			logrusLogger := logrus.New()
-			logrusLogger.Out = buf
-			logrusLogger.Level = logrus.DebugLevel
 
-			loggingMiddleware := NewLogMiddleware(log.Logrus(logrusLogger), true, false, nil, tc.excludeHeaderList)
+			loggingMiddleware := NewLogMiddleware(log.NewGoKitWithWriter(log.LogfmtFormat, buf), true, false, nil, tc.excludeHeaderList)
 
 			handler := func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, "<html><body>Hello world!</body></html>")

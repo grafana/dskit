@@ -51,6 +51,7 @@
 * [CHANGE] gRPC client: use default connect timeout of 5s, and therefore enable default connect backoff max delay of 5s. #332
 * [CHANGE] Remove `github.com/grafana/dskit/errors` in favour of Go's `errors` package. #357
 * [CHANGE] Remove `grpcutil.IsGRPCContextCanceled()` in favour of `grpcutil.IsCanceled()`. #357
+* [CHANGE] Remove `logrus` and `log.Interface`. #359
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

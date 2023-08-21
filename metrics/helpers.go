@@ -1,0 +1,61 @@
+package metrics
+
+import (
+	"errors"
+	"fmt"
+
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/prometheus/model/labels"
+)
+
+func MatchesLabels(m *dto.Metric, l []labels.Label) bool {
+	for _, l := range l {
+		found := false
+		for _, lp := range m.GetLabel() {
+			if l.Name != lp.GetName() || l.Value != lp.GetValue() {
+				continue
+			}
+
+			found = true
+			break
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+
+func FindMetricsInFamilyMatchingLabels(mf *dto.MetricFamily, labelNamesAndValues ...string) []*dto.Metric {
+	l := labels.FromStrings(labelNamesAndValues...)
+	var result []*dto.Metric
+	for _, m := range mf.GetMetric() {
+		if MatchesLabels(m, l) {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+func FindHistogramWithNameAndLabels(metrics MetricFamilyMap, name string, labelNamesAndValues ...string) (*dto.Histogram, error) {
+	metricFamily, ok := metrics[name]
+	if !ok {
+		return nil, fmt.Errorf("no metric with name '%v' found", name)
+	}
+
+	matchingMetrics := FindMetricsInFamilyMatchingLabels(metricFamily, labelNamesAndValues...)
+
+	if len(matchingMetrics) != 1 {
+		return nil, fmt.Errorf("wanted exactly one matching metric, but found %v", len(matchingMetrics))
+	}
+
+	metric := matchingMetrics[0]
+
+	if metric.Histogram == nil {
+		return nil, errors.New("found a single matching metric, but it is not a histogram")
+	}
+
+	return metric.Histogram, nil
+}

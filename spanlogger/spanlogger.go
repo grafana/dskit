@@ -33,9 +33,13 @@ var (
 
 // SpanLogger unifies tracing and logging, to reduce repetition.
 type SpanLogger struct {
-	log.Logger
+	ctx        context.Context // context passed in, with logger
+	resolver   TenantResolver  // passed in
+	baseLogger log.Logger      // passed in
+	logger     log.Logger      // initialized on first use
 	opentracing.Span
-	sampled bool
+	sampled      bool
+	debugEnabled bool
 }
 
 // New makes a new SpanLogger with a log.Logger to send logs to. The provided context will have the logger attached
@@ -45,14 +49,17 @@ func New(ctx context.Context, logger log.Logger, method string, resolver TenantR
 	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
 		span.SetTag(TenantIDsTagName, ids)
 	}
-	lwc, sampled := withContext(ctx, logger, resolver)
+	_, sampled := tracing.ExtractSampledTraceID(ctx)
 	l := &SpanLogger{
-		Logger:  log.With(lwc, "method", method),
-		Span:    span,
-		sampled: sampled,
+		ctx:          ctx,
+		resolver:     resolver,
+		baseLogger:   log.With(logger, "method", method),
+		Span:         span,
+		sampled:      sampled,
+		debugEnabled: debugEnabled(logger),
 	}
 	if len(kvps) > 0 {
-		level.Debug(l).Log(kvps...)
+		l.DebugLog(kvps...)
 	}
 
 	ctx = context.WithValue(ctx, loggerCtxKey, logger)
@@ -68,22 +75,57 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 	if !ok {
 		logger = fallback
 	}
+	sampled := false
 	sp := opentracing.SpanFromContext(ctx)
 	if sp == nil {
 		sp = opentracing.NoopTracer{}.StartSpan("noop")
+	} else {
+		_, sampled = tracing.ExtractSampledTraceID(ctx)
 	}
-	lwc, sampled := withContext(ctx, logger, resolver)
 	return &SpanLogger{
-		Logger:  lwc,
-		Span:    sp,
-		sampled: sampled,
+		ctx:          ctx,
+		baseLogger:   logger,
+		resolver:     resolver,
+		Span:         sp,
+		sampled:      sampled,
+		debugEnabled: debugEnabled(logger),
 	}
+}
+
+// Detect whether we should output debug logging.
+// false iff the logger says it's not enabled; true if the logger doesn't say.
+func debugEnabled(logger log.Logger) bool {
+	if x, ok := logger.(interface{ DebugEnabled() bool }); ok && !x.DebugEnabled() {
+		return false
+	}
+	return true
 }
 
 // Log implements gokit's Logger interface; sends logs to underlying logger and
 // also puts the on the spans.
 func (s *SpanLogger) Log(kvps ...interface{}) error {
-	s.Logger.Log(kvps...)
+	if s.logger == nil {
+		s.logger = s.makeLogger()
+	}
+	s.logger.Log(kvps...)
+	return s.spanLog(kvps...)
+}
+
+// DebugLog is more efficient than level.Debug().Log().
+func (s *SpanLogger) DebugLog(kvps ...interface{}) error {
+	if s.debugEnabled {
+		if s.logger == nil {
+			s.logger = s.makeLogger()
+		}
+		// The call to Log() through an interface makes its argument escape, so make a copy here,
+		// in the debug-only path, so the function is faster for the non-debug path.
+		localCopy := append([]any{}, kvps...)
+		level.Debug(s.logger).Log(localCopy...)
+	}
+	return s.spanLog(kvps...)
+}
+
+func (s *SpanLogger) spanLog(kvps ...interface{}) error {
 	if !s.sampled {
 		return nil
 	}
@@ -105,16 +147,17 @@ func (s *SpanLogger) Error(err error) error {
 	return err
 }
 
-func withContext(ctx context.Context, logger log.Logger, resolver TenantResolver) (log.Logger, bool) {
-	userID, err := resolver.TenantID(ctx)
+func (s *SpanLogger) makeLogger() log.Logger {
+	logger := s.baseLogger
+	userID, err := s.resolver.TenantID(s.ctx)
 	if err == nil && userID != "" {
 		logger = log.With(logger, "user", userID)
 	}
 
-	traceID, ok := tracing.ExtractSampledTraceID(ctx)
+	traceID, ok := tracing.ExtractSampledTraceID(s.ctx)
 	if !ok {
-		return logger, false
+		return logger
 	}
 
-	return log.With(logger, "traceID", traceID), true
+	return log.With(logger, "traceID", traceID)
 }

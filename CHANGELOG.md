@@ -137,7 +137,7 @@
 * [ENHANCEMENT] Add ability to pass TLS certificates and keys inline when configuring server-side TLS. #349 #363
 * [ENHANCEMENT] Migrate `github.com/weaveworks/common/aws` and `github.com/weaveworks/common/test` packages to corresponding packages in `github.com/grafana/dskit`. #356
 * [ENHANCEMENT] Ring: optionally emit logs and trace events in `DoUntilQuorum`. #361
-* [ENHANCEMENT] metrics: Add `MetricFamilyMap.MinGauges` and `MetricFamiliesPerTenant.SendMinOfGauges` methods. #366
+* [ENHANCEMENT] metrics: Add `MetricFamilyMap.MinGauges` and `MetricFamiliesPerTenant.SendMinOfGauges` methods. #366 #368
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
@@ -159,3 +159,4 @@
 * [BUGFIX] memberlist metrics: fix registration of `memberlist_client_kv_store_count` metric and disable expiration of metrics exposed by memberlist library. #327
 * [BUGFIX] middleware: fix issue where successful gRPC streaming requests are not always captured in metrics. #344
 * [BUGFIX] Ring: `DoUntilQuorum` and `DoUntilQuorumWithoutSuccessfulContextCancellation` will now cancel the context for a zone as soon as first failure for that zone is encountered. #364
+* [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGaugesPerTenant` no longer includes tenants, which do not have specified gauge. #368

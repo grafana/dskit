@@ -3,6 +3,7 @@ package metrics
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
 	"testing"
@@ -34,20 +35,58 @@ func TestSum(t *testing.T) {
 	}}, counterValue))
 }
 
-func TestMax(t *testing.T) {
-	require.Equal(t, float64(0), max(nil, counterValue))
-	require.Equal(t, float64(0), max(&dto.MetricFamily{Metric: nil}, counterValue))
-	require.Equal(t, float64(0), max(&dto.MetricFamily{Metric: []*dto.Metric{{Counter: &dto.Counter{}}}}, counterValue))
-	require.Equal(t, 12345.6789, max(&dto.MetricFamily{Metric: []*dto.Metric{{Counter: &dto.Counter{Value: proto.Float64(12345.6789)}}}}, counterValue))
-	require.Equal(t, 7890.12345, max(&dto.MetricFamily{Metric: []*dto.Metric{
-		{Counter: &dto.Counter{Value: proto.Float64(1234.56789)}},
-		{Counter: &dto.Counter{Value: proto.Float64(7890.12345)}},
-	}}, counterValue))
-	// using 'counterValue' as function only works on counters
-	require.Equal(t, float64(0), max(&dto.MetricFamily{Metric: []*dto.Metric{
-		{Gauge: &dto.Gauge{Value: proto.Float64(12345.6789)}},
-		{Gauge: &dto.Gauge{Value: proto.Float64(7890.12345)}},
-	}}, counterValue))
+func checkFloats(t *testing.T, exp, val float64) {
+	if math.IsNaN(val) {
+		if !math.IsNaN(exp) {
+			require.Fail(t, "expected %s got NaN", exp)
+		}
+	} else if math.IsNaN(exp) {
+		require.Fail(t, "expected NaN, got %s", val)
+	} else {
+		require.Equal(t, exp, val)
+	}
+}
+
+func TestMinGauges(t *testing.T) {
+	type testcase struct {
+		exp float64
+		mf  MetricFamilyMap
+	}
+
+	for _, tc := range []testcase{
+		{exp: math.NaN(), mf: MetricFamilyMap{}},
+		{exp: math.NaN(), mf: MetricFamilyMap{"metric": nil}},
+		{exp: math.NaN(), mf: MetricFamilyMap{"metric": &dto.MetricFamily{Metric: nil}}},
+		{exp: math.NaN(), mf: MetricFamilyMap{"metric": &dto.MetricFamily{Metric: []*dto.Metric{{Gauge: &dto.Gauge{}}}}}},
+		{exp: 12345.6789, mf: MetricFamilyMap{"metric": &dto.MetricFamily{Metric: []*dto.Metric{{Gauge: &dto.Gauge{Value: proto.Float64(12345.6789)}}}}}},
+		{exp: 1234.56789, mf: MetricFamilyMap{"metric": &dto.MetricFamily{Metric: []*dto.Metric{
+			{Gauge: &dto.Gauge{Value: proto.Float64(1234.56789)}},
+			{Gauge: &dto.Gauge{Value: proto.Float64(7890.12345)}},
+		}}}},
+	} {
+		checkFloats(t, tc.mf.MinGauges("metric"), tc.exp)
+	}
+}
+
+func TestMaxGauges(t *testing.T) {
+	type testcase struct {
+		exp float64
+		mf  MetricFamilyMap
+	}
+
+	for _, tc := range []testcase{
+		{exp: math.NaN(), mf: MetricFamilyMap{}},
+		{exp: math.NaN(), mf: MetricFamilyMap{"metric": nil}},
+		{exp: math.NaN(), mf: MetricFamilyMap{"metric": &dto.MetricFamily{Metric: nil}}},
+		{exp: math.NaN(), mf: MetricFamilyMap{"metric": &dto.MetricFamily{Metric: []*dto.Metric{{Gauge: &dto.Gauge{}}}}}},
+		{exp: 12345.6789, mf: MetricFamilyMap{"metric": &dto.MetricFamily{Metric: []*dto.Metric{{Gauge: &dto.Gauge{Value: proto.Float64(12345.6789)}}}}}},
+		{exp: 7890.12345, mf: MetricFamilyMap{"metric": &dto.MetricFamily{Metric: []*dto.Metric{
+			{Gauge: &dto.Gauge{Value: proto.Float64(1234.56789)}},
+			{Gauge: &dto.Gauge{Value: proto.Float64(7890.12345)}},
+		}}}},
+	} {
+		checkFloats(t, tc.mf.MaxGauges("metric"), tc.exp)
+	}
 }
 
 func TestCounterValue(t *testing.T) {
@@ -55,6 +94,13 @@ func TestCounterValue(t *testing.T) {
 	require.Equal(t, float64(0), counterValue(&dto.Metric{}))
 	require.Equal(t, float64(0), counterValue(&dto.Metric{Counter: &dto.Counter{}}))
 	require.Equal(t, 543857.12837, counterValue(&dto.Metric{Counter: &dto.Counter{Value: proto.Float64(543857.12837)}}))
+}
+
+func TestGaugeValueNan(t *testing.T) {
+	require.True(t, math.IsNaN(gaugeValueNaN(nil)))
+	require.True(t, math.IsNaN(gaugeValueNaN(&dto.Metric{})))
+	require.True(t, math.IsNaN(gaugeValueNaN(&dto.Metric{Gauge: &dto.Gauge{}})))
+	require.Equal(t, 543857.12837, gaugeValueNaN(&dto.Metric{Gauge: &dto.Gauge{Value: proto.Float64(543857.12837)}}))
 }
 
 func TestGetMetricsWithLabelNames(t *testing.T) {
@@ -205,63 +251,101 @@ func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {
 	}
 }
 
+func checkSingleGauge(t *testing.T, actual []*dto.Metric, val float64) {
+	require.Len(t, actual, 1)
+	require.Nil(t, actual[0].Label)
+	g := actual[0].GetGauge()
+	require.NotNil(t, g)
+	require.Equal(t, val, g.GetValue())
+}
+
 func TestSendMinMaxOfGauges(t *testing.T) {
+	const (
+		userLabel = "user"
+		user1     = "user-1"
+		user2     = "user-2"
+	)
+
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
 	desc := prometheus.NewDesc("test_metric", "", nil, nil)
+	descUser := prometheus.NewDesc("per_tenant", "", []string{userLabel}, nil)
 	regs := NewTenantRegistries(log.NewNopLogger())
-	regs.AddTenantRegistry("user-1", user1Reg)
-	regs.AddTenantRegistry("user-2", user2Reg)
 
-	// No matching metric.
-	t.Run("min of no gauges", func(t *testing.T) {
+	regs.AddTenantRegistry(user1, user1Reg)
+	regs.AddTenantRegistry(user2, user2Reg)
+
+	verifySendMinOfGauges := func(t *testing.T, val float64) {
 		mf := regs.BuildMetricFamiliesPerTenant()
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
 			mf.SendMinOfGauges(out, desc, "test_metric")
 		})
-		expected := []*dto.Metric{
-			{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(0)}},
-		}
-		require.ElementsMatch(t, expected, actual)
-	})
+		checkSingleGauge(t, actual, val)
+	}
 
-	t.Run("max of no gauges", func(t *testing.T) {
+	verifySendMaxOfGauges := func(t *testing.T, val float64) {
 		mf := regs.BuildMetricFamiliesPerTenant()
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
 			mf.SendMaxOfGauges(out, desc, "test_metric")
 		})
-		expected := []*dto.Metric{
-			{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+		checkSingleGauge(t, actual, val)
+	}
+
+	verifySendMaxOfGaugesPerTenant := func(t *testing.T, perTenantValues map[string]float64) {
+		mf := regs.BuildMetricFamiliesPerTenant()
+		collected := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendMaxOfGaugesPerTenant(out, descUser, "test_metric")
+		})
+
+		require.Len(t, collected, len(perTenantValues))
+		for _, a := range collected {
+			require.Len(t, a.GetLabel(), 1)
+			require.Equal(t, userLabel, a.GetLabel()[0].GetName())
+			tenant := a.GetLabel()[0].GetValue()
+			val, ok := perTenantValues[tenant]
+			require.True(t, ok, "tenant not found in the map: %s", tenant)
+			g := a.GetGauge()
+			require.NotNil(t, g)
+			require.Equal(t, val, g.GetValue())
+
+			delete(perTenantValues, tenant)
 		}
-		require.ElementsMatch(t, expected, actual)
-	})
+
+		require.Len(t, perTenantValues, 0)
+	}
+
+	// No matching metric.
+	verifySendMinOfGauges(t, 0)
+	verifySendMaxOfGauges(t, 0)
+	verifySendMaxOfGaugesPerTenant(t, map[string]float64{})
 
 	// Register a metric for each user.
 	user1Metric := promauto.With(user1Reg).NewGauge(prometheus.GaugeOpts{Name: "test_metric"})
-	user2Metric := promauto.With(user2Reg).NewGauge(prometheus.GaugeOpts{Name: "test_metric"})
 	user1Metric.Set(100)
+
+	verifySendMinOfGauges(t, 100)
+	verifySendMaxOfGauges(t, 100)
+	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user1: 100})
+
+	// Register metric for another user.
+	user2Metric := promauto.With(user2Reg).NewGauge(prometheus.GaugeOpts{Name: "test_metric"})
 	user2Metric.Set(80)
-	mf := regs.BuildMetricFamiliesPerTenant()
 
-	t.Run("min of gauges", func(t *testing.T) {
-		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendMinOfGauges(out, desc, "test_metric")
-		})
-		expected := []*dto.Metric{
-			{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(80)}},
-		}
-		require.ElementsMatch(t, expected, actual)
-	})
+	verifySendMinOfGauges(t, 80)
+	verifySendMaxOfGauges(t, 100)
+	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user1: 100, user2: 80})
 
-	t.Run("max of gauges", func(t *testing.T) {
-		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendMaxOfGauges(out, desc, "test_metric")
-		})
-		expected := []*dto.Metric{
-			{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(100)}},
-		}
-		require.ElementsMatch(t, expected, actual)
-	})
+	// Remove user1.
+	regs.RemoveTenantRegistry(user1, false)
+	verifySendMinOfGauges(t, 80)
+	verifySendMaxOfGauges(t, 80)
+	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user2: 80})
+
+	// Remove second user.
+	regs.RemoveTenantRegistry(user2, false)
+	verifySendMinOfGauges(t, 0)
+	verifySendMaxOfGauges(t, 0)
+	verifySendMaxOfGaugesPerTenant(t, map[string]float64{})
 }
 
 func TestSendSumOfHistogramsWithLabels(t *testing.T) {

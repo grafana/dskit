@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// MatchesLabels returns true if m has all the labels in l.
 func MatchesLabels(m *dto.Metric, l []labels.Label) bool {
 	for _, l := range l {
 		found := false
@@ -28,6 +29,7 @@ func MatchesLabels(m *dto.Metric, l []labels.Label) bool {
 	return true
 }
 
+// FindMetricsInFamilyMatchingLabels returns all the metrics in mf that match the labels in labelNamesAndValues.
 func FindMetricsInFamilyMatchingLabels(mf *dto.MetricFamily, labelNamesAndValues ...string) []*dto.Metric {
 	l := labels.FromStrings(labelNamesAndValues...)
 	var result []*dto.Metric
@@ -39,6 +41,9 @@ func FindMetricsInFamilyMatchingLabels(mf *dto.MetricFamily, labelNamesAndValues
 	return result
 }
 
+// FindHistogramWithNameAndLabels returns the histogram in metrics with name that matches the labels in labelNamesAndValues.
+// If no histogram with name is present in metrics, if labelNamesAndValues matches anything other than exactly one metric,
+// or if the matching metric is not a histogram, an error is returned.
 func FindHistogramWithNameAndLabels(metrics MetricFamilyMap, name string, labelNamesAndValues ...string) (*dto.Histogram, error) {
 	metricFamily, ok := metrics[name]
 	if !ok {

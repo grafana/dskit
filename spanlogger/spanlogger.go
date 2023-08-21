@@ -112,7 +112,8 @@ func (s *SpanLogger) Log(kvps ...interface{}) error {
 }
 
 // DebugLog is more efficient than level.Debug().Log().
-func (s *SpanLogger) DebugLog(kvps ...interface{}) error {
+// Also it swallows the error return because nobody checks for errors on debug logs.
+func (s *SpanLogger) DebugLog(kvps ...interface{}) {
 	if s.debugEnabled {
 		if s.logger == nil {
 			s.logger = s.makeLogger()
@@ -122,7 +123,7 @@ func (s *SpanLogger) DebugLog(kvps ...interface{}) error {
 		localCopy := append([]any{}, kvps...)
 		level.Debug(s.logger).Log(localCopy...)
 	}
-	return s.spanLog(kvps...)
+	_ = s.spanLog(kvps...)
 }
 
 func (s *SpanLogger) spanLog(kvps ...interface{}) error {

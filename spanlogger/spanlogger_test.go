@@ -126,7 +126,7 @@ func BenchmarkSpanLogger(b *testing.B) {
 	})
 	b.Run("debuglog", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = sl.DebugLog("msg", "foo", "more", "data")
+			sl.DebugLog("msg", "foo", "more", "data")
 		}
 	})
 }

@@ -134,19 +134,6 @@ func BenchmarkGetMetricsWithLabelNames(b *testing.B) {
 	}
 }
 
-func makeLabels(namesAndValues ...string) []*dto.LabelPair {
-	out := []*dto.LabelPair(nil)
-
-	for i := 0; i+1 < len(namesAndValues); i = i + 2 {
-		out = append(out, &dto.LabelPair{
-			Name:  proto.String(namesAndValues[i]),
-			Value: proto.String(namesAndValues[i+1]),
-		})
-	}
-
-	return out
-}
-
 // TestSendSumOfGaugesPerTenantWithLabels tests to ensure multiple metrics for the same tenant with a matching label are
 // summed correctly.
 func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,42 +14,42 @@ func TestMatchesLabels(t *testing.T) {
 	)}
 
 	testCases := map[string]struct {
-		labels        []labels.Label
+		labels        []string
 		expectedMatch bool
 	}{
 		"no labels": {
 			expectedMatch: true,
 		},
 		"one matching label": {
-			labels:        []labels.Label{{Name: "label-1", Value: "value-1"}},
+			labels:        []string{"label-1", "value-1"},
 			expectedMatch: true,
 		},
 		"all matching labels": {
-			labels: []labels.Label{
-				{Name: "label-1", Value: "value-1"},
-				{Name: "label-2", Value: "value-2"},
+			labels: []string{
+				"label-1", "value-1",
+				"label-2", "value-2",
 			},
 			expectedMatch: true,
 		},
 		"different value for label in metric": {
-			labels:        []labels.Label{{Name: "label-1", Value: "value-2"}},
+			labels:        []string{"label-1", "value-2"},
 			expectedMatch: false,
 		},
 		"label not on metric": {
-			labels:        []labels.Label{{Name: "label-3", Value: "value-2"}},
+			labels:        []string{"label-3", "value-2"},
 			expectedMatch: false,
 		},
 		"one value matches, one does not": {
-			labels: []labels.Label{
-				{Name: "label-1", Value: "value-1"},
-				{Name: "label-2", Value: "value-3"},
+			labels: []string{
+				"label-1", "value-1",
+				"label-2", "value-3",
 			},
 			expectedMatch: false,
 		},
 		"one value matches, one label not on metric": {
-			labels: []labels.Label{
-				{Name: "label-1", Value: "value-1"},
-				{Name: "label-3", Value: "value-2"},
+			labels: []string{
+				"label-1", "value-1",
+				"label-3", "value-2",
 			},
 			expectedMatch: false,
 		},
@@ -58,7 +57,7 @@ func TestMatchesLabels(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			actual := MatchesLabels(&m, testCase.labels)
+			actual := MatchesLabels(&m, testCase.labels...)
 			require.Equal(t, testCase.expectedMatch, actual)
 		})
 	}

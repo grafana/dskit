@@ -5,15 +5,14 @@ import (
 	"fmt"
 
 	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 // MatchesLabels returns true if m has all the labels in l.
-func MatchesLabels(m *dto.Metric, l []labels.Label) bool {
-	for _, l := range l {
+func MatchesLabels(m *dto.Metric, labelNamesAndValues ...string) bool {
+	for _, l := range makeLabels(labelNamesAndValues...) {
 		found := false
 		for _, lp := range m.GetLabel() {
-			if l.Name != lp.GetName() || l.Value != lp.GetValue() {
+			if l.GetName() != lp.GetName() || l.GetValue() != lp.GetValue() {
 				continue
 			}
 
@@ -31,10 +30,9 @@ func MatchesLabels(m *dto.Metric, l []labels.Label) bool {
 
 // FindMetricsInFamilyMatchingLabels returns all the metrics in mf that match the labels in labelNamesAndValues.
 func FindMetricsInFamilyMatchingLabels(mf *dto.MetricFamily, labelNamesAndValues ...string) []*dto.Metric {
-	l := labels.FromStrings(labelNamesAndValues...)
 	var result []*dto.Metric
 	for _, m := range mf.GetMetric() {
-		if MatchesLabels(m, l) {
+		if MatchesLabels(m, labelNamesAndValues...) {
 			result = append(result, m)
 		}
 	}

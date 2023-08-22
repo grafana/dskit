@@ -91,7 +91,7 @@ func NewMetricFamilyMap(metrics []*dto.MetricFamily) (MetricFamilyMap, error) {
 	return perMetricName, nil
 }
 
-// SumCounters returns sum of gauges or 0, if no gauge was found.
+// SumCounters returns sum of counters or 0, if no counter was found.
 func (mfm MetricFamilyMap) SumCounters(name string) float64 {
 	return sum(mfm[name], counterValue)
 }

@@ -461,12 +461,6 @@ func sum(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
 	return result
 }
 
-// max returns the maximum value from all metrics from same metric family (= series with the same metric name, but different labels)
-// Supplied function extracts value.
-
-// min returns the minimum value from all metrics from same metric family (= series with the same metric name, but different labels)
-// Supplied function extracts value.
-
 // fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns 0.
 func fold(mf *dto.MetricFamily, fn func(*dto.Metric) float64, foldFn func(val, res float64) float64) float64 {
 	result := math.NaN()

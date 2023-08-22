@@ -2,6 +2,7 @@ package spanlogger
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -33,10 +34,10 @@ var (
 
 // SpanLogger unifies tracing and logging, to reduce repetition.
 type SpanLogger struct {
-	ctx        context.Context // context passed in, with logger
-	resolver   TenantResolver  // passed in
-	baseLogger log.Logger      // passed in
-	logger     log.Logger      // initialized on first use
+	ctx        context.Context            // context passed in, with logger
+	resolver   TenantResolver             // passed in
+	baseLogger log.Logger                 // passed in
+	logger     atomic.Pointer[log.Logger] // initialized on first use
 	opentracing.Span
 	sampled      bool
 	debugEnabled bool
@@ -104,10 +105,7 @@ func debugEnabled(logger log.Logger) bool {
 // Log implements gokit's Logger interface; sends logs to underlying logger and
 // also puts the on the spans.
 func (s *SpanLogger) Log(kvps ...interface{}) error {
-	if s.logger == nil {
-		s.logger = s.makeLogger()
-	}
-	s.logger.Log(kvps...)
+	s.getLogger().Log(kvps...)
 	return s.spanLog(kvps...)
 }
 
@@ -115,13 +113,10 @@ func (s *SpanLogger) Log(kvps ...interface{}) error {
 // Also it swallows the error return because nobody checks for errors on debug logs.
 func (s *SpanLogger) DebugLog(kvps ...interface{}) {
 	if s.debugEnabled {
-		if s.logger == nil {
-			s.logger = s.makeLogger()
-		}
 		// The call to Log() through an interface makes its argument escape, so make a copy here,
 		// in the debug-only path, so the function is faster for the non-debug path.
 		localCopy := append([]any{}, kvps...)
-		level.Debug(s.logger).Log(localCopy...)
+		level.Debug(s.getLogger()).Log(localCopy...)
 	}
 	_ = s.spanLog(kvps...)
 }
@@ -148,7 +143,12 @@ func (s *SpanLogger) Error(err error) error {
 	return err
 }
 
-func (s *SpanLogger) makeLogger() log.Logger {
+func (s *SpanLogger) getLogger() log.Logger {
+	pLogger := s.logger.Load()
+	if pLogger != nil {
+		return *pLogger
+	}
+	// If no logger stored in the pointer, start to make one.
 	logger := s.baseLogger
 	userID, err := s.resolver.TenantID(s.ctx)
 	if err == nil && userID != "" {
@@ -156,9 +156,13 @@ func (s *SpanLogger) makeLogger() log.Logger {
 	}
 
 	traceID, ok := tracing.ExtractSampledTraceID(s.ctx)
-	if !ok {
-		return logger
+	if ok {
+		logger = log.With(logger, "traceID", traceID)
 	}
-
-	return log.With(logger, "traceID", traceID)
+	// If the value has been set by another goroutine, fetch that other value and discard the one we made.
+	if !s.logger.CompareAndSwap(nil, &logger) {
+		pLogger := s.logger.Load()
+		logger = *pLogger
+	}
+	return logger
 }

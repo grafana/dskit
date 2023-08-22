@@ -104,6 +104,10 @@ func (mfm MetricFamilyMap) MaxGauges(name string) float64 {
 	return max(mfm[name], gaugeValue)
 }
 
+func (mfm MetricFamilyMap) MinGauges(name string) float64 {
+	return min(mfm[name], gaugeValue)
+}
+
 func (mfm MetricFamilyMap) SumHistograms(name string) HistogramData {
 	hd := HistogramData{}
 	mfm.SumHistogramsTo(name, &hd)
@@ -228,11 +232,14 @@ func (d MetricFamiliesPerTenant) sumOfSingleValuesWithLabels(metric string, fn f
 	return result
 }
 
-func (d MetricFamiliesPerTenant) SendMaxOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+func (d MetricFamiliesPerTenant) foldGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, valFn func(MetricFamilyMap) float64, foldFn func(val, res float64) float64) {
 	result := math.NaN()
 	for _, tenantEntry := range d {
-		if value := tenantEntry.metrics.MaxGauges(gauge); math.IsNaN(result) || value > result {
+		value := valFn(tenantEntry.metrics)
+		if math.IsNaN(result) {
 			result = value
+		} else {
+			result = foldFn(value, result)
 		}
 	}
 
@@ -242,6 +249,25 @@ func (d MetricFamiliesPerTenant) SendMaxOfGauges(out chan<- prometheus.Metric, d
 	}
 
 	out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result)
+
+}
+
+func (d MetricFamiliesPerTenant) SendMinOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+	d.foldGauges(out, desc, func(familyMap MetricFamilyMap) float64 { return familyMap.MinGauges(gauge) }, func(val, res float64) float64 {
+		if val < res {
+			return val
+		}
+		return res
+	})
+}
+
+func (d MetricFamiliesPerTenant) SendMaxOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+	d.foldGauges(out, desc, func(familyMap MetricFamilyMap) float64 { return familyMap.MaxGauges(gauge) }, func(val, res float64) float64 {
+		if val > res {
+			return val
+		}
+		return res
+	})
 }
 
 func (d MetricFamiliesPerTenant) SendMaxOfGaugesPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
@@ -418,14 +444,38 @@ func sum(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
 	return result
 }
 
-// max returns the max value from all metrics from same metric family (= series with the same metric name, but different labels)
+// max returns the maximum value from all metrics from same metric family (= series with the same metric name, but different labels)
 // Supplied function extracts value.
 func max(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
+	return fold(mf, fn, func(val, res float64) float64 {
+		if val > res {
+			return val
+		}
+		return res
+	})
+}
+
+// min returns the minimum value from all metrics from same metric family (= series with the same metric name, but different labels)
+// Supplied function extracts value.
+func min(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
+	return fold(mf, fn, func(val, res float64) float64 {
+		if val < res {
+			return val
+		}
+		return res
+	})
+}
+
+// fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns 0.
+func fold(mf *dto.MetricFamily, fn func(*dto.Metric) float64, foldFn func(val, res float64) float64) float64 {
 	result := math.NaN()
 
 	for _, m := range mf.GetMetric() {
-		if value := fn(m); math.IsNaN(result) || value > result {
+		value := fn(m)
+		if math.IsNaN(result) {
 			result = value
+		} else {
+			result = foldFn(value, result)
 		}
 	}
 

@@ -192,7 +192,7 @@ func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {
 	}
 }
 
-func TestSendMaxOfGauges(t *testing.T) {
+func TestSendMinMaxOfGauges(t *testing.T) {
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
 	desc := prometheus.NewDesc("test_metric", "", nil, nil)
@@ -201,29 +201,54 @@ func TestSendMaxOfGauges(t *testing.T) {
 	regs.AddTenantRegistry("user-2", user2Reg)
 
 	// No matching metric.
-	mf := regs.BuildMetricFamiliesPerTenant()
-	actual := collectMetrics(t, func(out chan prometheus.Metric) {
-		mf.SendMaxOfGauges(out, desc, "test_metric")
+	t.Run("min of no gauges", func(t *testing.T) {
+		mf := regs.BuildMetricFamiliesPerTenant()
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendMinOfGauges(out, desc, "test_metric")
+		})
+		expected := []*dto.Metric{
+			{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+		}
+		require.ElementsMatch(t, expected, actual)
 	})
-	expected := []*dto.Metric{
-		{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(0)}},
-	}
-	require.ElementsMatch(t, expected, actual)
+
+	t.Run("max of no gauges", func(t *testing.T) {
+		mf := regs.BuildMetricFamiliesPerTenant()
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendMaxOfGauges(out, desc, "test_metric")
+		})
+		expected := []*dto.Metric{
+			{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+		}
+		require.ElementsMatch(t, expected, actual)
+	})
 
 	// Register a metric for each user.
 	user1Metric := promauto.With(user1Reg).NewGauge(prometheus.GaugeOpts{Name: "test_metric"})
 	user2Metric := promauto.With(user2Reg).NewGauge(prometheus.GaugeOpts{Name: "test_metric"})
 	user1Metric.Set(100)
 	user2Metric.Set(80)
-	mf = regs.BuildMetricFamiliesPerTenant()
+	mf := regs.BuildMetricFamiliesPerTenant()
 
-	actual = collectMetrics(t, func(out chan prometheus.Metric) {
-		mf.SendMaxOfGauges(out, desc, "test_metric")
+	t.Run("min of gauges", func(t *testing.T) {
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendMinOfGauges(out, desc, "test_metric")
+		})
+		expected := []*dto.Metric{
+			{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(80)}},
+		}
+		require.ElementsMatch(t, expected, actual)
 	})
-	expected = []*dto.Metric{
-		{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(100)}},
-	}
-	require.ElementsMatch(t, expected, actual)
+
+	t.Run("max of gauges", func(t *testing.T) {
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendMaxOfGauges(out, desc, "test_metric")
+		})
+		expected := []*dto.Metric{
+			{Label: nil, Gauge: &dto.Gauge{Value: proto.Float64(100)}},
+		}
+		require.ElementsMatch(t, expected, actual)
+	})
 }
 
 func TestSendSumOfHistogramsWithLabels(t *testing.T) {

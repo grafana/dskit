@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 )
@@ -821,4 +822,17 @@ func applyMetricOptions(options ...MetricOption) *metricOptions {
 type metricOptions struct {
 	skipZeroValueMetrics bool
 	labelNames           []string
+}
+
+func makeLabels(namesAndValues ...string) []*dto.LabelPair {
+	out := []*dto.LabelPair(nil)
+
+	for i := 0; i+1 < len(namesAndValues); i = i + 2 {
+		out = append(out, &dto.LabelPair{
+			Name:  proto.String(namesAndValues[i]),
+			Value: proto.String(namesAndValues[i+1]),
+		})
+	}
+
+	return out
 }

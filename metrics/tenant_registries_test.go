@@ -264,16 +264,19 @@ func TestSendMinMaxOfGauges(t *testing.T) {
 		userLabel = "user"
 		user1     = "user-1"
 		user2     = "user-2"
+		user3     = "user-3"
 	)
 
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
+	user3Reg := prometheus.NewRegistry()
 	desc := prometheus.NewDesc("test_metric", "", nil, nil)
 	descUser := prometheus.NewDesc("per_tenant", "", []string{userLabel}, nil)
 	regs := NewTenantRegistries(log.NewNopLogger())
 
 	regs.AddTenantRegistry(user1, user1Reg)
 	regs.AddTenantRegistry(user2, user2Reg)
+	regs.AddTenantRegistry(user3, user3Reg)
 
 	verifySendMinOfGauges := func(t *testing.T, val float64) {
 		mf := regs.BuildMetricFamiliesPerTenant()
@@ -335,14 +338,28 @@ func TestSendMinMaxOfGauges(t *testing.T) {
 	verifySendMaxOfGauges(t, 100)
 	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user1: 100, user2: 80})
 
+	// Register metric for third user, with negative value.
+	user3Metric := promauto.With(user3Reg).NewGauge(prometheus.GaugeOpts{Name: "test_metric"})
+	user3Metric.Set(-1000)
+
+	verifySendMinOfGauges(t, -1000)
+	verifySendMaxOfGauges(t, 100)
+	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user1: 100, user2: 80, user3: -1000})
+
 	// Remove user1.
 	regs.RemoveTenantRegistry(user1, false)
-	verifySendMinOfGauges(t, 80)
+	verifySendMinOfGauges(t, -1000)
 	verifySendMaxOfGauges(t, 80)
-	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user2: 80})
+	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user2: 80, user3: -1000})
 
 	// Remove second user.
 	regs.RemoveTenantRegistry(user2, false)
+	verifySendMinOfGauges(t, -1000)
+	verifySendMaxOfGauges(t, -1000)
+	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user3: -1000})
+
+	// Remove third user.
+	regs.RemoveTenantRegistry(user3, false)
 	verifySendMinOfGauges(t, 0)
 	verifySendMaxOfGauges(t, 0)
 	verifySendMaxOfGaugesPerTenant(t, map[string]float64{})

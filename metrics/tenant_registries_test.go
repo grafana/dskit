@@ -346,20 +346,20 @@ func TestSendMinMaxOfGauges(t *testing.T) {
 	verifySendMaxOfGauges(t, 100)
 	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user1: 100, user2: 80, user3: -1000})
 
-	// Remove user1.
-	regs.RemoveTenantRegistry(user1, false)
+	// Remove gauge from first user.
+	user1Reg.Unregister(user1Metric)
 	verifySendMinOfGauges(t, -1000)
 	verifySendMaxOfGauges(t, 80)
 	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user2: 80, user3: -1000})
 
-	// Remove second user.
-	regs.RemoveTenantRegistry(user2, false)
+	// Remove gauge from second user.
+	user2Reg.Unregister(user2Metric)
 	verifySendMinOfGauges(t, -1000)
 	verifySendMaxOfGauges(t, -1000)
 	verifySendMaxOfGaugesPerTenant(t, map[string]float64{user3: -1000})
 
-	// Remove third user.
-	regs.RemoveTenantRegistry(user3, false)
+	// Remove gauge from third user.
+	user3Reg.Unregister(user3Metric)
 	verifySendMinOfGauges(t, 0)
 	verifySendMaxOfGauges(t, 0)
 	verifySendMaxOfGaugesPerTenant(t, map[string]float64{})

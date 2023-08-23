@@ -160,3 +160,6 @@
 * [BUGFIX] memberlist metrics: fix registration of `memberlist_client_kv_store_count` metric and disable expiration of metrics exposed by memberlist library. #327
 * [BUGFIX] middleware: fix issue where successful gRPC streaming requests are not always captured in metrics. #344
 * [BUGFIX] Ring: `DoUntilQuorum` and `DoUntilQuorumWithoutSuccessfulContextCancellation` will now cancel the context for a zone as soon as first failure for that zone is encountered. #364
+* [BUGFIX] `MetricFamiliesPerTenant.SendMinOfGauges` will no longer return 0 if some tenant doesn't have the gauge in their registry, and other tenants have positive values only. #368
+* [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGauges` will no longer return 0 if some tenant doesn't have the gauge in their registry, and other tenants have negative values only. #368
+* [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGaugesPerTenant` no longer includes tenants, which do not have specified gauge. #368

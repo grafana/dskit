@@ -2,7 +2,8 @@ package spanlogger
 
 import (
 	"context"
-	"sync/atomic"
+
+	"go.uber.org/atomic" // Really just need sync/atomic but there is a lint rule preventing it.
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"

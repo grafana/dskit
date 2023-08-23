@@ -319,7 +319,7 @@ func TestSendMinMaxOfGauges(t *testing.T) {
 	verifySendMaxOfGauges(t, 0)
 	verifySendMaxOfGaugesPerTenant(t, map[string]float64{})
 
-	// Register a metric for each user.
+	// Register a metric for one user.
 	user1Metric := promauto.With(user1Reg).NewGauge(prometheus.GaugeOpts{Name: "test_metric"})
 	user1Metric.Set(100)
 

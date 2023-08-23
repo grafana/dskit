@@ -97,10 +97,10 @@ func TestCounterValue(t *testing.T) {
 }
 
 func TestGaugeValueNan(t *testing.T) {
-	require.True(t, math.IsNaN(gaugeValueNaN(nil)))
-	require.True(t, math.IsNaN(gaugeValueNaN(&dto.Metric{})))
-	require.True(t, math.IsNaN(gaugeValueNaN(&dto.Metric{Gauge: &dto.Gauge{}})))
-	require.Equal(t, 543857.12837, gaugeValueNaN(&dto.Metric{Gauge: &dto.Gauge{Value: proto.Float64(543857.12837)}}))
+	require.True(t, math.IsNaN(gaugeValueOrNaN(nil)))
+	require.True(t, math.IsNaN(gaugeValueOrNaN(&dto.Metric{})))
+	require.True(t, math.IsNaN(gaugeValueOrNaN(&dto.Metric{Gauge: &dto.Gauge{}})))
+	require.Equal(t, 543857.12837, gaugeValueOrNaN(&dto.Metric{Gauge: &dto.Gauge{Value: proto.Float64(543857.12837)}}))
 }
 
 func TestGetMetricsWithLabelNames(t *testing.T) {

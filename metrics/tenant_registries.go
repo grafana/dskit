@@ -103,7 +103,7 @@ func (mfm MetricFamilyMap) SumGauges(name string) float64 {
 
 // MaxGauges returns max of gauges or NaN, if no gauge was found.
 func (mfm MetricFamilyMap) MaxGauges(name string) float64 {
-	return fold(mfm[name], gaugeValueNaN, func(val, res float64) float64 {
+	return fold(mfm[name], gaugeValueOrNaN, func(val, res float64) float64 {
 		if val > res {
 			return val
 		}
@@ -113,7 +113,7 @@ func (mfm MetricFamilyMap) MaxGauges(name string) float64 {
 
 // MinGauges returns minimum of gauges or NaN if no gauge was found.
 func (mfm MetricFamilyMap) MinGauges(name string) float64 {
-	return fold(mfm[name], gaugeValueNaN, func(val, res float64) float64 {
+	return fold(mfm[name], gaugeValueOrNaN, func(val, res float64) float64 {
 		if val < res {
 			return val
 		}
@@ -461,7 +461,7 @@ func sum(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
 	return result
 }
 
-// fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns 0.
+// fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns NaN.
 func fold(mf *dto.MetricFamily, fn func(*dto.Metric) float64, foldFn func(val, res float64) float64) float64 {
 	result := math.NaN()
 
@@ -484,8 +484,8 @@ func fold(mf *dto.MetricFamily, fn func(*dto.Metric) float64, foldFn func(val, r
 func counterValue(m *dto.Metric) float64 { return m.GetCounter().GetValue() }
 func gaugeValue(m *dto.Metric) float64   { return m.GetGauge().GetValue() }
 
-// gaugeValueNaN returns Gauge value or math.NaN.
-func gaugeValueNaN(m *dto.Metric) float64 {
+// gaugeValueOrNaN returns Gauge value or math.NaN.
+func gaugeValueOrNaN(m *dto.Metric) float64 {
 	if m == nil || m.Gauge == nil || m.Gauge.Value == nil {
 		return math.NaN()
 	}

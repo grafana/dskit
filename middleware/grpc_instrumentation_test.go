@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/metrics"
 )
 
 func TestErrorCode_NoError(t *testing.T) {
@@ -246,18 +247,19 @@ func requireRequestMetrics(t *testing.T, g prometheus.Gatherer, result string, c
 }
 
 func gatherRequestMetrics(t *testing.T, g prometheus.Gatherer) string {
-	got, err := g.Gather()
+	metricMap, err := metrics.NewMetricFamilyMapFromGatherer(g)
 	require.NoError(t, err)
+
+	mf := metricMap["client_request_duration_seconds"]
+	if mf == nil {
+		return ""
+	}
 
 	actual := ""
 
-	for _, mf := range got {
-		require.Equal(t, "client_request_duration_seconds", *mf.Name)
-
-		for _, m := range mf.Metric {
-			require.NotNil(t, m.Histogram)
-			actual += fmt.Sprintf(`%v_count%v %v`, *mf.Name, formatLabelPairs(m.Label), *m.Histogram.SampleCount)
-		}
+	for _, m := range mf.Metric {
+		require.NotNil(t, m.Histogram)
+		actual += fmt.Sprintf(`%v_count%v %v`, *mf.Name, formatLabelPairs(m.Label), *m.Histogram.SampleCount)
 	}
 
 	return actual

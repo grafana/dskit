@@ -140,6 +140,7 @@
 * [ENHANCEMENT] metrics: Add `MetricFamilyMap.MinGauges` and `MetricFamiliesPerTenant.SendMinOfGauges` methods. #366
 * [ENHANCEMENT] metrics: add `MatchesLabels`, `FindMetricsInFamilyMatchingLabels` and `FindHistogramWithNameAndLabels` test helper methods. #365
 * [ENHANCEMENT] SpanLogger: much more efficient debug logging. #367
+* [ENHANCMENT] server: clarify documentation for `-server.grpc-max-concurrent-streams` CLI flag. #369
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
@@ -161,3 +162,6 @@
 * [BUGFIX] memberlist metrics: fix registration of `memberlist_client_kv_store_count` metric and disable expiration of metrics exposed by memberlist library. #327
 * [BUGFIX] middleware: fix issue where successful gRPC streaming requests are not always captured in metrics. #344
 * [BUGFIX] Ring: `DoUntilQuorum` and `DoUntilQuorumWithoutSuccessfulContextCancellation` will now cancel the context for a zone as soon as first failure for that zone is encountered. #364
+* [BUGFIX] `MetricFamiliesPerTenant.SendMinOfGauges` will no longer return 0 if some tenant doesn't have the gauge in their registry, and other tenants have positive values only. #368
+* [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGauges` will no longer return 0 if some tenant doesn't have the gauge in their registry, and other tenants have negative values only. #368
+* [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGaugesPerTenant` no longer includes tenants, which do not have specified gauge. #368

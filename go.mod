@@ -13,6 +13,7 @@ require (
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/felixge/httpsnoop v1.0.3
 	github.com/go-kit/log v0.2.1
+	github.com/go-logr/logr v1.2.4
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gogo/googleapis v1.1.0
 	github.com/gogo/protobuf v1.3.2
@@ -43,6 +44,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.0
 	go.etcd.io/etcd/client/pkg/v3 v3.5.0
 	go.etcd.io/etcd/client/v3 v3.5.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.42.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.17.0
 	go.opentelemetry.io/contrib/samplers/jaegerremote v0.11.0
 	go.opentelemetry.io/otel v1.16.0
@@ -73,7 +75,6 @@ require (
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
-	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/btree v1.0.1 // indirect

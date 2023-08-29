@@ -96,8 +96,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		urlPath := r.URL.Path
 		userAgent := r.Header.Get("User-Agent")
 
-		parentSpan := opentracing.SpanFromContext(ctx)
-		// tag parent httpgrpc.HTTP/Handle server span, if it exists
+		// tag parent httpgrpc.HTTP/Handle server span, if it exist
 		if parentSpan != nil {
 			parentSpan.SetTag(string(ext.HTTPUrl), urlPath)
 			parentSpan.SetTag(string(ext.HTTPMethod), method)

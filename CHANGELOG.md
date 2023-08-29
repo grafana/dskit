@@ -139,6 +139,7 @@
 * [ENHANCEMENT] Ring: optionally emit logs and trace events in `DoUntilQuorum`. #361
 * [ENHANCEMENT] metrics: Add `MetricFamilyMap.MinGauges` and `MetricFamiliesPerTenant.SendMinOfGauges` methods. #366
 * [ENHANCEMENT] metrics: add `MatchesLabels`, `FindMetricsInFamilyMatchingLabels` and `FindHistogramWithNameAndLabels` test helper methods. #365
+* [ENHANCMENT] server: clarify documentation for `-server.grpc-max-concurrent-streams` CLI flag. #369
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

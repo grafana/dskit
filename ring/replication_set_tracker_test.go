@@ -209,6 +209,8 @@ func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 }
 
 func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
+	t.Parallel()
+
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3"}
@@ -847,6 +849,8 @@ func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
 }
 
 func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
+	t.Parallel()
+
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}

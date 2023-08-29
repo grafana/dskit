@@ -1833,6 +1833,8 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 				testName := fmt.Sprintf("num instances = %d, num zones = %d, update oldest registered timestamp = %v", numInstances, numZones, updateOldestRegisteredTimestamp)
 
 				t.Run(testName, func(t *testing.T) {
+					t.Parallel()
+
 					// Randomise the seed but log it in case we need to reproduce the test on failure.
 					seed := time.Now().UnixNano()
 					rand.Seed(seed)
@@ -1968,6 +1970,8 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 }
 
 func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
+	t.Parallel()
+
 	userID := "user-1"
 	otherUserID := "user-2"
 	subringSize := 3
@@ -2674,6 +2678,8 @@ func TestRingUpdates(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			inmem, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -2767,6 +2773,8 @@ func startLifecycler(t *testing.T, cfg Config, heartbeat time.Duration, lifecycl
 // This test checks if shuffle-sharded ring can be reused, and whether it receives
 // updates from "main" ring.
 func TestRing_ShuffleShard_Caching(t *testing.T) {
+	t.Parallel()
+
 	inmem, closer := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
 		MaxCasRetries: 20,
 		CasRetryDelay: 500 * time.Millisecond,

@@ -162,6 +162,11 @@ func parseTracingConfig() (config, error) {
 		cfg.samplingServerURL = fmt.Sprintf("http://%s:%d/sampling", e, envJaegerDefaultSamplingServerPort)
 	}
 
+	// When sampling server URL is set, we use the remote sampler
+	if cfg.samplingServerURL != "" && cfg.samplerType == "" {
+		cfg.samplerType = "remote"
+	}
+
 	// Parse tags
 	cfg.jaegerTags, err = parseJaegerTags(os.Getenv(envJaegerTags))
 	if err != nil {
@@ -188,11 +193,6 @@ func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error
 		return nil, err
 	}
 
-	res, err := NewResource(serviceName, cfg.jaegerTags)
-	if err != nil {
-		return nil, err
-	}
-
 	// Configure sampling strategy
 	sampler := tracesdk.AlwaysSample()
 	if cfg.samplerType == "const" {
@@ -207,6 +207,17 @@ func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error
 	} else if cfg.samplerType != "" {
 		return nil, errors.Errorf("unknown sampler type %q", cfg.samplerType)
 	}
+	customAttrs := cfg.jaegerTags
+	customAttrs = append(customAttrs,
+		attribute.String("samplerType", cfg.samplerType),
+		attribute.Float64("samplerParam", cfg.samplerParam),
+		attribute.String("samplingServerURL", cfg.samplingServerURL),
+	)
+	res, err := NewResource(serviceName, customAttrs)
+	if err != nil {
+		return nil, err
+	}
+
 	tp := tracesdk.NewTracerProvider(
 		tracesdk.WithBatcher(exp),
 		tracesdk.WithResource(res),

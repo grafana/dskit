@@ -232,11 +232,11 @@ func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error
 		jaegerpropagator.Jaeger{},
 	}...))
 
-	// OpenTracing <=> OpenTelemetry bridge
-	// The tracer name is empty so that the bridge uses the default tracer.
-	otTracer, _ := bridge.NewTracerPair(tp.Tracer(""))
-	bridgeTracer = otTracer
-	opentracing.SetGlobalTracer(otTracer)
+	// // OpenTracing <=> OpenTelemetry bridge
+	// // The tracer name is empty so that the bridge uses the default tracer.
+	// otTracer, _ := bridge.NewTracerPair(tp.Tracer(""))
+	// bridgeTracer = otTracer
+	// opentracing.SetGlobalTracer(otTracer)
 	return &Closer{tp}, nil
 }
 

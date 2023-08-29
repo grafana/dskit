@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/pkg/errors"
@@ -110,11 +111,28 @@ func (r fakeResolver) TenantIDs(ctx context.Context) ([]string, error) {
 
 // Using a no-op logger and no tracing provider, measure the overhead of a small log call.
 func BenchmarkSpanLogger(b *testing.B) {
-	logger := log.NewNopLogger()
+	logger := noDebugNoopLogger{}
 	resolver := fakeResolver{}
 	sl, _ := New(context.Background(), logger, "test", resolver, "bar")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = sl.Log("msg", "foo", "more", "data")
-	}
+	b.Run("log", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = sl.Log("msg", "foo", "more", "data")
+		}
+	})
+	b.Run("level.debug", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = level.Debug(sl).Log("msg", "foo", "more", "data")
+		}
+	})
+	b.Run("debuglog", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			sl.DebugLog("msg", "foo", "more", "data")
+		}
+	})
 }
+
+// Logger which does nothing and implements the DebugEnabled interface used by SpanLogger.
+type noDebugNoopLogger struct{}
+
+func (noDebugNoopLogger) Log(...interface{}) error { return nil }
+func (noDebugNoopLogger) DebugEnabled() bool       { return false }

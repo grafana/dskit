@@ -24,7 +24,7 @@ help: ## Display this help and any documented user-facing targets. Other undocum
 
 .PHONY: test
 test: ## Runs Go tests
-	go test -tags netgo -timeout 30m -race -count 1 ./...
+	go test -tags netgo -timeout 30m -race -count 1 -p 4 ./...
 
 .PHONY: lint
 lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint ## Runs misspell, golangci-lint, and faillint

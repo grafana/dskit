@@ -1829,7 +1829,11 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 
 	for _, updateOldestRegisteredTimestamp := range []bool{false, true} {
 		for _, numInstances := range numInitialInstances {
+			numInstances := numInstances
+
 			for _, numZones := range numInitialZones {
+				numZones := numZones
+
 				testName := fmt.Sprintf("num instances = %d, num zones = %d, update oldest registered timestamp = %v", numInstances, numZones, updateOldestRegisteredTimestamp)
 
 				t.Run(testName, func(t *testing.T) {

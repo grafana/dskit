@@ -844,6 +844,8 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 

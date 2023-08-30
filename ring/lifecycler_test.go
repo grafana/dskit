@@ -844,7 +844,11 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			ctx := context.Background()
 
 			ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
@@ -1136,6 +1140,8 @@ func TestTokensOnDisk(t *testing.T) {
 }
 
 func TestDeletePersistedTokensOnShutdown(t *testing.T) {
+	t.Parallel()
+
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -1297,6 +1303,8 @@ func TestJoinInJoiningState(t *testing.T) {
 }
 
 func TestWaitBeforeJoining(t *testing.T) {
+	t.Parallel()
+
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 

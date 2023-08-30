@@ -353,6 +353,8 @@ func TestCASErrorWithRetries(t *testing.T) {
 }
 
 func TestCASNoChange(t *testing.T) {
+	t.Parallel()
+
 	withFixtures(t, func(t *testing.T, kv *Client) {
 		err := cas(kv, key, func(in *data) (*data, bool, error) {
 			if in == nil {
@@ -447,6 +449,8 @@ func TestCASFailedBecauseOfVersionChanges(t *testing.T) {
 }
 
 func TestMultipleCAS(t *testing.T) {
+	t.Parallel()
+
 	c := dataCodec{}
 
 	var cfg KVConfig
@@ -547,6 +551,8 @@ func defaultKVConfig(i int) KVConfig {
 }
 
 func TestMultipleClients(t *testing.T) {
+	t.Parallel()
+
 	members := 10
 
 	err := testMultipleClientsWithConfigGenerator(t, members, defaultKVConfig)
@@ -554,6 +560,8 @@ func TestMultipleClients(t *testing.T) {
 }
 
 func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
+	t.Parallel()
+
 	// We want 3 members, they will be configured with the following labels:
 	// 1) ""
 	// 2) "label1"
@@ -581,6 +589,8 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 }
 
 func TestMultipleClientsWithMixedLabelsAndClusterLabelVerificationDisabled(t *testing.T) {
+	t.Parallel()
+
 	// We want 3 members, all will have the cluster label verification disabled.
 	// They will be configured with mixed labels, and some without any labels.
 	//
@@ -606,6 +616,8 @@ func TestMultipleClientsWithMixedLabelsAndClusterLabelVerificationDisabled(t *te
 }
 
 func TestMultipleClientsWithSameLabelWithClusterLabelVerification(t *testing.T) {
+	t.Parallel()
+
 	members := 10
 	label := "myTestLabel"
 
@@ -759,6 +771,7 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 }
 
 func TestJoinMembersWithRetryBackoff(t *testing.T) {
+
 	c := dataCodec{}
 
 	const members = 3
@@ -787,7 +800,11 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			var clients []*Client
 
 			stop := make(chan struct{})

@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -79,16 +77,8 @@ func TestExtractSampledTraceID(t *testing.T) {
 		empty bool
 	}{
 		{
-			desc: "OpenTracing with Jaeger tracer provider",
-			ctx:  getContextWithOpenTracing,
-		},
-		{
 			desc: "OpenTelemetry",
 			ctx:  getContextWithOpenTelemetry,
-		},
-		{
-			desc: "OpenTelemetry with OpentTracing bridge",
-			ctx:  getContextWithOpenTelemetryWithBridge,
 		},
 		{
 			desc: "No tracer",
@@ -107,8 +97,8 @@ func TestExtractSampledTraceID(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			ctx, closer := tc.ctx(t)
 			defer closer()
-			sampledTraceID, sampled := ExtractSampledTraceID(ctx)
-			traceID, ok := ExtractTraceID(ctx)
+			sampledTraceID, sampled := ExtractOtelSampledTraceID(ctx)
+			traceID, ok := ExtractOtelTraceID(ctx)
 
 			assert.Equal(t, sampledTraceID, traceID, "Expected sampledTraceID to equal traceID")
 			if tc.empty {
@@ -121,36 +111,6 @@ func TestExtractSampledTraceID(t *testing.T) {
 				assert.True(t, ok, "Expected ok to be true")
 			}
 		})
-	}
-}
-
-func getContextWithOpenTracing(t *testing.T) (context.Context, func()) {
-	jCfg, err := jaegercfg.FromEnv()
-	require.NoError(t, err)
-	jCfg.ServiceName = "test"
-	jCfg.Sampler.Options = append(jCfg.Sampler.Options, jaeger.SamplerOptions.InitialSampler(jaeger.NewConstSampler(true)))
-	tracer, closer, err := jCfg.NewTracer()
-	require.NoError(t, err)
-	opentracing.SetGlobalTracer(tracer)
-	sp := otel.Tracer("github.com/grafana/mimir").StartSpan("test")
-	return opentracing.ContextWithSpan(context.Background(), sp), func() {
-		sp.Finish()
-		closer.Close()
-	}
-}
-
-func getContextWithOpenTelemetryWithBridge(t *testing.T) (context.Context, func()) {
-	originTracerProvider := otel.GetTracerProvider()
-	cfg, err := parseTracingConfig()
-	require.NoError(t, err)
-	iCloser, err := cfg.initJaegerTracerProvider("mimir")
-	require.NoError(t, err)
-	defer iCloser.Close()
-
-	sp := otel.Tracer("github.com/grafana/mimir").StartSpan("test")
-	return opentracing.ContextWithSpan(context.Background(), sp), func() {
-		sp.Finish()
-		otel.SetTracerProvider(originTracerProvider)
 	}
 }
 

@@ -27,7 +27,6 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.5
 	github.com/hashicorp/memberlist v0.3.1
 	github.com/miekg/dns v1.1.50
-	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
@@ -38,25 +37,26 @@ require (
 	github.com/prometheus/exporter-toolkit v0.10.1-0.20230714054209-2f4150c63f97
 	github.com/sercand/kuberesolver/v4 v4.0.0
 	github.com/soheilhy/cmux v0.1.5
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.28.0+incompatible
 	go.etcd.io/etcd/api/v3 v3.5.0
 	go.etcd.io/etcd/client/pkg/v3 v3.5.0
 	go.etcd.io/etcd/client/v3 v3.5.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.43.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.43.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.17.0
 	go.opentelemetry.io/contrib/samplers/jaegerremote v0.11.0
-	go.opentelemetry.io/otel v1.16.0
-	go.opentelemetry.io/otel/bridge/opentracing v1.16.0
+	go.opentelemetry.io/otel v1.17.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.16.0
-	go.opentelemetry.io/otel/sdk v1.16.0
-	go.opentelemetry.io/otel/trace v1.16.0
+	go.opentelemetry.io/otel/sdk v1.17.0
+	go.opentelemetry.io/otel/trace v1.17.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.2.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
-	golang.org/x/net v0.10.0
+	golang.org/x/net v0.14.0
 	golang.org/x/sync v0.3.0
 	golang.org/x/time v0.1.0
-	google.golang.org/grpc v1.55.0
+	google.golang.org/grpc v1.57.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -99,18 +99,20 @@ require (
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	github.com/yuin/gopher-lua v0.0.0-20210529063254-f4c35e4016d9 // indirect
-	go.opentelemetry.io/otel/metric v1.16.0 // indirect
+	go.opentelemetry.io/otel/metric v1.17.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
-	golang.org/x/crypto v0.10.0 // indirect
+	golang.org/x/crypto v0.12.0 // indirect
 	golang.org/x/mod v0.8.0 // indirect
 	golang.org/x/oauth2 v0.8.0 // indirect
-	golang.org/x/sys v0.9.0 // indirect
-	golang.org/x/text v0.10.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/text v0.12.0 // indirect
 	golang.org/x/tools v0.6.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
-	google.golang.org/protobuf v1.30.0 // indirect
+	google.golang.org/genproto v0.0.0-20230526161137-0005af68ea54 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20230525234035-dd9d682886f9 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230526203410-71b5a4ffd15e // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 )
 
 replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.21.4

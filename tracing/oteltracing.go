@@ -19,7 +19,6 @@ import (
 	"go.opentelemetry.io/contrib/samplers/jaegerremote"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	bridge "go.opentelemetry.io/otel/bridge/opentracing"
 	jaegerotel "go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
@@ -29,7 +28,6 @@ import (
 var (
 	// ErrBlankTraceConfiguration is an error to notify client to provide valid trace report agent or config server
 	ErrBlankTraceConfiguration = errors.New("no trace report agent, config server, or collector endpoint specified")
-	bridgeTracer               = bridge.NewBridgeTracer()
 )
 
 const (
@@ -61,10 +59,6 @@ func NewOtelFromEnv(serviceName string) (io.Closer, error) {
 		return nil, ErrBlankTraceConfiguration
 	}
 	return cfg.initJaegerTracerProvider(serviceName)
-}
-
-func GetBridgeTracer() *bridge.BridgeTracer {
-	return bridgeTracer
 }
 
 // parseJaegerTags Parse Jaeger tags from env var JAEGER_TAGS, example of TAGs format: key1=value1,key2=${value2:value3} where value2 is an env var

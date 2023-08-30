@@ -8,9 +8,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tracing"
-	"github.com/opentracing/opentracing-go/ext"
 	"go.opentelemetry.io/otel"
-	opentracing "go.opentelemetry.io/otel"
 	attribute "go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -78,13 +76,10 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 	if !ok {
 		logger = fallback
 	}
-	sampled := false
+
 	sp := trace.SpanFromContext(ctx)
-	if sp == nil {
-		sp = opentracing.NoopTracer{}.StartSpan("noop")
-	} else {
-		_, sampled = tracing.ExtractSampledTraceID(ctx)
-	}
+	_, sampled := tracing.ExtractSampledTraceID(ctx)
+
 	return &SpanLogger{
 		ctx:          ctx,
 		baseLogger:   logger,
@@ -140,8 +135,8 @@ func (s *SpanLogger) Error(err error) error {
 	if err == nil || !s.sampled {
 		return err
 	}
-	ext.Error.Set(s.Span, true)
-	s.Span.LogFields(attribute.Error(err))
+	s.RecordError(err, trace.WithStackTrace(true))
+	s.Span.AddEvent("error", trace.WithAttributes(attribute.String("msg", err.Error())))
 	return err
 }
 
@@ -157,7 +152,7 @@ func (s *SpanLogger) getLogger() log.Logger {
 		logger = log.With(logger, "user", userID)
 	}
 
-	traceID, ok := tracing.ExtractSampledTraceID(s.ctx)
+	traceID, ok := tracing.ExtractOtelSampledTraceID(s.ctx)
 	if ok {
 		logger = log.With(logger, "traceID", traceID)
 	}

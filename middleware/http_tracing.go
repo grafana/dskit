@@ -9,15 +9,10 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
-
-// Dummy dependency to enforce that we have a nethttp version newer
-// than the one which implements Websockets. (No semver on nethttp)
-var _ = nethttp.MWURLTagFunc
 
 type HttpgppcForwardedKey struct{}
 
@@ -29,24 +24,26 @@ type Tracer struct {
 
 // Wrap implements Interface
 func (t Tracer) Wrap(next http.Handler) http.Handler {
-	options := []nethttp.MWOption{
-		nethttp.OperationNameFunc(makeHTTPOperationNameFunc(t.RouteMatcher)),
-		nethttp.MWSpanObserver(func(sp trace.Span, r *http.Request) {
-			// add a tag with the client's user agent to the span
-			userAgent := r.Header.Get("User-Agent")
-			if userAgent != "" {
-				sp.SetTag("http.user_agent", userAgent)
-			}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// extract relevant span & tag data from request
+		ctx := r.Context()
+		name := makeHTTPOperationNameFunc(t.RouteMatcher)("http_tracing", r)
+		ctx, sp := otel.Tracer("dskit").Start(ctx, name)
 
-			// add a tag with the client's sourceIPs to the span, if a
-			// SourceIPExtractor is given.
-			if t.SourceIPs != nil {
-				sp.SetTag("sourceIPs", t.SourceIPs.Get(r))
-			}
-		}),
-	}
+		// add a tag with the client's user agent to the span
+		userAgent := r.Header.Get("User-Agent")
+		if userAgent != "" {
+			sp.SetAttributes(attribute.String("http.user_agent", userAgent))
+		}
 
-	return nethttp.Middleware(otel.Tracer("github.com/grafana/mimir"), next, options...)
+		// add a tag with the client's sourceIPs to the span, if a
+		// SourceIPExtractor is given.
+		if t.SourceIPs != nil {
+			sp.SetAttributes(attribute.String("sourceIPs", t.SourceIPs.Get(r)))
+		}
+		r.WithContext(ctx)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // HTTPGRPCTracer is a middleware which traces incoming httpgrpc requests.
@@ -101,8 +98,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		}
 		defer parentSpan.End()
 
-		// create and start child HTTP span
-		// mirroring opentracing-contrib/go-stdlib/nethttp.Middleware span name and tags
+		// create and start child HTTP span and set span name and attributes
 		childSpanName := httpOperationNameFunc(r)
 		startSpanOpts := []trace.SpanStartOption{
 			trace.WithSpanKind(trace.SpanKindServer),
@@ -125,9 +121,9 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func makeHTTPOperationNameFunc(routeMatcher RouteMatcher) func(r *http.Request) string {
-	return func(r *http.Request) string {
-		op := getRouteName(routeMatcher, r)
+func makeHTTPOperationNameFunc(routeMatcher RouteMatcher) func(op string, r *http.Request) string {
+	return func(op string, r *http.Request) string {
+
 		if op == "" {
 			return "HTTP " + r.Method
 		}

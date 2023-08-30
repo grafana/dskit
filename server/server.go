@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/exporter-toolkit/web"
 	"github.com/soheilhy/cmux"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

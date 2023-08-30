@@ -2,78 +2,43 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
 
 	"github.com/gorilla/mux"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
-	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
 	"github.com/grafana/dskit/httpgrpc"
 	httpgrpcServer "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
-
-// testObserver implements jaeger.ContribSpanObserver to collect an emitted span's attributes
-type testSpanObserver struct {
-	OpName     string
-	Tags       map[string]interface{}
-	References []opentracing.SpanReference
-}
-
-func (tso testSpanObserver) OnSetOperationName(operationName string) {
-	tso.OpName = operationName //nolint:staticcheck // SA4005
-}
-func (tso testSpanObserver) OnSetTag(key string, value interface{}) {
-	tso.Tags[key] = value
-}
-func (tso testSpanObserver) OnFinish(_ opentracing.FinishOptions) {}
-
-// testObserver implements jaeger.ContribObserver to collect SpanObservers as they are emitted
-type testObserver struct {
-	SpanObservers []testSpanObserver
-}
-
-func (to *testObserver) OnStartSpan(
-	_ trace.Span,
-	operationName string,
-	options opentracing.StartSpanOptions,
-) (jaeger.ContribSpanObserver, bool) {
-	spanObserver := testSpanObserver{
-		OpName:     operationName,
-		Tags:       options.Tags,
-		References: options.References,
-	}
-	to.SpanObservers = append(to.SpanObservers, spanObserver)
-	return spanObserver, true
-}
 
 // assertTracingSpans tests if expected spans and tags were recorded by tracing SpanObservers
 func assertTracingSpans(
 	t *testing.T,
-	spanObservers []testSpanObserver,
+	spanObservers []sdktrace.ReadOnlySpan,
 	expectedTagsByOpName map[string]map[string]string,
 ) {
 	var observedSpanOpNames []string
 	for _, spanObserver := range spanObservers {
 		// assert expected tag values for observed span, if any
-		if expectedTags, ok := expectedTagsByOpName[spanObserver.OpName]; ok {
-			for tagKey, tagValue := range spanObserver.Tags {
-				if expectedTagValue, ok := expectedTags[tagKey]; ok {
-					require.Equal(t, expectedTagValue, tagValue)
+		if expectedTags, ok := expectedTagsByOpName[spanObserver.Name()]; ok {
+			for _, kv := range spanObserver.Attributes() {
+				if expectedTagValue, ok := expectedTags[string(kv.Key)]; ok {
+					require.Equal(t, expectedTagValue, kv.Value.AsString())
 				}
 			}
 		}
 		// collect observed span operation names
-		observedSpanOpNames = append(observedSpanOpNames, spanObserver.OpName)
+		observedSpanOpNames = append(observedSpanOpNames, spanObserver.Name())
 	}
 	for opName := range expectedTagsByOpName {
 		// assert all expected operations were observed
@@ -82,7 +47,6 @@ func assertTracingSpans(
 }
 
 func TestHTTPGRPCTracing(t *testing.T) {
-
 	httpPort := 9099
 	httpAddress := "127.0.0.1"
 
@@ -107,17 +71,17 @@ func TestHTTPGRPCTracing(t *testing.T) {
 	// regardless of whether the request is routed through the gRPC Handle method first
 	expectedOpNameHelloHTTPSpan := "HTTP " + httpMethod + " - " + expectedHelloRouteLabel
 	expectedTagsHelloHTTPSpan := map[string]string{
-		string(ext.Component):  "net/http",
-		string(ext.HTTPUrl):    helloRouteURL.Path,
-		string(ext.HTTPMethod): httpMethod,
-		"http.route":           helloRouteName,
+		"component":   "net/http",
+		"http.url":    helloRouteURL.Path,
+		"http.method": httpMethod,
+		"http.route":  helloRouteName,
 	}
 	expectedOpNameHelloPathParamHTTPSpan := "HTTP " + httpMethod + " - " + expectedHelloPathParamRouteLabel
 	expectedTagsHelloPathParamHTTPSpan := map[string]string{
-		string(ext.Component):  "net/http",
-		string(ext.HTTPUrl):    helloPathParamRouteURL.Path,
-		string(ext.HTTPMethod): httpMethod,
-		"http.route":           expectedHelloPathParamRouteLabel,
+		"component":   "net/http",
+		"http.url":    helloPathParamRouteURL.Path,
+		"http.method": httpMethod,
+		"http.route":  expectedHelloPathParamRouteLabel,
 	}
 
 	tests := map[string]struct {
@@ -135,11 +99,11 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			routeLabel:      expectedHelloRouteLabel,
 			reqURL:          helloRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
-				"/httpgrpc.HTTP/Handle": {
-					string(ext.Component):  "gRPC",
-					string(ext.HTTPUrl):    helloRouteURL.Path,
-					string(ext.HTTPMethod): httpMethod,
-					"http.route":           helloRouteName,
+				"httpgrpc.HTTP/Handle": {
+					"component":   "gRPC",
+					"http.url":    helloRouteURL.Path,
+					"http.method": httpMethod,
+					"http.route":  helloRouteName,
 				},
 				expectedOpNameHelloHTTPSpan: expectedTagsHelloHTTPSpan,
 			},
@@ -161,11 +125,11 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			routeLabel:      expectedHelloPathParamRouteLabel,
 			reqURL:          helloPathParamRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
-				"/httpgrpc.HTTP/Handle": {
-					string(ext.Component):  "gRPC",
-					string(ext.HTTPUrl):    helloPathParamRouteURL.Path,
-					string(ext.HTTPMethod): httpMethod,
-					"http.route":           expectedHelloPathParamRouteLabel,
+				"httpgrpc.HTTP/Handle": {
+					"component":   "gRPC",
+					"http.url":    helloPathParamRouteURL.Path,
+					"http.method": httpMethod,
+					"http.route":  expectedHelloPathParamRouteLabel,
 				},
 				expectedOpNameHelloPathParamHTTPSpan: expectedTagsHelloPathParamHTTPSpan,
 			},
@@ -184,15 +148,13 @@ func TestHTTPGRPCTracing(t *testing.T) {
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
-
-			observer := testObserver{}
-			tracer, closer := jaeger.NewTracer(
-				"test",
-				jaeger.NewConstSampler(true),
-				jaeger.NewInMemoryReporter(),
-				jaeger.TracerOptions.ContribObserver(&observer),
+			exp := tracetest.NewInMemoryExporter()
+			tp := sdktrace.NewTracerProvider(
+				sdktrace.WithBatcher(exp),
+				sdktrace.WithSampler(sdktrace.AlwaysSample()),
 			)
-			opentracing.SetGlobalTracer(tracer)
+			otel.SetTracerProvider(tp)
+			ctx := context.Background()
 
 			var cfg Config
 			cfg.HTTPListenAddress = httpAddress
@@ -256,11 +218,12 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			assertTracingSpans(t, observer.SpanObservers, test.expectedTagsByOpName)
+			tp.ForceFlush(ctx)
+			assertTracingSpans(t, exp.GetSpans().Snapshots(), test.expectedTagsByOpName)
 
 			conn.Close()
 			server.Shutdown()
-			closer.Close()
+			tp.Shutdown(ctx)
 		})
 	}
 }

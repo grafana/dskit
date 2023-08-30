@@ -72,7 +72,7 @@ func (c *HistogramCollector) After(ctx context.Context, method, statusCode strin
 // 'histogram' parameter must be castable to prometheus.ExemplarObserver or function will panic
 // (this will always work for a HistogramVec).
 func ObserveWithExemplar(ctx context.Context, histogram prometheus.Observer, seconds float64) {
-	if traceID, ok := tracing.ExtractSampledTraceID(ctx); ok {
+	if traceID, ok := tracing.ExtractOtelSampledTraceID(ctx); ok {
 		histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(
 			seconds,
 			prometheus.Labels{"traceID": traceID},
@@ -158,7 +158,7 @@ func CollectedRequest(ctx context.Context, method string, col Collector, toStatu
 	if toStatusCode == nil {
 		toStatusCode = ErrorCode
 	}
-	newCtx, sp := otel.Tracer("github.com/grafana/mimir").Start(ctx, method, trace.WithSpanKind(trace.SpanKindClient))
+	newCtx, sp := otel.Tracer("").Start(ctx, method, trace.WithSpanKind(trace.SpanKindClient))
 	if userID, err := user.ExtractUserID(ctx); err == nil {
 		sp.SetAttributes(attribute.String("user", userID))
 	}

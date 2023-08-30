@@ -24,11 +24,12 @@ type Tracer struct {
 
 // Wrap implements Interface
 func (t Tracer) Wrap(next http.Handler) http.Handler {
+	// nethttp.MWSpanObserver()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// extract relevant span & tag data from request
 		ctx := r.Context()
-		name := makeHTTPOperationNameFunc(t.RouteMatcher)("http_tracing", r)
-		ctx, sp := otel.Tracer("dskit").Start(ctx, name)
+		name := makeHTTPOperationNameFunc(t.RouteMatcher)(r)
+		ctx, sp := otel.Tracer("").Start(ctx, name)
 
 		// add a tag with the client's user agent to the span
 		userAgent := r.Header.Get("User-Agent")
@@ -41,7 +42,7 @@ func (t Tracer) Wrap(next http.Handler) http.Handler {
 		if t.SourceIPs != nil {
 			sp.SetAttributes(attribute.String("sourceIPs", t.SourceIPs.Get(r)))
 		}
-		r.WithContext(ctx)
+		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -121,9 +122,9 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func makeHTTPOperationNameFunc(routeMatcher RouteMatcher) func(op string, r *http.Request) string {
-	return func(op string, r *http.Request) string {
-
+func makeHTTPOperationNameFunc(routeMatcher RouteMatcher) func(r *http.Request) string {
+	return func(r *http.Request) string {
+		op := getRouteName(routeMatcher, r)
 		if op == "" {
 			return "HTTP " + r.Method
 		}

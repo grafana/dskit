@@ -54,7 +54,7 @@ const (
 // Tracing will be enabled if one (or more) of the following environment variables is used to configure trace reporting:
 // - JAEGER_AGENT_HOST
 // - JAEGER_SAMPLER_MANAGER_HOST_PORT
-func NewFromEnv(serviceName string) (io.Closer, error) {
+func NewOtelFromEnv(serviceName string) (io.Closer, error) {
 	cfg, err := parseTracingConfig()
 	if err != nil {
 		return nil, errors.Wrap(err, "could not load jaeger tracer configuration")
@@ -231,12 +231,6 @@ func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error
 		// jaeger Propagator is for opentracing backwards compatibility
 		jaegerpropagator.Jaeger{},
 	}...))
-
-	// // OpenTracing <=> OpenTelemetry bridge
-	// // The tracer name is empty so that the bridge uses the default tracer.
-	// otTracer, _ := bridge.NewTracerPair(tp.Tracer(""))
-	// bridgeTracer = otTracer
-	// opentracing.SetGlobalTracer(otTracer)
 	return &Closer{tp}, nil
 }
 

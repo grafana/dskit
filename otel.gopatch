@@ -60,16 +60,23 @@ var b expression
 +ctx = trace.ContextWithSpan(a, b)
 
 @@
+var otgrpc identifier
 @@
--import "github.com/opentracing-contrib/go-grpc"
+-import otgrpc "github.com/opentracing-contrib/go-grpc"
 +import "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 
 -otgrpc.OpenTracingClientInterceptor(...)
 +otelgrpc.UnaryClientInterceptor()
 
+@@
+var otgrpc identifier
+@@
 -otgrpc.OpenTracingStreamClientInterceptor(...)
 +otelgrpc.StreamClientInterceptor()
 
+@@
+var otgrpc identifier
+@@
 -otgrpc.OpenTracingStreamServerInterceptor(...)
 +otelgrpc.StreamServerInterceptor()
 

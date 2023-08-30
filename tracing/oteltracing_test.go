@@ -6,7 +6,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
@@ -133,7 +132,7 @@ func getContextWithOpenTracing(t *testing.T) (context.Context, func()) {
 	tracer, closer, err := jCfg.NewTracer()
 	require.NoError(t, err)
 	opentracing.SetGlobalTracer(tracer)
-	sp := opentracing.GlobalTracer().StartSpan("test")
+	sp := otel.Tracer("github.com/grafana/mimir").StartSpan("test")
 	return opentracing.ContextWithSpan(context.Background(), sp), func() {
 		sp.Finish()
 		closer.Close()
@@ -148,7 +147,7 @@ func getContextWithOpenTelemetryWithBridge(t *testing.T) (context.Context, func(
 	require.NoError(t, err)
 	defer iCloser.Close()
 
-	sp := opentracing.GlobalTracer().StartSpan("test")
+	sp := otel.Tracer("github.com/grafana/mimir").StartSpan("test")
 	return opentracing.ContextWithSpan(context.Background(), sp), func() {
 		sp.Finish()
 		otel.SetTracerProvider(originTracerProvider)

@@ -252,7 +252,7 @@ func ExtractTraceID(ctx context.Context) (string, bool) {
 // true if the returned trace id is sampled.
 func ExtractSampledTraceID(ctx context.Context) (string, bool) {
 	// the common case, wehre jaeger and opentracing is used
-	sp := opentracing.SpanFromContext(ctx)
+	sp := trace.SpanFromContext(ctx)
 	if sp != nil {
 		sctx, ok := sp.Context().(jaeger.SpanContext)
 		if ok {

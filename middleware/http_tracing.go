@@ -10,8 +10,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Dummy dependency to enforce that we have a nethttp version newer
@@ -30,7 +30,7 @@ type Tracer struct {
 func (t Tracer) Wrap(next http.Handler) http.Handler {
 	options := []nethttp.MWOption{
 		nethttp.OperationNameFunc(makeHTTPOperationNameFunc(t.RouteMatcher)),
-		nethttp.MWSpanObserver(func(sp opentracing.Span, r *http.Request) {
+		nethttp.MWSpanObserver(func(sp trace.Span, r *http.Request) {
 			// add a tag with the client's user agent to the span
 			userAgent := r.Header.Get("User-Agent")
 			if userAgent != "" {
@@ -98,7 +98,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		urlPath := r.URL.Path
 		userAgent := r.Header.Get("User-Agent")
 
-		parentSpan := opentracing.SpanFromContext(ctx)
+		parentSpan := trace.SpanFromContext(ctx)
 		// tag parent httpgrpc.HTTP/Handle server span, if it exists
 		if parentSpan != nil {
 			parentSpan.SetTag(string(ext.HTTPUrl), urlPath)

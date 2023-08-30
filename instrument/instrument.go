@@ -10,11 +10,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
-	attribute "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/dskit/grpcutil"
@@ -154,19 +152,18 @@ func (c *JobCollector) After(_ context.Context, method, statusCode string, start
 // CollectedRequest runs a tracked request. It uses the given Collector to monitor requests.
 //
 // If `f` returns no error we log "200" as status code, otherwise "500". Pass in a function
-// for `toStatusCode` to overwrite this behaviour. It will also emit an OpenTracing span if
+// for `toStatusCode` to overwrite this behaviour. It will also emit an otel span if
 // you have a global tracer configured.
 func CollectedRequest(ctx context.Context, method string, col Collector, toStatusCode func(error) string, f func(context.Context) error) error {
 	if toStatusCode == nil {
 		toStatusCode = ErrorCode
 	}
-	newCtx, sp := otel.Tracer("github.com/grafana/mimir").Start(ctx, method)
-	ext.SpanKindRPCClient.Set(sp)
+	newCtx, sp := otel.Tracer("github.com/grafana/mimir").Start(ctx, method, trace.WithSpanKind(trace.SpanKindClient))
 	if userID, err := user.ExtractUserID(ctx); err == nil {
-		sp.SetTag("user", userID)
+		sp.SetAttributes(attribute.String("user", userID))
 	}
 	if orgID, err := user.ExtractOrgID(ctx); err == nil {
-		sp.SetTag("organization", orgID)
+		sp.SetAttributes(attribute.String("organization", orgID))
 	}
 
 	start := time.Now()
@@ -176,11 +173,11 @@ func CollectedRequest(ctx context.Context, method string, col Collector, toStatu
 
 	if err != nil {
 		if !grpcutil.IsCanceled(err) {
-			ext.Error.Set(sp, true)
+			sp.RecordError(err, trace.WithStackTrace(true))
 		}
-		sp.AddEvent("", trace.WithAttributes(attribute.Error(err)))
+		sp.AddEvent("error", trace.WithAttributes(attribute.String("msg", err.Error())))
 	}
-	sp.Finish()
+	sp.End()
 
 	return err
 }

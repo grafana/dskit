@@ -1828,6 +1828,8 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 	)
 
 	for _, updateOldestRegisteredTimestamp := range []bool{false, true} {
+		updateOldestRegisteredTimestamp := updateOldestRegisteredTimestamp
+
 		for _, numInstances := range numInitialInstances {
 			numInstances := numInstances
 

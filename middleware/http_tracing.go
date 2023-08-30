@@ -10,7 +10,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -47,7 +46,7 @@ func (t Tracer) Wrap(next http.Handler) http.Handler {
 		}),
 	}
 
-	return nethttp.Middleware(opentracing.GlobalTracer(), next, options...)
+	return nethttp.Middleware(otel.Tracer("github.com/grafana/mimir"), next, options...)
 }
 
 // HTTPGRPCTracer is a middleware which traces incoming httpgrpc requests.

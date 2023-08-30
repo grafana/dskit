@@ -40,7 +40,7 @@ type SpanLogger struct {
 	resolver   TenantResolver             // passed in
 	baseLogger log.Logger                 // passed in
 	logger     atomic.Pointer[log.Logger] // initialized on first use
-	opentracing.Span
+	trace.Span
 	sampled      bool
 	debugEnabled bool
 }

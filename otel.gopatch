@@ -148,3 +148,8 @@ var foo,x identifier
 -import foo "github.com/opentracing/opentracing-go"
 +import foo "go.opentelemetry.io/otel"
 foo.x
+
+@@
+@@
+-opentracing.Span
++trace.Span

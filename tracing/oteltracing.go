@@ -14,9 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
-	"github.com/uber/jaeger-client-go"
 	jaegerpropagator "go.opentelemetry.io/contrib/propagators/jaeger"
 	"go.opentelemetry.io/contrib/samplers/jaegerremote"
 	"go.opentelemetry.io/otel"
@@ -243,23 +241,14 @@ func (c Closer) Close() error {
 }
 
 // ExtractTraceID extracts the trace id, if any from the context.
-func ExtractTraceID(ctx context.Context) (string, bool) {
-	traceID, _ := ExtractSampledTraceID(ctx)
+func ExtractOtelTraceID(ctx context.Context) (string, bool) {
+	traceID, _ := ExtractOtelSampledTraceID(ctx)
 	return traceID, traceID != ""
 }
 
-// ExtractSampledTraceID works like ExtractTraceID but the returned bool is only
+// ExtractOtelSampledTraceID works like ExtractTraceID but the returned bool is only
 // true if the returned trace id is sampled.
-func ExtractSampledTraceID(ctx context.Context) (string, bool) {
-	// the common case, wehre jaeger and opentracing is used
-	sp := trace.SpanFromContext(ctx)
-	if sp != nil {
-		sctx, ok := sp.Context().(jaeger.SpanContext)
-		if ok {
-			return sctx.TraceID().String(), sctx.IsSampled()
-		}
-	}
-
+func ExtractOtelSampledTraceID(ctx context.Context) (string, bool) {
 	// the case opentelemetry is used with or without bridge
 	otelSp := trace.SpanFromContext(ctx)
 	traceID, sampled := otelSp.SpanContext().TraceID(), otelSp.SpanContext().IsSampled()

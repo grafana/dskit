@@ -12,7 +12,7 @@ import (
 // DeprecatedFlagsUsed is the metric that counts deprecated flags set.
 var DeprecatedFlagsUsed = promauto.NewCounter(
 	prometheus.CounterOpts{
-		Name: "deprecated_flags_inuse_total",
+		Name: "deprecated_flags_inuse_total_2",
 		Help: "The number of deprecated flags currently set.",
 	})
 

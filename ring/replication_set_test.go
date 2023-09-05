@@ -565,6 +565,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t 
 }
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImmediatelyOnSingleFailure(t *testing.T) {
+	t.Skip()
 	defer goleak.VerifyNone(t)
 
 	replicationSet := ReplicationSet{

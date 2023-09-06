@@ -134,7 +134,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			routeLabel:      expectedHelloRouteLabel,
 			reqURL:          helloRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
-				"/httpgrpc.HTTP/Handle": {
+				"/httpgrpc.DHTTP/Handle": {
 					string(ext.Component):  "gRPC",
 					string(ext.HTTPUrl):    helloRouteURL.Path,
 					string(ext.HTTPMethod): httpMethod,
@@ -160,7 +160,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			routeLabel:      expectedHelloPathParamRouteLabel,
 			reqURL:          helloPathParamRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
-				"/httpgrpc.HTTP/Handle": {
+				"/httpgrpc.DHTTP/Handle": {
 					string(ext.Component):  "gRPC",
 					string(ext.HTTPUrl):    helloPathParamRouteURL.Path,
 					string(ext.HTTPMethod): httpMethod,
@@ -229,13 +229,13 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)),
 			)
 			require.NoError(t, err)
-			client := httpgrpc.NewHTTPClient(conn)
+			client := httpgrpc.NewDHTTPClient(conn)
 
 			// emulateHTTPGRPCPRoxy mimics the usage of the Server type as a load balancing proxy,
 			// wrapping http requests into gRPC requests to utilize gRPC load balancing features
 			emulateHTTPGRPCPRoxy := func(
-				client httpgrpc.HTTPClient, req *http.Request,
-			) (*httpgrpc.HTTPResponse, error) {
+				client httpgrpc.DHTTPClient, req *http.Request,
+			) (*httpgrpc.DHTTPResponse, error) {
 				req.RequestURI = req.URL.String()
 				grpcReq, err := httpgrpcServer.HTTPRequest(req)
 				require.NoError(t, err)

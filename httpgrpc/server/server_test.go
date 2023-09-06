@@ -13,7 +13,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
@@ -42,7 +42,7 @@ func newTestServer(t *testing.T, handler http.Handler) (*testServer, error) {
 		URL:        "direct://" + lis.Addr().String(),
 	}
 
-	httpgrpc.RegisterHTTPServer(server.grpcServer, server.Server)
+	httpgrpc.RegisterDHTTPServer(server.grpcServer, server.Server)
 	go func() {
 		require.NoError(t, server.grpcServer.Serve(lis))
 	}()

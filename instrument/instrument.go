@@ -12,8 +12,10 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	attribute "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tracing"
@@ -158,7 +160,7 @@ func CollectedRequest(ctx context.Context, method string, col Collector, toStatu
 	if toStatusCode == nil {
 		toStatusCode = ErrorCode
 	}
-	sp, newCtx := opentracing.StartSpanFromContext(ctx, method)
+	newCtx, sp := otel.Tracer("github.com/grafana/mimir").Start(ctx, method)
 	ext.SpanKindRPCClient.Set(sp)
 	if userID, err := user.ExtractUserID(ctx); err == nil {
 		sp.SetTag("user", userID)
@@ -176,7 +178,7 @@ func CollectedRequest(ctx context.Context, method string, col Collector, toStatu
 		if !grpcutil.IsCanceled(err) {
 			ext.Error.Set(sp, true)
 		}
-		sp.LogFields(otlog.Error(err))
+		sp.AddEvent("", trace.WithAttributes(attribute.Error(err)))
 	}
 	sp.Finish()
 

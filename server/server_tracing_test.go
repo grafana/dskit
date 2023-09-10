@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
-	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -44,7 +44,7 @@ type testObserver struct {
 }
 
 func (to *testObserver) OnStartSpan(
-	_ opentracing.Span,
+	_ trace.Span,
 	operationName string,
 	options opentracing.StartSpanOptions,
 ) (jaeger.ContribSpanObserver, bool) {

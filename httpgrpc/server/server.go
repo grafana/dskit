@@ -15,16 +15,13 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/go-kit/log/level"
 	"github.com/sercand/kuberesolver/v4"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 )
 
@@ -188,14 +185,7 @@ func WriteError(w http.ResponseWriter, err error) {
 
 // ServeHTTP implements http.Handler
 func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if tracer := otel.Tracer("github.com/grafana/mimir"); tracer != nil {
-		span := trace.SpanFromContext(r.Context())
-		if err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(r.Header)); err != nil {
-			level.Warn(log.Global()).Log("msg", "failed to inject tracing headers into request", "err", err)
-		}
-
-	}
-
+	otelhttptrace.Inject(r.Context(), r)
 	req, err := HTTPRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

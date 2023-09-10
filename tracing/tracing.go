@@ -13,6 +13,7 @@ import (
 	jaeger "github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	jaegerprom "github.com/uber/jaeger-lib/metrics/prometheus"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrInvalidConfiguration is an error to notify client to provide valid trace report agent or config server
@@ -55,7 +56,7 @@ func NewFromEnv(serviceName string, options ...jaegercfg.Option) (io.Closer, err
 
 // ExtractTraceID extracts the trace id, if any from the context.
 func ExtractTraceID(ctx context.Context) (string, bool) {
-	sp := opentracing.SpanFromContext(ctx)
+	sp := trace.SpanFromContext(ctx)
 	if sp == nil {
 		return "", false
 	}
@@ -70,7 +71,7 @@ func ExtractTraceID(ctx context.Context) (string, bool) {
 // ExtractSampledTraceID works like ExtractTraceID but the returned bool is only
 // true if the returned trace id is sampled.
 func ExtractSampledTraceID(ctx context.Context) (string, bool) {
-	sp := opentracing.SpanFromContext(ctx)
+	sp := trace.SpanFromContext(ctx)
 	if sp == nil {
 		return "", false
 	}

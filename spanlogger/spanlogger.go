@@ -3,15 +3,16 @@ package spanlogger
 import (
 	"context"
 
+	"go.opentelemetry.io/otel"
+	opentracing "go.opentelemetry.io/otel"
+	attribute "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic" // Really just need sync/atomic but there is a lint rule preventing it.
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	otlog "github.com/opentracing/opentracing-go/log"
-
 	"github.com/grafana/dskit/tracing"
+	"github.com/opentracing/opentracing-go/ext"
 )
 
 type loggerCtxMarker struct{}
@@ -39,7 +40,7 @@ type SpanLogger struct {
 	resolver   TenantResolver             // passed in
 	baseLogger log.Logger                 // passed in
 	logger     atomic.Pointer[log.Logger] // initialized on first use
-	opentracing.Span
+	trace.Span
 	sampled      bool
 	debugEnabled bool
 }
@@ -47,7 +48,7 @@ type SpanLogger struct {
 // New makes a new SpanLogger with a log.Logger to send logs to. The provided context will have the logger attached
 // to it and can be retrieved with FromContext.
 func New(ctx context.Context, logger log.Logger, method string, resolver TenantResolver, kvps ...interface{}) (*SpanLogger, context.Context) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, method)
+	ctx, span := otel.Tracer("github.com/grafana/mimir").Start(ctx, method)
 	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
 		span.SetTag(TenantIDsTagName, ids)
 	}
@@ -78,7 +79,7 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 		logger = fallback
 	}
 	sampled := false
-	sp := opentracing.SpanFromContext(ctx)
+	sp := trace.SpanFromContext(ctx)
 	if sp == nil {
 		sp = opentracing.NoopTracer{}.StartSpan("noop")
 	} else {
@@ -126,7 +127,7 @@ func (s *SpanLogger) spanLog(kvps ...interface{}) error {
 	if !s.sampled {
 		return nil
 	}
-	fields, err := otlog.InterleavedKVToFields(kvps...)
+	fields, err := attribute.InterleavedKVToFields(kvps...)
 	if err != nil {
 		return err
 	}
@@ -140,7 +141,7 @@ func (s *SpanLogger) Error(err error) error {
 		return err
 	}
 	ext.Error.Set(s.Span, true)
-	s.Span.LogFields(otlog.Error(err))
+	s.Span.LogFields(attribute.Error(err))
 	return err
 }
 

@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/httpgrpc"
@@ -126,7 +128,7 @@ func TestTracePropagation(t *testing.T) {
 
 	server, err := newTestServer(t, middleware.Tracer{}.Wrap(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			span := opentracing.SpanFromContext(r.Context())
+			span := trace.SpanFromContext(r.Context())
 			_, err := fmt.Fprint(w, span.BaggageItem("name"))
 			require.NoError(t, err)
 		}),
@@ -141,7 +143,7 @@ func TestTracePropagation(t *testing.T) {
 	req, err := http.NewRequest("GET", "/hello", &bytes.Buffer{})
 	require.NoError(t, err)
 
-	sp, ctx := opentracing.StartSpanFromContext(context.Background(), "Test")
+	ctx, sp := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "Test")
 	sp.SetBaggageItem("name", "world")
 
 	req = req.WithContext(user.InjectOrgID(ctx, "1"))

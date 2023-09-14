@@ -14,12 +14,12 @@ import (
 )
 
 type GrpcMethodLimiter interface {
-	// RpcCallStarting is called before request has been read into memory.
+	// RPCCallStarting is called before request has been read into memory.
 	// All that's known about the request at this point is grpc method name.
 	// Returned error should be convertible to gRPC Status via status.FromError,
 	// otherwise gRPC-server implementation-specific error will be returned to the client (codes.PermissionDenied in grpc@v1.55.0).
-	RpcCallStarting(methodName string) error
-	RpcCallFinished(methodName string)
+	RPCCallStarting(methodName string) error
+	RPCCallFinished(methodName string)
 }
 
 // Custom type to hide it from other packages.
@@ -92,7 +92,7 @@ func (g *grpcLimitCheck) TapHandle(ctx context.Context, info *tap.Info) (context
 	}
 
 	if g.methodLimiter != nil {
-		if err := g.methodLimiter.RpcCallStarting(info.FullMethodName); err != nil {
+		if err := g.methodLimiter.RPCCallStarting(info.FullMethodName); err != nil {
 			return ctx, err
 		}
 	}
@@ -115,7 +115,7 @@ func (g *grpcLimitCheck) HandleRPC(ctx context.Context, rpcStats stats.RPCStats)
 	if name, ok := ctx.Value(requestFullMethod).(string); ok {
 		g.inflight.Dec()
 		if g.methodLimiter != nil {
-			g.methodLimiter.RpcCallFinished(name)
+			g.methodLimiter.RPCCallFinished(name)
 		}
 	}
 }
@@ -135,8 +135,5 @@ func isMethodNameValid(method string) bool {
 		method = method[1:]
 	}
 	pos := strings.LastIndex(method, "/")
-	if pos == -1 {
-		return false
-	}
-	return true
+	return pos >= 0
 }

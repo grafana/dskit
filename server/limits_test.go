@@ -271,7 +271,7 @@ type methodLimiter struct {
 	inflight            atomic.Int64
 }
 
-func (m *methodLimiter) RpcCallStarting(methodName string) error {
+func (m *methodLimiter) RPCCallStarting(methodName string) error {
 	if methodName == m.method {
 		v := m.inflight.Inc()
 		if v > int64(m.methodInflightLimit) {
@@ -282,7 +282,7 @@ func (m *methodLimiter) RpcCallStarting(methodName string) error {
 	return nil
 }
 
-func (m *methodLimiter) RpcCallFinished(methodName string) {
+func (m *methodLimiter) RPCCallFinished(methodName string) {
 	if methodName == m.method {
 		m.inflight.Dec()
 	}

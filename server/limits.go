@@ -102,7 +102,7 @@ func (g *grpcLimitCheck) TapHandle(ctx context.Context, info *tap.Info) (context
 	return ctx, nil
 }
 
-func (g *grpcLimitCheck) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+func (g *grpcLimitCheck) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
 	return ctx
 }
 

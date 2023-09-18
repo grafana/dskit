@@ -114,7 +114,10 @@ func newBaseClient(
 	}
 }
 
-func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) error {
+// setAsync asynchronously creates an entry using the given function. Because
+// expiration types differ between backends, the provided function should be
+// curried with the necessary values to set the expiration correctly.
+func (c *baseClient) setAsync(key string, value []byte, f func(key string, buf []byte) error) error {
 	if c.maxItemSize > 0 && uint64(len(value)) > c.maxItemSize {
 		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
 		return nil
@@ -124,7 +127,7 @@ func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f fun
 		start := time.Now()
 		c.metrics.operations.WithLabelValues(opSet).Inc()
 
-		err := f(key, value, ttl)
+		err := f(key, value)
 		if err != nil {
 			level.Debug(c.logger).Log(
 				"msg", "failed to store item to cache",

@@ -214,15 +214,16 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	return c, nil
 }
 
-// SetAsync implement RemoteCacheClient.
+// SetAsync implements RemoteCacheClient.
+// A ttl of 0 duration means no expiration.
 func (c *redisClient) SetAsync(key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
+	return c.setAsync(key, value, func(key string, buf []byte) error {
 		_, err := c.Set(context.Background(), key, value, ttl).Result()
 		return err
 	})
 }
 
-// GetMulti implement RemoteCacheClient.
+// GetMulti implements RemoteCacheClient.
 func (c *redisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) map[string][]byte {
 	if len(keys) == 0 {
 		return nil
@@ -267,14 +268,14 @@ func (c *redisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) 
 	return results
 }
 
-// Delete implement RemoteCacheClient.
+// Delete implements RemoteCacheClient.
 func (c *redisClient) Delete(ctx context.Context, key string) error {
 	return c.delete(ctx, key, func(ctx context.Context, key string) error {
 		return c.Del(ctx, key).Err()
 	})
 }
 
-// Stop implement RemoteCacheClient.
+// Stop implements RemoteCacheClient.
 func (c *redisClient) Stop() {
 	// Stop running async operations.
 	c.asyncQueue.stop()

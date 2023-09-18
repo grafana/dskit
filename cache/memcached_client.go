@@ -293,12 +293,25 @@ func (c *memcachedClient) Stop() {
 	c.client.Close()
 }
 
+// SetAsync creates an entry with the given expiration. For entries with no
+// expiration, use SetAsyncNoExpire instead.
 func (c *memcachedClient) SetAsync(key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
+	return c.setAsync(key, value, func(key string, buf []byte) error {
 		return c.client.Set(&memcache.Item{
 			Key:        key,
 			Value:      value,
 			Expiration: int32(time.Now().Add(ttl).Unix()),
+		})
+	})
+}
+
+// SetAsyncNoExpire creates an entry that does not expire.
+func (c *memcachedClient) SetAsyncNoExpire(key string, value []byte) error {
+	return c.setAsync(key, value, func(key string, buf []byte) error {
+		return c.client.Set(&memcache.Item{
+			Key:        key,
+			Value:      value,
+			Expiration: 0,
 		})
 	})
 }

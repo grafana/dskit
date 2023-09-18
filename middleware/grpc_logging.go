@@ -29,6 +29,10 @@ type OptionalLogging interface {
 	ShouldLog(ctx context.Context, duration time.Duration) bool
 }
 
+type LoggableError interface {
+	GetError() *GRPCError
+}
+
 // GRPCServerLog logs grpc requests, errors, and latency.
 type GRPCServerLog struct {
 	Log log.Logger
@@ -41,16 +45,14 @@ type GRPCServerLog struct {
 func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	begin := time.Now()
 	resp, err := handler(ctx, req)
-	if err == nil && s.DisableRequestSuccessLog {
-		return resp, nil
-	}
-	var optional OptionalLogging
-	if errors.As(err, &optional) && !optional.ShouldLog(ctx, time.Since(begin)) {
-		return resp, err
-	}
 
-	entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", time.Since(begin))
 	if err != nil {
+		var optional OptionalLogging
+		if errors.As(err, &optional) && !optional.ShouldLog(ctx, time.Since(begin)) {
+			return resp, err
+		}
+
+		entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", time.Since(begin))
 		if s.WithRequest {
 			entry = log.With(entry, "request", req)
 		}
@@ -59,10 +61,26 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		} else {
 			level.Warn(entry).Log("msg", gRPC, "err", err)
 		}
-	} else {
-		level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
+		return resp, err
 	}
-	return resp, err
+
+	loggableErr, ok := resp.(LoggableError)
+	if !ok || loggableErr.GetError() == nil {
+		if !s.DisableRequestSuccessLog {
+			entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", time.Since(begin))
+			level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
+		}
+		return resp, nil
+	}
+
+	if loggableErr.GetError().GetShouldLog() {
+		entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", time.Since(begin))
+		if s.WithRequest {
+			entry = log.With(entry, "request", req)
+		}
+		level.Warn(entry).Log("msg", gRPC, "err", loggableErr.GetError().GetMessage())
+	}
+	return resp, nil
 }
 
 // StreamServerInterceptor returns an interceptor that logs gRPC requests

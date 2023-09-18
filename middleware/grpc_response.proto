@@ -1,0 +1,23 @@
+syntax = "proto3";
+package middleware;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+message FakeGRPCResponse {
+  GRPCResponse GRPCResponse = 1 [(gogoproto.nullable) = false, (gogoproto.embed) = true];
+  string Status = 2;
+}
+
+message GRPCResponse {
+  GRPCSuccess Success = 1;
+  GRPCError Error = 2;
+}
+
+message GRPCError {
+  string Message = 1;
+  bool ShouldLog = 2;
+}
+
+message GRPCSuccess {
+  string Message = 1;
+}

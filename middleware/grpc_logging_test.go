@@ -81,3 +81,82 @@ func TestGrpcLogging(t *testing.T) {
 		})
 	}
 }
+
+func TestGrpcLoggingWithGRPCResponse(t *testing.T) {
+	ctx := context.Background()
+	info := &grpc.UnaryServerInfo{FullMethod: "Test"}
+	for _, tc := range []struct {
+		err                      error
+		resp                     *GRPCResponse
+		disableRequestSuccessLog bool
+		logContains              []string
+	}{{
+		err:         context.Canceled,
+		logContains: []string{"level=debug", "context canceled"},
+	}, {
+		resp: &GRPCResponse{
+			Error: &GRPCError{
+				Message:   "yolo",
+				ShouldLog: true,
+			},
+		},
+		logContains: []string{"level=warn", "err=yolo"},
+	}, {
+		resp: &GRPCResponse{
+			Error: &GRPCError{
+				Message:   "yolo",
+				ShouldLog: false,
+			},
+		},
+		logContains: nil,
+	}, {
+		err:         nil,
+		logContains: []string{"level=debug", "method=Test"},
+	}, {
+		err:                      nil,
+		disableRequestSuccessLog: true,
+		logContains:              nil,
+	}, {
+		err: nil,
+		resp: &GRPCResponse{
+			Success: &GRPCSuccess{
+				Message: "this was successful",
+			},
+		},
+		logContains: []string{"level=debug", "method=Test"},
+	}, {
+		err: nil,
+		resp: &GRPCResponse{
+			Success: &GRPCSuccess{
+				Message: "this was successful",
+			},
+		},
+		disableRequestSuccessLog: true,
+		logContains:              nil,
+	},
+	} {
+		t.Run("", func(t *testing.T) {
+			buf := bytes.NewBuffer(nil)
+			logger := log.NewLogfmtLogger(buf)
+			l := GRPCServerLog{
+				Log:                      logger,
+				WithRequest:              true,
+				DisableRequestSuccessLog: tc.disableRequestSuccessLog,
+			}
+
+			handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+				return tc.resp, tc.err
+			}
+
+			_, err := l.UnaryServerInterceptor(ctx, nil, info, handler)
+			require.ErrorIs(t, tc.err, err)
+
+			if len(tc.logContains) == 0 {
+				require.Empty(t, buf)
+			}
+			for _, content := range tc.logContains {
+				require.Contains(t, buf.String(), content)
+			}
+		})
+	}
+}

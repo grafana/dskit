@@ -202,11 +202,10 @@ func (cfg *Config) registererOrDefault() prometheus.Registerer {
 //
 // Servers will be automatically instrumented for Prometheus metrics.
 type Server struct {
-	cfg             Config
-	handler         SignalHandler
-	grpcListener    net.Listener
-	httpListener    net.Listener
-	grpcServerLimit *grpcInflightLimitCheck
+	cfg          Config
+	handler      SignalHandler
+	grpcListener net.Listener
+	httpListener net.Listener
 
 	// These fields are used to support grpc over the http server
 	//  if RouteHTTPToGRPC is set. the fields are kept here

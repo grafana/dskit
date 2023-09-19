@@ -118,7 +118,6 @@ type Config struct {
 	GRPCServerTimeout                  time.Duration `yaml:"grpc_server_keepalive_timeout"`
 	GRPCServerMinTimeBetweenPings      time.Duration `yaml:"grpc_server_min_time_between_pings"`
 	GRPCServerPingWithoutStreamAllowed bool          `yaml:"grpc_server_ping_without_stream_allowed"`
-	GRPCServerMaxInflightRequests      int           `yaml:"grpc_server_max_inflight_requests"`
 
 	LogFormat                    string           `yaml:"log_format"`
 	LogLevel                     log.Level        `yaml:"log_level"`
@@ -140,7 +139,7 @@ type Config struct {
 	PathPrefix string `yaml:"http_path_prefix"`
 
 	// This limiter is called for every started and finished gRPC request.
-	GrpcMethodLimiter GrpcMethodLimiter `yaml:"-"`
+	GrpcMethodLimiter GrpcInflightMethodLimiter `yaml:"-"`
 }
 
 var infinty = time.Duration(math.MaxInt64)
@@ -180,7 +179,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.GRPCServerTimeout, "server.grpc.keepalive.timeout", time.Second*20, "After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s")
 	f.DurationVar(&cfg.GRPCServerMinTimeBetweenPings, "server.grpc.keepalive.min-time-between-pings", 5*time.Minute, "Minimum amount of time a client should wait before sending a keepalive ping. If client sends keepalive ping more often, server will send GOAWAY and close the connection.")
 	f.BoolVar(&cfg.GRPCServerPingWithoutStreamAllowed, "server.grpc.keepalive.ping-without-stream-allowed", false, "If true, server allows keepalive pings even when there are no active streams(RPCs). If false, and client sends ping when there are no active streams, server will send GOAWAY and close the connection.")
-	f.IntVar(&cfg.GRPCServerMaxInflightRequests, "server.grpc.max-inflight-requests", 0, "If not 0, and gRPC server is already handling this number of requests, gRPC server will reject any additional incoming requests without consuming more resources. 0 disables the check.")
 	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Base path to serve all API routes from (e.g. /v1/)")
 	f.StringVar(&cfg.LogFormat, "log.format", log.LogfmtFormat, "Output log messages in the given format. Valid formats: [logfmt, json]")
 	cfg.LogLevel.RegisterFlags(f)
@@ -208,7 +206,7 @@ type Server struct {
 	handler         SignalHandler
 	grpcListener    net.Listener
 	httpListener    net.Listener
-	grpcServerLimit *grpcLimitCheck
+	grpcServerLimit *grpcInflightLimitCheck
 
 	// These fields are used to support grpc over the http server
 	//  if RouteHTTPToGRPC is set. the fields are kept here
@@ -373,8 +371,6 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		PermitWithoutStream: cfg.GRPCServerPingWithoutStreamAllowed,
 	}
 
-	grpcServerLimit := newGrpcLimitCheck(cfg.GRPCServerMaxInflightRequests, cfg.GrpcMethodLimiter, cfg.MetricsNamespace, cfg.registererOrDefault())
-
 	grpcOptions := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(grpcMiddleware...),
 		grpc.ChainStreamInterceptor(grpcStreamMiddleware...),
@@ -383,14 +379,21 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		grpc.MaxRecvMsgSize(cfg.GPRCServerMaxRecvMsgSize),
 		grpc.MaxSendMsgSize(cfg.GRPCServerMaxSendMsgSize),
 		grpc.MaxConcurrentStreams(uint32(cfg.GPRCServerMaxConcurrentStreams)),
-		grpc.InTapHandle(grpcServerLimit.TapHandle),
+	}
+
+	if cfg.GrpcMethodLimiter != nil {
+		grpcServerLimit := newGrpcInflightLimitCheck(cfg.GrpcMethodLimiter)
+		grpcOptions = append(grpcOptions, grpc.InTapHandle(grpcServerLimit.TapHandle), grpc.StatsHandler(grpcServerLimit))
+	}
+
+	grpcOptions = append(grpcOptions,
 		grpc.StatsHandler(middleware.NewStatsHandler(
 			metrics.ReceivedMessageSize,
 			metrics.SentMessageSize,
 			metrics.InflightRequests,
 		)),
-		grpc.StatsHandler(grpcServerLimit),
-	}
+	)
+
 	grpcOptions = append(grpcOptions, cfg.GRPCOptions...)
 	if grpcTLSConfig != nil {
 		grpcCreds := credentials.NewTLS(grpcTLSConfig)
@@ -469,7 +472,6 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		grpcOnHTTPListener: grpcOnHTTPListener,
 		handler:            handler,
 		grpchttpmux:        grpchttpmux,
-		grpcServerLimit:    grpcServerLimit,
 
 		HTTP:             router,
 		HTTPServer:       httpServer,
@@ -584,8 +586,4 @@ func (s *Server) Shutdown() {
 
 	_ = s.HTTPServer.Shutdown(ctx)
 	s.GRPC.GracefulStop()
-}
-
-func (s *Server) SetGrpcMaxInflightRequests(limit int) {
-	s.grpcServerLimit.maxInflight.Store(int64(limit))
 }

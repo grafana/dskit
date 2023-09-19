@@ -22,21 +22,25 @@ import (
 )
 
 func TestGrpcLimitCheckMalformedMethodName(t *testing.T) {
-	ts := &testServer{finishRequest: make(chan struct{})}
+	const badMethodName = "bad_method_name"
 
-	limitCheck := newGrpcLimitCheck(5, nil, "", nil)
+	ts := &testServer{finishRequest: make(chan struct{})}
+	ml := &methodLimiter{protectedMethod: badMethodName}
+
+	limitCheck := newGrpcInflightLimitCheck(ml)
 
 	c := setupGrpcServerWithCheckAndClient(t, ts, limitCheck)
 
 	out := &protobuf.Empty{}
-	err := c.(*fakeServerClient).cc.Invoke(context.Background(), "bad_method_name", &protobuf.Empty{}, out)
+	err := c.(*fakeServerClient).cc.Invoke(context.Background(), badMethodName, &protobuf.Empty{}, out)
 
 	require.Error(t, err)
 	s, ok := status.FromError(err)
 	require.True(t, ok)
 	require.Equal(t, codes.Unimplemented, s.Code())
 	require.Contains(t, s.Message(), "malformed method name")
-	require.Equal(t, int64(0), limitCheck.inflight.Load())
+	require.Equal(t, int64(0), ml.allInflight.Load())
+	require.Equal(t, int64(0), ml.protectedMethodInflight.Load())
 }
 
 func checkGrpcStatusError(t *testing.T, err error, code codes.Code, msg string) {
@@ -119,22 +123,19 @@ func TestGrpcLimitCheckStreaming(t *testing.T) {
 
 func testGrpcLimitCheckWithMethodLimiter(
 	t *testing.T,
-	grpcLimit, protectedMethodLimit, msgsPerStreamCall int,
+	inflightLimit, protectedMethodLimit, msgsPerStreamCall int,
 	protectedMethodName string,
 	callToProtectedMethod func(c FakeServerClient) error,
 	callsToUnprotectedMethods ...func(c FakeServerClient) error,
 ) {
-	if grpcLimit != 0 && grpcLimit < protectedMethodLimit {
+	if inflightLimit != 0 && inflightLimit < protectedMethodLimit {
 		t.Fatal("invalid combination of parameters for this test")
 	}
 
 	ts := &testServer{finishRequest: make(chan struct{}), msgPerStreamCall: msgsPerStreamCall}
-	var m GrpcMethodLimiter
-	if protectedMethodLimit > 0 {
-		m = &methodLimiter{method: protectedMethodName, methodInflightLimit: protectedMethodLimit}
-	}
+	ml := &methodLimiter{protectedMethod: protectedMethodName, allInflightLimit: inflightLimit, protectedMethodInflightLimit: protectedMethodLimit}
 
-	limitCheck := newGrpcLimitCheck(grpcLimit, m, "", nil)
+	limitCheck := newGrpcInflightLimitCheck(ml)
 
 	c := setupGrpcServerWithCheckAndClient(t, ts, limitCheck)
 
@@ -159,18 +160,18 @@ func testGrpcLimitCheckWithMethodLimiter(
 		// Wait until all goroutines start and all calls are in-flight calls for protected method.
 		started.Wait()
 		test.Poll(t, 1*time.Second, int64(protectedMethodLimit), func() interface{} {
-			return limitCheck.inflight.Load()
+			return ml.protectedMethodInflight.Load()
 		})
 
 		// Another request to limited method should fail.
 		err := callToProtectedMethod(c)
-		checkGrpcStatusError(t, err, 123, "too many requests to "+protectedMethodName)
+		checkGrpcStatusError(t, err, codes.ResourceExhausted, "too many requests to "+protectedMethodName)
 	}
 
 	// However we can start more requests to different (unprotected) method
 	extraCalls := 10
-	if grpcLimit > 0 {
-		extraCalls = grpcLimit - protectedMethodLimit
+	if inflightLimit > 0 {
+		extraCalls = inflightLimit - protectedMethodLimit
 	}
 
 	for i := 0; i < extraCalls; i++ {
@@ -191,14 +192,14 @@ func testGrpcLimitCheckWithMethodLimiter(
 	// Wait until all goroutines start and all calls are in-flight.
 	started.Wait()
 	test.Poll(t, 1*time.Second, int64(protectedMethodLimit+extraCalls), func() interface{} {
-		return limitCheck.inflight.Load()
+		return ml.allInflight.Load()
 	})
 
-	if grpcLimit > 0 {
+	if inflightLimit > 0 {
 		// But now we're really at the limit -- we used all grpc inflight limit calls. Everything should return codes.Unavailable now.
 		for _, fn := range append(callsToUnprotectedMethods, callToProtectedMethod) {
 			err := fn(c)
-			checkGrpcStatusError(t, err, codes.Unavailable, errTooManyInflightRequestsMsg)
+			checkGrpcStatusError(t, err, codes.Unavailable, "too many requests")
 		}
 	}
 
@@ -206,7 +207,8 @@ func testGrpcLimitCheckWithMethodLimiter(
 	close(ts.finishRequest)
 	finished.Wait()
 
-	require.Equal(t, int64(0), limitCheck.inflight.Load())
+	require.Equal(t, int64(0), ml.allInflight.Load())
+	require.Equal(t, int64(0), ml.protectedMethodInflight.Load())
 
 	// Another request to protected or unprotected method should succeed again.
 	for _, fn := range append(callsToUnprotectedMethods, callToProtectedMethod) {
@@ -215,7 +217,7 @@ func testGrpcLimitCheckWithMethodLimiter(
 	}
 }
 
-func setupGrpcServerWithCheckAndClient(t *testing.T, ts *testServer, g *grpcLimitCheck) FakeServerClient {
+func setupGrpcServerWithCheckAndClient(t *testing.T, ts *testServer, g *grpcInflightLimitCheck) FakeServerClient {
 	server := grpc.NewServer(grpc.InTapHandle(g.TapHandle), grpc.StatsHandler(g))
 	RegisterFakeServerServer(server, ts)
 
@@ -266,24 +268,35 @@ func (ts *testServer) StreamSleep(_ *protobuf.Empty, stream FakeServer_StreamSle
 }
 
 type methodLimiter struct {
-	method              string
-	methodInflightLimit int
-	inflight            atomic.Int64
+	allInflightLimit int
+	allInflight      atomic.Int64
+
+	protectedMethod              string
+	protectedMethodInflightLimit int
+	protectedMethodInflight      atomic.Int64
 }
 
 func (m *methodLimiter) RPCCallStarting(methodName string) error {
-	if methodName == m.method {
-		v := m.inflight.Inc()
-		if v > int64(m.methodInflightLimit) {
-			m.inflight.Dec()
-			return status.Error(123, "too many requests to "+m.method)
+	v := m.allInflight.Inc()
+	if m.allInflightLimit > 0 && v > int64(m.allInflightLimit) {
+		m.allInflight.Dec()
+		return status.Error(codes.Unavailable, "too many requests")
+	}
+
+	if methodName == m.protectedMethod && m.protectedMethodInflightLimit > 0 {
+		v := m.protectedMethodInflight.Inc()
+		if v > int64(m.protectedMethodInflightLimit) {
+			m.protectedMethodInflight.Dec()
+			m.allInflight.Dec()
+			return status.Error(codes.ResourceExhausted, "too many requests to "+m.protectedMethod)
 		}
 	}
 	return nil
 }
 
 func (m *methodLimiter) RPCCallFinished(methodName string) {
-	if methodName == m.method {
-		m.inflight.Dec()
+	m.allInflight.Dec()
+	if methodName == m.protectedMethod && m.protectedMethodInflightLimit > 0 {
+		m.protectedMethodInflight.Dec()
 	}
 }

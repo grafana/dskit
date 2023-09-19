@@ -59,7 +59,7 @@
 * [FEATURE] Add `flagext.ParseFlagsAndArguments()` and `flagext.ParseFlagsWithoutArguments()` utilities. #341
 * [FEATURE] Add `log.RateLimitedLogger` for limiting the rate of logging. The `logger_rate_limit_discarded_log_lines_total` metrics traces the total number of discarded log lines per level. #352
 * [FEATURE] Add `middleware.HTTPGRPCTracer` for more detailed server-side tracing spans and tags on `httpgrpc.HTTP/Handle` requests
-* [FEATURE] Server: Add inflight requests limit for gRPC server. This can be configured using `-server.grpc.max-inflight-requests` or in runtime by calling `SetGrpcMaxInflightRequests`. Server can also use optional `GrpcMethodLimiter` implementation, which can perform additional checks before gRPC request is accepted. #377
+* [FEATURE] Server: Add support for `GrpcInflightMethodLimiter` -- limiting gRPC requests before reading full request into the memory. This can be used to implement global or method-specific inflight limits for gRPC methods. #377
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
 * [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274
 * [ENHANCEMENT] Add middleware package. #38

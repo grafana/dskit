@@ -41,6 +41,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.42.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.42.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.43.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.17.0
 	go.opentelemetry.io/contrib/samplers/jaegerremote v0.11.0
 	go.opentelemetry.io/otel v1.17.0

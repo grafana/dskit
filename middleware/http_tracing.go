@@ -9,10 +9,9 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -24,36 +23,32 @@ type Tracer struct {
 
 // Wrap implements Interface
 func (t Tracer) Wrap(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// extract relevant span & tag data from request
-		name := makeHTTPOperationNameFunc(t.RouteMatcher)(r)
-
-		// extract span context from request headers
-		attrs, baggageEntries, spanCtx := otelhttptrace.Extract(r.Context(), r)
-		r = r.WithContext(baggage.ContextWithBaggage(r.Context(), baggageEntries))
-		ctx, sp := otel.Tracer("").Start(
-			trace.ContextWithRemoteSpanContext(r.Context(), spanCtx),
-			"middleware.http"+name,
-			trace.WithAttributes(attrs...),
-		)
-
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		labeler, _ := otelhttp.LabelerFromContext(r.Context())
 		// add a tag with the client's user agent to the span
 		userAgent := r.Header.Get("User-Agent")
-
 		if userAgent != "" {
-			sp.SetAttributes(attribute.String("http.user_agent", userAgent))
+			labeler.Add(attribute.String("http.user_agent", userAgent))
 		}
+
+		// ops := []trace.SpanStartOption{
+		// 	trace.WithLinks(trace.LinkFromContext(r.Context())),
+		// }
+		// _, _ = otel.Tracer("").Start(r.Context(), "name", ops...)
 
 		// add a tag with the client's sourceIPs to the span, if a
 		// SourceIPExtractor is given.
 		if t.SourceIPs != nil {
-			sp.SetAttributes(attribute.String("sourceIPs", t.SourceIPs.Get(r)))
+			labeler.Add(attribute.String("sourceIPs", t.SourceIPs.Get(r)))
 		}
-
-		r = r.WithContext(trace.ContextWithSpan(ctx, sp))
-		defer sp.End()
 		next.ServeHTTP(w, r)
 	})
+
+	options := []otelhttp.Option{
+		otelhttp.WithSpanNameFormatter(makeHTTPOperationNameFunc(t.RouteMatcher)),
+	}
+	return otelhttp.NewHandler(handler, "http.tracing", options...)
+
 }
 
 // HTTPGRPCTracer is a middleware which traces incoming httpgrpc requests.
@@ -90,6 +85,7 @@ func InitHTTPGRPCMiddleware(router *mux.Router) *mux.Router {
 // tracing tooling to differentiate the HTTP requests represented by the httpgrpc.HTTP/Handle spans.
 func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 	httpOperationNameFunc := makeHTTPOperationNameFunc(hgt.RouteMatcher)
+
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		parentSpan := trace.SpanFromContext(ctx)
@@ -109,7 +105,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		}
 
 		// create and start child HTTP span and set span name and attributes
-		childSpanName := httpOperationNameFunc(r)
+		childSpanName := httpOperationNameFunc("", r)
 		startSpanOpts := []trace.SpanStartOption{
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
@@ -132,8 +128,8 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func makeHTTPOperationNameFunc(routeMatcher RouteMatcher) func(r *http.Request) string {
-	return func(r *http.Request) string {
+func makeHTTPOperationNameFunc(routeMatcher RouteMatcher) func(_ string, r *http.Request) string {
+	return func(_ string, r *http.Request) string {
 		op := getRouteName(routeMatcher, r)
 		if op == "" {
 			return "HTTP " + r.Method

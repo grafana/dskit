@@ -16,6 +16,12 @@ service HTTP {
   rpc Handle(HTTPRequest) returns (HTTPResponse) {};
 }
 
+// HTTP2 is the same service as HTTP, and needs to have exact same set of methods.
+// However since this service has a different name, we can apply different checks for the method calls.
+service HTTP2 {
+  rpc Handle(HTTPRequest) returns (HTTPResponse) {};
+}
+
 message HTTPRequest {
   string method = 1;
   string url = 2;

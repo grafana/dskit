@@ -143,7 +143,8 @@
 * [ENHANCEMENT] metrics: Add `MetricFamilyMap.MinGauges` and `MetricFamiliesPerTenant.SendMinOfGauges` methods. #366
 * [ENHANCEMENT] metrics: add `MatchesLabels`, `FindMetricsInFamilyMatchingLabels` and `FindHistogramWithNameAndLabels` test helper methods. #365
 * [ENHANCEMENT] SpanLogger: much more efficient debug logging. #367
-* [ENHANCMENT] server: clarify documentation for `-server.grpc-max-concurrent-streams` CLI flag. #369
+* [ENHANCEMENT] server: clarify documentation for `-server.grpc-max-concurrent-streams` CLI flag. #369
+* [ENHANCEMENT] Ring: Add ID attribute to `InstanceDesc` for ring members. #387
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

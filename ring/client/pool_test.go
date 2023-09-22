@@ -59,13 +59,13 @@ func TestHealthCheck(t *testing.T) {
 
 func TestPoolCache(t *testing.T) {
 	buildCount := 0
-	factory := func(addr string) (PoolClient, error) {
+	factory := PoolAddrFunc(func(addr string) (PoolClient, error) {
 		if addr == "bad" {
 			return nil, fmt.Errorf("Fail")
 		}
 		buildCount++
 		return mockClient{happy: true, status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
-	}
+	})
 
 	cfg := PoolConfig{
 		HealthCheckTimeout: 50 * time.Millisecond,

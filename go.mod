@@ -36,7 +36,7 @@ require (
 	github.com/prometheus/client_model v0.4.0
 	github.com/prometheus/common v0.44.0
 	github.com/prometheus/exporter-toolkit v0.10.1-0.20230714054209-2f4150c63f97
-	github.com/sercand/kuberesolver/v4 v4.0.0
+	github.com/sercand/kuberesolver/v5 v5.1.1
 	github.com/soheilhy/cmux v0.1.5
 	github.com/stretchr/testify v1.8.1
 	github.com/uber/jaeger-client-go v2.28.0+incompatible

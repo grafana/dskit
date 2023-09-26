@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -107,7 +108,7 @@ func newIntegrationClientServer(
 	}()
 
 	httpURL := fmt.Sprintf("https://localhost:%d/hello", httpPort)
-	grpcHost := fmt.Sprintf("localhost:%d", grpcPort)
+	grpcHost := net.JoinHostPort("localhost", strconv.Itoa(grpcPort))
 
 	for _, tc := range tcs {
 		tlsClientConfig, err := tc.tlsConfig.GetTLSConfig()

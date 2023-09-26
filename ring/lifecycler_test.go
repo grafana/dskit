@@ -3,8 +3,10 @@ package ring
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -513,7 +515,7 @@ func TestLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 	assert.Greater(t, desc.GetTimestamp(), int64(0))
 	assert.Equal(t, testInstanceID, desc.GetId())
 	assert.Equal(t, ACTIVE, desc.GetState())
-	assert.Equal(t, fmt.Sprintf("%s:%d", lifecyclerCfg.Addr, lifecyclerCfg.Port), desc.GetAddr())
+	assert.Equal(t, net.JoinHostPort(lifecyclerCfg.Addr, strconv.Itoa(lifecyclerCfg.Port)), desc.GetAddr())
 	assert.Equal(t, lifecyclerCfg.Zone, desc.Zone)
 	assert.Equal(t, prevTokens, Tokens(desc.GetTokens()))
 }

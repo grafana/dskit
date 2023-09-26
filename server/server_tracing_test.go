@@ -3,8 +3,10 @@ package server
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -89,12 +91,13 @@ func TestHTTPGRPCTracing(t *testing.T) {
 
 	helloRouteName := "hello"
 	helloRouteTmpl := "/hello"
-	helloRouteURLRaw := fmt.Sprintf("http://%s:%d/hello", httpAddress, httpPort)
+	hostport := net.JoinHostPort(httpAddress, strconv.Itoa(httpPort))
+	helloRouteURLRaw := fmt.Sprintf("http://%s/hello", hostport)
 	helloRouteURL, err := url.Parse(helloRouteURLRaw)
 	require.NoError(t, err)
 
 	helloPathParamRouteTmpl := "/hello/{pathParam}"
-	helloPathParamRouteURLRaw := fmt.Sprintf("http://%s:%d/hello/world", httpAddress, httpPort)
+	helloPathParamRouteURLRaw := fmt.Sprintf("http://%s/hello/world", hostport)
 	helloPathParamRouteURL, err := url.Parse(helloPathParamRouteURLRaw)
 	require.NoError(t, err)
 

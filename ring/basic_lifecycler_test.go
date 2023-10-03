@@ -132,6 +132,7 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 
 				if testData.initialInstanceID == instanceID {
 					assert.True(t, instanceExists)
+					assert.Equal(t, testData.initialInstanceID, instanceDesc.Id)
 					assert.Equal(t, testData.initialInstanceDesc.Addr, instanceDesc.Addr)
 					assert.Equal(t, testData.initialInstanceDesc.Zone, instanceDesc.Zone)
 					assert.Equal(t, testData.initialInstanceDesc.State, instanceDesc.State)
@@ -165,6 +166,7 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			// Assert on the instance registered within the ring.
 			instanceDesc, ok := getInstanceFromStore(t, store, testInstanceID)
 			assert.True(t, ok)
+			assert.Equal(t, testInstanceID, instanceDesc.GetId())
 			assert.Equal(t, cfg.Addr, instanceDesc.GetAddr())
 			assert.Equal(t, testData.registerState, instanceDesc.GetState())
 			assert.Equal(t, testData.registerTokens, Tokens(instanceDesc.GetTokens()))
@@ -250,6 +252,7 @@ func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 	// Assert on the instance is in the ring.
 	inst, ok := getInstanceFromStore(t, store, testInstanceID)
 	assert.True(t, ok)
+	assert.Equal(t, cfg.ID, inst.GetId())
 	assert.Equal(t, cfg.Addr, inst.GetAddr())
 	assert.Equal(t, LEAVING, inst.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, Tokens(inst.GetTokens()))
@@ -396,7 +399,8 @@ func TestBasicLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 			desc.GetTimestamp() > 0 &&
 			desc.GetState() == ACTIVE &&
 			Tokens(desc.GetTokens()).Equals(registerTokens) &&
-			desc.GetAddr() == cfg.Addr
+			desc.GetAddr() == cfg.Addr &&
+			desc.GetId() == cfg.ID
 	})
 
 	// Ensure the registration timestamp has been updated.
@@ -503,6 +507,7 @@ func TestBasicLifecycler_updateInstance_ShouldAddInstanceToTheRingIfDoesNotExist
 
 	desc, ok := getInstanceFromStore(t, store, testInstanceID)
 	require.True(t, ok)
+	assert.Equal(t, cfg.ID, desc.GetId())
 	assert.Equal(t, ACTIVE, desc.GetState())
 	assert.Equal(t, registerTokens, Tokens(desc.GetTokens()))
 	assert.Equal(t, cfg.Addr, desc.GetAddr())

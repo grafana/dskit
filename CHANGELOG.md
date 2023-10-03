@@ -54,6 +54,7 @@
 * [CHANGE] Remove `logrus` and `log.Interface`. #359
 * [CHANGE] Remove jaeger-specific opentracing usage in `middleware.HTTPGRPCTracer`. #372
 * [CHANGE] Always include source IPs in HTTP and gRPC server spans. #386
+* [CHANGE] ring: Change `PoolFactory` function type to an interface and create function implementations. #387
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
@@ -143,7 +144,8 @@
 * [ENHANCEMENT] metrics: Add `MetricFamilyMap.MinGauges` and `MetricFamiliesPerTenant.SendMinOfGauges` methods. #366
 * [ENHANCEMENT] metrics: add `MatchesLabels`, `FindMetricsInFamilyMatchingLabels` and `FindHistogramWithNameAndLabels` test helper methods. #365
 * [ENHANCEMENT] SpanLogger: much more efficient debug logging. #367
-* [ENHANCMENT] server: clarify documentation for `-server.grpc-max-concurrent-streams` CLI flag. #369
+* [ENHANCEMENT] server: clarify documentation for `-server.grpc-max-concurrent-streams` CLI flag. #369
+* [ENHANCEMENT] Ring: Add ID attribute to `InstanceDesc` for ring members. #387
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

@@ -511,6 +511,7 @@ func TestLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 
 	// Ensure other information has been preserved.
 	assert.Greater(t, desc.GetTimestamp(), int64(0))
+	assert.Equal(t, testInstanceID, desc.GetId())
 	assert.Equal(t, ACTIVE, desc.GetState())
 	assert.Equal(t, fmt.Sprintf("%s:%d", lifecyclerCfg.Addr, lifecyclerCfg.Port), desc.GetAddr())
 	assert.Equal(t, lifecyclerCfg.Zone, desc.Zone)
@@ -650,7 +651,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		ingDesc = desc.Ingesters["ing1"]
 		t.Log(fmt.Sprintf("Polling for new ingester to have become active with %d tokens", numTokens),
 			"state", ingDesc.State, "tokens", len(ingDesc.Tokens))
-		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == numTokens
+		return ingDesc.Id == "ing1" && ingDesc.State == ACTIVE && len(ingDesc.Tokens) == numTokens
 	})
 
 	seen := map[uint32]struct{}{}
@@ -1053,7 +1054,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 
 	// Lifecycler should be in ACTIVE state, using tokens from the ring.
 	require.Equal(t, ACTIVE, l.GetState())
-	require.Equal(t, Tokens(origTokens), l.getTokens())
+	require.Equal(t, origTokens, l.getTokens())
 	require.Equal(t, registeredAt.Truncate(time.Second), l.getRegisteredAt())
 
 	// check that ring entry has updated address and state
@@ -1061,6 +1062,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	require.NoError(t, err)
 
 	r := GetOrCreateRingDesc(desc)
+	require.Equal(t, lifecyclerConfig.ID, r.Ingesters[id].Id)
 	require.Equal(t, ACTIVE, r.Ingesters[id].State)
 	require.Equal(t, "1.1.1.1:111", r.Ingesters[id].Addr)
 	require.Equal(t, "new", r.Ingesters[id].Zone)

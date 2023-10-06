@@ -180,7 +180,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 		require.NoError(t, server.Run())
 	}()
 
-	conn, err := grpc.Dial(grpcTarget(server), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -592,7 +592,7 @@ func TestTLSServer(t *testing.T) {
 	expected := []byte("Hello World!")
 	require.Equal(t, expected, body)
 
-	conn, err := grpc.Dial(grpcTarget(server), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -683,7 +683,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	expected := []byte("Hello World!")
 	require.Equal(t, expected, body)
 
-	conn, err := grpc.Dial(grpcTarget(server), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -817,8 +817,4 @@ func httpTarget(srv *Server, path string) string {
 
 func httpsTarget(srv *Server, path string) string {
 	return fmt.Sprintf("https://%s%s", srv.HTTPListenAddr().String(), path)
-}
-
-func grpcTarget(srv *Server) string {
-	return srv.GRPCListenAddr().String()
 }

@@ -78,7 +78,7 @@ func cancelableSleep(ctx context.Context, sleep time.Duration) error {
 
 func TestTCPv4Network(t *testing.T) {
 	var cfg Config
-	setRandomPorts(t, NetworkTCPV4, &cfg)
+	setAutoAssignedPorts(NetworkTCPV4, &cfg)
 
 	t.Run("http", func(t *testing.T) {
 		var level log.Level
@@ -156,7 +156,7 @@ func TestDefaultAddresses(t *testing.T) {
 func TestErrorInstrumentationMiddleware(t *testing.T) {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
-	setRandomPorts(t, DefaultNetwork, &cfg)
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -300,7 +300,7 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
-	setRandomPorts(t, DefaultNetwork, &cfg)
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -451,7 +451,7 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 
 func TestRunReturnsError(t *testing.T) {
 	var cfg Config
-	setRandomPorts(t, DefaultNetwork, &cfg)
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	t.Run("http", func(t *testing.T) {
 		cfg.MetricsNamespace = "testing_http"
@@ -499,7 +499,7 @@ func TestMiddlewareLogging(t *testing.T) {
 		DoNotAddDefaultHTTPMiddleware: true,
 		Router:                        &mux.Router{},
 	}
-	setRandomPorts(t, DefaultNetwork, &cfg)
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -544,7 +544,7 @@ func TestTLSServer(t *testing.T) {
 		MetricsNamespace: "testing_tls",
 		LogLevel:         level,
 	}
-	setRandomPorts(t, DefaultNetwork, &cfg)
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -637,7 +637,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 		MetricsNamespace: "testing_tls_certs_inline",
 		LogLevel:         level,
 	}
-	setRandomPorts(t, DefaultNetwork, &cfg)
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	server, err := New(cfg)
 	defer server.Shutdown()
@@ -731,7 +731,7 @@ func TestLogSourceIPs(t *testing.T) {
 		Log:              logger,
 		LogSourceIPs:     true,
 	}
-	setRandomPorts(t, DefaultNetwork, &cfg)
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	server, err := New(cfg)
 	require.NoError(t, err)
@@ -761,7 +761,7 @@ func TestStopWithDisabledSignalHandling(t *testing.T) {
 	cfg := Config{
 		LogLevel: level,
 	}
-	setRandomPorts(t, DefaultNetwork, &cfg)
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	var test = func(t *testing.T, metricsNamespace string, handler SignalHandler) {
 		cfg.SignalHandler = handler
@@ -802,7 +802,7 @@ func (dh dummyHandler) Stop() {
 	close(dh.quit)
 }
 
-func setRandomPorts(t *testing.T, network string, cfg *Config) {
+func setAutoAssignedPorts(network string, cfg *Config) {
 	cfg.HTTPListenNetwork = network
 	cfg.HTTPListenAddress = "localhost"
 	cfg.HTTPListenPort = 0

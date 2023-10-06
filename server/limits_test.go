@@ -325,8 +325,8 @@ func (m *methodLimiter) RPCCallStarting(ctx context.Context, methodName string, 
 func (m *methodLimiter) RPCCallFinished(ctx context.Context) {
 	m.allInflight.Dec()
 
-	methodName := ctx.Value(ctxMethodName).(ctxKey)
-	if string(methodName) == m.protectedMethod && m.protectedMethodInflightLimit > 0 {
+	methodName := ctx.Value(ctxMethodName).(string)
+	if methodName == m.protectedMethod && m.protectedMethodInflightLimit > 0 {
 		m.protectedMethodInflight.Dec()
 	}
 }

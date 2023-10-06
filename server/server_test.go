@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -76,14 +77,9 @@ func cancelableSleep(ctx context.Context, sleep time.Duration) error {
 }
 
 func TestTCPv4Network(t *testing.T) {
-	cfg := Config{
-		HTTPListenNetwork: NetworkTCPV4,
-		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9290,
-		GRPCListenNetwork: NetworkTCPV4,
-		GRPCListenAddress: "localhost",
-		GRPCListenPort:    9291,
-	}
+	var cfg Config
+	setAutoAssignedPorts(NetworkTCPV4, &cfg)
+
 	t.Run("http", func(t *testing.T) {
 		var level log.Level
 		require.NoError(t, level.Set("info"))
@@ -160,9 +156,8 @@ func TestDefaultAddresses(t *testing.T) {
 func TestErrorInstrumentationMiddleware(t *testing.T) {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
-	cfg.HTTPListenPort = 9090 // can't use 80 as ordinary user
-	cfg.GRPCListenAddress = "localhost"
-	cfg.GRPCListenPort = 1234
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
 	server, err := New(cfg)
 	require.NoError(t, err)
 
@@ -185,7 +180,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 		require.NoError(t, server.Run())
 	}()
 
-	conn, err := grpc.Dial("localhost:1234", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -235,25 +230,25 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 
 	// Now test the HTTP versions of the functions
 	{
-		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/succeed", nil)
+		req, err := http.NewRequest("GET", httpTarget(server, "/succeed"), nil)
 		require.NoError(t, err)
 		_, err = http.DefaultClient.Do(req)
 		require.NoError(t, err)
 	}
 	{
-		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/error500", nil)
+		req, err := http.NewRequest("GET", httpTarget(server, "/error500"), nil)
 		require.NoError(t, err)
 		_, err = http.DefaultClient.Do(req)
 		require.NoError(t, err)
 	}
 	{
-		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/notfound", nil)
+		req, err := http.NewRequest("GET", httpTarget(server, "/notfound"), nil)
 		require.NoError(t, err)
 		_, err = http.DefaultClient.Do(req)
 		require.NoError(t, err)
 	}
 	{
-		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/sleep10", nil)
+		req, err := http.NewRequest("GET", httpTarget(server, "/sleep10"), nil)
 		require.NoError(t, err)
 		err = callThenCancel(func(ctx context.Context) error {
 			_, err = http.DefaultClient.Do(req.WithContext(ctx))
@@ -305,9 +300,8 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
-	cfg.HTTPListenPort = 9090 // can't use 80 as ordinary user
-	cfg.GRPCListenAddress = "localhost"
-	cfg.GRPCListenPort = 1234
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
 	server, err := New(cfg)
 	require.NoError(t, err)
 
@@ -339,7 +333,7 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 
 	// Now test the HTTP versions of the functions
 	{
-		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/succeed", nil)
+		req, err := http.NewRequest("GET", httpTarget(server, "/succeed"), nil)
 		require.NoError(t, err)
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
@@ -348,13 +342,13 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 		require.Equal(t, "OK", string(body))
 	}
 	{
-		req, err := http.NewRequest("GET", "http://127.0.0.1:9090/error500", nil)
+		req, err := http.NewRequest("GET", httpTarget(server, "/error500"), nil)
 		require.NoError(t, err)
 		_, err = http.DefaultClient.Do(req)
 		require.NoError(t, err)
 	}
 	{
-		req, err := http.NewRequest("POST", "http://127.0.0.1:9090/sleep10", bytes.NewReader([]byte("Body")))
+		req, err := http.NewRequest("POST", httpTarget(server, "/sleep10"), bytes.NewReader([]byte("Body")))
 		require.NoError(t, err)
 		err = callThenCancel(func(ctx context.Context) error {
 			_, err = http.DefaultClient.Do(req.WithContext(ctx))
@@ -456,14 +450,9 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 }
 
 func TestRunReturnsError(t *testing.T) {
-	cfg := Config{
-		HTTPListenNetwork: DefaultNetwork,
-		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9090,
-		GRPCListenNetwork: DefaultNetwork,
-		GRPCListenAddress: "localhost",
-		GRPCListenPort:    9191,
-	}
+	var cfg Config
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
 	t.Run("http", func(t *testing.T) {
 		cfg.MetricsNamespace = "testing_http"
 		var level log.Level
@@ -504,17 +493,14 @@ func TestMiddlewareLogging(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
 	cfg := Config{
-		HTTPListenNetwork:             DefaultNetwork,
-		HTTPListenAddress:             "localhost",
-		HTTPListenPort:                9192,
-		GRPCListenNetwork:             DefaultNetwork,
-		GRPCListenAddress:             "localhost",
 		HTTPMiddleware:                []middleware.Interface{middleware.Log{Log: log.Global()}},
 		MetricsNamespace:              "testing_logging",
 		LogLevel:                      level,
 		DoNotAddDefaultHTTPMiddleware: true,
 		Router:                        &mux.Router{},
 	}
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
 	server, err := New(cfg)
 	require.NoError(t, err)
 
@@ -527,7 +513,7 @@ func TestMiddlewareLogging(t *testing.T) {
 	}()
 	defer server.Shutdown()
 
-	req, err := http.NewRequest("GET", "http://127.0.0.1:9192/error500", nil)
+	req, err := http.NewRequest("GET", httpTarget(server, "/error500"), nil)
 	require.NoError(t, err)
 	_, err = http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -543,9 +529,6 @@ func TestTLSServer(t *testing.T) {
 	require.NoError(t, err, string(out))
 
 	cfg := Config{
-		HTTPListenNetwork: DefaultNetwork,
-		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9193,
 		HTTPTLSConfig: TLSConfig{
 			TLSCertPath: filepath.Join(certsDir, "server.crt"),
 			TLSKeyPath:  filepath.Join(certsDir, "server.key"),
@@ -558,12 +541,11 @@ func TestTLSServer(t *testing.T) {
 			ClientAuth:  "VerifyClientCertIfGiven",
 			ClientCAs:   filepath.Join(certsDir, "root.crt"),
 		},
-		MetricsNamespace:  "testing_tls",
-		GRPCListenNetwork: DefaultNetwork,
-		GRPCListenAddress: "localhost",
-		GRPCListenPort:    9194,
-		LogLevel:          level,
+		MetricsNamespace: "testing_tls",
+		LogLevel:         level,
 	}
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
 	server, err := New(cfg)
 	require.NoError(t, err)
 
@@ -599,7 +581,7 @@ func TestTLSServer(t *testing.T) {
 	}
 
 	client := &http.Client{Transport: tr}
-	res, err := client.Get("https://localhost:9193/testhttps")
+	res, err := client.Get(httpsTarget(server, "/testhttps"))
 	require.NoError(t, err)
 	defer res.Body.Close()
 
@@ -610,7 +592,7 @@ func TestTLSServer(t *testing.T) {
 	expected := []byte("Hello World!")
 	require.Equal(t, expected, body)
 
-	conn, err := grpc.Dial("localhost:9194", grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -640,9 +622,6 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := Config{
-		HTTPListenNetwork: DefaultNetwork,
-		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9193,
 		HTTPTLSConfig: TLSConfig{
 			TLSCert:       string(cert),
 			TLSKey:        config.Secret(key),
@@ -655,12 +634,11 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 			ClientAuth:    "VerifyClientCertIfGiven",
 			ClientCAsText: string(clientCAs),
 		},
-		MetricsNamespace:  "testing_tls_certs_inline",
-		GRPCListenNetwork: DefaultNetwork,
-		GRPCListenAddress: "localhost",
-		GRPCListenPort:    9194,
-		LogLevel:          level,
+		MetricsNamespace: "testing_tls_certs_inline",
+		LogLevel:         level,
 	}
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
 	server, err := New(cfg)
 	defer server.Shutdown()
 
@@ -694,7 +672,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	}
 
 	client := &http.Client{Transport: tr}
-	res, err := client.Get("https://localhost:9193/testhttps")
+	res, err := client.Get(httpsTarget(server, "/testhttps"))
 	require.NoError(t, err)
 	defer res.Body.Close()
 
@@ -705,7 +683,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	expected := []byte("Hello World!")
 	require.Equal(t, expected, body)
 
-	conn, err := grpc.Dial("localhost:9194", grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -747,17 +725,14 @@ func TestLogSourceIPs(t *testing.T) {
 	require.NoError(t, level.Set("info"))
 	logger := newFakeLogger()
 	cfg := Config{
-		HTTPListenNetwork: DefaultNetwork,
-		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9195,
-		GRPCListenNetwork: DefaultNetwork,
-		GRPCListenAddress: "localhost",
-		HTTPMiddleware:    []middleware.Interface{middleware.Log{Log: log.Global()}},
-		MetricsNamespace:  "testing_mux",
-		LogLevel:          level,
-		Log:               logger,
-		LogSourceIPs:      true,
+		HTTPMiddleware:   []middleware.Interface{middleware.Log{Log: log.Global()}},
+		MetricsNamespace: "testing_mux",
+		LogLevel:         level,
+		Log:              logger,
+		LogSourceIPs:     true,
 	}
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
 	server, err := New(cfg)
 	require.NoError(t, err)
 
@@ -772,7 +747,7 @@ func TestLogSourceIPs(t *testing.T) {
 
 	logger.assertNotContains(t, "sourceIPs")
 
-	req, err := http.NewRequest("GET", "http://127.0.0.1:9195/error500", nil)
+	req, err := http.NewRequest("GET", httpTarget(server, "/error500"), nil)
 	require.NoError(t, err)
 	_, err = http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -784,14 +759,9 @@ func TestStopWithDisabledSignalHandling(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
 	cfg := Config{
-		HTTPListenNetwork: DefaultNetwork,
-		HTTPListenAddress: "localhost",
-		HTTPListenPort:    9198,
-		GRPCListenNetwork: DefaultNetwork,
-		GRPCListenAddress: "localhost",
-		GRPCListenPort:    9199,
-		LogLevel:          level,
+		LogLevel: level,
 	}
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
 	var test = func(t *testing.T, metricsNamespace string, handler SignalHandler) {
 		cfg.SignalHandler = handler
@@ -830,4 +800,21 @@ func (dh dummyHandler) Loop() {
 
 func (dh dummyHandler) Stop() {
 	close(dh.quit)
+}
+
+func setAutoAssignedPorts(network string, cfg *Config) {
+	cfg.HTTPListenNetwork = network
+	cfg.HTTPListenAddress = "localhost"
+	cfg.HTTPListenPort = 0
+	cfg.GRPCListenNetwork = network
+	cfg.GRPCListenAddress = "localhost"
+	cfg.GRPCListenPort = 0
+}
+
+func httpTarget(srv *Server, path string) string {
+	return fmt.Sprintf("http://%s%s", srv.HTTPListenAddr().String(), path)
+}
+
+func httpsTarget(srv *Server, path string) string {
+	return fmt.Sprintf("https://%s%s", srv.HTTPListenAddr().String(), path)
 }

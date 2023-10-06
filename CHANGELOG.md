@@ -146,6 +146,7 @@
 * [ENHANCEMENT] SpanLogger: much more efficient debug logging. #367
 * [ENHANCEMENT] server: clarify documentation for `-server.grpc-max-concurrent-streams` CLI flag. #369
 * [ENHANCEMENT] Ring: Add ID attribute to `InstanceDesc` for ring members. #387
+* [ENHANCEMENT] httpgrpc, grpcutil: added constants and functions for adding request details into outgoing grpc metadata. #391
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

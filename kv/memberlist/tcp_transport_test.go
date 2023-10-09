@@ -20,14 +20,14 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 		unexpectedLogs string
 	}{
 		"should not log 'connection refused' by default": {
-			remoteAddr:     "localhost:12345",
+			remoteAddr:     "127.0.0.1:12345",
 			unexpectedLogs: "connection refused",
 		},
 		"should log 'connection refused' if debug log level is enabled": {
 			setup: func(t *testing.T, cfg *TCPTransportConfig) {
 				cfg.TransportDebug = true
 			},
-			remoteAddr:   "localhost:12345",
+			remoteAddr:   "127.0.0.1:12345",
 			expectedLogs: "connection refused",
 		},
 	}
@@ -39,7 +39,7 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 
 			cfg := TCPTransportConfig{}
 			flagext.DefaultValues(&cfg)
-			cfg.BindAddrs = []string{"localhost"}
+			cfg.BindAddrs = []string{"127.0.0.1"}
 			cfg.BindPort = 0
 			if testData.setup != nil {
 				testData.setup(t, &cfg)
@@ -69,7 +69,7 @@ func TestFinalAdvertiseAddr(t *testing.T) {
 	}{
 		"should not fail with local address specified": {
 			advertiseAddr: "127.0.0.1",
-			bindAddrs:     []string{"localhost"},
+			bindAddrs:     []string{"127.0.0.1"},
 			bindPort:      0,
 		},
 	}

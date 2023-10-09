@@ -234,14 +234,28 @@ func casWithErr(ctx context.Context, kv *Client, key string, updateFn func(*data
 	return kv.CAS(ctx, key, fn)
 }
 
+var localhostIP *net.IPAddr
+var localhostBindAddrs []string
+var localhostBindAddrsOnce sync.Once
+
+func setLocalhostBindAddrs() {
+	var err error
+	localhostIP, err = net.ResolveIPAddr("ip4", "localhost")
+	if err != nil {
+		localhostBindAddrs = []string{"127.0.0.1"}
+	}
+	localhostBindAddrs = []string{localhostIP.String()}
+}
+
 func TestBasicGetAndCas(t *testing.T) {
 	c := dataCodec{}
 
 	name := "Ing 1"
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: localhostBindAddrs,
 	}
 	cfg.Codecs = []codec.Codec{c}
 
@@ -543,8 +557,9 @@ func defaultKVConfig(i int) KVConfig {
 	cfg.GossipNodes = 10
 	cfg.PushPullInterval = 5 * time.Second
 
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: localhostBindAddrs,
 		BindPort:  0, // randomize ports
 	}
 
@@ -826,6 +841,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 				}
 			}()
 
+			localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 			for i, port := range ports {
 				id := fmt.Sprintf("Member-%d", i)
 				var cfg KVConfig
@@ -842,7 +858,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 				cfg.AbortIfJoinFails = true
 
 				cfg.TCPTransport = TCPTransportConfig{
-					BindAddrs: []string{"localhost"},
+					BindAddrs: localhostBindAddrs,
 					BindPort:  port,
 				}
 
@@ -926,12 +942,13 @@ func TestMemberlistFailsToJoin(t *testing.T) {
 	cfg.MaxJoinRetries = 2
 	cfg.AbortIfJoinFails = true
 
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: localhostBindAddrs,
 		BindPort:  0,
 	}
 
-	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(ports[0]))}
+	cfg.JoinMembers = []string{net.JoinHostPort(localhostIP.String(), strconv.Itoa(ports[0]))}
 
 	cfg.Codecs = []codec.Codec{c}
 
@@ -950,8 +967,9 @@ func TestMemberlistFailsToJoin(t *testing.T) {
 
 func getFreePorts(count int) ([]int, error) {
 	var ports []int
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	for i := 0; i < count; i++ {
-		addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+		addr, err := net.ResolveTCPAddr("tcp", localhostIP.String()+":0")
 		if err != nil {
 			return nil, err
 		}
@@ -990,6 +1008,7 @@ func runClient(kv *Client, name string, ringKey string, portToConnect int, casIn
 	// stop gossipping about the ring(s)
 	defer services.StopAndAwaitTerminated(context.Background(), kv.kv) //nolint:errcheck
 
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	for {
 		select {
 		case <-start:
@@ -997,7 +1016,7 @@ func runClient(kv *Client, name string, ringKey string, portToConnect int, casIn
 
 			// let's join the first member
 			if portToConnect > 0 {
-				_, err := kv.kv.JoinMembers([]string{net.JoinHostPort("127.0.0.1", strconv.Itoa(portToConnect))})
+				_, err := kv.kv.JoinMembers([]string{net.JoinHostPort(localhostIP.String(), strconv.Itoa(portToConnect))})
 				if err != nil {
 					return fmt.Errorf("%s failed to join the cluster: %f", name, err)
 				}
@@ -1098,8 +1117,9 @@ var _ codec.Codec = &distributedCounterCodec{}
 func TestMultipleCodecs(t *testing.T) {
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: localhostBindAddrs,
 		BindPort:  0, // randomize
 	}
 
@@ -1189,8 +1209,9 @@ func TestRejoin(t *testing.T) {
 
 	var cfg1 KVConfig
 	flagext.DefaultValues(&cfg1)
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	cfg1.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: localhostBindAddrs,
 		BindPort:  ports[0],
 	}
 
@@ -1408,8 +1429,9 @@ func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 func TestFastJoin(t *testing.T) {
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: localhostBindAddrs,
 		BindPort:  0, // randomize
 	}
 

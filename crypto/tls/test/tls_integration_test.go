@@ -56,21 +56,21 @@ func (h *grpcHealthCheck) Watch(_ *grpc_health_v1.HealthCheckRequest, _ grpc_hea
 	return status.Error(codes.Unimplemented, "Watching is not supported")
 }
 
-func getLocalHostPort() (int, error) {
+func getLocalHostAddr() (*net.TCPAddr, error) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	l, err := net.ListenTCP("tcp", addr)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	if err := l.Close(); err != nil {
-		return 0, err
+		return nil, err
 	}
-	return l.Addr().(*net.TCPAddr).Port, nil
+	return l.Addr().(*net.TCPAddr), nil
 }
 
 func newIntegrationClientServer(
@@ -85,13 +85,19 @@ func newIntegrationClientServer(
 		prometheus.DefaultRegisterer = savedRegistry
 	}()
 
-	grpcPort, err := getLocalHostPort()
+	httpAddr, err := getLocalHostAddr()
 	require.NoError(t, err)
-	httpPort, err := getLocalHostPort()
+	grpcAddr, err := getLocalHostAddr()
 	require.NoError(t, err)
 
-	cfg.HTTPListenPort = httpPort
-	cfg.GRPCListenPort = grpcPort
+	if cfg.HTTPListenAddress == "" {
+		cfg.HTTPListenAddress = httpAddr.IP.String()
+	}
+	cfg.HTTPListenPort = httpAddr.Port
+	if cfg.GRPCListenAddress == "" {
+		cfg.GRPCListenAddress = grpcAddr.IP.String()
+	}
+	cfg.GRPCListenPort = grpcAddr.Port
 
 	serv, err := server.New(cfg)
 	require.NoError(t, err)
@@ -107,8 +113,8 @@ func newIntegrationClientServer(
 		require.NoError(t, err)
 	}()
 
-	httpURL := fmt.Sprintf("https://localhost:%d/hello", httpPort)
-	grpcHost := net.JoinHostPort("localhost", strconv.Itoa(grpcPort))
+	httpURL := fmt.Sprintf("https://localhost:%d/hello", httpAddr.Port)
+	grpcHost := net.JoinHostPort("localhost", strconv.Itoa(grpcAddr.Port))
 
 	for _, tc := range tcs {
 		tlsClientConfig, err := tc.tlsConfig.GetTLSConfig()

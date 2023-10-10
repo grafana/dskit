@@ -316,7 +316,10 @@ func withFixtures(t *testing.T, testFN func(t *testing.T, kv *Client)) {
 
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
-	cfg.TCPTransport = TCPTransportConfig{}
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: localhostBindAddrs,
+	}
 	cfg.Codecs = []codec.Codec{c}
 
 	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
@@ -468,8 +471,12 @@ func TestMultipleCAS(t *testing.T) {
 
 	c := dataCodec{}
 
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: localhostBindAddrs,
+	}
 	cfg.Codecs = []codec.Codec{c}
 
 	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
@@ -1272,7 +1279,12 @@ func TestMessageBuffer(t *testing.T) {
 func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{}
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
+	cfg := KVConfig{
+		TCPTransport: TCPTransportConfig{
+			BindAddrs: localhostBindAddrs,
+		},
+	}
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
@@ -1337,7 +1349,12 @@ func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{}
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
+	cfg := KVConfig{
+		TCPTransport: TCPTransportConfig{
+			BindAddrs: localhostBindAddrs,
+		},
+	}
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
 	cfg.LeftIngestersTimeout = 5 * time.Minute
@@ -1481,6 +1498,10 @@ func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 
 	cfg := KVConfig{}
 	cfg.Codecs = append(cfg.Codecs, codec)
+	localhostBindAddrsOnce.Do(setLocalhostBindAddrs)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: localhostBindAddrs,
+	}
 
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 

@@ -455,10 +455,18 @@ func TestSpreadMinimizingTokenGenerator_GetMissingTokens(t *testing.T) {
 	tokensPerInstance := 512
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, testInstance, testZone, zones)
 
-	// we get all the tokens for the underlying instance, but we don't mark all of them as taken
+	// We get all the tokens for the underlying instance, but we don't mark all of them as taken
 	// in order to simulate that some tokens were taken by another instance when the method was
-	// first called
-	missingIndexes := []int{rand.Intn(tokensPerInstance - 1), rand.Intn(tokensPerInstance - 1), rand.Intn(tokensPerInstance - 1)}
+	// first called.
+	// We create missingIndexes, a slice of 3 different missing indexes.
+	missingIndexes := make([]int, 0, 3)
+	for i := 0; i < 3; i++ {
+		missingIndex := rand.Intn(tokensPerInstance - 1)
+		if slices.Contains(missingIndexes, missingIndex) {
+			continue
+		}
+		missingIndexes = append(missingIndexes, missingIndex)
+	}
 	slices.Sort(missingIndexes)
 	takenTokens := make(Tokens, 0, tokensPerInstance)
 	allTokens := tokenGenerator.GenerateTokens(tokensPerInstance, takenTokens)
@@ -470,7 +478,7 @@ func TestSpreadMinimizingTokenGenerator_GetMissingTokens(t *testing.T) {
 		takenTokens = append(takenTokens, token)
 	}
 
-	// we generate the missing tokens, and we ensure that they correspond to the
+	// We generate the missing tokens, and we ensure that they correspond to the
 	// tokens of allTokens having indexes in missingIndexes.
 	tokens := tokenGenerator.GenerateTokens(len(missingIndexes), takenTokens)
 	require.Len(t, tokens, len(missingIndexes))

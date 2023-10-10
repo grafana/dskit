@@ -171,3 +171,4 @@
 * [BUGFIX] `MetricFamiliesPerTenant.SendMinOfGauges` will no longer return 0 if some tenant doesn't have the gauge in their registry, and other tenants have positive values only. #368
 * [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGauges` will no longer return 0 if some tenant doesn't have the gauge in their registry, and other tenants have negative values only. #368
 * [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGaugesPerTenant` no longer includes tenants, which do not have specified gauge. #368
+* [BUGFIX] Correctly format `host:port` addresses when using IPv6. #388

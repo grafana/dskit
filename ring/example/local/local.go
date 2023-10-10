@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -87,7 +88,7 @@ func runCluster() {
 	}
 	defer services.StopAndAwaitTerminated(ctx, lfc)
 
-	listener, err := net.Listen("tcp", bindaddr+":8100")
+	listener, err := net.Listen("tcp", net.JoinHostPort(bindaddr, "8100"))
 	if err != nil {
 		panic(err)
 	}
@@ -211,7 +212,7 @@ func SimpleRing(store kv.Client) (*ring.Ring, error) {
 func SimpleRingLifecycler(store kv.Client, bindaddr string, bindport int) (*ring.BasicLifecycler, error) {
 	var config ring.BasicLifecyclerConfig
 	config.ID = bindaddr
-	config.Addr = fmt.Sprintf("%s:%d", bindaddr, bindport)
+	config.Addr = net.JoinHostPort(bindaddr, strconv.Itoa(bindport))
 
 	var delegate ring.BasicLifecyclerDelegate
 

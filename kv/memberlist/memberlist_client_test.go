@@ -11,6 +11,7 @@ import (
 	"net"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -930,7 +931,7 @@ func TestMemberlistFailsToJoin(t *testing.T) {
 		BindPort:  0,
 	}
 
-	cfg.JoinMembers = []string{fmt.Sprintf("127.0.0.1:%d", ports[0])}
+	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(ports[0]))}
 
 	cfg.Codecs = []codec.Codec{c}
 
@@ -996,7 +997,7 @@ func runClient(kv *Client, name string, ringKey string, portToConnect int, casIn
 
 			// let's join the first member
 			if portToConnect > 0 {
-				_, err := kv.kv.JoinMembers([]string{fmt.Sprintf("127.0.0.1:%d", portToConnect)})
+				_, err := kv.kv.JoinMembers([]string{net.JoinHostPort("127.0.0.1", strconv.Itoa(portToConnect))})
 				if err != nil {
 					return fmt.Errorf("%s failed to join the cluster: %f", name, err)
 				}
@@ -1155,7 +1156,7 @@ func TestMultipleCodecs(t *testing.T) {
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
 	// Join second KV to first one. That will also trigger state transfer.
-	_, err = mkv2.JoinMembers([]string{fmt.Sprintf("127.0.0.1:%d", mkv1.GetListeningPort())})
+	_, err = mkv2.JoinMembers([]string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))})
 	require.NoError(t, err)
 
 	// Now read both values from second KV. It should have both values by now.
@@ -1199,7 +1200,7 @@ func TestRejoin(t *testing.T) {
 
 	cfg2 := cfg1
 	cfg2.TCPTransport.BindPort = ports[1]
-	cfg2.JoinMembers = []string{fmt.Sprintf("localhost:%d", ports[0])}
+	cfg2.JoinMembers = []string{net.JoinHostPort("localhost", strconv.Itoa(ports[0]))}
 	cfg2.RejoinInterval = 1 * time.Second
 
 	mkv1 := NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
@@ -1430,7 +1431,7 @@ func TestFastJoin(t *testing.T) {
 	require.NoError(t, err)
 
 	// We will read values from second KV, which will join the first one
-	cfg.JoinMembers = []string{fmt.Sprintf("127.0.0.1:%d", mkv1.GetListeningPort())}
+	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
 
 	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 	go func() {

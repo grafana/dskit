@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof" // anonymous import to get the pprof handler registered
+	"strconv"
 	"strings"
 	"time"
 
@@ -251,7 +252,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		network = DefaultNetwork
 	}
 	// Setup listeners first, so we can fail early if the port is in use.
-	httpListener, err := net.Listen(network, fmt.Sprintf("%s:%d", cfg.HTTPListenAddress, cfg.HTTPListenPort))
+	httpListener, err := net.Listen(network, net.JoinHostPort(cfg.HTTPListenAddress, strconv.Itoa(cfg.HTTPListenPort)))
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +276,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	if network == "" {
 		network = DefaultNetwork
 	}
-	grpcListener, err := net.Listen(network, fmt.Sprintf("%s:%d", cfg.GRPCListenAddress, cfg.GRPCListenPort))
+	grpcListener, err := net.Listen(network, net.JoinHostPort(cfg.GRPCListenAddress, strconv.Itoa(cfg.GRPCListenPort)))
 	if err != nil {
 		return nil, err
 	}

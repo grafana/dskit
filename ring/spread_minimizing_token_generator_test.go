@@ -458,7 +458,14 @@ func TestSpreadMinimizingTokenGenerator_GetMissingTokens(t *testing.T) {
 	// we get all the tokens for the underlying instance, but we don't mark all of them as taken
 	// in order to simulate that some tokens were taken by another instance when the method was
 	// first called
-	missingIndexes := []int{rand.Intn(tokensPerInstance - 1), rand.Intn(tokensPerInstance - 1), rand.Intn(tokensPerInstance - 1)}
+	missingIndexes := make([]int, 0, 3)
+	for i := 0; i < 3; i++ {
+		missingIndex := rand.Intn(tokensPerInstance - 1)
+		if slices.Contains(missingIndexes, missingIndex) {
+			continue
+		}
+		missingIndexes = append(missingIndexes, missingIndex)
+	}
 	slices.Sort(missingIndexes)
 	takenTokens := make(Tokens, 0, tokensPerInstance)
 	allTokens := tokenGenerator.GenerateTokens(tokensPerInstance, takenTokens)

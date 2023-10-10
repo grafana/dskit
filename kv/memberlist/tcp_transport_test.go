@@ -99,11 +99,6 @@ func TestFinalAdvertiseAddr(t *testing.T) {
 func TestNonIPsAreRejected(t *testing.T) {
 	cfg := TCPTransportConfig{BindAddrs: flagext.StringSlice{"localhost"}}
 	_, err := NewTCPTransport(cfg, nil, nil)
-	if err == nil {
-		t.Fatal("expected non-nil err, got nil")
-	}
-	want := `could not parse bind addr "localhost" as IP address`
-	if err.Error() != want {
-		t.Fatalf("NewTCPTransport with non-IP address BindAddr: got %v, want %v", err, want)
-	}
+	require.Error(t, err)
+	require.Equal(t, err.Error(), `could not parse bind addr "localhost" as IP address`)
 }

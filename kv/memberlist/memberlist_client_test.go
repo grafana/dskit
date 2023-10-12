@@ -234,6 +234,24 @@ func casWithErr(ctx context.Context, kv *Client, key string, updateFn func(*data
 	return kv.CAS(ctx, key, fn)
 }
 
+func getLocalhostAddr() string {
+	return getLocalhostAddrs()[0]
+}
+
+var addrsOnce sync.Once
+var localhostIP string
+
+func getLocalhostAddrs() []string {
+	addrsOnce.Do(func() {
+		ip, err := net.ResolveIPAddr("ip4", "localhost")
+		if err != nil {
+			localhostIP = "127.0.0.1" // this is the most common answer, try it
+		}
+		localhostIP = ip.String()
+	})
+	return []string{localhostIP}
+}
+
 func TestBasicGetAndCas(t *testing.T) {
 	c := dataCodec{}
 
@@ -241,7 +259,7 @@ func TestBasicGetAndCas(t *testing.T) {
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: getLocalhostAddrs(),
 	}
 	cfg.Codecs = []codec.Codec{c}
 
@@ -302,7 +320,9 @@ func withFixtures(t *testing.T, testFN func(t *testing.T, kv *Client)) {
 
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
-	cfg.TCPTransport = TCPTransportConfig{}
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+	}
 	cfg.Codecs = []codec.Codec{c}
 
 	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
@@ -456,6 +476,9 @@ func TestMultipleCAS(t *testing.T) {
 
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+	}
 	cfg.Codecs = []codec.Codec{c}
 
 	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
@@ -544,7 +567,7 @@ func defaultKVConfig(i int) KVConfig {
 	cfg.PushPullInterval = 5 * time.Second
 
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: getLocalhostAddrs(),
 		BindPort:  0, // randomize ports
 	}
 
@@ -842,7 +865,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 				cfg.AbortIfJoinFails = true
 
 				cfg.TCPTransport = TCPTransportConfig{
-					BindAddrs: []string{"localhost"},
+					BindAddrs: getLocalhostAddrs(),
 					BindPort:  port,
 				}
 
@@ -927,11 +950,11 @@ func TestMemberlistFailsToJoin(t *testing.T) {
 	cfg.AbortIfJoinFails = true
 
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: getLocalhostAddrs(),
 		BindPort:  0,
 	}
 
-	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(ports[0]))}
+	cfg.JoinMembers = []string{net.JoinHostPort(getLocalhostAddr(), strconv.Itoa(ports[0]))}
 
 	cfg.Codecs = []codec.Codec{c}
 
@@ -951,7 +974,7 @@ func TestMemberlistFailsToJoin(t *testing.T) {
 func getFreePorts(count int) ([]int, error) {
 	var ports []int
 	for i := 0; i < count; i++ {
-		addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+		addr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(getLocalhostAddr(), "0"))
 		if err != nil {
 			return nil, err
 		}
@@ -997,7 +1020,7 @@ func runClient(kv *Client, name string, ringKey string, portToConnect int, casIn
 
 			// let's join the first member
 			if portToConnect > 0 {
-				_, err := kv.kv.JoinMembers([]string{net.JoinHostPort("127.0.0.1", strconv.Itoa(portToConnect))})
+				_, err := kv.kv.JoinMembers([]string{net.JoinHostPort(getLocalhostAddr(), strconv.Itoa(portToConnect))})
 				if err != nil {
 					return fmt.Errorf("%s failed to join the cluster: %f", name, err)
 				}
@@ -1099,7 +1122,7 @@ func TestMultipleCodecs(t *testing.T) {
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: getLocalhostAddrs(),
 		BindPort:  0, // randomize
 	}
 
@@ -1190,7 +1213,7 @@ func TestRejoin(t *testing.T) {
 	var cfg1 KVConfig
 	flagext.DefaultValues(&cfg1)
 	cfg1.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: getLocalhostAddrs(),
 		BindPort:  ports[0],
 	}
 
@@ -1251,7 +1274,11 @@ func TestMessageBuffer(t *testing.T) {
 func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{}
+	cfg := KVConfig{
+		TCPTransport: TCPTransportConfig{
+			BindAddrs: getLocalhostAddrs(),
+		},
+	}
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
@@ -1316,7 +1343,11 @@ func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{}
+	cfg := KVConfig{
+		TCPTransport: TCPTransportConfig{
+			BindAddrs: getLocalhostAddrs(),
+		},
+	}
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
 	cfg.LeftIngestersTimeout = 5 * time.Minute
@@ -1409,7 +1440,7 @@ func TestFastJoin(t *testing.T) {
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
+		BindAddrs: getLocalhostAddrs(),
 		BindPort:  0, // randomize
 	}
 
@@ -1459,6 +1490,9 @@ func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 
 	cfg := KVConfig{}
 	cfg.Codecs = append(cfg.Codecs, codec)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+	}
 
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 

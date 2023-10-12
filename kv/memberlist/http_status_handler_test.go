@@ -11,6 +11,7 @@ import (
 
 func TestPage(t *testing.T) {
 	conf := memberlist.DefaultLANConfig()
+	conf.BindAddr = getLocalhostAddr()
 	ml, err := memberlist.Create(conf)
 	require.NoError(t, err)
 

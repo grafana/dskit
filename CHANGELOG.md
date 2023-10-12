@@ -173,3 +173,4 @@
 * [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGauges` will no longer return 0 if some tenant doesn't have the gauge in their registry, and other tenants have negative values only. #368
 * [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGaugesPerTenant` no longer includes tenants, which do not have specified gauge. #368
 * [BUGFIX] Correctly format `host:port` addresses when using IPv6. #388
+* [BUGFIX] Memberlist's TCP transport will now reject bind addresses that are not IP addresses, such as "localhost", rather than silently converting these to 0.0.0.0 and therefore listening on all addresses. #396

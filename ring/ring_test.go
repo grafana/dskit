@@ -998,14 +998,16 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 
 			// Check the replication set has the correct settings
 			replicationSet, err := ring.GetReplicationSetForOperation(Read)
-			if testData.expectedError == nil {
-				require.NoError(t, err)
-			} else {
+			if testData.expectedError != nil {
 				require.Equal(t, testData.expectedError, err)
+				return
 			}
+
+			require.NoError(t, err)
 
 			assert.Equal(t, testData.expectedMaxErrors, replicationSet.MaxErrors)
 			assert.Equal(t, testData.expectedMaxUnavailableZones, replicationSet.MaxUnavailableZones)
+			assert.True(t, replicationSet.ZoneAwarenessEnabled)
 
 			returnAddresses := []string{}
 			for _, instance := range replicationSet.Instances {

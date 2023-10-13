@@ -24,6 +24,8 @@ type ReplicationSet struct {
 	// Maximum number of different zones in which instances can fail. Max unavailable zones and
 	// max errors are mutually exclusive.
 	MaxUnavailableZones int
+
+	ZoneAwarenessEnabled bool
 }
 
 // Do function f in parallel for all replicas in the set, erroring if we exceed

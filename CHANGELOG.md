@@ -174,3 +174,4 @@
 * [BUGFIX] `MetricFamiliesPerTenant.SendMaxOfGaugesPerTenant` no longer includes tenants, which do not have specified gauge. #368
 * [BUGFIX] Correctly format `host:port` addresses when using IPv6. #388
 * [BUGFIX] Memberlist's TCP transport will now reject bind addresses that are not IP addresses, such as "localhost", rather than silently converting these to 0.0.0.0 and therefore listening on all addresses. #396
+* [BUGFIX] Ring: use zone-aware logging when all zones are required for quorum. #403

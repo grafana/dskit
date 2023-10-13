@@ -181,10 +181,10 @@ func TestDefaultResultTracker_AwaitStart_ContextCancelled(t *testing.T) {
 }
 
 func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
-	instance1 := InstanceDesc{Addr: "127.0.0.1"}
-	instance2 := InstanceDesc{Addr: "127.0.0.2"}
-	instance3 := InstanceDesc{Addr: "127.0.0.3"}
-	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Id: "instance-1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Id: "instance-2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Id: "instance-3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Id: "instance-4"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	logger := &testLogger{}
@@ -198,10 +198,11 @@ func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 		require.NoError(t, tracker.awaitStart(context.Background(), instance), "requests for all instances should be released immediately")
 
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-			"level":    level.DebugValue(),
-			"msg":      "starting request to instance",
-			"reason":   "initial requests",
-			"instance": instance.Addr,
+			"level":        level.DebugValue(),
+			"msg":          "starting request to instance",
+			"reason":       "initial requests",
+			"instanceAddr": instance.Addr,
+			"instanceID":   instance.Id,
 		})
 	}
 
@@ -211,10 +212,10 @@ func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
 	t.Parallel()
 
-	instance1 := InstanceDesc{Addr: "127.0.0.1"}
-	instance2 := InstanceDesc{Addr: "127.0.0.2"}
-	instance3 := InstanceDesc{Addr: "127.0.0.3"}
-	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Id: "instance-1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Id: "instance-2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Id: "instance-3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Id: "instance-4"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	instanceRequestCounts := make([]atomic.Uint64, len(instances))
@@ -258,10 +259,11 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 
 		for instance := range instancesAwaitReleaseResults {
 			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-				"level":    level.DebugValue(),
-				"msg":      "starting request to instance",
-				"reason":   "initial requests",
-				"instance": instance.Addr,
+				"level":        level.DebugValue(),
+				"msg":          "starting request to instance",
+				"reason":       "initial requests",
+				"instanceAddr": instance.Addr,
+				"instanceID":   instance.Id,
 			})
 		}
 
@@ -292,10 +294,10 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 }
 
 func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAllowed(t *testing.T) {
-	instance1 := InstanceDesc{Addr: "127.0.0.1"}
-	instance2 := InstanceDesc{Addr: "127.0.0.2"}
-	instance3 := InstanceDesc{Addr: "127.0.0.3"}
-	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Id: "instance-1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Id: "instance-2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Id: "instance-3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Id: "instance-4"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	logger := &testLogger{}
@@ -353,25 +355,28 @@ func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAl
 
 	for _, instance := range instancesReleased[0:2] {
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-			"level":    level.DebugValue(),
-			"msg":      "starting request to instance",
-			"reason":   "initial requests",
-			"instance": instance.Addr,
+			"level":        level.DebugValue(),
+			"msg":          "starting request to instance",
+			"reason":       "initial requests",
+			"instanceAddr": instance.Addr,
+			"instanceID":   instance.Id,
 		})
 	}
 
 	expectedLogMessages = append(expectedLogMessages,
 		map[interface{}]interface{}{
-			"level":    level.WarnValue(),
-			"msg":      "instance failed",
-			"instance": instancesReleased[1].Addr,
-			"err":      errors.New("something went wrong"),
+			"level":        level.WarnValue(),
+			"msg":          "instance failed",
+			"instanceAddr": instancesReleased[1].Addr,
+			"instanceID":   instancesReleased[1].Id,
+			"err":          errors.New("something went wrong"),
 		},
 		map[interface{}]interface{}{
-			"level":    level.DebugValue(),
-			"msg":      "starting request to instance",
-			"reason":   "failure of other instance",
-			"instance": instancesReleased[2].Addr,
+			"level":        level.DebugValue(),
+			"msg":          "starting request to instance",
+			"reason":       "failure of other instance",
+			"instanceAddr": instancesReleased[2].Addr,
+			"instanceID":   instancesReleased[2].Id,
 		},
 	)
 
@@ -504,10 +509,10 @@ func TestDefaultResultTracker_StartMinimumRequests_MaxErrorsIsNumberOfInstances(
 }
 
 func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
-	instance1 := InstanceDesc{Addr: "127.0.0.1"}
-	instance2 := InstanceDesc{Addr: "127.0.0.2"}
-	instance3 := InstanceDesc{Addr: "127.0.0.3"}
-	instance4 := InstanceDesc{Addr: "127.0.0.4"}
+	instance1 := InstanceDesc{Addr: "127.0.0.1", Id: "instance-1"}
+	instance2 := InstanceDesc{Addr: "127.0.0.2", Id: "instance-2"}
+	instance3 := InstanceDesc{Addr: "127.0.0.3", Id: "instance-3"}
+	instance4 := InstanceDesc{Addr: "127.0.0.4", Id: "instance-4"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	logger := &testLogger{}
@@ -546,16 +551,18 @@ func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
 	waitForInstancesReleased(2, "should initially release two requests")
 	expectedLogMessages := []map[interface{}]interface{}{
 		{
-			"level":    level.DebugValue(),
-			"msg":      "starting request to instance",
-			"reason":   "initial requests",
-			"instance": instancesReleased[0].Addr,
+			"level":        level.DebugValue(),
+			"msg":          "starting request to instance",
+			"reason":       "initial requests",
+			"instanceAddr": instancesReleased[0].Addr,
+			"instanceID":   instancesReleased[0].Id,
 		},
 		{
-			"level":    level.DebugValue(),
-			"msg":      "starting request to instance",
-			"reason":   "initial requests",
-			"instance": instancesReleased[1].Addr,
+			"level":        level.DebugValue(),
+			"msg":          "starting request to instance",
+			"reason":       "initial requests",
+			"instanceAddr": instancesReleased[1].Addr,
+			"instanceID":   instancesReleased[1].Id,
 		},
 	}
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
@@ -563,20 +570,22 @@ func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
 	tracker.startAdditionalRequests()
 	waitForInstancesReleased(3, "should release a third request after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-		"level":    level.DebugValue(),
-		"msg":      "starting request to instance",
-		"reason":   "hedging",
-		"instance": instancesReleased[2].Addr,
+		"level":        level.DebugValue(),
+		"msg":          "starting request to instance",
+		"reason":       "hedging",
+		"instanceAddr": instancesReleased[2].Addr,
+		"instanceID":   instancesReleased[2].Id,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 
 	tracker.startAdditionalRequests()
 	waitForInstancesReleased(4, "should release remaining request after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-		"level":    level.DebugValue(),
-		"msg":      "starting request to instance",
-		"reason":   "hedging",
-		"instance": instancesReleased[3].Addr,
+		"level":        level.DebugValue(),
+		"msg":          "starting request to instance",
+		"reason":       "hedging",
+		"instanceAddr": instancesReleased[3].Addr,
+		"instanceID":   instancesReleased[3].Id,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 }
@@ -1025,11 +1034,12 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 
 	expectedLogMessages = append(expectedLogMessages,
 		map[interface{}]interface{}{
-			"level":           level.WarnValue(),
-			"msg":             "request to instance has failed, zone cannot contribute to quorum",
-			"zone":            instancesReleased[0].Zone,
-			"failingInstance": instancesReleased[0].Addr,
-			"err":             errors.New("something went wrong"),
+			"level":               level.WarnValue(),
+			"msg":                 "request to instance has failed, zone cannot contribute to quorum",
+			"zone":                instancesReleased[0].Zone,
+			"failingInstanceAddr": instancesReleased[0].Addr,
+			"failingInstanceID":   instancesReleased[0].Id,
+			"err":                 errors.New("something went wrong"),
 		},
 		map[interface{}]interface{}{
 			"level":  level.DebugValue(),

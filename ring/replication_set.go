@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -122,7 +123,7 @@ func (c DoUntilQuorumConfig) Validate() error {
 //
 // # Result selection
 //
-// If r.MaxUnavailableZones is greater than zero, DoUntilQuorum operates in zone-aware mode:
+// If r.MaxUnavailableZones is greater than zero, or r.ZoneAwarenessEnabled is true, DoUntilQuorum operates in zone-aware mode:
 //   - DoUntilQuorum returns an error if calls to f for instances in more than r.MaxUnavailableZones zones return errors
 //   - Otherwise, DoUntilQuorum returns all results from all replicas in the first zones for which f succeeds
 //     for every instance in that zone (eg. if there are 3 zones and r.MaxUnavailableZones is 1, DoUntilQuorum will
@@ -206,6 +207,10 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		return nil, err
 	}
 
+	if r.ZoneAwarenessEnabled && r.MaxErrors > 0 {
+		return nil, fmt.Errorf("invalid ReplicationSet: MaxErrors is non-zero (is %v) but ZoneAwarenessEnabled is true", r.MaxErrors)
+	}
+
 	var logger kitlog.Logger = cfg.Logger
 	if cfg.Logger == nil {
 		logger = kitlog.NewNopLogger()
@@ -229,7 +234,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 
 	var resultTracker replicationSetResultTracker
 	var contextTracker replicationSetContextTracker
-	if r.MaxUnavailableZones > 0 {
+	if r.MaxUnavailableZones > 0 || r.ZoneAwarenessEnabled {
 		resultTracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, logger)
 		contextTracker = newZoneAwareContextTracker(ctx, r.Instances)
 	} else {

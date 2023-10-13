@@ -1026,7 +1026,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 	expectedLogMessages = append(expectedLogMessages,
 		map[interface{}]interface{}{
 			"level":           level.WarnValue(),
-			"msg":             "zone has failed",
+			"msg":             "request to instance has failed, zone cannot contribute to quorum",
 			"zone":            instancesReleased[0].Zone,
 			"failingInstance": instancesReleased[0].Addr,
 			"err":             errors.New("something went wrong"),

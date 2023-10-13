@@ -283,7 +283,7 @@ func (t *zoneAwareResultTracker) done(instance *InstanceDesc, err error) {
 
 		if t.failuresByZone[instance.Zone] == 1 {
 			level.Warn(t.logger).Log(
-				"msg", "zone has failed",
+				"msg", "request to instance has failed, zone cannot contribute to quorum",
 				"zone", instance.Zone,
 				"failingInstance", instance.Addr,
 				"err", err,

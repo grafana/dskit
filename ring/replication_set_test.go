@@ -1300,6 +1300,77 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_Hedging_NonZoneAware(
 	require.InDelta(t, 2*cfg.HedgingDelay, invocations[3].invokedAfter, tolerance, "expected final request to be released after another hedging delay")
 }
 
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_LoggingWithNoFailingInstancesOrZones(t *testing.T) {
+	instances := []InstanceDesc{
+		{Addr: "instance-1", Zone: "zone-a"},
+		{Addr: "instance-2", Zone: "zone-a"},
+		{Addr: "instance-3", Zone: "zone-b"},
+		{Addr: "instance-4", Zone: "zone-b"},
+		{Addr: "instance-5", Zone: "zone-c"},
+		{Addr: "instance-6", Zone: "zone-c"},
+	}
+
+	testCases := map[string]bool{
+		"zone awareness enabled":  true,
+		"zone awareness disabled": false,
+	}
+
+	for name, zoneAwarenessEnabled := range testCases {
+		t.Run(name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+
+			replicationSet := ReplicationSet{
+				Instances:            instances,
+				MaxErrors:            0,
+				MaxUnavailableZones:  0,
+				ZoneAwarenessEnabled: zoneAwarenessEnabled,
+			}
+
+			logger := &testLogger{}
+			spanLogger, ctx := spanlogger.New(context.Background(), logger, "DoUntilQuorum test", dummyTenantResolver{})
+			f := func(ctx context.Context, desc *InstanceDesc, _ context.CancelFunc) (string, error) {
+				return desc.Addr, nil
+			}
+
+			cfg := DoUntilQuorumConfig{Logger: spanLogger}
+			results, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, func(string) {})
+			require.ElementsMatch(t, results, []string{"instance-1", "instance-2", "instance-3", "instance-4", "instance-5", "instance-6"})
+			require.NoError(t, err)
+
+			var expectedMessage string
+			var forbiddenMessage string
+
+			if zoneAwarenessEnabled {
+				expectedMessage = "starting requests to zone"
+				forbiddenMessage = "starting request to instance"
+			} else {
+				expectedMessage = "starting request to instance"
+				forbiddenMessage = "starting requests to zone"
+			}
+
+			var startingRequestLogMessages []map[interface{}]interface{}
+
+			for _, m := range logger.messages {
+				if msg, ok := m["msg"]; ok {
+					msg = msg.(string)
+
+					require.NotEqual(t, forbiddenMessage, msg)
+
+					if msg == expectedMessage {
+						startingRequestLogMessages = append(startingRequestLogMessages, m)
+					}
+				}
+			}
+
+			if zoneAwarenessEnabled {
+				require.Len(t, startingRequestLogMessages, 3) // One message per zone
+			} else {
+				require.Len(t, startingRequestLogMessages, len(instances)) // One message per instance
+			}
+		})
+	}
+}
+
 func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
 	testCases := map[string]struct {
 		replicationSet      ReplicationSet

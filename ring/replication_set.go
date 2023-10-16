@@ -208,7 +208,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	}
 
 	if r.ZoneAwarenessEnabled && r.MaxErrors > 0 {
-		return nil, fmt.Errorf("invalid ReplicationSet: MaxErrors is non-zero (is %v) but ZoneAwarenessEnabled is true", r.MaxErrors)
+		return nil, fmt.Errorf("invalid ReplicationSet: MaxErrors is non-zero (is %v) and ZoneAwarenessEnabled is true", r.MaxErrors)
 	}
 
 	var logger kitlog.Logger = cfg.Logger

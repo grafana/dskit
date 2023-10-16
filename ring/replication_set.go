@@ -109,6 +109,15 @@ type DoUntilQuorumConfig struct {
 
 	// If non-nil, DoUntilQuorum will emit log lines and span events during the call.
 	Logger *spanlogger.SpanLogger
+
+	// If non-nil and a request returns an error for which IsTerminalError returns true,
+	// DoUntilQuorum will immediately cancel any inflight requests and return the error.
+	//
+	// This is useful to cancel DoUntilQuorum when an unrecoverable error occurs where it does not
+	// make sense to attempt requests to other instances. For example, if a client-side limit on the
+	// total response size across all instances is reached, making further requests to other
+	// instances would not be worthwhile.
+	IsTerminalError func(error) bool
 }
 
 func (c DoUntilQuorumConfig) Validate() error {
@@ -279,6 +288,16 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		}
 	}
 
+	terminate := func(err error) ([]T, error) {
+		if cfg.Logger != nil {
+			_ = cfg.Logger.Error(err)
+		}
+
+		contextTracker.cancelAllContexts()
+		cleanupResultsAlreadyReceived()
+		return nil, err
+	}
+
 	var hedgingTrigger <-chan time.Time
 
 	if cfg.HedgingDelay > 0 {
@@ -300,6 +319,13 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 			resultTracker.startAdditionalRequests()
 		case result := <-resultsChan:
 			resultsRemaining--
+
+			if result.err != nil && cfg.IsTerminalError != nil && cfg.IsTerminalError(result.err) {
+				level.Error(logger).Log("msg", "cancelling all outstanding requests because a terminal error occurred", "err", result.err)
+				// We must return before calling resultTracker.done() below, otherwise done() might start further requests if request minimisation is enabled.
+				return terminate(result.err)
+			}
+
 			resultTracker.done(result.instance, result.err)
 
 			if result.err == nil {
@@ -309,14 +335,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 
 				if resultTracker.failed() {
 					level.Error(logger).Log("msg", "cancelling all requests because quorum cannot be reached")
-
-					if cfg.Logger != nil {
-						_ = cfg.Logger.Error(result.err)
-					}
-
-					contextTracker.cancelAllContexts()
-					cleanupResultsAlreadyReceived()
-					return nil, result.err
+					return terminate(result.err)
 				}
 			}
 		}

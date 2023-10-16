@@ -528,40 +528,105 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t 
 
 	for _, minimizeRequests := range []bool{true, false} {
 		t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
-			defer goleak.VerifyNone(t)
+			for _, setTerminalError := range []bool{true, false} {
+				t.Run(fmt.Sprintf("IsTerminalError set: %v", setTerminalError), func(t *testing.T) {
+					defer goleak.VerifyNone(t)
 
-			ctx := context.Background()
-			cleanupTracker := newCleanupTracker(t, 1)
-			zoneBReplica1CleanupRequired := atomic.NewBool(false)
+					ctx := context.Background()
+					cleanupTracker := newCleanupTracker(t, 1)
+					zoneBReplica1CleanupRequired := atomic.NewBool(false)
 
-			f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
-				cleanupTracker.trackCall(ctx, desc, cancel)
+					f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+						cleanupTracker.trackCall(ctx, desc, cancel)
 
-				if desc.Addr == "zone-b-replica-1" {
-					zoneBReplica1CleanupRequired.Store(true)
-				}
+						if desc.Addr == "zone-b-replica-1" {
+							zoneBReplica1CleanupRequired.Store(true)
+						}
 
-				if desc.Addr == "zone-b-replica-2" {
-					return "", fmt.Errorf("this is the error for %v", desc.Addr)
-				}
+						if desc.Addr == "zone-b-replica-2" {
+							return "", fmt.Errorf("this is the error for %v", desc.Addr)
+						}
 
-				return desc.Addr, nil
-			}
+						return desc.Addr, nil
+					}
 
-			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
-			actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
-			require.ElementsMatch(t, expectedResults, actualResults)
-			require.NoError(t, err)
+					cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
 
-			if zoneBReplica1CleanupRequired.Load() {
-				cleanupTracker.collectCleanedUpInstances()
-				cleanupTracker.assertCorrectCleanup(expectedResults, []string{"zone-b-replica-1"})
-			} else {
-				cleanupTracker.collectCleanedUpInstancesWithExpectedCount(0)
-				cleanupTracker.assertCorrectCleanup(expectedResults, []string{})
+					if setTerminalError {
+						// Verify that DoUntilQuorumWithoutSuccessfulContextCancellation behaves the same when
+						// IsTerminalError is not set, and when it is set and returns false.
+						cfg.IsTerminalError = func(_ error) bool {
+							return false
+						}
+					}
+
+					actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
+					require.ElementsMatch(t, expectedResults, actualResults)
+					require.NoError(t, err)
+
+					if zoneBReplica1CleanupRequired.Load() {
+						cleanupTracker.collectCleanedUpInstances()
+						cleanupTracker.assertCorrectCleanup(expectedResults, []string{"zone-b-replica-1"})
+					} else {
+						cleanupTracker.collectCleanedUpInstancesWithExpectedCount(0)
+						cleanupTracker.assertCorrectCleanup(expectedResults, []string{})
+					}
+				})
 			}
 		})
 	}
+}
+
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_TerminalError(t *testing.T) {
+	replicationSet := ReplicationSet{
+		Instances: []InstanceDesc{
+			{Addr: "zone-a-replica-1", Zone: "zone-a"},
+			{Addr: "zone-a-replica-2", Zone: "zone-a"},
+			{Addr: "zone-b-replica-1", Zone: "zone-b"},
+			{Addr: "zone-b-replica-2", Zone: "zone-b"},
+			{Addr: "zone-c-replica-1", Zone: "zone-c"},
+			{Addr: "zone-c-replica-2", Zone: "zone-c"},
+		},
+		MaxUnavailableZones: 1,
+	}
+
+	defer goleak.VerifyNone(t)
+
+	ctx := context.Background()
+	cleanupTracker := newCleanupTracker(t, 3)
+	mtx := &sync.RWMutex{}
+	calledInstances := []string{}
+	terminalError := errors.New("this is the terminal error")
+
+	f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+		cleanupTracker.trackCall(ctx, desc, cancel)
+
+		mtx.Lock()
+		defer mtx.Unlock()
+		calledInstances = append(calledInstances, desc.Addr)
+
+		if len(calledInstances) == 4 {
+			// Last instance to be called, return terminal error.
+			return desc.Addr, terminalError
+		}
+
+		return desc.Addr, nil
+	}
+
+	cfg := DoUntilQuorumConfig{
+		MinimizeRequests: true,
+		IsTerminalError: func(err error) bool {
+			return errors.Is(err, terminalError)
+		},
+	}
+
+	actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
+	require.Len(t, calledInstances, 4, "should not initiate requests to third zone after initial requests return a terminal error")
+	require.Empty(t, actualResults)
+	require.Equal(t, terminalError, err)
+
+	cleanupTracker.collectCleanedUpInstances()
+	cleanupTracker.assertCorrectCleanup(nil, calledInstances[0:3])
 }
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImmediatelyOnSingleFailure(t *testing.T) {

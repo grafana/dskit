@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -422,5 +423,34 @@ func TestGetTokenDistance(t *testing.T) {
 	for _, testData := range tests {
 		distance := tokenDistance(testData.from, testData.to)
 		require.Equal(t, testData.expected, distance)
+	}
+}
+
+func TestSearchToken(t *testing.T) {
+	tokens := []uint32{3, 5}
+
+	assert.Equal(t, 0, searchToken(tokens, 0))
+	assert.Equal(t, 1, searchToken(tokens, 3))
+	assert.Equal(t, 1, searchToken(tokens, 4))
+	assert.Equal(t, 0, searchToken(tokens, 5))
+	assert.Equal(t, 0, searchToken(tokens, 7))
+}
+
+func BenchmarkSearchToken(b *testing.B) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	tokensPerInstance := 512
+	numInstances := []int{3, 9, 27, 81, 243, 729}
+
+	for _, instances := range numInstances {
+		b.Run(fmt.Sprintf("searchToken_%d_instances", instances), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				tokens := GenerateTokens(instances*tokensPerInstance, []uint32{})
+				hash := r.Uint32()
+				b.StartTimer()
+				searchToken(tokens, hash)
+			}
+		})
 	}
 }

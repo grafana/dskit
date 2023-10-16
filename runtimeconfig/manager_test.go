@@ -310,10 +310,10 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
-					runtime_config_hash{config_name="overrides", sha256="%s"} 1
+					runtime_config_hash{config="overrides", sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
-					runtime_config_last_reload_successful{config_name="overrides"} 1
+					runtime_config_last_reload_successful{config="overrides"} 1
 				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
 
 	// need to use buffer, otherwise loadConfig will throw away update
@@ -344,10 +344,10 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
-					runtime_config_hash{config_name="overrides", sha256="%s"} 1
+					runtime_config_hash{config="overrides", sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
-					runtime_config_last_reload_successful{config_name="overrides"} 1
+					runtime_config_last_reload_successful{config="overrides"} 1
 				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
 
 	// Cleaning up
@@ -475,10 +475,10 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
-					runtime_config_hash{config_name="overrides", sha256="%s"} 1
+					runtime_config_hash{config="overrides", sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
-					runtime_config_last_reload_successful{config_name="overrides"} %d
+					runtime_config_last_reload_successful{config="overrides"} %d
 				`, fmt.Sprintf("%x", sha256.Sum256(config)), lastSuccessful))))
 
 	}

@@ -351,6 +351,74 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 	assert.NoError(t, services.StopManagerAndAwaitStopped(context.Background(), servManager))
 }
 
+func TestModuleService_InterruptedFastStartup(t *testing.T) {
+	finishStarting := make(chan struct{})
+	subserviceStarted := make(chan struct{})
+	subserviceStopped := false
+
+	subService := services.NewBasicService(func(_ context.Context) error {
+		// We want to control the execution of this function via the test code,
+		// so ignore the passed context because it will be cancelled shortly after entering this function.
+		close(subserviceStarted)
+		<-finishStarting
+		return nil
+	}, func(serviceContext context.Context) error {
+		<-serviceContext.Done()
+		return nil
+	}, func(failureCase error) error {
+		subserviceStopped = true
+		return nil
+	})
+
+	noDepsFunc := func(string) map[string]services.Service { return nil }
+	moduleSvc := NewModuleService("A", log.NewNopLogger(), subService, noDepsFunc, noDepsFunc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-subserviceStarted
+		cancel()
+	}()
+
+	require.ErrorIs(t, services.StartAndAwaitRunning(ctx, moduleSvc), context.Canceled)
+
+	// Allow the subservice startup func to finish after we gave up waiting for the start.
+	close(finishStarting)
+
+	// If we attempt to stop the module service, it should
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), moduleSvc))
+	require.True(t, subserviceStopped)
+}
+
+func TestModuleService_InterruptedSlowStartup(t *testing.T) {
+	subserviceStarted := make(chan struct{})
+	subserviceStopped := false
+
+	subService := services.NewBasicService(func(serviceContext context.Context) error {
+		close(subserviceStarted)
+		// Prolong the startup until we have to stop.
+		<-serviceContext.Done()
+		return nil
+	}, func(serviceContext context.Context) error {
+		require.Fail(t, "did not expect to enter running state; service should have been canceled while in starting Fn and go directly to stoppingFn")
+		return nil
+	}, func(failureCase error) error {
+		subserviceStopped = true
+		return nil
+	})
+
+	noDepsFunc := func(string) map[string]services.Service { return nil }
+	moduleSvc := NewModuleService("A", log.NewNopLogger(), subService, noDepsFunc, noDepsFunc)
+
+	// Don't wait for startup because it will be very slow.
+	require.NoError(t, moduleSvc.StartAsync(context.Background()))
+
+	<-subserviceStarted
+
+	// If moduleService can handle StartingStates, then it should call Stop on the subservice.
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), moduleSvc))
+	assert.True(t, subserviceStopped)
+}
+
 func getStopDependenciesForModule(module string, services map[string]services.Service) []string {
 	var deps []string
 	for name := range services[module].(delegatedNamedService).Service.(*moduleService).stopDeps(module) {

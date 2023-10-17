@@ -162,7 +162,7 @@ func TestNewOverridesManager(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -199,7 +199,7 @@ func TestOverridesManagerMultipleFilesAppend(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -233,7 +233,7 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -261,7 +261,7 @@ func TestOverridesManagerMultipleFilesWithEmptyFile(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -302,7 +302,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 
-	overridesManager, err := New(overridesManagerConfig, reg, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -310,10 +310,10 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
-					runtime_config_hash{sha256="%s"} 1
+					runtime_config_hash{config="overrides", sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
-					runtime_config_last_reload_successful 1
+					runtime_config_last_reload_successful{config="overrides"} 1
 				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
 
 	// need to use buffer, otherwise loadConfig will throw away update
@@ -344,10 +344,10 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
-					runtime_config_hash{sha256="%s"} 1
+					runtime_config_hash{config="overrides", sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
-					runtime_config_last_reload_successful 1
+					runtime_config_last_reload_successful{config="overrides"} 1
 				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
 
 	// Cleaning up
@@ -362,7 +362,7 @@ func TestManager_ListenerChannel(t *testing.T) {
 
 	writeValueToFile(t, cfg.LoadPath.String(), value{Value: 555})
 
-	overridesManager, err := New(cfg, nil, log.NewNopLogger())
+	overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	// need to use buffer, otherwise loadConfig will throw away update
@@ -398,7 +398,7 @@ func TestManager_ListenerChannel(t *testing.T) {
 func TestManager_StopClosesListenerChannels(t *testing.T) {
 	cfg := newTestOverridesManagerConfig(t, time.Second, valueLoader)
 
-	overridesManager, err := New(cfg, nil, log.NewNopLogger())
+	overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -433,7 +433,7 @@ func TestManager_ShouldFastFailOnInvalidConfigAtStartup(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	m, err := New(cfg, nil, log.NewNopLogger())
+	m, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Error(t, services.StartAndAwaitRunning(context.Background(), m))
 }
@@ -467,7 +467,7 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 
-	manager, err := New(managerConfig, reg, log.NewNopLogger())
+	manager, err := New(managerConfig, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 
@@ -475,10 +475,10 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
-					runtime_config_hash{sha256="%s"} 1
+					runtime_config_hash{config="overrides", sha256="%s"} 1
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
-					runtime_config_last_reload_successful %d
+					runtime_config_last_reload_successful{config="overrides"} %d
 				`, fmt.Sprintf("%x", sha256.Sum256(config)), lastSuccessful))))
 
 	}
@@ -512,7 +512,7 @@ func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
 		return valueLoader(reader)
 	})
 
-	overridesManager, err := New(cfg, nil, log.NewNopLogger())
+	overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ch := overridesManager.CreateListenerChannel(10) // must be big enough to hold all modifications.

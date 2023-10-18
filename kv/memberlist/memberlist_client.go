@@ -485,17 +485,17 @@ func (m *KV) running(ctx context.Context) error {
 		tickerChan = t.C
 	}
 
+	logger := log.With(m.logger, "phase", "periodic_rejoin")
 	for {
 		select {
 		case <-tickerChan:
-			members := m.discoverMembers(ctx, m.cfg.JoinMembers)
-
-			reached, err := m.memberlist.Join(members)
+			const numAttempts = 1 // don't retry if resolution fails, we will try again next time
+			reached, err := m.joinMembersInBatches(ctx, numAttempts, logger)
 			if err == nil {
-				level.Info(m.logger).Log("msg", "re-joined memberlist cluster", "reached_nodes", reached)
+				level.Info(logger).Log("msg", "re-joined memberlist cluster", "reached_nodes", reached)
 			} else {
 				// Don't report error from rejoin, otherwise KV service would be stopped completely.
-				level.Warn(m.logger).Log("msg", "re-joining memberlist cluster failed", "err", err)
+				level.Warn(logger).Log("msg", "re-joining memberlist cluster failed", "err", err, "next_try_in", m.cfg.RejoinInterval)
 			}
 
 		case <-ctx.Done():
@@ -540,7 +540,7 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "nodes_found", len(nodes), "to_join", toJoin)
 
 	totalJoined := 0
-	for toJoin > 0 && len(nodes) > 0 {
+	for toJoin > 0 && len(nodes) > 0 && ctx.Err() == nil {
 		reached, err := m.memberlist.Join(nodes[0:1]) // Try to join single node only.
 		if err != nil {
 			level.Debug(m.logger).Log("msg", "fast-joining node failed", "node", nodes[0], "err", err)
@@ -568,41 +568,88 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 		return true
 	}
 
+	logger := log.With(m.logger, "phase", "startup")
+	level.Info(logger).Log("msg", "joining memberlist cluster", "join_members", strings.Join(m.cfg.JoinMembers, ","))
 	startTime := time.Now()
+	reached, err := m.joinMembersInBatches(ctx, m.cfg.MaxJoinRetries, logger)
+	if err != nil {
+		level.Error(logger).Log("msg", "joining memberlist cluster failed", "err", err, "elapsed_time", time.Since(startTime))
+		return false
+	}
+	level.Info(logger).Log("msg", "joining memberlist cluster succeeded", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
+	return true
+}
 
-	level.Info(m.logger).Log("msg", "joining memberlist cluster", "join_members", strings.Join(m.cfg.JoinMembers, ","))
+// joinMembersInBatches joins m.cfg.JoinMembers 100 at a time. After each batch of 100 it rediscoveres the members.
+// This helps when the list of members is big and by the time we reach the end the originally resolved addresses may be obsolete.
+// joinMembersInBatches returns an error iff it couldn't successfully join any node.
+func (m *KV) joinMembersInBatches(ctx context.Context, numAttempts int, logger log.Logger) (int, error) {
+	const joinNodesBatch = 100
+	var (
+		cfg = backoff.Config{
+			MinBackoff: m.cfg.MinJoinBackoff,
+			MaxBackoff: m.cfg.MaxJoinBackoff,
+			MaxRetries: numAttempts,
+		}
+		boff               = backoff.New(ctx, cfg)
+		lastErr            = error(nil)
+		successfullyJoined = 0
+	)
 
-	cfg := backoff.Config{
-		MinBackoff: m.cfg.MinJoinBackoff,
-		MaxBackoff: m.cfg.MaxJoinBackoff,
-		MaxRetries: m.cfg.MaxJoinRetries,
+	for ; boff.Ongoing(); boff.Wait() {
+		var (
+			attemptedNodes = make(map[string]bool) // On each attempt we want to retry all nodes.
+			joinedInBatch  int
+			err            error
+		)
+		for batchHasMore := true; batchHasMore; successfullyJoined += joinedInBatch {
+			// Rediscover nodes and try to join a subset of them with each batch.
+			// When the list of nodes is large by the time we reach the end of the list some of the
+			// IPs can be unreachable.
+			nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
+			if len(nodes) == 0 {
+				level.Warn(logger).Log("msg", "joining memberlist cluster: found no nodes to join", "attempts", boff.NumRetries()+1, "max_attempts", numAttempts)
+				lastErr = errors.New("found no nodes to join")
+				break
+			}
+
+			batchHasMore, joinedInBatch, err = m.joinMembersBatch(nodes, joinNodesBatch, attemptedNodes)
+			if err != nil {
+				lastErr = err
+			}
+		}
+		if successfullyJoined > 0 {
+			// If there are _some_ successful joins, then we can consider the join done.
+			// Mimicking the Join semantics we return an error only when we couldn't join any node at all
+			lastErr = nil
+			break
+		}
 	}
 
-	boff := backoff.New(ctx, cfg)
-	var lastErr error
+	return successfullyJoined, lastErr
+}
 
-	for boff.Ongoing() {
-		// We rejoin all nodes, including those that were joined during "fast-join".
-		// This is harmless and simpler.
-		nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
-
-		if len(nodes) > 0 {
-			reached, err := m.memberlist.Join(nodes) // err is only returned if reached==0.
-			if err == nil {
-				level.Info(m.logger).Log("msg", "joining memberlist cluster succeeded", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
-				return true
-			}
-			level.Warn(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err)
-			lastErr = err
-		} else {
-			level.Warn(m.logger).Log("msg", "joining memberlist cluster: found no nodes to join", "retries", boff.NumRetries())
+func (m *KV) joinMembersBatch(nodes []string, batchSize int, attemptedNodes map[string]bool) (moreLeft bool, successfullyJoined int, lastErr error) {
+	attemptedThisBatch := 0
+	for nodeIdx, node := range nodes {
+		if attemptedNodes[node] {
+			continue
+		}
+		if attemptedThisBatch >= batchSize {
+			moreLeft = true
+			break
 		}
 
-		boff.Wait()
+		// Attempt to join a single node. Complexity shouldn't be different from passing all the node IPs to Join.
+		reached, err := m.memberlist.Join(nodes[nodeIdx : nodeIdx+1])
+		successfullyJoined += reached
+		if err != nil {
+			lastErr = err
+		}
+		attemptedThisBatch++
+		attemptedNodes[node] = true
 	}
-
-	level.Error(m.logger).Log("msg", "joining memberlist cluster failed", "last_error", lastErr, "elapsed_time", time.Since(startTime))
-	return false
+	return moreLeft, successfullyJoined, lastErr
 }
 
 // Provides a dns-based member disovery to join a memberlist cluster w/o knowning members' addresses upfront.

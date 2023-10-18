@@ -55,6 +55,7 @@
 * [CHANGE] Remove jaeger-specific opentracing usage in `middleware.HTTPGRPCTracer`. #372
 * [CHANGE] Always include source IPs in HTTP and gRPC server spans. #386
 * [CHANGE] ring: Change `PoolFactory` function type to an interface and create function implementations. #387
+* [CHANGE] Server: Raise default `--server.grpc-max-concurrent-streams` following change in gRPC #410
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

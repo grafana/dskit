@@ -56,6 +56,7 @@
 * [CHANGE] Always include source IPs in HTTP and gRPC server spans. #386
 * [CHANGE] ring: Change `PoolFactory` function type to an interface and create function implementations. #387
 * [CHANGE] server: fix incorrect spelling of "gRPC" in `server.Config` fields. #422
+* [CHANGE] memberlist: re-resolve `JoinMembers` during full joins to the cluster (either at startup or periodic). The re-resolution happens on every 100 attempted nodes. This helps speed up joins and respect context cancelation #411
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

@@ -602,7 +602,7 @@ func (m *KV) joinMembersInBatches(ctx context.Context, numAttempts int, logger l
 			joinedInBatch  int
 			err            error
 		)
-		for batchHasMore := true; batchHasMore; successfullyJoined += joinedInBatch {
+		for batchHasMore := true; boff.Ongoing() && batchHasMore; successfullyJoined += joinedInBatch {
 			// Rediscover nodes and try to join a subset of them with each batch.
 			// When the list of nodes is large by the time we reach the end of the list some of the
 			// IPs can be unreachable.

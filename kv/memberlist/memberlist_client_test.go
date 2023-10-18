@@ -9,7 +9,6 @@ import (
 	"math"
 	"math/rand"
 	"net"
-	"os"
 	"reflect"
 	"sort"
 	"strconv"
@@ -883,7 +882,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 					time.Sleep(testData.startDelayForRest)
 				}
 
-				mkv := NewKV(cfg, log.NewLogfmtLogger(os.Stdout), &delayedDNSProviderMock{delay: dnsDelay}, prometheus.NewPedanticRegistry()) // Not started yet.
+				mkv := NewKV(cfg, log.NewNopLogger(), &delayedDNSProviderMock{delay: dnsDelay}, prometheus.NewPedanticRegistry()) // Not started yet.
 				watcher.WatchService(mkv)
 
 				kv, err := NewClient(mkv, c)

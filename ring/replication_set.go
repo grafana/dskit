@@ -9,6 +9,7 @@ import (
 
 	kitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/opentracing/opentracing-go/ext"
 
 	"github.com/grafana/dskit/spanlogger"
 )
@@ -294,7 +295,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 
 	terminate := func(err error) ([]T, error) {
 		if cfg.Logger != nil {
-			_ = cfg.Logger.Error(err)
+			ext.Error.Set(cfg.Logger.Span, true)
 		}
 
 		contextTracker.cancelAllContexts()

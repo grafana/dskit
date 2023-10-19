@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 type RingMock struct {
@@ -435,29 +434,6 @@ func TestSearchToken(t *testing.T) {
 	assert.Equal(t, 1, searchToken(tokens, 4))
 	assert.Equal(t, 0, searchToken(tokens, 5))
 	assert.Equal(t, 0, searchToken(tokens, 7))
-}
-
-func newSearchToken(tokens []uint32, key uint32) int {
-	i, found := slices.BinarySearch(tokens, key)
-	if found {
-		// we want the first token > key, not >= key
-		i = i + 1
-	}
-	if i >= len(tokens) {
-		i = 0
-	}
-	return i
-}
-
-func TestSearchTokenFuncs(t *testing.T) {
-	tokens := GenerateTokens(512*30, []uint32{})
-
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	for i := 0; i < 10000000; i++ {
-		key := r.Uint32()
-		require.Equal(t, searchToken(tokens, key), newSearchToken(tokens, key))
-	}
 }
 
 func BenchmarkSearchToken(b *testing.B) {

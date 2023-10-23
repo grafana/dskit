@@ -51,13 +51,8 @@ func TestMemcachedClientConfig_Validate(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cfg := MemcachedClientConfig{}
+			memcachedClientConfigDefaultValues(&cfg)
 			cfg.Addresses = flagext.StringSliceCSV{"localhost:11211"}
-
-			// Init default values. We can't use flagext.DefaultValues() because MemcachedClientConfig
-			// does not implement any of the supported interfaces.
-			fs := flag.NewFlagSet("", flag.PanicOnError)
-			cfg.RegisterFlagsWithPrefix("", fs)
-			_ = fs.Parse([]string{})
 
 			testData.setup(&cfg)
 			require.Equal(t, testData.expectedErr, cfg.Validate())
@@ -232,3 +227,11 @@ type nopAllocator struct{}
 
 func (n nopAllocator) Get(_ int) *[]byte { return nil }
 func (n nopAllocator) Put(_ *[]byte)     {}
+
+func memcachedClientConfigDefaultValues(cfg *MemcachedClientConfig) {
+	// Init default values. We can't use flagext.DefaultValues() because MemcachedClientConfig
+	// does not implement any of the supported interfaces.
+	fs := flag.NewFlagSet("", flag.PanicOnError)
+	cfg.RegisterFlagsWithPrefix("", fs)
+	_ = fs.Parse([]string{})
+}

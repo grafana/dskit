@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/test"
@@ -51,20 +52,20 @@ func checkGrpcStatusError(t *testing.T, err error, code codes.Code, msg string) 
 	require.Equal(t, msg, s.Message())
 }
 
-func callToSucceed(c FakeServerClient) error {
-	_, err := c.Succeed(context.Background(), &protobuf.Empty{})
+func callToSucceed(ctx context.Context, c FakeServerClient) error {
+	_, err := c.Succeed(ctx, &protobuf.Empty{})
 	return err
 }
 
-func callToSleep(c FakeServerClient) error {
-	_, err := c.Sleep(context.Background(), &protobuf.Empty{})
+func callToSleep(ctx context.Context, c FakeServerClient) error {
+	_, err := c.Sleep(ctx, &protobuf.Empty{})
 	return err
 }
 
-func callToStreaming(msgsPerStreamCall int) func(c FakeServerClient) error {
-	return func(c FakeServerClient) error {
+func callToStreaming(msgsPerStreamCall int) func(ctx context.Context, c FakeServerClient) error {
+	return func(ctx context.Context, c FakeServerClient) error {
 		rcvd := 0
-		s, err := c.StreamSleep(context.Background(), &protobuf.Empty{})
+		s, err := c.StreamSleep(ctx, &protobuf.Empty{})
 		if err != nil {
 			return err
 		}
@@ -125,8 +126,8 @@ func testGrpcLimitCheckWithMethodLimiter(
 	t *testing.T,
 	inflightLimit, protectedMethodLimit, msgsPerStreamCall int,
 	protectedMethodName string,
-	callToProtectedMethod func(c FakeServerClient) error,
-	callsToUnprotectedMethods ...func(c FakeServerClient) error,
+	callToProtectedMethod func(ctx context.Context, c FakeServerClient) error,
+	callsToUnprotectedMethods ...func(ctx context.Context, c FakeServerClient) error,
 ) {
 	if inflightLimit != 0 && inflightLimit < protectedMethodLimit {
 		t.Fatal("invalid combination of parameters for this test")
@@ -152,7 +153,7 @@ func testGrpcLimitCheckWithMethodLimiter(
 				started.Done()
 				defer finished.Done()
 
-				err := callToProtectedMethod(c)
+				err := callToProtectedMethod(context.Background(), c)
 				require.NoError(t, err)
 			}()
 		}
@@ -164,8 +165,14 @@ func testGrpcLimitCheckWithMethodLimiter(
 		})
 
 		// Another request to limited method should fail.
-		err := callToProtectedMethod(c)
+		err := callToProtectedMethod(context.Background(), c)
 		checkGrpcStatusError(t, err, codes.ResourceExhausted, "too many requests to "+protectedMethodName)
+	}
+
+	for _, fn := range append(callsToUnprotectedMethods, callToProtectedMethod) {
+		// Requests to all method with abort flag should always fail (that's how our check works)
+		err := fn(metadata.AppendToOutgoingContext(context.Background(), metaAbortRequest, "true"), c)
+		checkGrpcStatusError(t, err, codes.Aborted, "aborted")
 	}
 
 	// However we can start more requests to different (unprotected) method
@@ -183,7 +190,7 @@ func testGrpcLimitCheckWithMethodLimiter(
 			defer finished.Done()
 
 			for _, fn := range callsToUnprotectedMethods {
-				err := fn(c)
+				err := fn(context.Background(), c)
 				require.NoError(t, err)
 			}
 		}()
@@ -198,8 +205,12 @@ func testGrpcLimitCheckWithMethodLimiter(
 	if inflightLimit > 0 {
 		// But now we're really at the limit -- we used all grpc inflight limit calls. Everything should return codes.Unavailable now.
 		for _, fn := range append(callsToUnprotectedMethods, callToProtectedMethod) {
-			err := fn(c)
+			err := fn(context.Background(), c)
 			checkGrpcStatusError(t, err, codes.Unavailable, "too many requests")
+
+			// Requests with abort flag are aborted early, without doing being blocked.
+			err = fn(metadata.AppendToOutgoingContext(context.Background(), metaAbortRequest, "true"), c)
+			checkGrpcStatusError(t, err, codes.Aborted, "aborted")
 		}
 	}
 
@@ -212,8 +223,12 @@ func testGrpcLimitCheckWithMethodLimiter(
 
 	// Another request to protected or unprotected method should succeed again.
 	for _, fn := range append(callsToUnprotectedMethods, callToProtectedMethod) {
-		err := fn(c)
+		err := fn(context.Background(), c)
 		require.NoError(t, err)
+
+		// Unless we pass abort-request header.
+		err = fn(metadata.AppendToOutgoingContext(context.Background(), metaAbortRequest, "true"), c)
+		checkGrpcStatusError(t, err, codes.Aborted, "aborted")
 	}
 }
 
@@ -276,11 +291,23 @@ type methodLimiter struct {
 	protectedMethodInflight      atomic.Int64
 }
 
-func (m *methodLimiter) RPCCallStarting(methodName string) error {
+type ctxKey string
+
+const (
+	ctxMethodName ctxKey = "method"
+
+	metaAbortRequest = "abort-request"
+)
+
+func (m *methodLimiter) RPCCallStarting(ctx context.Context, methodName string, md metadata.MD) (context.Context, error) {
+	if v := md.Get(metaAbortRequest); len(v) == 1 && v[0] == "true" {
+		return ctx, status.Error(codes.Aborted, "aborted")
+	}
+
 	v := m.allInflight.Inc()
 	if m.allInflightLimit > 0 && v > int64(m.allInflightLimit) {
 		m.allInflight.Dec()
-		return status.Error(codes.Unavailable, "too many requests")
+		return ctx, status.Error(codes.Unavailable, "too many requests")
 	}
 
 	if methodName == m.protectedMethod && m.protectedMethodInflightLimit > 0 {
@@ -288,14 +315,17 @@ func (m *methodLimiter) RPCCallStarting(methodName string) error {
 		if v > int64(m.protectedMethodInflightLimit) {
 			m.protectedMethodInflight.Dec()
 			m.allInflight.Dec()
-			return status.Error(codes.ResourceExhausted, "too many requests to "+m.protectedMethod)
+			return ctx, status.Error(codes.ResourceExhausted, "too many requests to "+m.protectedMethod)
 		}
 	}
-	return nil
+
+	return context.WithValue(ctx, ctxMethodName, methodName), nil
 }
 
-func (m *methodLimiter) RPCCallFinished(methodName string) {
+func (m *methodLimiter) RPCCallFinished(ctx context.Context) {
 	m.allInflight.Dec()
+
+	methodName := ctx.Value(ctxMethodName).(string)
 	if methodName == m.protectedMethod && m.protectedMethodInflightLimit > 0 {
 		m.protectedMethodInflight.Dec()
 	}

@@ -151,6 +151,7 @@
 * [ENHANCEMENT] Ring: clarify the message logged by `DoUntilQuorum` when the first failure in a zone occurs. #402
 * [ENHANCEMENT] Ring: include instance ID in log messages emitted by `DoUntilQuorum`. #402
 * [ENHANCEMENT] Ring: add support for aborting early if a terminal error is returned by a request initiated by `DoUntilQuorum`. #404 #413
+* [ENHANCEMENT] Memcached: allow to configure write and read buffer size (in bytes). #414
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

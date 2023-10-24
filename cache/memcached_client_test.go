@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"hash/crc32"
 	"net"
@@ -12,7 +13,52 @@ import (
 	"github.com/grafana/gomemcache/memcache"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/dskit/flagext"
 )
+
+func TestMemcachedClientConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup       func(config *MemcachedClientConfig)
+		expectedErr error
+	}{
+		"should pass on positive write buffer size": {
+			setup: func(config *MemcachedClientConfig) {
+				config.WriteBufferSizeBytes = 12345
+			},
+			expectedErr: nil,
+		},
+		"should pass on positive read buffer size": {
+			setup: func(config *MemcachedClientConfig) {
+				config.ReadBufferSizeBytes = 12345
+			},
+			expectedErr: nil,
+		},
+		"should return error on negative write buffer size": {
+			setup: func(config *MemcachedClientConfig) {
+				config.WriteBufferSizeBytes = -1
+			},
+			expectedErr: ErrInvalidWriteBufferSizeBytes,
+		},
+		"should return error on negative read buffer size": {
+			setup: func(config *MemcachedClientConfig) {
+				config.ReadBufferSizeBytes = -1
+			},
+			expectedErr: ErrInvalidReadBufferSizeBytes,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := MemcachedClientConfig{}
+			memcachedClientConfigDefaultValues(&cfg)
+			cfg.Addresses = flagext.StringSliceCSV{"localhost:11211"}
+
+			testData.setup(&cfg)
+			require.Equal(t, testData.expectedErr, cfg.Validate())
+		})
+	}
+}
 
 func TestMemcachedClient_GetMulti(t *testing.T) {
 	setup := func() (*memcachedClient, *mockMemcachedClientBackend, error) {
@@ -181,3 +227,11 @@ type nopAllocator struct{}
 
 func (n nopAllocator) Get(_ int) *[]byte { return nil }
 func (n nopAllocator) Put(_ *[]byte)     {}
+
+func memcachedClientConfigDefaultValues(cfg *MemcachedClientConfig) {
+	// Init default values. We can't use flagext.DefaultValues() because MemcachedClientConfig
+	// does not implement any of the supported interfaces.
+	fs := flag.NewFlagSet("", flag.PanicOnError)
+	cfg.RegisterFlagsWithPrefix("", fs)
+	_ = fs.Parse([]string{})
+}

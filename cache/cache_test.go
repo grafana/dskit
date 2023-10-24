@@ -9,6 +9,7 @@ import (
 func TestBackendConfig_Validate(t *testing.T) {
 	t.Run("empty backend", func(t *testing.T) {
 		cfg := BackendConfig{}
+		memcachedClientConfigDefaultValues(&cfg.Memcached)
 
 		require.NoError(t, cfg.Validate())
 	})
@@ -22,24 +23,24 @@ func TestBackendConfig_Validate(t *testing.T) {
 	})
 
 	t.Run("memcached backend valid", func(t *testing.T) {
-		cfg := BackendConfig{
-			Backend: BackendMemcached,
-			Memcached: MemcachedClientConfig{
-				Addresses:           []string{"localhost:11211"},
-				MaxAsyncConcurrency: 1,
-			},
-		}
+		cfg := BackendConfig{}
+		memcachedClientConfigDefaultValues(&cfg.Memcached)
+
+		cfg.Backend = BackendMemcached
+		cfg.Memcached.Addresses = []string{"localhost:11211"}
+		cfg.Memcached.MaxAsyncConcurrency = 1
 
 		require.NoError(t, cfg.Validate())
 	})
 
 	t.Run("memcached backend invalid", func(t *testing.T) {
-		cfg := BackendConfig{
-			Backend:   BackendMemcached,
-			Memcached: MemcachedClientConfig{},
-		}
+		cfg := BackendConfig{}
+		memcachedClientConfigDefaultValues(&cfg.Memcached)
 
-		require.Error(t, cfg.Validate())
+		cfg.Backend = BackendMemcached
+		cfg.Memcached.Addresses = []string{}
+
+		require.Equal(t, ErrNoMemcachedAddresses, cfg.Validate())
 	})
 
 	t.Run("redis backend valid", func(t *testing.T) {

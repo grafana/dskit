@@ -22,7 +22,7 @@ const (
 	reasonAsyncBufferFull = "async-buffer-full"
 	reasonMalformedKey    = "malformed-key"
 	reasonConnectTimeout  = "connect-timeout"
-	reasonTimeout         = "timeout"
+	reasonTimeout         = "request-timeout"
 	reasonServerError     = "server-error"
 	reasonNetworkError    = "network-error"
 	reasonOther           = "other"

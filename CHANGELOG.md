@@ -63,6 +63,7 @@
 * [FEATURE] Add `middleware.HTTPGRPCTracer` for more detailed server-side tracing spans and tags on `httpgrpc.HTTP/Handle` requests
 * [FEATURE] Server: Add support for `GrpcInflightMethodLimiter` -- limiting gRPC requests before reading full request into the memory. This can be used to implement global or method-specific inflight limits for gRPC methods. #377 #392
 * [FEATURE] Server: Add `-grpc.server.num-workers` flag that configures the `grpc.NumStreamWorkers()` option. This can be used to start a fixed base amount of workers to process gRPC requests and avoid stack allocation for each call. #400
+* [ENHANCEMENT] Add headers in HTTP gRPC error in order to be converted back to a HTTP response with HTTPResponseFromError. #416
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
 * [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274
 * [ENHANCEMENT] Add middleware package. #38

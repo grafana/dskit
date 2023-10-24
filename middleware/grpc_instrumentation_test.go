@@ -39,6 +39,16 @@ func TestErrorCode_Any5xx(t *testing.T) {
 	assert.Equal(t, "5xx", a)
 }
 
+func TestErrorCode_5xx_WithHeaders(t *testing.T) {
+	err := httpgrpc.ErrorfWithHeaders(http.StatusNotImplemented, []*httpgrpc.Header{
+		{Key: "X-Test", Values: []string{"test"}},
+	}, "Fail")
+	resp, ok := httpgrpc.HTTPResponseFromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, http.StatusNotImplemented, int(resp.Code))
+	assert.Contains(t, resp.Headers, &httpgrpc.Header{Key: "X-Test", Values: []string{"test"}})
+}
+
 func TestErrorCode_Any4xx(t *testing.T) {
 	err := httpgrpc.Errorf(http.StatusConflict, "Fail")
 	a := errorCode(err)

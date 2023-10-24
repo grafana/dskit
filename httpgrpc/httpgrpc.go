@@ -28,6 +28,14 @@ func Errorf(code int, tmpl string, args ...interface{}) error {
 	})
 }
 
+func ErrorfWithHeaders(code int, headers []*Header, tmpl string, args ...interface{}) error {
+	return ErrorFromHTTPResponse(&HTTPResponse{
+		Code:    int32(code),
+		Body:    []byte(fmt.Sprintf(tmpl, args...)),
+		Headers: headers,
+	})
+}
+
 // ErrorFromHTTPResponse converts an HTTP response into a grpc error
 func ErrorFromHTTPResponse(resp *HTTPResponse) error {
 	a, err := types.MarshalAny(resp)

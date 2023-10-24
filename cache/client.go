@@ -21,6 +21,7 @@ const (
 	reasonMaxItemSize     = "max-item-size"
 	reasonAsyncBufferFull = "async-buffer-full"
 	reasonMalformedKey    = "malformed-key"
+	reasonConnectTimeout  = "connect-timeout"
 	reasonTimeout         = "timeout"
 	reasonServerError     = "server-error"
 	reasonNetworkError    = "network-error"
@@ -199,7 +200,7 @@ func (c *baseClient) trackError(op string, err error) {
 	var netErr net.Error
 	switch {
 	case errors.As(err, &connErr):
-		c.metrics.failures.WithLabelValues(op, reasonTimeout).Inc()
+		c.metrics.failures.WithLabelValues(op, reasonConnectTimeout).Inc()
 	case errors.As(err, &netErr):
 		if netErr.Timeout() {
 			c.metrics.failures.WithLabelValues(op, reasonTimeout).Inc()

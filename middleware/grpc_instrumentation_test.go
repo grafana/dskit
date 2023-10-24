@@ -28,43 +28,63 @@ import (
 	"github.com/grafana/dskit/metrics"
 )
 
-func TestErrorCode_NoError(t *testing.T) {
-	a := errorCode(nil)
-	assert.Equal(t, "2xx", a)
-}
+func TestErrorCode(t *testing.T) {
+	testCases := []struct {
+		name           string
+		err            error
+		expected       string
+		expectedHeader *httpgrpc.Header
+	}{
+		{
+			name:           "No Error",
+			err:            nil,
+			expected:       "2xx",
+			expectedHeader: nil, // No header expected for this case
+		},
+		{
+			name:           "Any 5xx",
+			err:            httpgrpc.Errorf(http.StatusNotImplemented, "Fail"),
+			expected:       "5xx",
+			expectedHeader: nil,
+		},
+		{
+			name:           "Any 4xx",
+			err:            httpgrpc.Errorf(http.StatusConflict, "Fail"),
+			expected:       "4xx",
+			expectedHeader: nil,
+		},
+		{
+			name:           "Canceled",
+			err:            status.Errorf(codes.Canceled, "Fail"),
+			expected:       "cancel",
+			expectedHeader: nil,
+		},
+		{
+			name:           "Unknown",
+			err:            status.Errorf(codes.Unknown, "Fail"),
+			expected:       "error",
+			expectedHeader: nil,
+		},
+		{
+			name:           "5xx WithHeaders",
+			err:            httpgrpc.ErrorfWithHeaders(http.StatusNotImplemented, []*httpgrpc.Header{{Key: "X-Test", Values: []string{"test"}}}, "Fail"),
+			expected:       "5xx",
+			expectedHeader: &httpgrpc.Header{Key: "X-Test", Values: []string{"test"}},
+		},
+	}
 
-func TestErrorCode_Any5xx(t *testing.T) {
-	err := httpgrpc.Errorf(http.StatusNotImplemented, "Fail")
-	a := errorCode(err)
-	assert.Equal(t, "5xx", a)
-}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := errorCode(tc.err)
+			assert.Equal(t, tc.expected, a)
 
-func TestErrorCode_5xx_WithHeaders(t *testing.T) {
-	err := httpgrpc.ErrorfWithHeaders(http.StatusNotImplemented, []*httpgrpc.Header{
-		{Key: "X-Test", Values: []string{"test"}},
-	}, "Fail")
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, http.StatusNotImplemented, int(resp.Code))
-	assert.Contains(t, resp.Headers, &httpgrpc.Header{Key: "X-Test", Values: []string{"test"}})
-}
-
-func TestErrorCode_Any4xx(t *testing.T) {
-	err := httpgrpc.Errorf(http.StatusConflict, "Fail")
-	a := errorCode(err)
-	assert.Equal(t, "4xx", a)
-}
-
-func TestErrorCode_Canceled(t *testing.T) {
-	err := status.Errorf(codes.Canceled, "Fail")
-	a := errorCode(err)
-	assert.Equal(t, "cancel", a)
-}
-
-func TestErrorCode_Unknown(t *testing.T) {
-	err := status.Errorf(codes.Unknown, "Fail")
-	a := errorCode(err)
-	assert.Equal(t, "error", a)
+			if tc.expectedHeader != nil {
+				resp, ok := httpgrpc.HTTPResponseFromError(tc.err)
+				assert.True(t, ok)
+				assert.Contains(t, resp.Headers, tc.expectedHeader)
+			}
+		})
+	}
 }
 
 func setUpStreamClientInstrumentInterceptorTest(t *testing.T, serverStreams bool) (grpc.ClientStream, *mockGrpcStream, context.CancelFunc, *prometheus.Registry) {

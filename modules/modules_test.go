@@ -383,7 +383,9 @@ func TestModuleService_InterruptedFastStartup(t *testing.T) {
 	// Start service using context that's going to be cancelled
 	require.NoError(t, moduleSvc.StartAsync(ctx))
 	// We get context cancelled error from service context cancellation.
-	require.ErrorIs(t, moduleSvc.AwaitRunning(context.Background()), context.Canceled)
+	err := moduleSvc.AwaitRunning(context.Background())
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "starting module")
 
 	require.True(t, subserviceStopped)
 	require.Equal(t, services.Failed, moduleSvc.State())
@@ -416,7 +418,9 @@ func TestModuleService_InterruptedSlowStartup(t *testing.T) {
 	<-subserviceStarted
 
 	// We get context.Canceled from moduleService.start.
-	require.ErrorIs(t, services.StopAndAwaitTerminated(context.Background(), moduleSvc), context.Canceled)
+	err := services.StopAndAwaitTerminated(context.Background(), moduleSvc)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "starting module")
 
 	assert.True(t, subserviceStopped)
 	require.Equal(t, services.Failed, moduleSvc.State())

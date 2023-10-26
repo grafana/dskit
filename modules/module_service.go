@@ -79,7 +79,7 @@ func (w *moduleService) start(serviceContext context.Context) error {
 
 	// we don't want to let this service to stop until all dependant services are stopped,
 	// so we use independent context here
-	level.Info(w.logger).Log("msg", "initialising", "module", w.name)
+	level.Info(w.logger).Log("msg", "starting", "module", w.name)
 	err := w.service.StartAsync(context.Background())
 	if err != nil {
 		return errors.Wrapf(err, "error starting module: %s", w.name)
@@ -88,10 +88,10 @@ func (w *moduleService) start(serviceContext context.Context) error {
 	err = w.service.AwaitRunning(serviceContext)
 	if err != nil {
 		// Make sure that underlying service is stopped before returning
-		// (eg. in case of context cancellation, AwaitRunning returns early, but service may still be starting).
+		// (e.g. in case of context cancellation, AwaitRunning returns early, but service may still be starting).
 		_ = services.StopAndAwaitTerminated(context.Background(), w.service)
 	}
-	return err
+	return errors.Wrapf(err, "starting module %s", w.name)
 }
 
 func (w *moduleService) run(serviceContext context.Context) error {

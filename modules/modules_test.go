@@ -377,16 +377,19 @@ func TestModuleService_InterruptedFastStartup(t *testing.T) {
 	go func() {
 		<-subserviceStarted
 		cancel()
+		close(finishStarting)
 	}()
 
-	require.ErrorIs(t, services.StartAndAwaitRunning(ctx, moduleSvc), context.Canceled)
+	// Start service using context that's going to be cancelled
+	require.NoError(t, moduleSvc.StartAsync(ctx))
+	// We get context cancelled error from service context cancellation.
+	err := moduleSvc.AwaitRunning(context.Background())
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "starting module A")
 
-	// Allow the subservice startup func to finish after we gave up waiting for the start.
-	close(finishStarting)
-
-	// If we attempt to stop the module service, it should
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), moduleSvc))
 	require.True(t, subserviceStopped)
+	require.Equal(t, services.Failed, moduleSvc.State())
+	require.Equal(t, services.Terminated, subService.State())
 }
 
 func TestModuleService_InterruptedSlowStartup(t *testing.T) {
@@ -414,9 +417,14 @@ func TestModuleService_InterruptedSlowStartup(t *testing.T) {
 
 	<-subserviceStarted
 
-	// If moduleService can handle StartingStates, then it should call Stop on the subservice.
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), moduleSvc))
+	// We get context.Canceled from moduleService.start.
+	err := services.StopAndAwaitTerminated(context.Background(), moduleSvc)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "starting module A")
+
 	assert.True(t, subserviceStopped)
+	require.Equal(t, services.Failed, moduleSvc.State())
+	require.Equal(t, services.Terminated, subService.State())
 }
 
 func getStopDependenciesForModule(module string, services map[string]services.Service) []string {

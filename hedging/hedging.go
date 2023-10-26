@@ -84,11 +84,11 @@ func RoundTripperWithRegisterer(cfg Config, next http.RoundTripper, reg promethe
 			Help: "The total number of hedged requests rejected via rate limiting.",
 		})
 	})
-	return hedgedhttp.NewRoundTripper(
-		cfg.At,
-		cfg.UpTo,
-		newLimitedHedgingRoundTripper(cfg.MaxPerSecond, next),
-	)
+	return hedgedhttp.New(hedgedhttp.Config{
+		Delay:     cfg.At,
+		Upto:      cfg.UpTo,
+		Transport: newLimitedHedgingRoundTripper(cfg.MaxPerSecond, next),
+	})
 }
 
 // RoundTripper returns a hedged roundtripper.

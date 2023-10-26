@@ -849,6 +849,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 				}
 			}()
 
+			kvsStarted := &sync.WaitGroup{}
 			for i, port := range ports {
 				id := fmt.Sprintf("Member-%d", i)
 				var cfg KVConfig
@@ -890,14 +891,14 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 				clients = append(clients, kv)
 
 				startKVAndRunClient := func(kv *Client, id string, port int) {
-					err = services.StartAndAwaitRunning(context.Background(), mkv)
-					if err != nil {
-						t.Errorf("failed to start KV: %v", err)
-					}
+					err := services.StartAndAwaitRunning(context.Background(), mkv)
+					kvsStarted.Done()
+					require.NoError(t, err, "failed to start KV: %v")
 					err = runClient(kv, id, key, port, time.Second, start, stop)
 					require.NoError(t, err)
 				}
 
+				kvsStarted.Add(1)
 				if i < 2 {
 					go startKVAndRunClient(kv, id, 0)
 				} else {
@@ -906,8 +907,8 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 			}
 
 			t.Log("Waiting for all members to join memberlist cluster")
+			kvsStarted.Wait() // We want the KVs to not wait for each other in startup, but our test clients expect that each KV is started.
 			close(start)
-			time.Sleep(2 * time.Second)
 
 			t.Log("Observing ring ...")
 

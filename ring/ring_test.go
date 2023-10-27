@@ -1843,6 +1843,11 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 				t.Run(testName, func(t *testing.T) {
 					t.Parallel()
 
+					// Randomise the seed but log it in case we need to reproduce the test on failure.
+					seed := time.Now().UnixNano()
+					rnd := rand.New(rand.NewSource(seed))
+					t.Log("random generator seed:", seed)
+
 					// Initialise the ring.
 					ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, 128)}
 					ring := Ring{
@@ -1885,7 +1890,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 					for i := 1; i <= numEvents; i++ {
 						currTime = currTime.Add(delayBetweenEvents)
 
-						switch r := rand.Intn(100); {
+						switch r := rnd.Intn(100); {
 						case r < 80:
 							// Scale up instances by 1.
 							instanceID := fmt.Sprintf("instance-%d", nextInstanceID)
@@ -1911,7 +1916,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 
 							sort.Strings(instanceIDs)
 
-							idxToRemove := rand.Intn(len(instanceIDs))
+							idxToRemove := rnd.Intn(len(instanceIDs))
 							idToRemove := instanceIDs[idxToRemove]
 							delete(ringDesc.Ingesters, idToRemove)
 

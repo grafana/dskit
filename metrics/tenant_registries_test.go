@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
@@ -611,6 +612,11 @@ func TestFloat64PrecisionStability(t *testing.T) {
 		cardinality   = 20
 	)
 
+	// Randomise the seed but log it in case we need to reproduce the test on failure.
+	seed := time.Now().UnixNano()
+	rnd := rand.New(rand.NewSource(seed))
+	t.Log("random generator seed:", seed)
+
 	// Generate a large number of registries with different metrics each.
 	registries := NewTenantRegistries(log.NewNopLogger())
 	for userID := 1; userID <= numRegistries; userID++ {
@@ -619,22 +625,22 @@ func TestFloat64PrecisionStability(t *testing.T) {
 
 		g := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_gauge"}, labelNames)
 		for i := 0; i < cardinality; i++ {
-			g.WithLabelValues("a", strconv.Itoa(i)).Set(rand.Float64())
+			g.WithLabelValues("a", strconv.Itoa(i)).Set(rnd.Float64())
 		}
 
 		c := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{Name: "test_counter"}, labelNames)
 		for i := 0; i < cardinality; i++ {
-			c.WithLabelValues("a", strconv.Itoa(i)).Add(rand.Float64())
+			c.WithLabelValues("a", strconv.Itoa(i)).Add(rnd.Float64())
 		}
 
 		h := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{Name: "test_histogram", Buckets: []float64{0.1, 0.5, 1}}, labelNames)
 		for i := 0; i < cardinality; i++ {
-			h.WithLabelValues("a", strconv.Itoa(i)).Observe(rand.Float64())
+			h.WithLabelValues("a", strconv.Itoa(i)).Observe(rnd.Float64())
 		}
 
 		s := promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{Name: "test_summary"}, labelNames)
 		for i := 0; i < cardinality; i++ {
-			s.WithLabelValues("a", strconv.Itoa(i)).Observe(rand.Float64())
+			s.WithLabelValues("a", strconv.Itoa(i)).Observe(rnd.Float64())
 		}
 
 		registries.AddTenantRegistry(strconv.Itoa(userID), reg)

@@ -1,6 +1,6 @@
 ## Changelog
 
-* [CHANGE] Updated the minimum required Go version to 1.19 to ensure compatibility with OpenTelemetry version 1.14.0. #350
+* [CHANGE] Updated the minimum required Go version to 1.20 and update Drone config #420
 * [CHANGE] Change `WaitRingStability` and `WaitInstanceState` methods signature to rely on `ReadRing` instead. #251
 * [CHANGE] Added new `-consul.cas-retry-delay` flag. It has a default value of `1s`, while previously there was no delay between retries. #178
 * [CHANGE] Flagext: `DayValue` now always uses UTC when parsing or displaying dates. #71

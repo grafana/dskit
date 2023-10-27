@@ -122,13 +122,16 @@ func TestGetMetricsWithLabelNames(t *testing.T) {
 	require.Equal(t, map[string]metricsWithLabels{
 		getLabelsString([]string{"10", "20"}): {
 			labelValues: []string{"10", "20"},
-			metrics:     []*dto.Metric{m2, m3, m4}},
+			metrics:     []*dto.Metric{m2, m3, m4},
+		},
 		getLabelsString([]string{"11", "21"}): {
 			labelValues: []string{"11", "21"},
-			metrics:     []*dto.Metric{m5}},
+			metrics:     []*dto.Metric{m5},
+		},
 		getLabelsString([]string{"12", "22"}): {
 			labelValues: []string{"12", "22"},
-			metrics:     []*dto.Metric{m6}},
+			metrics:     []*dto.Metric{m6},
+		},
 	}, out)
 
 	// no labels -- returns all metrics in single key. this isn't very efficient, and there are other functions
@@ -137,7 +140,8 @@ func TestGetMetricsWithLabelNames(t *testing.T) {
 	require.Equal(t, map[string]metricsWithLabels{
 		getLabelsString(nil): {
 			labelValues: []string{},
-			metrics:     []*dto.Metric{m1, m2, m3, m4, m5, m6}},
+			metrics:     []*dto.Metric{m1, m2, m3, m4, m5, m6},
+		},
 	}, out2)
 }
 
@@ -610,7 +614,7 @@ func TestFloat64PrecisionStability(t *testing.T) {
 
 	// Randomise the seed but log it in case we need to reproduce the test on failure.
 	seed := time.Now().UnixNano()
-	rand.Seed(seed)
+	rnd := rand.New(rand.NewSource(seed))
 	t.Log("random generator seed:", seed)
 
 	// Generate a large number of registries with different metrics each.
@@ -621,22 +625,22 @@ func TestFloat64PrecisionStability(t *testing.T) {
 
 		g := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_gauge"}, labelNames)
 		for i := 0; i < cardinality; i++ {
-			g.WithLabelValues("a", strconv.Itoa(i)).Set(rand.Float64())
+			g.WithLabelValues("a", strconv.Itoa(i)).Set(rnd.Float64())
 		}
 
 		c := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{Name: "test_counter"}, labelNames)
 		for i := 0; i < cardinality; i++ {
-			c.WithLabelValues("a", strconv.Itoa(i)).Add(rand.Float64())
+			c.WithLabelValues("a", strconv.Itoa(i)).Add(rnd.Float64())
 		}
 
 		h := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{Name: "test_histogram", Buckets: []float64{0.1, 0.5, 1}}, labelNames)
 		for i := 0; i < cardinality; i++ {
-			h.WithLabelValues("a", strconv.Itoa(i)).Observe(rand.Float64())
+			h.WithLabelValues("a", strconv.Itoa(i)).Observe(rnd.Float64())
 		}
 
 		s := promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{Name: "test_summary"}, labelNames)
 		for i := 0; i < cardinality; i++ {
-			s.WithLabelValues("a", strconv.Itoa(i)).Observe(rand.Float64())
+			s.WithLabelValues("a", strconv.Itoa(i)).Observe(rnd.Float64())
 		}
 
 		registries.AddTenantRegistry(strconv.Itoa(userID), reg)
@@ -874,6 +878,7 @@ func TestTenantRegistries_RemoveTenantRegistry_SoftRemoval(t *testing.T) {
 			summary_user_count{user="5"} 5
 	`)))
 }
+
 func TestTenantRegistries_RemoveTenantRegistry_HardRemoval(t *testing.T) {
 	tm := setupTestMetrics()
 

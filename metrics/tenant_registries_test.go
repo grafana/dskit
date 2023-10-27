@@ -608,10 +608,6 @@ func TestFloat64PrecisionStability(t *testing.T) {
 		cardinality   = 20
 	)
 
-	// Randomise the seed but log it in case we need to reproduce the test on failure.
-	seed := time.Now().UnixNano()
-	rand.Seed(seed)
-	t.Log("random generator seed:", seed)
 
 	// Generate a large number of registries with different metrics each.
 	registries := NewTenantRegistries(log.NewNopLogger())

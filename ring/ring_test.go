@@ -1843,11 +1843,6 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 				t.Run(testName, func(t *testing.T) {
 					t.Parallel()
 
-					// Randomise the seed but log it in case we need to reproduce the test on failure.
-					seed := time.Now().UnixNano()
-					rand.Seed(seed)
-					t.Log("random generator seed:", seed)
-
 					// Initialise the ring.
 					ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, 128)}
 					ring := Ring{

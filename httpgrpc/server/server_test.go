@@ -151,3 +151,37 @@ func TestTracePropagation(t *testing.T) {
 	assert.Equal(t, "world", recorder.Body.String())
 	assert.Equal(t, 200, recorder.Code)
 }
+
+func TestContainsDoNotLogErrorKey(t *testing.T) {
+	testCases := map[string]struct {
+		header          http.Header
+		expectedOutcome bool
+	}{
+		"if headers do not contain X-DoNotLogError, return false": {
+			header: http.Header{
+				"X-First":  []string{"a", "b", "c"},
+				"X-Second": []string{"1", "2"},
+			},
+			expectedOutcome: false,
+		},
+		"if headers contain X-DoNotLogError with a value, return true": {
+			header: http.Header{
+				"X-First":         []string{"a", "b", "c"},
+				"X-DoNotLogError": []string{"true"},
+			},
+			expectedOutcome: true,
+		},
+		"if headers contain X-DoNotLogError without a value, return true": {
+			header: http.Header{
+				"X-First":         []string{"a", "b", "c"},
+				"X-DoNotLogError": nil,
+			},
+			expectedOutcome: true,
+		},
+	}
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			require.Equal(t, testData.expectedOutcome, containsDoNotLogErrorKey(testData.header))
+		})
+	}
+}

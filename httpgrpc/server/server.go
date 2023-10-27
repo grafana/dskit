@@ -62,13 +62,18 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 
 	recorder := httptest.NewRecorder()
 	s.handler.ServeHTTP(recorder, req)
+	header := recorder.Header()
 	resp := &httpgrpc.HTTPResponse{
 		Code:    int32(recorder.Code),
-		Headers: fromHeader(recorder.Header()),
+		Headers: fromHeader(header),
 		Body:    recorder.Body.Bytes(),
 	}
 	if recorder.Code/100 == 5 {
-		return nil, httpgrpc.ErrorFromHTTPResponse(resp)
+		err := httpgrpc.ErrorFromHTTPResponse(resp)
+		if containsDoNotLogErrorKey(header) {
+			return nil, middleware.DoNotLogError{Err: err}
+		}
+		return nil, err
 	}
 	return resp, nil
 }
@@ -233,4 +238,9 @@ func fromHeader(hs http.Header) []*httpgrpc.Header {
 		})
 	}
 	return result
+}
+
+func containsDoNotLogErrorKey(hs http.Header) bool {
+	_, ok := hs[middleware.DoNotLogErrorHeader]
+	return ok
 }

@@ -7,6 +7,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
@@ -24,10 +25,20 @@ const (
 	gRPC = "gRPC"
 )
 
+var (
+	DoNotLogErrorHeader = http.CanonicalHeaderKey("X-DoNotLogError")
+)
+
 // An error can implement ShouldLog() to control whether GRPCServerLog will log.
 type OptionalLogging interface {
 	ShouldLog(ctx context.Context, duration time.Duration) bool
 }
+
+type DoNotLogError struct{ Err error }
+
+func (i DoNotLogError) Error() string                                     { return i.Err.Error() }
+func (i DoNotLogError) Unwrap() error                                     { return i.Err }
+func (i DoNotLogError) ShouldLog(_ context.Context, _ time.Duration) bool { return false }
 
 // GRPCServerLog logs grpc requests, errors, and latency.
 type GRPCServerLog struct {

@@ -8,7 +8,7 @@ require (
 	github.com/armon/go-metrics v0.3.10
 	github.com/aws/aws-sdk-go v1.44.321
 	github.com/cespare/xxhash v1.1.0
-	github.com/cristalhq/hedgedhttp v0.7.0
+	github.com/cristalhq/hedgedhttp v0.9.1
 	github.com/davecgh/go-spew v1.1.1
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/felixge/httpsnoop v1.0.3

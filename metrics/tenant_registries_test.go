@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
@@ -122,13 +121,16 @@ func TestGetMetricsWithLabelNames(t *testing.T) {
 	require.Equal(t, map[string]metricsWithLabels{
 		getLabelsString([]string{"10", "20"}): {
 			labelValues: []string{"10", "20"},
-			metrics:     []*dto.Metric{m2, m3, m4}},
+			metrics:     []*dto.Metric{m2, m3, m4},
+		},
 		getLabelsString([]string{"11", "21"}): {
 			labelValues: []string{"11", "21"},
-			metrics:     []*dto.Metric{m5}},
+			metrics:     []*dto.Metric{m5},
+		},
 		getLabelsString([]string{"12", "22"}): {
 			labelValues: []string{"12", "22"},
-			metrics:     []*dto.Metric{m6}},
+			metrics:     []*dto.Metric{m6},
+		},
 	}, out)
 
 	// no labels -- returns all metrics in single key. this isn't very efficient, and there are other functions
@@ -137,7 +139,8 @@ func TestGetMetricsWithLabelNames(t *testing.T) {
 	require.Equal(t, map[string]metricsWithLabels{
 		getLabelsString(nil): {
 			labelValues: []string{},
-			metrics:     []*dto.Metric{m1, m2, m3, m4, m5, m6}},
+			metrics:     []*dto.Metric{m1, m2, m3, m4, m5, m6},
+		},
 	}, out2)
 }
 
@@ -608,7 +611,6 @@ func TestFloat64PrecisionStability(t *testing.T) {
 		cardinality   = 20
 	)
 
-
 	// Generate a large number of registries with different metrics each.
 	registries := NewTenantRegistries(log.NewNopLogger())
 	for userID := 1; userID <= numRegistries; userID++ {
@@ -870,6 +872,7 @@ func TestTenantRegistries_RemoveTenantRegistry_SoftRemoval(t *testing.T) {
 			summary_user_count{user="5"} 5
 	`)))
 }
+
 func TestTenantRegistries_RemoveTenantRegistry_HardRemoval(t *testing.T) {
 	tm := setupTestMetrics()
 

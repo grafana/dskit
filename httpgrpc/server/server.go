@@ -27,6 +27,10 @@ import (
 	"github.com/grafana/dskit/middleware"
 )
 
+var (
+	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
+)
+
 // Server implements HTTPServer.  HTTPServer is a generated interface that gRPC
 // servers must implement.
 type Server struct {
@@ -70,8 +74,8 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 	}
 	if recorder.Code/100 == 5 {
 		err := httpgrpc.ErrorFromHTTPResponse(resp)
-		if containsDoNotLogErrorKey(header) {
-			return nil, middleware.DoNotLogError{Err: err}
+		if _, ok := header[DoNotLogErrorHeaderKey]; ok {
+			err = middleware.DoNotLogError{Err: err}
 		}
 		return nil, err
 	}
@@ -238,9 +242,4 @@ func fromHeader(hs http.Header) []*httpgrpc.Header {
 		})
 	}
 	return result
-}
-
-func containsDoNotLogErrorKey(hs http.Header) bool {
-	_, ok := hs[middleware.DoNotLogErrorHeader]
-	return ok
 }

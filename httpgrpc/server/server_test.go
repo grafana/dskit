@@ -73,25 +73,39 @@ func TestBasic(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Does a Fprintln, injecting a newline.
-		http.Error(w, "foo", http.StatusInternalServerError)
-	}))
-	require.NoError(t, err)
-	defer server.grpcServer.GracefulStop()
+	for _, doNotLog := range []bool{true, false} {
+		var stat string
+		if !doNotLog {
+			stat = "not "
+		}
+		t.Run(fmt.Sprintf("test header when DoNotLogErrorHeaderKey is %spresent", stat), func(t *testing.T) {
+			server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if doNotLog {
+					w.Header().Set(DoNotLogErrorHeaderKey, "true")
+				}
+				// Does a Fprintln, injecting a newline.
+				http.Error(w, "foo", http.StatusInternalServerError)
+			}))
+			require.NoError(t, err)
+			defer server.grpcServer.GracefulStop()
 
-	client, err := NewClient(server.URL)
-	require.NoError(t, err)
+			client, err := NewClient(server.URL)
+			require.NoError(t, err)
 
-	req, err := http.NewRequest("GET", "/hello", &bytes.Buffer{})
-	require.NoError(t, err)
+			req, err := http.NewRequest("GET", "/hello", &bytes.Buffer{})
+			require.NoError(t, err)
 
-	req = req.WithContext(user.InjectOrgID(context.Background(), "1"))
-	recorder := httptest.NewRecorder()
-	client.ServeHTTP(recorder, req)
+			req = req.WithContext(user.InjectOrgID(context.Background(), "1"))
+			recorder := httptest.NewRecorder()
+			client.ServeHTTP(recorder, req)
 
-	assert.Equal(t, "foo\n", recorder.Body.String())
-	assert.Equal(t, 500, recorder.Code)
+			assert.Equal(t, "foo\n", recorder.Body.String())
+			assert.Equal(t, 500, recorder.Code)
+			if doNotLog {
+				assert.Equal(t, recorder.Header().Get(DoNotLogErrorHeaderKey), "true")
+			}
+		})
+	}
 }
 
 func TestParseURL(t *testing.T) {
@@ -150,38 +164,4 @@ func TestTracePropagation(t *testing.T) {
 
 	assert.Equal(t, "world", recorder.Body.String())
 	assert.Equal(t, 200, recorder.Code)
-}
-
-func TestContainsDoNotLogErrorKey(t *testing.T) {
-	testCases := map[string]struct {
-		header          http.Header
-		expectedOutcome bool
-	}{
-		"if headers do not contain X-DoNotLogError, return false": {
-			header: http.Header{
-				"X-First":  []string{"a", "b", "c"},
-				"X-Second": []string{"1", "2"},
-			},
-			expectedOutcome: false,
-		},
-		"if headers contain X-DoNotLogError with a value, return true": {
-			header: http.Header{
-				"X-First":         []string{"a", "b", "c"},
-				"X-DoNotLogError": []string{"true"},
-			},
-			expectedOutcome: true,
-		},
-		"if headers contain X-DoNotLogError without a value, return true": {
-			header: http.Header{
-				"X-First":         []string{"a", "b", "c"},
-				"X-DoNotLogError": nil,
-			},
-			expectedOutcome: true,
-		},
-	}
-	for testName, testData := range testCases {
-		t.Run(testName, func(t *testing.T) {
-			require.Equal(t, testData.expectedOutcome, containsDoNotLogErrorKey(testData.header))
-		})
-	}
 }

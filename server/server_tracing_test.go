@@ -201,7 +201,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			cfg.HTTPListenPort = httpPort
 			cfg.GRPCListenAddress = httpAddress
 			cfg.GRPCListenPort = 1234
-			cfg.GPRCServerMaxRecvMsgSize = 4 * 1024 * 1024
+			cfg.GRPCServerMaxRecvMsgSize = 4 * 1024 * 1024
 			cfg.GRPCServerMaxSendMsgSize = 4 * 1024 * 1024
 			cfg.Router = middleware.InitHTTPGRPCMiddleware(mux.NewRouter())
 			cfg.MetricsNamespace = "testing_httpgrpc_tracing_" + middleware.MakeLabelValue(testName)

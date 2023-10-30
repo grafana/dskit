@@ -457,10 +457,11 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	}
 
 	httpServer := &http.Server{
-		ReadTimeout:  cfg.HTTPServerReadTimeout,
-		WriteTimeout: cfg.HTTPServerWriteTimeout,
-		IdleTimeout:  cfg.HTTPServerIdleTimeout,
-		Handler:      middleware.Merge(httpMiddleware...).Wrap(router),
+		ReadTimeout:       cfg.HTTPServerReadTimeout,
+		ReadHeaderTimeout: cfg.HTTPServerReadTimeout,
+		WriteTimeout:      cfg.HTTPServerWriteTimeout,
+		IdleTimeout:       cfg.HTTPServerIdleTimeout,
+		Handler:           middleware.Merge(httpMiddleware...).Wrap(router),
 	}
 	if httpTLSConfig != nil {
 		httpServer.TLSConfig = httpTLSConfig

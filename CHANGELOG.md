@@ -153,6 +153,7 @@
 * [ENHANCEMENT] Ring: include instance ID in log messages emitted by `DoUntilQuorum`. #402
 * [ENHANCEMENT] Ring: add support for aborting early if a terminal error is returned by a request initiated by `DoUntilQuorum`. #404 #413
 * [ENHANCEMENT] Memcached: allow to configure write and read buffer size (in bytes). #414
+* [ENHANCEMENT] Server: Add `-server.http-read-header-timeout` option to specify timeout for reading HTTP request header. It defaults to 0, in which case reading of headers can take up to `-server.http-read-timeout`, leaving no time for reading body, if there's any. #423
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

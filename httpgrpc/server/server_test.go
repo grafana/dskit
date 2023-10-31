@@ -7,6 +7,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -73,25 +74,113 @@ func TestBasic(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Does a Fprintln, injecting a newline.
-		http.Error(w, "foo", http.StatusInternalServerError)
-	}))
-	require.NoError(t, err)
-	defer server.grpcServer.GracefulStop()
+	for _, doNotLog := range []bool{true, false} {
+		var stat string
+		if !doNotLog {
+			stat = "not "
+		}
+		t.Run(fmt.Sprintf("test header when DoNotLogErrorHeaderKey is %spresent", stat), func(t *testing.T) {
+			server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if doNotLog {
+					w.Header().Set(DoNotLogErrorHeaderKey, "true")
+				}
+				// Does a Fprintln, injecting a newline.
+				http.Error(w, "foo", http.StatusInternalServerError)
+			}))
+			require.NoError(t, err)
+			defer server.grpcServer.GracefulStop()
 
-	client, err := NewClient(server.URL)
-	require.NoError(t, err)
+			client, err := NewClient(server.URL)
+			require.NoError(t, err)
 
-	req, err := http.NewRequest("GET", "/hello", &bytes.Buffer{})
-	require.NoError(t, err)
+			req, err := http.NewRequest("GET", "/hello", &bytes.Buffer{})
+			require.NoError(t, err)
 
-	req = req.WithContext(user.InjectOrgID(context.Background(), "1"))
-	recorder := httptest.NewRecorder()
-	client.ServeHTTP(recorder, req)
+			req = req.WithContext(user.InjectOrgID(context.Background(), "1"))
+			recorder := httptest.NewRecorder()
+			client.ServeHTTP(recorder, req)
 
-	assert.Equal(t, "foo\n", recorder.Body.String())
-	assert.Equal(t, 500, recorder.Code)
+			assert.Equal(t, "foo\n", recorder.Body.String())
+			assert.Equal(t, 500, recorder.Code)
+			assert.NotContains(t, recorder.Header(), DoNotLogErrorHeaderKey)
+		})
+	}
+}
+
+func TestServerHandleDoNotLogError(t *testing.T) {
+	testCases := map[string]struct {
+		errorCode     int
+		doNotLogError bool
+		expectedError bool
+	}{
+		"HTTPResponse with code 5xx and with DoNotLogError header should return a non-loggable error": {
+			errorCode:     http.StatusInternalServerError,
+			doNotLogError: true,
+			expectedError: true,
+		},
+		"HTTPResponse with code 5xx and without DoNotLogError header should return a loggable error": {
+			errorCode:     http.StatusInternalServerError,
+			expectedError: true,
+		},
+		"HTTPResponse with code different from 5xx and with DoNotLogError header should not return an error": {
+			errorCode:     http.StatusBadRequest,
+			doNotLogError: true,
+			expectedError: false,
+		},
+		"HTTPResponse with code different from 5xx and without DoNotLogError header should not return an error": {
+			errorCode:     http.StatusBadRequest,
+			expectedError: false,
+		},
+	}
+	errMsg := "this is an error"
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if testData.doNotLogError {
+					w.Header().Set(DoNotLogErrorHeaderKey, "true")
+				}
+				http.Error(w, errMsg, testData.errorCode)
+			})
+
+			s := NewServer(h)
+			req := &httpgrpc.HTTPRequest{
+				Method: "GET",
+				Url:    "/test",
+			}
+			resp, err := s.Handle(context.Background(), req)
+			if testData.expectedError {
+				require.Error(t, err)
+				require.Nil(t, resp)
+				var optional middleware.OptionalLogging
+				if testData.doNotLogError {
+					require.ErrorAs(t, err, &optional)
+					require.False(t, optional.ShouldLog(context.Background(), 0))
+				} else {
+					require.False(t, errors.As(err, &optional))
+				}
+				checkError(t, err, testData.errorCode, errMsg)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				checkHTTPResponse(t, resp, testData.errorCode, errMsg)
+			}
+		})
+	}
+}
+
+func checkError(t *testing.T, err error, expectedCode int, expectedMessage string) {
+	resp, ok := httpgrpc.HTTPResponseFromError(err)
+	require.True(t, ok)
+	checkHTTPResponse(t, resp, expectedCode, expectedMessage)
+}
+
+func checkHTTPResponse(t *testing.T, resp *httpgrpc.HTTPResponse, expectedCode int, expectedBody string) {
+	require.Equal(t, int32(expectedCode), resp.GetCode())
+	require.Equal(t, fmt.Sprintf("%s\n", expectedBody), string(resp.GetBody()))
+	hs := resp.GetHeaders()
+	for _, h := range hs {
+		require.NotEqual(t, DoNotLogErrorHeaderKey, h.Key)
+	}
 }
 
 func TestParseURL(t *testing.T) {

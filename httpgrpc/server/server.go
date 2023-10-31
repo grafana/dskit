@@ -78,7 +78,6 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 	if recorder.Code/100 == 5 {
 		err := httpgrpc.ErrorFromHTTPResponse(resp)
 		if _, ok := header[DoNotLogErrorHeaderKey]; ok {
-			recorder.Header().Del(DoNotLogErrorHeaderKey)
 			err = middleware.DoNotLogError{Err: err}
 		}
 		return nil, err

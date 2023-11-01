@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -183,7 +182,7 @@ func errorCode(err error, successCode string, maskHTTPStatuses bool) string {
 		return strconv.Itoa(int(errResp.Code))
 	}
 
-	if stat, ok := status.FromError(err); ok {
+	if stat, ok := grpcutil.ErrorToStatus(err); ok {
 		return stat.Code().String()
 	}
 

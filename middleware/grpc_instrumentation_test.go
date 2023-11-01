@@ -29,15 +29,16 @@ import (
 	"github.com/grafana/dskit/metrics"
 )
 
-func TestErrorCode_NoError(t *testing.T) {
-	a := errorCode(nil, "2xx", true)
-	assert.Equal(t, "2xx", a)
+func TestErrorCode(t *testing.T) {
+	// Ensure that error code of a nil error is the required success code.
+	for _, successCode := range []string{"2xxx", "success"} {
+		t.Run(fmt.Sprintf("errorCode with successCode %q of a nil error returns %s", successCode, successCode), func(t *testing.T) {
+			a := errorCode(nil, successCode, true)
+			assert.Equal(t, successCode, a)
+		})
+	}
 
-	a = errorCode(nil, "success", true)
-	assert.Equal(t, "success", a)
-}
-
-func TestErrorCode_Any5xx(t *testing.T) {
+	// Ensure that error code of a 5xx error or of a wrapped 5xx error is the 5xx code itself.
 	for _, maskError := range []bool{true, false} {
 		actualCode := http.StatusNotImplemented
 		expectedCode := strconv.Itoa(actualCode)
@@ -49,11 +50,14 @@ func TestErrorCode_Any5xx(t *testing.T) {
 			err := httpgrpc.Errorf(actualCode, "Fail")
 			a := errorCode(err, "2xx", maskError)
 			assert.Equal(t, expectedCode, a)
+
+			wrappedErr := DoNotLogError{Err: err}
+			a = errorCode(wrappedErr, "", maskError)
+			assert.Equal(t, expectedCode, a)
 		})
 	}
-}
 
-func TestErrorCode_Any4xx(t *testing.T) {
+	// Ensure that error code of a 4xx error or of a wrapped 4xx error is the 4xx code itself.
 	for _, maskError := range []bool{true, false} {
 		actualCode := http.StatusConflict
 		expectedCode := strconv.Itoa(actualCode)
@@ -65,11 +69,14 @@ func TestErrorCode_Any4xx(t *testing.T) {
 			err := httpgrpc.Errorf(actualCode, "Fail")
 			a := errorCode(err, "2xx", maskError)
 			assert.Equal(t, expectedCode, a)
+
+			wrappedErr := DoNotLogError{Err: err}
+			a = errorCode(wrappedErr, "", maskError)
+			assert.Equal(t, expectedCode, a)
 		})
 	}
-}
 
-func TestErrorCode_Canceled(t *testing.T) {
+	// Ensure that error code of a context.Cacnceled error is "cancel".
 	for _, maskError := range []bool{true, false} {
 		testName := fmt.Sprintf("canceled error with maskHTTPError set to %v gives \"cancel\"", maskError)
 		t.Run(testName, func(t *testing.T) {
@@ -82,30 +89,29 @@ func TestErrorCode_Canceled(t *testing.T) {
 			assert.Equal(t, "cancel", a)
 		})
 	}
-}
 
-func TestErrorCode_GRPCErrors(t *testing.T) {
+	// Ensure that error code of a gRPC error or of a wrapped gRPC error is gRPC error's status code.
 	testCases := []codes.Code{codes.FailedPrecondition, codes.ResourceExhausted, codes.Internal, codes.Unavailable, codes.Unknown}
 	for _, grpcCode := range testCases {
 		for _, maskError := range []bool{true, false} {
 			testName := fmt.Sprintf("error with gRPC status code %s with maskHTTPError set to %v gives %s", grpcCode.String(), maskError, grpcCode.String())
 			t.Run(testName, func(t *testing.T) {
 				err := status.Errorf(grpcCode, "Fail")
-				a := errorCode(err, "2xx", maskError)
+				a := errorCode(err, "", maskError)
+				assert.Equal(t, grpcCode.String(), a)
+
+				wrappedErr := DoNotLogError{Err: err}
+				a = errorCode(wrappedErr, "", maskError)
 				assert.Equal(t, grpcCode.String(), a)
 			})
 		}
 	}
-}
 
-func TestErrorCode_Others(t *testing.T) {
-	err := errors.New("fail")
-	a := errorCode(err, "", false)
-	assert.Equal(t, "error", a)
-
-	err = io.EOF
-	a = errorCode(err, "", false)
-	assert.Equal(t, "error", a)
+	// Ensure that error code of a non-gRPC error is "error".
+	for _, err := range []error{errors.New("fail"), io.EOF} {
+		a := errorCode(err, "", false)
+		assert.Equal(t, "error", a)
+	}
 }
 
 func setUpStreamClientInstrumentInterceptorTest(t *testing.T, serverStreams bool) (grpc.ClientStream, *mockGrpcStream, context.CancelFunc, *prometheus.Registry) {

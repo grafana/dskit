@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -21,16 +22,7 @@ import (
 )
 
 func observe(ctx context.Context, hist *prometheus.HistogramVec, method string, err error, duration time.Duration) {
-	respStatus := "success"
-	if err != nil {
-		if errResp, ok := httpgrpc.HTTPResponseFromError(err); ok {
-			respStatus = strconv.Itoa(int(errResp.Code))
-		} else if grpcutil.IsCanceled(err) {
-			respStatus = "cancel"
-		} else {
-			respStatus = "error"
-		}
-	}
+	respStatus := errorCode(err, "success", false)
 	instrument.ObserveWithExemplar(ctx, hist.WithLabelValues(gRPC, method, respStatus, "false"), duration.Seconds())
 }
 
@@ -59,7 +51,7 @@ func UnaryClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.Unar
 	return func(ctx context.Context, method string, req, resp interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		start := time.Now()
 		err := invoker(ctx, method, req, resp, cc, opts...)
-		metric.WithLabelValues(method, errorCode(err)).Observe(time.Since(start).Seconds())
+		metric.WithLabelValues(method, errorCode(err, "2xx", true)).Observe(time.Since(start).Seconds())
 		return err
 	}
 }
@@ -122,7 +114,7 @@ func (s *instrumentedClientStream) finish(err error) {
 
 	close(s.finishedChan)
 
-	s.metric.WithLabelValues(s.method, errorCode(err)).Observe(time.Since(s.start).Seconds())
+	s.metric.WithLabelValues(s.method, errorCode(err, "2xx", true)).Observe(time.Since(s.start).Seconds())
 }
 
 func (s *instrumentedClientStream) SendMsg(m interface{}) error {
@@ -174,17 +166,26 @@ func (s *instrumentedClientStream) CloseSend() error {
 }
 
 // errorCode converts an error into an error code string.
-func errorCode(err error) string {
+func errorCode(err error, successCode string, maskHTTPStatuses bool) string {
 	if err == nil {
-		return "2xx"
+		return successCode
+	}
+
+	if grpcutil.IsCanceled(err) {
+		return "cancel"
 	}
 
 	if errResp, ok := httpgrpc.HTTPResponseFromError(err); ok {
-		statusFamily := int(errResp.Code / 100)
-		return strconv.Itoa(statusFamily) + "xx"
-	} else if grpcutil.IsCanceled(err) {
-		return "cancel"
-	} else {
-		return "error"
+		if maskHTTPStatuses {
+			statusFamily := int(errResp.Code / 100)
+			return strconv.Itoa(statusFamily) + "xx"
+		}
+		return strconv.Itoa(int(errResp.Code))
 	}
+
+	if stat, ok := status.FromError(err); ok {
+		return stat.Code().String()
+	}
+
+	return "error"
 }

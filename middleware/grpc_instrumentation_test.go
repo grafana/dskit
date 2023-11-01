@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,31 +30,81 @@ import (
 )
 
 func TestErrorCode_NoError(t *testing.T) {
-	a := errorCode(nil)
+	a := errorCode(nil, "2xx", true)
 	assert.Equal(t, "2xx", a)
+
+	a = errorCode(nil, "success", true)
+	assert.Equal(t, "success", a)
 }
 
 func TestErrorCode_Any5xx(t *testing.T) {
-	err := httpgrpc.Errorf(http.StatusNotImplemented, "Fail")
-	a := errorCode(err)
-	assert.Equal(t, "5xx", a)
+	for _, maskError := range []bool{true, false} {
+		actualCode := http.StatusNotImplemented
+		expectedCode := strconv.Itoa(actualCode)
+		if maskError {
+			expectedCode = "5xx"
+		}
+		testName := fmt.Sprintf("an error with status %d and with maskHTTPError set to %v gives %s", actualCode, maskError, expectedCode)
+		t.Run(testName, func(t *testing.T) {
+			err := httpgrpc.Errorf(actualCode, "Fail")
+			a := errorCode(err, "2xx", maskError)
+			assert.Equal(t, expectedCode, a)
+		})
+	}
 }
 
 func TestErrorCode_Any4xx(t *testing.T) {
-	err := httpgrpc.Errorf(http.StatusConflict, "Fail")
-	a := errorCode(err)
-	assert.Equal(t, "4xx", a)
+	for _, maskError := range []bool{true, false} {
+		actualCode := http.StatusConflict
+		expectedCode := strconv.Itoa(actualCode)
+		if maskError {
+			expectedCode = "4xx"
+		}
+		testName := fmt.Sprintf("an error with status %d and with maskHTTPError set to %v gives %s", actualCode, maskError, expectedCode)
+		t.Run(testName, func(t *testing.T) {
+			err := httpgrpc.Errorf(actualCode, "Fail")
+			a := errorCode(err, "2xx", maskError)
+			assert.Equal(t, expectedCode, a)
+		})
+	}
 }
 
 func TestErrorCode_Canceled(t *testing.T) {
-	err := status.Errorf(codes.Canceled, "Fail")
-	a := errorCode(err)
-	assert.Equal(t, "cancel", a)
+	for _, maskError := range []bool{true, false} {
+		testName := fmt.Sprintf("canceled error with maskHTTPError set to %v gives \"cancel\"", maskError)
+		t.Run(testName, func(t *testing.T) {
+			contextCanceled := context.Canceled
+			a := errorCode(contextCanceled, "2xx", maskError)
+			assert.Equal(t, "cancel", a)
+
+			grpcContextCanceled := status.Errorf(codes.Canceled, "Fail")
+			a = errorCode(grpcContextCanceled, "2xx", maskError)
+			assert.Equal(t, "cancel", a)
+		})
+	}
 }
 
-func TestErrorCode_Unknown(t *testing.T) {
-	err := status.Errorf(codes.Unknown, "Fail")
-	a := errorCode(err)
+func TestErrorCode_GRPCErrors(t *testing.T) {
+	testCases := []codes.Code{codes.FailedPrecondition, codes.ResourceExhausted, codes.Internal, codes.Unavailable, codes.Unknown}
+	for _, grpcCode := range testCases {
+		for _, maskError := range []bool{true, false} {
+			testName := fmt.Sprintf("error with gRPC status code %s with maskHTTPError set to %v gives %s", grpcCode.String(), maskError, grpcCode.String())
+			t.Run(testName, func(t *testing.T) {
+				err := status.Errorf(grpcCode, "Fail")
+				a := errorCode(err, "2xx", maskError)
+				assert.Equal(t, grpcCode.String(), a)
+			})
+		}
+	}
+}
+
+func TestErrorCode_Others(t *testing.T) {
+	err := errors.New("fail")
+	a := errorCode(err, "", false)
+	assert.Equal(t, "error", a)
+
+	err = io.EOF
+	a = errorCode(err, "", false)
 	assert.Equal(t, "error", a)
 }
 

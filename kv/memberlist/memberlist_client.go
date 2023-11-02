@@ -619,14 +619,17 @@ func (m *KV) joinMembersInBatches(ctx context.Context) (int, error) {
 		successfullyJoined = 0
 		lastErr            error
 		batch              = make([]string, batchSize)
+		nodes              []string
 	)
 	for moreAvailableNodes := true; ctx.Err() == nil && moreAvailableNodes; {
 		// Rediscover nodes and try to join a subset of them with each batch.
 		// When the list of nodes is large by the time we reach the end of the list some of the
 		// IPs can be unreachable.
-		nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
-		if len(nodes) == 0 {
-			return 0, errors.New("found no nodes to join")
+		newlyResolved := m.discoverMembers(ctx, m.cfg.JoinMembers)
+		if len(newlyResolved) > 0 {
+			// If the resolution fails we keep using the nodes list from the last resolution.
+			// If that failed too, then we fail the join attempt.
+			nodes = newlyResolved
 		}
 
 		// Prepare batch
@@ -657,6 +660,9 @@ func (m *KV) joinMembersInBatches(ctx context.Context) (int, error) {
 	}
 	if successfullyJoined > 0 {
 		lastErr = nil
+	}
+	if successfullyJoined == 0 && lastErr == nil {
+		return 0, errors.New("found no nodes to join")
 	}
 	return successfullyJoined, lastErr
 }

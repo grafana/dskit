@@ -597,12 +597,8 @@ func (m *KV) joinMembersInBatches(ctx context.Context, numAttempts int, logger l
 	)
 
 	for ; boff.Ongoing(); boff.Wait() {
-		var (
-			attemptedNodes = make(map[string]bool) // On each attempt we want to retry all nodes.
-			joinedInBatch  int
-			err            error
-		)
-		for batchHasMore := true; boff.Ongoing() && batchHasMore; successfullyJoined += joinedInBatch {
+		attemptedNodes := make(map[string]bool) // On each attempt we want to retry all nodes.
+		for batchHasMore := true; boff.Ongoing() && batchHasMore; {
 			// Rediscover nodes and try to join a subset of them with each batch.
 			// When the list of nodes is large by the time we reach the end of the list some of the
 			// IPs can be unreachable.
@@ -613,10 +609,15 @@ func (m *KV) joinMembersInBatches(ctx context.Context, numAttempts int, logger l
 				break
 			}
 
+			var (
+				joinedInBatch int
+				err           error
+			)
 			batchHasMore, joinedInBatch, err = m.joinMembersBatch(nodes, joinNodesBatch, attemptedNodes)
 			if err != nil {
 				lastErr = err
 			}
+			successfullyJoined += joinedInBatch
 		}
 		if successfullyJoined > 0 {
 			// If there are _some_ successful joins, then we can consider the join done.

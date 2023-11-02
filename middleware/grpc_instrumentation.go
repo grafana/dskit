@@ -185,11 +185,6 @@ func errorCode(err error, maskHTTPStatuses bool) string {
 		return "success"
 	}
 
-	// In order to understand whether this error corresponds to context.Canceled, we don't call
-	// grpcutil.IsCanceled to avoid an additional call to grpcutil.ErrorToStatusCode. Instead,
-	// we check whether statusCodes is codes.Canceled, or whether it is codes.Unknown with the
-	// error being context.Canceled. In that case we return "cancel".
-	// If statusCode is codes.Unknown but the error is not context.Canceled, we return "error".
 	if statusCode == codes.Canceled {
 		return "cancel"
 	}

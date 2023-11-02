@@ -77,7 +77,7 @@ func TestErrorToStatusCode(t *testing.T) {
 			err:                fmt.Errorf(msgErr),
 			expectedStatusCode: codes.Unknown,
 		},
-		"a wrapped non-gRPC error returns codes.Unknows": {
+		"a wrapped non-gRPC error returns codes.Unknown": {
 			err:                fmt.Errorf("wrapped: %w", fmt.Errorf(msgErr)),
 			expectedStatusCode: codes.Unknown,
 		},
@@ -93,7 +93,7 @@ func TestErrorToStatusCode(t *testing.T) {
 			err:                grpcstatus.Error(codes.FailedPrecondition, msgErr),
 			expectedStatusCode: codes.FailedPrecondition,
 		},
-		"a wrapped error of a gRPC error built by grpc/status creturns the gRPC error's code": {
+		"a wrapped error of a gRPC error built by grpc/status returns the gRPC error's code": {
 			err:                fmt.Errorf("wrapped: %w", grpcstatus.Error(codes.ResourceExhausted, msgErr)),
 			expectedStatusCode: codes.ResourceExhausted,
 		},

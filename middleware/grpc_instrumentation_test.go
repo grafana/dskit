@@ -32,125 +32,83 @@ const (
 
 func TestErrorCode(t *testing.T) {
 	testCases := map[string]struct {
-		err                error
-		maskHTTPStatuses   bool
-		expectedStatusCode string
+		err                               error
+		expectedStatusWithMaskingEnabled  string
+		expectedStatusWithMaskingDisabled string
 	}{
-		"no error with maskHTTPStatuses set to true returns 2xx": {
-			err:                nil,
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "2xx",
+		"no error returns 2xx with masking enabled, and success with masking disabled": {
+			err:                               nil,
+			expectedStatusWithMaskingEnabled:  "2xx",
+			expectedStatusWithMaskingDisabled: "success",
 		},
-		"no error with maskHTTPStatuses set to false returns success": {
-			err:                nil,
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "success",
+		"a gRPC error with status 500 returns 5xx with masking enabled and 500 with masking disabled": {
+			err:                               status.Errorf(http.StatusInternalServerError, errMsg),
+			expectedStatusWithMaskingEnabled:  "5xx",
+			expectedStatusWithMaskingDisabled: "500",
 		},
-		"a gRPC error with status 500 and with maskHTTPError set to true gives 5xx": {
-			err:                status.Errorf(http.StatusInternalServerError, errMsg),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "5xx",
+		"a wrapped gRPC error with status 503 returns 5xx with masking enabled and 503 with masking disabled": {
+			err:                               fmt.Errorf("wrapped: %w", status.Errorf(http.StatusServiceUnavailable, errMsg)),
+			expectedStatusWithMaskingEnabled:  "5xx",
+			expectedStatusWithMaskingDisabled: "503",
 		},
-		"a wrapped gRPC error with status 503 and with maskHTTPError set to true gives 5xx": {
-			err:                fmt.Errorf("wrapped: %w", status.Errorf(http.StatusServiceUnavailable, errMsg)),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "5xx",
+		"a gRPC error with status 400 returns 4xx with masking enabled and 400 with masking disabled": {
+			err:                               status.Errorf(http.StatusBadRequest, errMsg),
+			expectedStatusWithMaskingEnabled:  "4xx",
+			expectedStatusWithMaskingDisabled: "400",
 		},
-		"a gRPC error with status 400 and with maskHTTPError set to false gives 400": {
-			err:                status.Errorf(http.StatusBadRequest, errMsg),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "400",
+		"a wrapped gRPC error with status 429 returns 4xx with masking enabled and 429 with masking disabled": {
+			err:                               fmt.Errorf("wrapped: %w", status.Errorf(http.StatusTooManyRequests, errMsg)),
+			expectedStatusWithMaskingEnabled:  "4xx",
+			expectedStatusWithMaskingDisabled: "429",
 		},
-		"a wrapped gRPC error with status 429 and with maskHTTPError set to false gives 429": {
-			err:                fmt.Errorf("wrapped: %w", status.Errorf(http.StatusTooManyRequests, errMsg)),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "429",
+		"a gRPC error with status Codes.Internal always returns codes.Internal": {
+			err:                               status.Errorf(codes.Internal, errMsg),
+			expectedStatusWithMaskingEnabled:  codes.Internal.String(),
+			expectedStatusWithMaskingDisabled: codes.Internal.String(),
 		},
-		"a gRPC error with status Codes.Internal and with maskHTTPError set to true gives codes.Internal": {
-			err:                status.Errorf(codes.Internal, errMsg),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: codes.Internal.String(),
+		"a wrapped gRPC error with status Codes.FailedPrecondition always returns codes.FailedPrecondition": {
+			err:                               fmt.Errorf("wrapped: %w", status.Errorf(codes.FailedPrecondition, errMsg)),
+			expectedStatusWithMaskingEnabled:  codes.FailedPrecondition.String(),
+			expectedStatusWithMaskingDisabled: codes.FailedPrecondition.String(),
 		},
-		"a wrapped gRPC error with status Codes.FailedPrecondition and with maskHTTPError set to true gives codes.FailedPrecondition": {
-			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.FailedPrecondition, errMsg)),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: codes.FailedPrecondition.String(),
+		"a gRPC error with status Codes.Canceled always returns cancel": {
+			err:                               status.Errorf(codes.Canceled, context.Canceled.Error()),
+			expectedStatusWithMaskingEnabled:  "cancel",
+			expectedStatusWithMaskingDisabled: "cancel",
 		},
-		"a gRPC error with status Codes.Unavailable and with maskHTTPError set to false gives codes.Unavailable": {
-			err:                status.Errorf(codes.Unavailable, errMsg),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: codes.Unavailable.String(),
+		"a wrapped gRPC error with status Codes.Canceled always returns cancel": {
+			err:                               fmt.Errorf("wrapped: %w", status.Errorf(codes.Canceled, context.Canceled.Error())),
+			expectedStatusWithMaskingEnabled:  "cancel",
+			expectedStatusWithMaskingDisabled: "cancel",
 		},
-		"a wrapped gRPC error with status Codes.ResourceExhausted and with maskHTTPError set to false gives codes.ResourceExhausted": {
-			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.ResourceExhausted, errMsg)),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: codes.ResourceExhausted.String(),
+		"context.Canceled always returns cancel": {
+			err:                               context.Canceled,
+			expectedStatusWithMaskingEnabled:  "cancel",
+			expectedStatusWithMaskingDisabled: "cancel",
 		},
-		"a gRPC error with status Codes.Canceled and with maskHTTPError set to true gives cancel": {
-			err:                status.Errorf(codes.Canceled, context.Canceled.Error()),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "cancel",
+		"a gRPC error with status Codes.Unknown always returns error": {
+			err:                               status.Errorf(codes.Unknown, errMsg),
+			expectedStatusWithMaskingEnabled:  "error",
+			expectedStatusWithMaskingDisabled: "error",
 		},
-		"a wrapped gRPC error with status Codes.Canceled and with maskHTTPError set to true gives cancel": {
-			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.Canceled, context.Canceled.Error())),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "cancel",
+		"a wrapped gRPC error with status Codes.Unknown always returns error": {
+			err:                               fmt.Errorf("wrapped: %w", status.Errorf(codes.Unknown, errMsg)),
+			expectedStatusWithMaskingEnabled:  "error",
+			expectedStatusWithMaskingDisabled: "error",
 		},
-		"a gRPC error with status Codes.Canceled and with maskHTTPError set to false gives cancel": {
-			err:                status.Errorf(codes.Canceled, context.Canceled.Error()),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "cancel",
-		},
-		"a wrapped gRPC error with status Codes.Canceled and with maskHTTPError set to false gives cancel": {
-			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.Canceled, context.Canceled.Error())),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "cancel",
-		},
-		"context.Canceled with maskHTTPError set to true gives cancel": {
-			err:                context.Canceled,
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "cancel",
-		},
-		"context.Canceled with maskHTTPError set to false gives cancel": {
-			err:                context.Canceled,
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "cancel",
-		},
-		"a gRPC error with status Codes.Unknown and with maskHTTPError set to true gives error": {
-			err:                status.Errorf(codes.Unknown, errMsg),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "error",
-		},
-		"a wrapped gRPC error with status Codes.Unknown and with maskHTTPError set to true gives error": {
-			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.Unknown, errMsg)),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "error",
-		},
-		"a gRPC error with status Codes.Unknown and with maskHTTPError set to false gives error": {
-			err:                status.Errorf(codes.Unknown, errMsg),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "error",
-		},
-		"a wrapped gRPC error with status Codes.Unknown and with maskHTTPError set to false gives error": {
-			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.Unknown, errMsg)),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "error",
-		},
-		"a non-gRPC error with maskHTTPError set to true gives error": {
-			err:                fmt.Errorf(errMsg),
-			maskHTTPStatuses:   true,
-			expectedStatusCode: "error",
-		},
-		"a non-gRPC error with maskHTTPError set to false gives error": {
-			err:                fmt.Errorf(errMsg),
-			maskHTTPStatuses:   false,
-			expectedStatusCode: "error",
+		"a non-gRPC error always returns error": {
+			err:                               fmt.Errorf(errMsg),
+			expectedStatusWithMaskingEnabled:  "error",
+			expectedStatusWithMaskingDisabled: "error",
 		},
 	}
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			statusCode := errorCode(testData.err, testData.maskHTTPStatuses)
-			require.Equal(t, testData.expectedStatusCode, statusCode)
+			statusCode := errorCode(testData.err, true)
+			require.Equal(t, testData.expectedStatusWithMaskingEnabled, statusCode)
+
+			statusCode = errorCode(testData.err, false)
+			require.Equal(t, testData.expectedStatusWithMaskingDisabled, statusCode)
 		})
 	}
 }

@@ -6,6 +6,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strconv"
 	"time"
@@ -13,15 +14,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
 )
 
 func observe(ctx context.Context, hist *prometheus.HistogramVec, method string, err error, duration time.Duration) {
-	respStatus := errorCode(err, "success", false)
+	respStatus := errorCode(err, false)
 	instrument.ObserveWithExemplar(ctx, hist.WithLabelValues(gRPC, method, respStatus, "false"), duration.Seconds())
 }
 
@@ -50,7 +51,7 @@ func UnaryClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.Unar
 	return func(ctx context.Context, method string, req, resp interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		start := time.Now()
 		err := invoker(ctx, method, req, resp, cc, opts...)
-		metric.WithLabelValues(method, errorCode(err, "2xx", true)).Observe(time.Since(start).Seconds())
+		metric.WithLabelValues(method, errorCode(err, true)).Observe(time.Since(start).Seconds())
 		return err
 	}
 }
@@ -113,7 +114,7 @@ func (s *instrumentedClientStream) finish(err error) {
 
 	close(s.finishedChan)
 
-	s.metric.WithLabelValues(s.method, errorCode(err, "2xx", true)).Observe(time.Since(s.start).Seconds())
+	s.metric.WithLabelValues(s.method, errorCode(err, true)).Observe(time.Since(s.start).Seconds())
 }
 
 func (s *instrumentedClientStream) SendMsg(m interface{}) error {
@@ -165,26 +166,51 @@ func (s *instrumentedClientStream) CloseSend() error {
 }
 
 // errorCode converts an error into an error code string.
-func errorCode(err error, successCode string, maskHTTPStatuses bool) string {
-	if err == nil {
-		return successCode
+// If the given error is nil, errorCode returns "success" or "2xx", depending on whether maskHTTPStatuses
+// is set to false or true respectively.
+// If the given error corresponds to context.Canceled, errorCode returns "cancel", independently of maskHTTPStatuses.
+// If the given error is a gRPC error with an HTTP status code, errorCode returns the string representation of the
+// HTTP status code or the first digit of the HTTP status code followed by "xx", depending on whether maskHTTPStatuses
+// is set to false or true respectively.
+// If the given error is a gRPC error with a gRPC status code different from codes.Unknown, errorCode returns the string
+// representation of the status code, independently of maskHTTPStatuses.
+// If the given error is a gRPC error with gRPC status code codes.Unknown, or if it is a non-gRPC error, errorCode
+// returns "error".
+func errorCode(err error, maskHTTPStatuses bool) string {
+	statusCode := grpcutil.ErrorToStatusCode(err)
+	if statusCode == codes.OK {
+		if maskHTTPStatuses {
+			return "2xx"
+		}
+		return "success"
 	}
 
-	if grpcutil.IsCanceled(err) {
+	// In order to understand whether this error corresponds to context.Canceled, we don't call
+	// grpcutil.IsCanceled to avoid an additional call to grpcutil.ErrorToStatusCode. Instead,
+	// we check whether statusCodes is codes.Canceled, or whether it is codes.Unknown with the
+	// error being context.Canceled. In that case we return "cancel".
+	// If statusCode is codes.Unknown but the error is not context.Canceled, we return "error".
+	if statusCode == codes.Canceled {
 		return "cancel"
 	}
 
-	if errResp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+	if statusCode == codes.Unknown {
+		if errors.Is(err, context.Canceled) {
+			return "cancel"
+		}
+		return "error"
+	}
+
+	// At this point err is a gRPC error with a gRPC or an HTTP status code.
+	// HTTP status codes are higher than 200, and when divided by 100 give a
+	// positive value. If maskHTTPStatuses is true, we mask those status codes.
+	statusFamily := int(statusCode / 100)
+	if statusFamily > 0 {
 		if maskHTTPStatuses {
-			statusFamily := int(errResp.Code / 100)
 			return strconv.Itoa(statusFamily) + "xx"
 		}
-		return strconv.Itoa(int(errResp.Code))
+		return strconv.Itoa(int(statusCode))
 	}
 
-	if stat, ok := grpcutil.ErrorToStatus(err); ok {
-		return stat.Code().String()
-	}
-
-	return "error"
+	return statusCode.String()
 }

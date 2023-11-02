@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,99 +17,141 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	io_prometheus_client "github.com/prometheus/client_model/go"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/metrics"
 )
 
+const (
+	errMsg = "fail"
+)
+
 func TestErrorCode(t *testing.T) {
-	// Ensure that error code of a nil error is the required success code.
-	for _, successCode := range []string{"2xxx", "success"} {
-		t.Run(fmt.Sprintf("errorCode with successCode %q of a nil error returns %s", successCode, successCode), func(t *testing.T) {
-			a := errorCode(nil, successCode, true)
-			assert.Equal(t, successCode, a)
-		})
+	testCases := map[string]struct {
+		err                error
+		maskHTTPStatuses   bool
+		expectedStatusCode string
+	}{
+		"no error with maskHTTPStatuses set to true returns 2xx": {
+			err:                nil,
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "2xx",
+		},
+		"no error with maskHTTPStatuses set to false returns success": {
+			err:                nil,
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "success",
+		},
+		"a gRPC error with status 500 and with maskHTTPError set to true gives 5xx": {
+			err:                status.Errorf(http.StatusInternalServerError, errMsg),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "5xx",
+		},
+		"a wrapped gRPC error with status 503 and with maskHTTPError set to true gives 5xx": {
+			err:                fmt.Errorf("wrapped: %w", status.Errorf(http.StatusServiceUnavailable, errMsg)),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "5xx",
+		},
+		"a gRPC error with status 400 and with maskHTTPError set to false gives 400": {
+			err:                status.Errorf(http.StatusBadRequest, errMsg),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "400",
+		},
+		"a wrapped gRPC error with status 429 and with maskHTTPError set to false gives 429": {
+			err:                fmt.Errorf("wrapped: %w", status.Errorf(http.StatusTooManyRequests, errMsg)),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "429",
+		},
+		"a gRPC error with status Codes.Internal and with maskHTTPError set to true gives codes.Internal": {
+			err:                status.Errorf(codes.Internal, errMsg),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: codes.Internal.String(),
+		},
+		"a wrapped gRPC error with status Codes.FailedPrecondition and with maskHTTPError set to true gives codes.FailedPrecondition": {
+			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.FailedPrecondition, errMsg)),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: codes.FailedPrecondition.String(),
+		},
+		"a gRPC error with status Codes.Unavailable and with maskHTTPError set to false gives codes.Unavailable": {
+			err:                status.Errorf(codes.Unavailable, errMsg),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: codes.Unavailable.String(),
+		},
+		"a wrapped gRPC error with status Codes.ResourceExhausted and with maskHTTPError set to false gives codes.ResourceExhausted": {
+			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.ResourceExhausted, errMsg)),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: codes.ResourceExhausted.String(),
+		},
+		"a gRPC error with status Codes.Canceled and with maskHTTPError set to true gives cancel": {
+			err:                status.Errorf(codes.Canceled, context.Canceled.Error()),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "cancel",
+		},
+		"a wrapped gRPC error with status Codes.Canceled and with maskHTTPError set to true gives cancel": {
+			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.Canceled, context.Canceled.Error())),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "cancel",
+		},
+		"a gRPC error with status Codes.Canceled and with maskHTTPError set to false gives cancel": {
+			err:                status.Errorf(codes.Canceled, context.Canceled.Error()),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "cancel",
+		},
+		"a wrapped gRPC error with status Codes.Canceled and with maskHTTPError set to false gives cancel": {
+			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.Canceled, context.Canceled.Error())),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "cancel",
+		},
+		"context.Canceled with maskHTTPError set to true gives cancel": {
+			err:                context.Canceled,
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "cancel",
+		},
+		"context.Canceled with maskHTTPError set to false gives cancel": {
+			err:                context.Canceled,
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "cancel",
+		},
+		"a gRPC error with status Codes.Unknown and with maskHTTPError set to true gives error": {
+			err:                status.Errorf(codes.Unknown, errMsg),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "error",
+		},
+		"a wrapped gRPC error with status Codes.Unknown and with maskHTTPError set to true gives error": {
+			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.Unknown, errMsg)),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "error",
+		},
+		"a gRPC error with status Codes.Unknown and with maskHTTPError set to false gives error": {
+			err:                status.Errorf(codes.Unknown, errMsg),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "error",
+		},
+		"a wrapped gRPC error with status Codes.Unknown and with maskHTTPError set to false gives error": {
+			err:                fmt.Errorf("wrapped: %w", status.Errorf(codes.Unknown, errMsg)),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "error",
+		},
+		"a non-gRPC error with maskHTTPError set to true gives error": {
+			err:                fmt.Errorf(errMsg),
+			maskHTTPStatuses:   true,
+			expectedStatusCode: "error",
+		},
+		"a non-gRPC error with maskHTTPError set to false gives error": {
+			err:                fmt.Errorf(errMsg),
+			maskHTTPStatuses:   false,
+			expectedStatusCode: "error",
+		},
 	}
-
-	// Ensure that error code of a 5xx error or of a wrapped 5xx error is the 5xx code itself.
-	for _, maskError := range []bool{true, false} {
-		actualCode := http.StatusNotImplemented
-		expectedCode := strconv.Itoa(actualCode)
-		if maskError {
-			expectedCode = "5xx"
-		}
-		testName := fmt.Sprintf("an error with status %d and with maskHTTPError set to %v gives %s", actualCode, maskError, expectedCode)
+	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			err := httpgrpc.Errorf(actualCode, "Fail")
-			a := errorCode(err, "2xx", maskError)
-			assert.Equal(t, expectedCode, a)
-
-			wrappedErr := DoNotLogError{Err: err}
-			a = errorCode(wrappedErr, "", maskError)
-			assert.Equal(t, expectedCode, a)
+			statusCode := errorCode(testData.err, testData.maskHTTPStatuses)
+			require.Equal(t, testData.expectedStatusCode, statusCode)
 		})
-	}
-
-	// Ensure that error code of a 4xx error or of a wrapped 4xx error is the 4xx code itself.
-	for _, maskError := range []bool{true, false} {
-		actualCode := http.StatusConflict
-		expectedCode := strconv.Itoa(actualCode)
-		if maskError {
-			expectedCode = "4xx"
-		}
-		testName := fmt.Sprintf("an error with status %d and with maskHTTPError set to %v gives %s", actualCode, maskError, expectedCode)
-		t.Run(testName, func(t *testing.T) {
-			err := httpgrpc.Errorf(actualCode, "Fail")
-			a := errorCode(err, "2xx", maskError)
-			assert.Equal(t, expectedCode, a)
-
-			wrappedErr := DoNotLogError{Err: err}
-			a = errorCode(wrappedErr, "", maskError)
-			assert.Equal(t, expectedCode, a)
-		})
-	}
-
-	// Ensure that error code of a context.Cacnceled error is "cancel".
-	for _, maskError := range []bool{true, false} {
-		testName := fmt.Sprintf("canceled error with maskHTTPError set to %v gives \"cancel\"", maskError)
-		t.Run(testName, func(t *testing.T) {
-			contextCanceled := context.Canceled
-			a := errorCode(contextCanceled, "2xx", maskError)
-			assert.Equal(t, "cancel", a)
-
-			grpcContextCanceled := status.Errorf(codes.Canceled, "Fail")
-			a = errorCode(grpcContextCanceled, "2xx", maskError)
-			assert.Equal(t, "cancel", a)
-		})
-	}
-
-	// Ensure that error code of a gRPC error or of a wrapped gRPC error is gRPC error's status code.
-	testCases := []codes.Code{codes.FailedPrecondition, codes.ResourceExhausted, codes.Internal, codes.Unavailable, codes.Unknown}
-	for _, grpcCode := range testCases {
-		for _, maskError := range []bool{true, false} {
-			testName := fmt.Sprintf("error with gRPC status code %s with maskHTTPError set to %v gives %s", grpcCode.String(), maskError, grpcCode.String())
-			t.Run(testName, func(t *testing.T) {
-				err := status.Errorf(grpcCode, "Fail")
-				a := errorCode(err, "", maskError)
-				assert.Equal(t, grpcCode.String(), a)
-
-				wrappedErr := DoNotLogError{Err: err}
-				a = errorCode(wrappedErr, "", maskError)
-				assert.Equal(t, grpcCode.String(), a)
-			})
-		}
-	}
-
-	// Ensure that error code of a non-gRPC error is "error".
-	for _, err := range []error{errors.New("fail"), io.EOF} {
-		a := errorCode(err, "", false)
-		assert.Equal(t, "error", a)
 	}
 }
 

@@ -490,7 +490,7 @@ func (m *KV) running(ctx context.Context) error {
 		select {
 		case <-tickerChan:
 			const numAttempts = 1 // don't retry if resolution fails, we will try again next time
-			reached, err := m.joinMembersInBatches(ctx, numAttempts, logger)
+			reached, err := m.joinMembersWithRetries(ctx, numAttempts, logger)
 			if err == nil {
 				level.Info(logger).Log("msg", "re-joined memberlist cluster", "reached_nodes", reached)
 			} else {
@@ -571,7 +571,7 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 	logger := log.With(m.logger, "phase", "startup")
 	level.Info(logger).Log("msg", "joining memberlist cluster", "join_members", strings.Join(m.cfg.JoinMembers, ","))
 	startTime := time.Now()
-	reached, err := m.joinMembersInBatches(ctx, m.cfg.MaxJoinRetries, logger)
+	reached, err := m.joinMembersWithRetries(ctx, m.cfg.MaxJoinRetries, logger)
 	if err != nil {
 		level.Error(logger).Log("msg", "joining memberlist cluster failed", "err", err, "elapsed_time", time.Since(startTime))
 		return false
@@ -580,11 +580,10 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 	return true
 }
 
-// joinMembersInBatches joins m.cfg.JoinMembers 100 at a time. After each batch of 100 it rediscoveres the members.
+// joinMembersWithRetries joins m.cfg.JoinMembers 100 at a time. After each batch of 100 it rediscoveres the members.
 // This helps when the list of members is big and by the time we reach the end the originally resolved addresses may be obsolete.
-// joinMembersInBatches returns an error iff it couldn't successfully join any node.
-func (m *KV) joinMembersInBatches(ctx context.Context, numAttempts int, logger log.Logger) (int, error) {
-	const joinNodesBatch = 100
+// joinMembersWithRetries returns an error iff it couldn't successfully join any node.
+func (m *KV) joinMembersWithRetries(ctx context.Context, numAttempts int, logger log.Logger) (int, error) {
 	var (
 		cfg = backoff.Config{
 			MinBackoff: m.cfg.MinJoinBackoff,
@@ -592,65 +591,93 @@ func (m *KV) joinMembersInBatches(ctx context.Context, numAttempts int, logger l
 			MaxRetries: numAttempts,
 		}
 		boff               = backoff.New(ctx, cfg)
-		lastErr            = error(nil)
+		err                = error(nil)
 		successfullyJoined = 0
 	)
 
 	for ; boff.Ongoing(); boff.Wait() {
-		attemptedNodes := make(map[string]bool) // On each attempt we want to retry all nodes.
-		for batchHasMore := true; boff.Ongoing() && batchHasMore; {
-			// Rediscover nodes and try to join a subset of them with each batch.
-			// When the list of nodes is large by the time we reach the end of the list some of the
-			// IPs can be unreachable.
-			nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
-			if len(nodes) == 0 {
-				level.Warn(logger).Log("msg", "joining memberlist cluster: found no nodes to join", "attempts", boff.NumRetries()+1, "max_attempts", numAttempts)
-				lastErr = errors.New("found no nodes to join")
-				break
-			}
-
-			var (
-				joinedInBatch int
-				err           error
-			)
-			batchHasMore, joinedInBatch, err = m.joinMembersBatch(nodes, joinNodesBatch, attemptedNodes)
-			if err != nil {
-				lastErr = err
-			}
-			successfullyJoined += joinedInBatch
-		}
+		successfullyJoined, err = m.joinMembersInBatches(ctx)
 		if successfullyJoined > 0 {
 			// If there are _some_ successful joins, then we can consider the join done.
 			// Mimicking the Join semantics we return an error only when we couldn't join any node at all
-			lastErr = nil
+			err = nil
 			break
 		}
+		level.Warn(logger).Log("msg", "joining memberlist cluster", "attempts", boff.NumRetries()+1, "max_attempts", numAttempts, "err", err)
 	}
 
+	return successfullyJoined, err
+}
+
+// joinMembersInBatches joins m.cfg.JoinMembers and re-resolves the address of m.cfg.JoinMembers after joining 100 nodes.
+// joinMembersInBatches returns the number of nodes joined. joinMembersInBatches returns an error only when the
+// number of joined nodes is 0.
+func (m *KV) joinMembersInBatches(ctx context.Context) (int, error) {
+	const batchSize = 100
+	var (
+		attemptedNodes     = make(map[string]bool)
+		successfullyJoined = 0
+		lastErr            error
+		batch              = make([]string, batchSize)
+	)
+	for moreAvailableNodes := true; ctx.Err() == nil && moreAvailableNodes; {
+		// Rediscover nodes and try to join a subset of them with each batch.
+		// When the list of nodes is large by the time we reach the end of the list some of the
+		// IPs can be unreachable.
+		nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
+		if len(nodes) == 0 {
+			return 0, errors.New("found no nodes to join")
+		}
+
+		// Prepare batch
+		batch = batch[:0]
+		moreAvailableNodes = false
+		for _, n := range nodes {
+			if attemptedNodes[n] {
+				continue
+			}
+			if len(batch) >= batchSize {
+				moreAvailableNodes = true
+				break
+			}
+			batch = append(batch, n)
+		}
+
+		// Join batch
+		joinedInBatch, err := m.joinMembersBatch(ctx, batch)
+		if err != nil {
+			lastErr = err
+		}
+
+		// Record joined nodes
+		successfullyJoined += joinedInBatch
+		for _, n := range batch {
+			attemptedNodes[n] = true
+		}
+	}
+	if successfullyJoined > 0 {
+		lastErr = nil
+	}
 	return successfullyJoined, lastErr
 }
 
-func (m *KV) joinMembersBatch(nodes []string, batchSize int, attemptedNodes map[string]bool) (moreLeft bool, successfullyJoined int, lastErr error) {
-	attemptedThisBatch := 0
-	for nodeIdx, node := range nodes {
-		if attemptedNodes[node] {
-			continue
+// joinMembersBatch returns an error only if it couldn't successfully join any nodes or if ctx is cancelled.
+func (m *KV) joinMembersBatch(ctx context.Context, nodes []string) (successfullyJoined int, lastErr error) {
+	for nodeIdx := range nodes {
+		if ctx.Err() != nil {
+			return successfullyJoined, fmt.Errorf("joining batch: %w", context.Cause(ctx))
 		}
-		if attemptedThisBatch >= batchSize {
-			moreLeft = true
-			break
-		}
-
 		// Attempt to join a single node. Complexity shouldn't be different from passing all the node IPs to Join.
 		reached, err := m.memberlist.Join(nodes[nodeIdx : nodeIdx+1])
 		successfullyJoined += reached
 		if err != nil {
 			lastErr = err
 		}
-		attemptedThisBatch++
-		attemptedNodes[node] = true
 	}
-	return moreLeft, successfullyJoined, lastErr
+	if successfullyJoined > 0 {
+		lastErr = nil
+	}
+	return successfullyJoined, lastErr
 }
 
 // Provides a dns-based member disovery to join a memberlist cluster w/o knowning members' addresses upfront.

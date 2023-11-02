@@ -30,85 +30,191 @@ const (
 	errMsg = "fail"
 )
 
-func TestErrorCode(t *testing.T) {
+func TestInstrumentationLabel_StatusCodeToString(t *testing.T) {
 	testCases := map[string]struct {
-		err                               error
+		statusCode                        codes.Code
 		expectedStatusWithMaskingEnabled  string
 		expectedStatusWithMaskingDisabled string
 	}{
-		"no error returns 2xx with masking enabled, and success with masking disabled": {
-			err:                               nil,
+		"codes.OK 2xx with masking enabled, and success with masking disabled": {
+			statusCode:                        codes.OK,
 			expectedStatusWithMaskingEnabled:  "2xx",
 			expectedStatusWithMaskingDisabled: "success",
 		},
-		"a gRPC error with status 500 returns 5xx with masking enabled and 500 with masking disabled": {
-			err:                               status.Errorf(http.StatusInternalServerError, errMsg),
+		"HTTP status 500 returns 5xx with masking enabled and 500 with masking disabled": {
+			statusCode:                        http.StatusInternalServerError,
 			expectedStatusWithMaskingEnabled:  "5xx",
 			expectedStatusWithMaskingDisabled: "500",
 		},
-		"a wrapped gRPC error with status 503 returns 5xx with masking enabled and 503 with masking disabled": {
-			err:                               fmt.Errorf("wrapped: %w", status.Errorf(http.StatusServiceUnavailable, errMsg)),
+		"HTTP status 503 returns 5xx with masking enabled and 503 with masking disabled": {
+			statusCode:                        http.StatusServiceUnavailable,
 			expectedStatusWithMaskingEnabled:  "5xx",
 			expectedStatusWithMaskingDisabled: "503",
 		},
-		"a gRPC error with status 400 returns 4xx with masking enabled and 400 with masking disabled": {
-			err:                               status.Errorf(http.StatusBadRequest, errMsg),
+		"HTTP status 400 returns 4xx with masking enabled and 400 with masking disabled": {
+			statusCode:                        http.StatusBadRequest,
 			expectedStatusWithMaskingEnabled:  "4xx",
 			expectedStatusWithMaskingDisabled: "400",
 		},
-		"a wrapped gRPC error with status 429 returns 4xx with masking enabled and 429 with masking disabled": {
-			err:                               fmt.Errorf("wrapped: %w", status.Errorf(http.StatusTooManyRequests, errMsg)),
+		"HTTP status 429 returns 4xx with masking enabled and 420 with masking disabled": {
+			statusCode:                        http.StatusTooManyRequests,
 			expectedStatusWithMaskingEnabled:  "4xx",
 			expectedStatusWithMaskingDisabled: "429",
 		},
-		"a gRPC error with status Codes.Internal always returns codes.Internal": {
-			err:                               status.Errorf(codes.Internal, errMsg),
+		"gRPC status codes.Internal always returns codes.Internal": {
+			statusCode:                        codes.Internal,
 			expectedStatusWithMaskingEnabled:  codes.Internal.String(),
 			expectedStatusWithMaskingDisabled: codes.Internal.String(),
 		},
-		"a wrapped gRPC error with status Codes.FailedPrecondition always returns codes.FailedPrecondition": {
-			err:                               fmt.Errorf("wrapped: %w", status.Errorf(codes.FailedPrecondition, errMsg)),
+		"gRPC status codes.Unavailable always returns codes.Unavailable": {
+			statusCode:                        codes.Unavailable,
+			expectedStatusWithMaskingEnabled:  codes.Unavailable.String(),
+			expectedStatusWithMaskingDisabled: codes.Unavailable.String(),
+		},
+		"gRPC status codes.FailedPrecondition always returns codes.FailedPrecondition": {
+			statusCode:                        codes.FailedPrecondition,
 			expectedStatusWithMaskingEnabled:  codes.FailedPrecondition.String(),
 			expectedStatusWithMaskingDisabled: codes.FailedPrecondition.String(),
 		},
-		"a gRPC error with status Codes.Canceled always returns cancel": {
-			err:                               status.Errorf(codes.Canceled, context.Canceled.Error()),
+		"gRPC status codes.ResourceExhausted always returns codes.ResourceExhausted": {
+			statusCode:                        codes.ResourceExhausted,
+			expectedStatusWithMaskingEnabled:  codes.ResourceExhausted.String(),
+			expectedStatusWithMaskingDisabled: codes.ResourceExhausted.String(),
+		},
+		"gRPC status Codes.Canceled always returns cancel": {
+			statusCode:                        codes.Canceled,
 			expectedStatusWithMaskingEnabled:  "cancel",
 			expectedStatusWithMaskingDisabled: "cancel",
 		},
-		"a wrapped gRPC error with status Codes.Canceled always returns cancel": {
-			err:                               fmt.Errorf("wrapped: %w", status.Errorf(codes.Canceled, context.Canceled.Error())),
-			expectedStatusWithMaskingEnabled:  "cancel",
-			expectedStatusWithMaskingDisabled: "cancel",
-		},
-		"context.Canceled always returns cancel": {
-			err:                               context.Canceled,
-			expectedStatusWithMaskingEnabled:  "cancel",
-			expectedStatusWithMaskingDisabled: "cancel",
-		},
-		"a gRPC error with status Codes.Unknown always returns error": {
-			err:                               status.Errorf(codes.Unknown, errMsg),
-			expectedStatusWithMaskingEnabled:  "error",
-			expectedStatusWithMaskingDisabled: "error",
-		},
-		"a wrapped gRPC error with status Codes.Unknown always returns error": {
-			err:                               fmt.Errorf("wrapped: %w", status.Errorf(codes.Unknown, errMsg)),
-			expectedStatusWithMaskingEnabled:  "error",
-			expectedStatusWithMaskingDisabled: "error",
-		},
-		"a non-gRPC error always returns error": {
-			err:                               fmt.Errorf(errMsg),
+		"gRPC status codes.Unknown always returns error": {
+			statusCode:                        codes.Unknown,
 			expectedStatusWithMaskingEnabled:  "error",
 			expectedStatusWithMaskingDisabled: "error",
 		},
 	}
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			statusCode := errorCode(testData.err, true)
+			instrumentationLabel := InstrumentationLabel{}
+			instrumentationLabel.maskHTTPStatuses = true
+			statusCode := instrumentationLabel.statusCodeToString(testData.statusCode)
 			require.Equal(t, testData.expectedStatusWithMaskingEnabled, statusCode)
 
-			statusCode = errorCode(testData.err, false)
+			instrumentationLabel.maskHTTPStatuses = false
+			statusCode = instrumentationLabel.statusCodeToString(testData.statusCode)
 			require.Equal(t, testData.expectedStatusWithMaskingDisabled, statusCode)
+		})
+	}
+}
+
+func TestInstrumentationLabel_ErrorToStatusCode(t *testing.T) {
+	testCases := map[string]struct {
+		err                                  error
+		expectedWithAcceptingGRPCStatueCodes codes.Code
+		expectedWithoutAcceptGRPCStatueCodes codes.Code
+	}{
+		"no error always returns codes.OK": {
+			err:                                  nil,
+			expectedWithAcceptingGRPCStatueCodes: codes.OK,
+			expectedWithoutAcceptGRPCStatueCodes: codes.OK,
+		},
+		"a gRPC error with status 5xx always returns 5xx": {
+			err:                                  status.Errorf(http.StatusInternalServerError, errMsg),
+			expectedWithAcceptingGRPCStatueCodes: http.StatusInternalServerError,
+			expectedWithoutAcceptGRPCStatueCodes: http.StatusInternalServerError,
+		},
+		"a wrapped gRPC error with status 5xx always returns 5xx": {
+			err:                                  fmt.Errorf("wrapped: %w", status.Errorf(http.StatusServiceUnavailable, errMsg)),
+			expectedWithAcceptingGRPCStatueCodes: http.StatusServiceUnavailable,
+			expectedWithoutAcceptGRPCStatueCodes: http.StatusServiceUnavailable,
+		},
+		"a gRPC error with status 4xx always return 4xx": {
+			err:                                  status.Errorf(http.StatusBadRequest, errMsg),
+			expectedWithAcceptingGRPCStatueCodes: http.StatusBadRequest,
+			expectedWithoutAcceptGRPCStatueCodes: http.StatusBadRequest,
+		},
+		"a wrapped gRPC error with status 4xx always returns 4xx": {
+			err:                                  fmt.Errorf("wrapped: %w", status.Errorf(http.StatusTooManyRequests, errMsg)),
+			expectedWithAcceptingGRPCStatueCodes: http.StatusTooManyRequests,
+			expectedWithoutAcceptGRPCStatueCodes: http.StatusTooManyRequests,
+		},
+		"a gRPC error with status codes.Internal returns codes.Internal or codes.Unknown depending on accepting gRPC status codes": {
+			err:                                  status.Errorf(codes.Internal, errMsg),
+			expectedWithAcceptingGRPCStatueCodes: codes.Internal,
+			expectedWithoutAcceptGRPCStatueCodes: codes.Unknown,
+		},
+		"a wrapped gRPC error with status codes.FailedPrecondition returns codes.FailedPrecondition or codes.Unknown depending on accepting gRPC status codes": {
+			err:                                  fmt.Errorf("wrapped: %w", status.Errorf(codes.FailedPrecondition, errMsg)),
+			expectedWithAcceptingGRPCStatueCodes: codes.FailedPrecondition,
+			expectedWithoutAcceptGRPCStatueCodes: codes.Unknown,
+		},
+		"a gRPC error with status codes.Canceled always returns codes.Canceled": {
+			err:                                  status.Errorf(codes.Canceled, context.Canceled.Error()),
+			expectedWithAcceptingGRPCStatueCodes: codes.Canceled,
+			expectedWithoutAcceptGRPCStatueCodes: codes.Canceled,
+		},
+		"a wrapped gRPC error with status codes.Canceled always returns codes.Canceled": {
+			err:                                  fmt.Errorf("wrapped: %w", status.Errorf(codes.Canceled, context.Canceled.Error())),
+			expectedWithAcceptingGRPCStatueCodes: codes.Canceled,
+			expectedWithoutAcceptGRPCStatueCodes: codes.Canceled,
+		},
+		"context.Canceled always returns codes.Canceled": {
+			err:                                  context.Canceled,
+			expectedWithAcceptingGRPCStatueCodes: codes.Canceled,
+			expectedWithoutAcceptGRPCStatueCodes: codes.Canceled,
+		},
+		"a gRPC error with status Codes.Unknown always returns codes.Unknown": {
+			err:                                  status.Errorf(codes.Unknown, errMsg),
+			expectedWithAcceptingGRPCStatueCodes: codes.Unknown,
+			expectedWithoutAcceptGRPCStatueCodes: codes.Unknown,
+		},
+		"a wrapped gRPC error with status Codes.Unknown always returns codes.Unknown": {
+			err:                                  fmt.Errorf("wrapped: %w", status.Errorf(codes.Unknown, errMsg)),
+			expectedWithAcceptingGRPCStatueCodes: codes.Unknown,
+			expectedWithoutAcceptGRPCStatueCodes: codes.Unknown,
+		},
+		"a non-gRPC error always returns codes.Unknown": {
+			err:                                  fmt.Errorf(errMsg),
+			expectedWithAcceptingGRPCStatueCodes: codes.Unknown,
+			expectedWithoutAcceptGRPCStatueCodes: codes.Unknown,
+		},
+	}
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			instrumentationLabel := InstrumentationLabel{}
+			instrumentationLabel.AcceptGRPCStatuses(true)
+			statusCode := instrumentationLabel.errorToStatusCode(testData.err)
+			require.Equal(t, testData.expectedWithAcceptingGRPCStatueCodes, statusCode)
+
+			instrumentationLabel.AcceptGRPCStatuses(false)
+			statusCode = instrumentationLabel.errorToStatusCode(testData.err)
+			require.Equal(t, testData.expectedWithoutAcceptGRPCStatueCodes, statusCode)
+		})
+	}
+}
+
+func TestApplyInstrumentationLabelOptions(t *testing.T) {
+	testCases := map[string]struct {
+		instrumentationLabelOptions []InstrumentationLabelOption
+		expectedAcceptGRPCStatuses  bool
+	}{
+		"Applying DoNotAcceptGRPCStatusesOption sets acceptGRPCStatus to false": {
+			instrumentationLabelOptions: []InstrumentationLabelOption{DoNotAcceptGRPCStatusesOption},
+			expectedAcceptGRPCStatuses:  false,
+		},
+		"Applying AcceptGRPCStatusesOption sets acceptGRPCStatus to true": {
+			instrumentationLabelOptions: []InstrumentationLabelOption{AcceptGRPCStatusesOption},
+			expectedAcceptGRPCStatuses:  true,
+		},
+	}
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			instrumentationLabel := ApplyInstrumentationLabelOptions(false, testData.instrumentationLabelOptions...)
+			require.Equal(t, testData.expectedAcceptGRPCStatuses, instrumentationLabel.acceptGRPCStatuses)
+			require.False(t, instrumentationLabel.maskHTTPStatuses)
+
+			instrumentationLabel = ApplyInstrumentationLabelOptions(true, testData.instrumentationLabelOptions...)
+			require.Equal(t, testData.expectedAcceptGRPCStatuses, instrumentationLabel.acceptGRPCStatuses)
+			require.True(t, instrumentationLabel.maskHTTPStatuses)
 		})
 	}
 }

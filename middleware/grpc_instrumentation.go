@@ -21,56 +21,61 @@ import (
 	"github.com/grafana/dskit/instrument"
 )
 
-func observe(ctx context.Context, hist *prometheus.HistogramVec, method string, err error, duration time.Duration) {
-	respStatus := errorCode(err, false)
-	instrument.ObserveWithExemplar(ctx, hist.WithLabelValues(gRPC, method, respStatus, "false"), duration.Seconds())
+func observe(ctx context.Context, hist *prometheus.HistogramVec, method string, err error, duration time.Duration, instrumentationLabelOptions ...InstrumentationLabelOption) {
+	instrumentationLabel := ApplyInstrumentationLabelOptions(false, instrumentationLabelOptions...)
+	instrument.ObserveWithExemplar(ctx, hist.WithLabelValues(gRPC, method, instrumentationLabel.GetInstrumentationLabel(err), "false"), duration.Seconds())
 }
 
 // UnaryServerInstrumentInterceptor instruments gRPC requests for errors and latency.
-func UnaryServerInstrumentInterceptor(hist *prometheus.HistogramVec) grpc.UnaryServerInterceptor {
+func UnaryServerInstrumentInterceptor(hist *prometheus.HistogramVec, instrumentationLabelOptions ...InstrumentationLabelOption) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		begin := time.Now()
 		resp, err := handler(ctx, req)
-		observe(ctx, hist, info.FullMethod, err, time.Since(begin))
+		observe(ctx, hist, info.FullMethod, err, time.Since(begin), instrumentationLabelOptions...)
 		return resp, err
 	}
 }
 
 // StreamServerInstrumentInterceptor instruments gRPC requests for errors and latency.
-func StreamServerInstrumentInterceptor(hist *prometheus.HistogramVec) grpc.StreamServerInterceptor {
+func StreamServerInstrumentInterceptor(hist *prometheus.HistogramVec, instrumentationLabelOptions ...InstrumentationLabelOption) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		begin := time.Now()
 		err := handler(srv, ss)
-		observe(ss.Context(), hist, info.FullMethod, err, time.Since(begin))
+		observe(ss.Context(), hist, info.FullMethod, err, time.Since(begin), instrumentationLabelOptions...)
 		return err
 	}
 }
 
 // UnaryClientInstrumentInterceptor records duration of gRPC requests client side.
-func UnaryClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.UnaryClientInterceptor {
+func UnaryClientInstrumentInterceptor(metric *prometheus.HistogramVec, instrumentationLabelOptions ...InstrumentationLabelOption) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, resp interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		start := time.Now()
 		err := invoker(ctx, method, req, resp, cc, opts...)
-		metric.WithLabelValues(method, errorCode(err, true)).Observe(time.Since(start).Seconds())
+		// we enforce masking of HTTP statuses.
+		instrumentationLabel := ApplyInstrumentationLabelOptions(true, instrumentationLabelOptions...)
+		metric.WithLabelValues(method, instrumentationLabel.GetInstrumentationLabel(err)).Observe(time.Since(start).Seconds())
 		return err
 	}
 }
 
 // StreamClientInstrumentInterceptor records duration of streaming gRPC requests client side.
-func StreamClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.StreamClientInterceptor {
+func StreamClientInstrumentInterceptor(metric *prometheus.HistogramVec, instrumentationLabelOptions ...InstrumentationLabelOption) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string,
 		streamer grpc.Streamer, opts ...grpc.CallOption,
 	) (grpc.ClientStream, error) {
 		start := time.Now()
 		stream, err := streamer(ctx, desc, cc, method, opts...)
+		// we enforce masking of HTTP statuses.
+		instrumentationLabel := ApplyInstrumentationLabelOptions(true, instrumentationLabelOptions...)
 		s := &instrumentedClientStream{
-			metric:        metric,
-			start:         start,
-			method:        method,
-			serverStreams: desc.ServerStreams,
-			finished:      atomic.NewBool(false),
-			finishedChan:  make(chan struct{}),
-			stream:        stream,
+			metric:               metric,
+			start:                start,
+			method:               method,
+			serverStreams:        desc.ServerStreams,
+			finished:             atomic.NewBool(false),
+			finishedChan:         make(chan struct{}),
+			stream:               stream,
+			instrumentationLabel: instrumentationLabel,
 		}
 		s.awaitCompletion(ctx)
 		return s, err
@@ -79,13 +84,14 @@ func StreamClientInstrumentInterceptor(metric *prometheus.HistogramVec) grpc.Str
 
 // This implementation is heavily inspired by github.com/opentracing-contrib/go-grpc's openTracingClientStream.
 type instrumentedClientStream struct {
-	metric        *prometheus.HistogramVec
-	start         time.Time
-	method        string
-	serverStreams bool
-	finished      *atomic.Bool
-	finishedChan  chan struct{}
-	stream        grpc.ClientStream
+	metric               *prometheus.HistogramVec
+	start                time.Time
+	method               string
+	serverStreams        bool
+	finished             *atomic.Bool
+	finishedChan         chan struct{}
+	stream               grpc.ClientStream
+	instrumentationLabel InstrumentationLabel
 }
 
 func (s *instrumentedClientStream) Trailer() metadata.MD {
@@ -114,7 +120,7 @@ func (s *instrumentedClientStream) finish(err error) {
 
 	close(s.finishedChan)
 
-	s.metric.WithLabelValues(s.method, errorCode(err, true)).Observe(time.Since(s.start).Seconds())
+	s.metric.WithLabelValues(s.method, s.instrumentationLabel.GetInstrumentationLabel(err)).Observe(time.Since(s.start).Seconds())
 }
 
 func (s *instrumentedClientStream) SendMsg(m interface{}) error {
@@ -165,21 +171,58 @@ func (s *instrumentedClientStream) CloseSend() error {
 	return err
 }
 
-// errorCode converts an error into an error code string.
-// If the given error is nil, errorCode returns "success" or "2xx", depending on whether maskHTTPStatuses
-// is set to false or true respectively.
-// If the given error corresponds to context.Canceled, errorCode returns "cancel", independently of maskHTTPStatuses.
-// If the given error is a gRPC error with an HTTP status code, errorCode returns the string representation of the
-// HTTP status code or the first digit of the HTTP status code followed by "xx", depending on whether maskHTTPStatuses
-// is set to false or true respectively.
-// If the given error is a gRPC error with a gRPC status code different from codes.Unknown, errorCode returns the string
-// representation of the status code, independently of maskHTTPStatuses.
-// If the given error is a gRPC error with gRPC status code codes.Unknown, or if it is a non-gRPC error, errorCode
-// returns "error".
-func errorCode(err error, maskHTTPStatuses bool) string {
-	statusCode := grpcutil.ErrorToStatusCode(err)
+type InstrumentationLabelOption func(*InstrumentationLabel)
+
+var (
+	AcceptGRPCStatusesOption InstrumentationLabelOption = func(instrumentationLabel *InstrumentationLabel) {
+		instrumentationLabel.AcceptGRPCStatuses(true)
+	}
+
+	DoNotAcceptGRPCStatusesOption InstrumentationLabelOption = func(instrumentationLabel *InstrumentationLabel) {
+		instrumentationLabel.AcceptGRPCStatuses(false)
+	}
+)
+
+func ApplyInstrumentationLabelOptions(maskHTTPStatuses bool, options ...InstrumentationLabelOption) InstrumentationLabel {
+	instrumentationLabel := InstrumentationLabel{maskHTTPStatuses: maskHTTPStatuses}
+	for _, opt := range options {
+		opt(&instrumentationLabel)
+	}
+	return instrumentationLabel
+}
+
+type InstrumentationLabel struct {
+	acceptGRPCStatuses bool
+	maskHTTPStatuses   bool
+}
+
+func (i *InstrumentationLabel) AcceptGRPCStatuses(acceptance bool) {
+	i.acceptGRPCStatuses = acceptance
+}
+
+// GetInstrumentationLabel converts an error into an error code string by applying the configurations
+// contained in this InstrumentationLabel object.
+func (i *InstrumentationLabel) GetInstrumentationLabel(err error) string {
+	statusCode := i.errorToStatusCode(err)
+	return i.statusCodeToString(statusCode)
+}
+
+// statusCodeToString converts a given status code in its string representation.
+//
+//   - If the given status code is codes.OK, statusCodeToString returns "success" or "2xx",
+//     depending on whether maskHTTPStatuses is set to false or true respectively.
+//   - If the given status code is codes.Canceled, statusCodeToString returns "cancel"
+//     independently of maskHTTPStatuses.
+//   - If the given status code ia a valid HTTP status code, statusCodeToString returns the
+//     string representation of the HTTP status code or the first digit of the HTTP status
+//     code followed by "xx", depending on whether maskHTTPStatuses is set to false or true
+//     respectively.
+//   - If the given status code is a gRPC status code different from codes.Unknown, statusCodeToString
+//     returns the string representation of the status code, independently of maskHTTPStatuses.
+//   - If the given status code is codes.Unknown, statusCodeToString returns "error".
+func (i *InstrumentationLabel) statusCodeToString(statusCode codes.Code) string {
 	if statusCode == codes.OK {
-		if maskHTTPStatuses {
+		if i.maskHTTPStatuses {
 			return "2xx"
 		}
 		return "success"
@@ -190,22 +233,53 @@ func errorCode(err error, maskHTTPStatuses bool) string {
 	}
 
 	if statusCode == codes.Unknown {
-		if errors.Is(err, context.Canceled) {
-			return "cancel"
-		}
 		return "error"
 	}
 
-	// At this point err is a gRPC error with a gRPC or an HTTP status code.
-	// HTTP status codes are higher than 200, and when divided by 100 give a
-	// positive value. If maskHTTPStatuses is true, we mask those status codes.
-	statusFamily := int(statusCode / 100)
-	if statusFamily > 0 {
-		if maskHTTPStatuses {
+	if isHTTPStatusCode(statusCode) {
+		statusFamily := int(statusCode / 100)
+		if i.maskHTTPStatuses {
 			return strconv.Itoa(statusFamily) + "xx"
 		}
 		return strconv.Itoa(int(statusCode))
 	}
 
 	return statusCode.String()
+}
+
+// errorToStatusCode extracts a status code from the given error, and does the following:
+//
+//   - If the error corresponds to context.Canceled, codes.Canceled is returned.
+//   - If the extracted status code is a valid HTTP status code, it is returned.
+//   - If the extracted status code is a gRPC code, and acceptGRPCStatusCodes is
+//     true, the gRPC status code is returned. Otherwise, codes.Unknown is returned.
+func (i *InstrumentationLabel) errorToStatusCode(err error) codes.Code {
+	if err == nil {
+		return codes.OK
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return codes.Canceled
+	}
+
+	statusCode := grpcutil.ErrorToStatusCode(err)
+
+	if statusCode == codes.Canceled {
+		return statusCode
+	}
+
+	if isHTTPStatusCode(statusCode) {
+		return statusCode
+	}
+	if i.acceptGRPCStatuses {
+		return statusCode
+	}
+	return codes.Unknown
+}
+
+// isHTTPStatusCode checks whether the given gRPC status code corresponds to a valid
+// HTTP status code. A status code is considered a valid HTTP status codes if it is
+// higher or equal than 100 and lower than 600.
+func isHTTPStatusCode(statusCode codes.Code) bool {
+	return int(statusCode) >= 100 && int(statusCode) < 600
 }

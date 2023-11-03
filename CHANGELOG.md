@@ -156,7 +156,7 @@
 * [ENHANCEMENT] Server: Add `-server.http-read-header-timeout` option to specify timeout for reading HTTP request header. It defaults to 0, in which case reading of headers can take up to `-server.http-read-timeout`, leaving no time for reading body, if there's any. #423
 * [ENHANCEMENT] Make httpgrpc.Server produce non-loggable errors when a header with key `httpgrpc.DoNotLogErrorHeaderKey` and any value is present in the HTTP response. #421
 * [ENHANCEMENT] Server: Add `-server.report-grpc-codes-in-instrumentation-label` CLI flag to specify whether gRPC status codes should be used in instrumentation labels. It defaults to false, meaning that gRPC status codes are represented with `error` value. #424
-* [ENHANCEMENT] Instrumentation: `middleware.InstrumentationLabelOption` struct, and values `middleware.AcceptGRPCStatusesOption` and `middleware.DoNotAcceptGRPCStatusesOption` have been added to allow both server and clients to configure gRPC status code usages in instrumentation labels. This can be optionally used in the following functions: $424
+* [ENHANCEMENT] Instrumentation: `middleware.InstrumentationOption` struct, and a special value `middleware.ReportGRPCStatusOption` have been added to allow both server and clients to configure gRPC status code usages in instrumentation labels. This can be optionally used in the following functions: #424
  * `middleware.UnaryServerInstrumentInterceptor`
  * `middleware.StreamServerInstrumentInterceptor`
  * `middleware.UnaryClientInstrumentInterceptor`

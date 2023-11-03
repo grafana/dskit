@@ -175,9 +175,9 @@ func (s *instrumentedClientStream) CloseSend() error {
 type InstrumentationOption func(*instrumentationLabel)
 
 var (
-	// ReportGRPCStatusesOption is an InstrumentationOption that is used for enabling gRPC status codes to be used
+	// ReportGRPCStatusOption is an InstrumentationOption that is used for enabling gRPC status codes to be used
 	// in instrumentation labels.
-	ReportGRPCStatusesOption InstrumentationOption = func(instrumentationLabel *instrumentationLabel) {
+	ReportGRPCStatusOption InstrumentationOption = func(instrumentationLabel *instrumentationLabel) {
 		instrumentationLabel.reportGRPCStatus = true
 	}
 )

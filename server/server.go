@@ -350,21 +350,21 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		WithRequest:              !cfg.ExcludeRequestInLog,
 		DisableRequestSuccessLog: cfg.DisableRequestSuccessLog,
 	}
-	var reportGRPCStatusesOption middleware.InstrumentationOption
+	var reportGRPCStatusesOptions []middleware.InstrumentationOption
 	if cfg.ReportGRPCCodesInInstrumentationLabel {
-		reportGRPCStatusesOption = middleware.ReportGRPCStatusesOption
+		reportGRPCStatusesOptions = []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
 		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
-		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, reportGRPCStatusesOption),
+		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, reportGRPCStatusesOptions...),
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 
 	grpcStreamMiddleware := []grpc.StreamServerInterceptor{
 		serverLog.StreamServerInterceptor,
 		otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
-		middleware.StreamServerInstrumentInterceptor(metrics.RequestDuration, reportGRPCStatusesOption),
+		middleware.StreamServerInstrumentInterceptor(metrics.RequestDuration, reportGRPCStatusesOptions...),
 	}
 	grpcStreamMiddleware = append(grpcStreamMiddleware, cfg.GRPCStreamMiddleware...)
 

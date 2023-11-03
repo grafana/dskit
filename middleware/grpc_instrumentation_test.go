@@ -260,8 +260,8 @@ func TestApplyInstrumentationLabelOptions(t *testing.T) {
 			instrumentationOptions:     nil,
 			expectedAcceptGRPCStatuses: false,
 		},
-		"Applying ReportGRPCStatusesOption sets acceptGRPCStatus to true": {
-			instrumentationOptions:     []InstrumentationOption{ReportGRPCStatusesOption},
+		"Applying ReportGRPCStatusOption sets acceptGRPCStatus to true": {
+			instrumentationOptions:     []InstrumentationOption{ReportGRPCStatusOption},
 			expectedAcceptGRPCStatuses: true,
 		},
 	}

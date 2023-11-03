@@ -198,11 +198,23 @@ type instrumentationLabel struct {
 // getInstrumentationLabel converts an error into an error code string by applying the configurations
 // contained in this instrumentationLabel object.
 func (i *instrumentationLabel) getInstrumentationLabel(err error) string {
-	statusCode := i.errorToStatusCode(err)
+	statusCode := errorToStatusCode(err)
 	return i.statusCodeToString(statusCode)
 }
 
 func (i *instrumentationLabel) statusCodeToString(statusCode codes.Code) string {
+	if isHTTPStatusCode(statusCode) {
+		statusFamily := int(statusCode / 100)
+		if i.maskHTTPStatus {
+			return strconv.Itoa(statusFamily) + "xx"
+		}
+		return strconv.Itoa(int(statusCode))
+	}
+
+	if i.reportGRPCStatus {
+		return statusCode.String()
+	}
+
 	if statusCode == codes.OK {
 		if i.maskHTTPStatus {
 			return "2xx"
@@ -214,28 +226,15 @@ func (i *instrumentationLabel) statusCodeToString(statusCode codes.Code) string 
 		return "cancel"
 	}
 
-	if statusCode == codes.Unknown {
-		return "error"
-	}
-
-	if isHTTPStatusCode(statusCode) {
-		statusFamily := int(statusCode / 100)
-		if i.maskHTTPStatus {
-			return strconv.Itoa(statusFamily) + "xx"
-		}
-		return strconv.Itoa(int(statusCode))
-	}
-
-	return statusCode.String()
+	return "error"
 }
 
 // errorToStatusCode extracts a status code from the given error, and does the following:
 //
+//   - If the error is nil, codes.OK is returned.
 //   - If the error corresponds to context.Canceled, codes.Canceled is returned.
-//   - If the extracted status code is a valid HTTP status code, it is returned.
-//   - If the extracted status code is a gRPC code, and acceptGRPCStatusCodes is
-//     true, the gRPC status code is returned. Otherwise, codes.Unknown is returned.
-func (i *instrumentationLabel) errorToStatusCode(err error) codes.Code {
+//   - Otherwise, the actual status code of the error is returned.
+func errorToStatusCode(err error) codes.Code {
 	if err == nil {
 		return codes.OK
 	}
@@ -244,19 +243,7 @@ func (i *instrumentationLabel) errorToStatusCode(err error) codes.Code {
 		return codes.Canceled
 	}
 
-	statusCode := grpcutil.ErrorToStatusCode(err)
-
-	if statusCode == codes.Canceled {
-		return statusCode
-	}
-
-	if isHTTPStatusCode(statusCode) {
-		return statusCode
-	}
-	if i.reportGRPCStatus {
-		return statusCode
-	}
-	return codes.Unknown
+	return grpcutil.ErrorToStatusCode(err)
 }
 
 // isHTTPStatusCode checks whether the given gRPC status code corresponds to a valid

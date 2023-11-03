@@ -350,9 +350,9 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		WithRequest:              !cfg.ExcludeRequestInLog,
 		DisableRequestSuccessLog: cfg.DisableRequestSuccessLog,
 	}
-	reportGRPCStatusesOption := middleware.DoNotAcceptGRPCStatusesOption
+	var reportGRPCStatusesOption middleware.InstrumentationOption
 	if cfg.ReportGRPCCodesInInstrumentationLabel {
-		reportGRPCStatusesOption = middleware.AcceptGRPCStatusesOption
+		reportGRPCStatusesOption = middleware.ReportGRPCStatusesOption
 	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,

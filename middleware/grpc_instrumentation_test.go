@@ -253,26 +253,26 @@ func TestInstrumentationLabel_ErrorToStatusCode(t *testing.T) {
 
 func TestApplyInstrumentationLabelOptions(t *testing.T) {
 	testCases := map[string]struct {
-		instrumentationOptions     []InstrumentationOption
-		expectedAcceptGRPCStatuses bool
+		instrumentationOptions   []InstrumentationOption
+		expectedReportGRPCStatus bool
 	}{
-		"Applying no InstrimentationOption sets acceptGRPCStatus to false": {
-			instrumentationOptions:     nil,
-			expectedAcceptGRPCStatuses: false,
+		"Applying no InstrumentationOption sets acceptGRPCStatus to false": {
+			instrumentationOptions:   nil,
+			expectedReportGRPCStatus: false,
 		},
 		"Applying ReportGRPCStatusOption sets acceptGRPCStatus to true": {
-			instrumentationOptions:     []InstrumentationOption{ReportGRPCStatusOption},
-			expectedAcceptGRPCStatuses: true,
+			instrumentationOptions:   []InstrumentationOption{ReportGRPCStatusOption},
+			expectedReportGRPCStatus: true,
 		},
 	}
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			instrumentationLabel := applyInstrumentationOptions(false, testData.instrumentationOptions...)
-			require.Equal(t, testData.expectedAcceptGRPCStatuses, instrumentationLabel.reportGRPCStatus)
+			require.Equal(t, testData.expectedReportGRPCStatus, instrumentationLabel.reportGRPCStatus)
 			require.False(t, instrumentationLabel.maskHTTPStatus)
 
 			instrumentationLabel = applyInstrumentationOptions(true, testData.instrumentationOptions...)
-			require.Equal(t, testData.expectedAcceptGRPCStatuses, instrumentationLabel.reportGRPCStatus)
+			require.Equal(t, testData.expectedReportGRPCStatus, instrumentationLabel.reportGRPCStatus)
 			require.True(t, instrumentationLabel.maskHTTPStatus)
 		})
 	}

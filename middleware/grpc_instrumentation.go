@@ -229,11 +229,6 @@ func (i *instrumentationLabel) statusCodeToString(statusCode codes.Code) string 
 	return "error"
 }
 
-// errorToStatusCode extracts a status code from the given error, and does the following:
-//
-//   - If the error is nil, codes.OK is returned.
-//   - If the error corresponds to context.Canceled, codes.Canceled is returned.
-//   - Otherwise, the actual status code of the error is returned.
 func errorToStatusCode(err error) codes.Code {
 	if err == nil {
 		return codes.OK
@@ -246,9 +241,6 @@ func errorToStatusCode(err error) codes.Code {
 	return grpcutil.ErrorToStatusCode(err)
 }
 
-// isHTTPStatusCode checks whether the given gRPC status code corresponds to a valid
-// HTTP status code. A status code is considered a valid HTTP status codes if it is
-// higher or equal than 100 and lower than 600.
 func isHTTPStatusCode(statusCode codes.Code) bool {
 	return int(statusCode) >= 100 && int(statusCode) < 600
 }

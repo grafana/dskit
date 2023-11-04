@@ -155,6 +155,13 @@
 * [ENHANCEMENT] Memcached: allow to configure write and read buffer size (in bytes). #414
 * [ENHANCEMENT] Server: Add `-server.http-read-header-timeout` option to specify timeout for reading HTTP request header. It defaults to 0, in which case reading of headers can take up to `-server.http-read-timeout`, leaving no time for reading body, if there's any. #423
 * [ENHANCEMENT] Make httpgrpc.Server produce non-loggable errors when a header with key `httpgrpc.DoNotLogErrorHeaderKey` and any value is present in the HTTP response. #421
+* [ENHANCEMENT] Server: Add `-server.report-grpc-codes-in-instrumentation-label` CLI flag to specify whether gRPC status codes should be used in `status_code` label of request duration metric. It defaults to false, meaning that gRPC status codes are represented with `error` value. #424
+* [ENHANCEMENT] Added `middleware.ReportGRPCStatusOption` that can be passed to the following functions to enable reporting of gRPC status codes in "status_code" label (instead of simplified "error", "cancel" or "success" values): #424
+ * `middleware.UnaryServerInstrumentInterceptor`
+ * `middleware.StreamServerInstrumentInterceptor`
+ * `middleware.UnaryClientInstrumentInterceptor`
+ * `middleware.StreamClientInstrumentInterceptor`
+ * `middleware.Instrument`
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

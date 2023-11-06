@@ -672,7 +672,8 @@ func (m *KV) joinMembersBatch(ctx context.Context, nodes []string) (successfully
 		if ctx.Err() != nil {
 			return successfullyJoined, fmt.Errorf("joining batch: %w", context.Cause(ctx))
 		}
-		// Attempt to join a single node. Complexity shouldn't be different from passing all the node IPs to Join.
+		// Attempt to join a single node.
+		// The cost of calling Join shouldn't be different between passing all nodes in one invocation versus passing a single node per invocation.
 		reached, err := m.memberlist.Join(nodes[nodeIdx : nodeIdx+1])
 		successfullyJoined += reached
 		if err != nil {

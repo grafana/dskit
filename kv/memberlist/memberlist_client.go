@@ -591,7 +591,7 @@ func (m *KV) joinMembersWithRetries(ctx context.Context, numAttempts int, logger
 			MaxRetries: numAttempts,
 		}
 		boff               = backoff.New(ctx, cfg)
-		err                = error(nil)
+		err                error
 		successfullyJoined = 0
 	)
 

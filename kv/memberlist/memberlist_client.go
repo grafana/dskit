@@ -647,6 +647,7 @@ func (m *KV) joinMembersInBatches(ctx context.Context) (int, error) {
 				break
 			}
 			batch = append(batch, n)
+			attemptedNodes[n] = true
 		}
 
 		// Join batch
@@ -654,12 +655,7 @@ func (m *KV) joinMembersInBatches(ctx context.Context) (int, error) {
 		if err != nil {
 			lastErr = err
 		}
-
-		// Record joined nodes
 		successfullyJoined += joinedInBatch
-		for _, n := range batch {
-			attemptedNodes[n] = true
-		}
 	}
 	if successfullyJoined > 0 {
 		lastErr = nil

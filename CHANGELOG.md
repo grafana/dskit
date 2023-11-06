@@ -162,6 +162,7 @@
  * `middleware.UnaryClientInstrumentInterceptor`
  * `middleware.StreamClientInstrumentInterceptor`
  * `middleware.Instrument`
+* [ENHANCEMENT] Server: Added new `-server.http-log-closed-connections-without-response-enabled` option to log details about closed connections that received no response. #426
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

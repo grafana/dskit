@@ -582,7 +582,7 @@ func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 
 // joinMembersWithRetries joins m.cfg.JoinMembers 100 at a time. After each batch of 100 it rediscoveres the members.
 // This helps when the list of members is big and by the time we reach the end the originally resolved addresses may be obsolete.
-// joinMembersWithRetries returns an error iff it couldn't successfully join any node.
+// joinMembersWithRetries returns an error iff it couldn't successfully join any node OR the context was cancelled.
 func (m *KV) joinMembersWithRetries(ctx context.Context, numAttempts int, logger log.Logger) (int, error) {
 	var (
 		cfg = backoff.Config{
@@ -658,12 +658,12 @@ func (m *KV) joinMembersInBatches(ctx context.Context) (int, error) {
 		successfullyJoined += joinedInBatch
 	}
 	if successfullyJoined > 0 {
-		lastErr = nil
+		return successfullyJoined, nil
 	}
 	if successfullyJoined == 0 && lastErr == nil {
 		return 0, errors.New("found no nodes to join")
 	}
-	return successfullyJoined, lastErr
+	return 0, lastErr
 }
 
 // joinMembersBatch returns an error only if it couldn't successfully join any nodes or if ctx is cancelled.

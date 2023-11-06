@@ -605,8 +605,8 @@ func (m *KV) joinMembersWithRetries(ctx context.Context, numAttempts int, logger
 		}
 		level.Warn(logger).Log("msg", "joining memberlist cluster", "attempts", boff.NumRetries()+1, "max_attempts", numAttempts, "err", err)
 	}
-	if err == nil && ctx.Err() != nil {
-		err = fmt.Errorf("joining memberlist: %w", context.Cause(ctx))
+	if err == nil && boff.Err() != nil {
+		err = fmt.Errorf("joining memberlist: %w", boff.Err())
 	}
 
 	return successfullyJoined, err

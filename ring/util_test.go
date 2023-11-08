@@ -67,6 +67,10 @@ func (r *RingMock) HasInstance(_ string) bool {
 
 func (r *RingMock) CleanupShuffleShardCache(_ string) {}
 
+func (r *RingMock) GetTokenRangesForInstance(_ string) ([]uint32, error) {
+	return []uint32{0, math.MaxUint32}, nil
+}
+
 func createStartingRing() *Ring {
 	// Init the ring.
 	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{

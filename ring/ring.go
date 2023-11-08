@@ -76,6 +76,9 @@ type ReadRing interface {
 
 	// CleanupShuffleShardCache should delete cached shuffle-shard subrings for given identifier.
 	CleanupShuffleShardCache(identifier string)
+
+	// GetTokenRangesForInstance returns the token ranges owned by an instance in the ring
+	GetTokenRangesForInstance(instanceID string) ([]uint32, error)
 }
 
 var (

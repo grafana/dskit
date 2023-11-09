@@ -94,7 +94,7 @@ func (zc *zeroResponseConn) Write(b []byte) (n int, err error) {
 	return
 }
 
-var authRegexp = regexp.MustCompile("((?i)\\r\\nauthorization:\\s+)(\\S+\\s+)(\\S+)")
+var authRegexp = regexp.MustCompile(`((?i)\r\nauthorization:\s+)(\S+\s+)(\S+)`)
 
 func (zc *zeroResponseConn) Close() error {
 	err := zc.Conn.Close()

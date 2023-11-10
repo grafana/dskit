@@ -39,7 +39,7 @@ func (i *itemTracker) recordError(err error, optionalFilters ...OptionalErrorFil
 
 	var isClientError bool
 	if optionalFilters == nil {
-		isClientError = httpStatus4xxFilter(err)
+		isClientError = isHTTPStatus4xx(err)
 	} else {
 		isClientError = applyOptionalErrorFilters(err, optionalFilters...)
 	}
@@ -51,19 +51,19 @@ func (i *itemTracker) recordError(err error, optionalFilters ...OptionalErrorFil
 	return i.failedServer.Inc()
 }
 
-type OptionalErrorFilter func(error) bool
-
-var httpStatus4xxFilter = func(err error) bool {
+func isHTTPStatus4xx(err error) bool {
 	if s, ok := status.FromError(err); ok && s.Code()/100 == 4 {
 		return true
 	}
 	return false
 }
 
+type OptionalErrorFilter func(error) bool
+
 func applyOptionalErrorFilters(err error, filters ...OptionalErrorFilter) bool {
-	result := true
+	result := false
 	for _, filter := range filters {
-		result = result && filter(err)
+		result = result || filter(err)
 	}
 	return result
 }

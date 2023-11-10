@@ -288,6 +288,24 @@ func TestDoBatch_QuorumError(t *testing.T) {
 			unavailableInstances: []string{"2"},
 			acceptableOutcomes:   []error{mockServerError},
 		},
+		"2 HTTP 4xx and 1 client error with the client filter should return the HTTP 4xx error": {
+			// isClientErr filter applied to http429Error is false, so http429Error is not treated as a client error
+			errors:               [replicationFactor]error{http429Error, http429Error, mockClientError},
+			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			acceptableOutcomes:   []error{http429Error},
+		},
+		"1 HTTP 4xx, 1 HTTP 5xx and 1 client error with the client filter should return either HTTP 4xx or HTTP 5xx error": {
+			// isClientErr filter applied to http429Error is false, so http429Error is not treated as a client error
+			errors:               [replicationFactor]error{http429Error, http500Error, mockClientError},
+			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			acceptableOutcomes:   []error{http429Error, http500Error},
+		},
+		"1 HTTP 4xx, 1 client and 1 server error with the client filter should return either the HTTP 4xx or the server error": {
+			// isClientErr filter applied to http429Error is false, so http429Error is not treated as a client error
+			errors:               [replicationFactor]error{http429Error, mockClientError, mockServerError},
+			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			acceptableOutcomes:   []error{mockServerError, http429Error},
+		},
 	}
 
 	for testName, testData := range testCases {

@@ -32,7 +32,6 @@ type itemTracker struct {
 	failedServer atomic.Int32
 	remaining    atomic.Int32
 	err          atomic.Error
-	done         atomic.Bool
 }
 
 func (i *itemTracker) recordError(err error, optionalFilters ...OptionalErrorFilter) int32 {
@@ -165,9 +164,6 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, optionalEr
 	// * succeeded, failedClient, failedServer and remaining guarantee that the "return decision" is made atomically
 	// avoiding race condition
 	for _, itemTracker := range itemTrackers {
-		if itemTracker.done.Load() {
-			continue
-		}
 		if err != nil {
 			// Track the number of errors by error family, and if it exceeds maxFailures
 			// shortcut the waiting rpc.
@@ -189,7 +185,6 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, optionalEr
 			// instances rejected it with ClientError, then we do not have quorum to reject the request as a ClientError. Instead,
 			// we return the last ServerError error for debuggability.
 			if errCount > int32(itemTracker.maxFailures) || itemTracker.remaining.Dec() == 0 {
-				itemTracker.done.Store(true)
 				if b.rpcsFailed.Inc() == 1 {
 					b.err <- err
 				}
@@ -198,7 +193,6 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, optionalEr
 			// If we successfully process items in minSuccess instances,
 			// then wake up the waiting rpc, so it can return early.
 			if itemTracker.succeeded.Inc() >= int32(itemTracker.minSuccess) {
-				itemTracker.done.Store(true)
 				if b.rpcsPending.Dec() == 0 {
 					b.done <- struct{}{}
 				}

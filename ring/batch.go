@@ -4,12 +4,43 @@ package ring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/status"
 )
+
+type Error interface {
+	error
+	IsClientError() bool
+}
+
+type batchError struct {
+	isClientError bool
+	err           error
+}
+
+func newError(err error) Error {
+	var e Error
+	if errors.As(err, &e) {
+		return e
+	}
+	isClientError := false
+	if s, ok := status.FromError(err); ok && s.Code()/100 == 4 {
+		isClientError = true
+	}
+	return batchError{isClientError: isClientError, err: err}
+}
+
+func (e batchError) IsClientError() bool {
+	return e.isClientError
+}
+
+func (e batchError) Error() string {
+	return e.err.Error()
+}
 
 type batchTracker struct {
 	rpcsPending atomic.Int32
@@ -25,23 +56,25 @@ type instance struct {
 }
 
 type itemTracker struct {
-	minSuccess  int
-	maxFailures int
-	succeeded   atomic.Int32
-	failed4xx   atomic.Int32
-	failed5xx   atomic.Int32
-	remaining   atomic.Int32
-	err         atomic.Error
+	minSuccess   int
+	maxFailures  int
+	succeeded    atomic.Int32
+	failedClient atomic.Int32
+	failedServer atomic.Int32
+	remaining    atomic.Int32
+	err          atomic.Error
+	done         atomic.Bool
 }
 
 func (i *itemTracker) recordError(err error) int32 {
 	i.err.Store(err)
 
-	if s, ok := status.FromError(err); ok && s.Code()/100 == 4 {
-		return i.failed4xx.Inc()
+	e := newError(err)
+	if e.IsClientError() {
+		return i.failedClient.Inc()
 	}
 
-	return i.failed5xx.Inc()
+	return i.failedServer.Inc()
 }
 
 // DoBatch request against a set of keys in the ring, handling replication and
@@ -134,29 +167,34 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
 	//
 	// The use of atomic increments here is needed as:
 	// * rpcsPending and rpcsFailed guarantee only a single goroutine will write to either channel
-	// * succeeded, failed4xx, failed5xx and remaining guarantee that the "return decision" is made atomically
+	// * succeeded, failedClient, failedServer and remaining guarantee that the "return decision" is made atomically
 	// avoiding race condition
-	for i := range itemTrackers {
+	for _, itemTracker := range itemTrackers {
+		if itemTracker.done.Load() {
+			continue
+		}
 		if err != nil {
 			// Track the number of errors by error family, and if it exceeds maxFailures
 			// shortcut the waiting rpc.
-			errCount := itemTrackers[i].recordError(err)
+			errCount := itemTracker.recordError(err)
 			// We should return an error if we reach the maxFailure (quorum) on a given error family OR
-			// we don't have any remaining instances to try.
+			// we don't have any remaining instances to try. In the following we use ClientError and ServerError
+			// to annotate instances of ring.Error whose IsClientError() returns true and false respectively.
 			//
-			// Ex: 2xx, 4xx, 5xx -> return 5xx
-			// Ex: 4xx, 4xx, _ -> return 4xx
-			// Ex: 5xx, _, 5xx -> return 5xx
+			// Ex: _ ClientError, SeriverError -> return ServerError
+			// Ex: ClientError, ClientError, _ -> return ClientError
+			// Ex: ServerError, _, ServerError -> return ServerError
 			//
-			// The reason for searching for quorum in 4xx and 5xx errors separately is to give a more accurate
-			// response to the initial request. So if a quorum of instances rejects the request with 4xx, then the request should be rejected
-			// even if less-than-quorum instances indicated a failure to process the request (via 5xx).
+			// The reason for searching for quorum in ClientError and ServerError errors separately is to give a more accurate
+			// response to the initial request. So if a quorum of instances rejects the request with ClientError, then the request should be rejected
+			// even if less-than-quorum instances indicated a failure to process the request (via ServerError).
 			// The speculation is that had the unavailable instances been available,
-			// they would have rejected the request with a 4xx as well.
-			// Conversely, if a quorum of instances failed to process the request via 5xx and less-than-quorum
-			// instances rejected it with 4xx, then we do not have quorum to reject the request as a 4xx. Instead,
-			// we return the last 5xx error for debuggability.
-			if errCount > int32(itemTrackers[i].maxFailures) || itemTrackers[i].remaining.Dec() == 0 {
+			// they would have rejected the request with a ClientError as well.
+			// Conversely, if a quorum of instances failed to process the request via ServerError and less-than-quorum
+			// instances rejected it with ClientError, then we do not have quorum to reject the request as a ClientError. Instead,
+			// we return the last ServerError error for debuggability.
+			if errCount > int32(itemTracker.maxFailures) || itemTracker.remaining.Dec() == 0 {
+				itemTracker.done.Store(true)
 				if b.rpcsFailed.Inc() == 1 {
 					b.err <- err
 				}
@@ -164,7 +202,8 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
 		} else {
 			// If we successfully process items in minSuccess instances,
 			// then wake up the waiting rpc, so it can return early.
-			if itemTrackers[i].succeeded.Inc() >= int32(itemTrackers[i].minSuccess) {
+			if itemTracker.succeeded.Inc() >= int32(itemTracker.minSuccess) {
+				itemTracker.done.Store(true)
 				if b.rpcsPending.Dec() == 0 {
 					b.done <- struct{}{}
 				}
@@ -172,11 +211,10 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
 			}
 
 			// If we successfully called this particular instance, but we don't have any remaining instances to try,
-			// and we failed to call minSuccess instances, then we need to return the last error
-			// Ex: 4xx, 5xx, 2xx
-			if itemTrackers[i].remaining.Dec() == 0 {
+			// and we failed to call minSuccess instances, then we need to return the last error.
+			if itemTracker.remaining.Dec() == 0 {
 				if b.rpcsFailed.Inc() == 1 {
-					b.err <- itemTrackers[i].err.Load()
+					b.err <- itemTracker.err.Load()
 				}
 			}
 		}

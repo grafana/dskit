@@ -4,43 +4,12 @@ package ring
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/status"
 )
-
-type Error interface {
-	error
-	IsClientError() bool
-}
-
-type batchError struct {
-	isClientError bool
-	err           error
-}
-
-func newError(err error) Error {
-	var e Error
-	if errors.As(err, &e) {
-		return e
-	}
-	isClientError := false
-	if s, ok := status.FromError(err); ok && s.Code()/100 == 4 {
-		isClientError = true
-	}
-	return batchError{isClientError: isClientError, err: err}
-}
-
-func (e batchError) IsClientError() bool {
-	return e.isClientError
-}
-
-func (e batchError) Error() string {
-	return e.err.Error()
-}
 
 type batchTracker struct {
 	rpcsPending atomic.Int32
@@ -66,15 +35,38 @@ type itemTracker struct {
 	done         atomic.Bool
 }
 
-func (i *itemTracker) recordError(err error) int32 {
+func (i *itemTracker) recordError(err error, optionalFilters ...OptionalErrorFilter) int32 {
 	i.err.Store(err)
 
-	e := newError(err)
-	if e.IsClientError() {
+	var isClientError bool
+	if optionalFilters == nil {
+		isClientError = httpStatus4xxFilter(err)
+	} else {
+		isClientError = applyOptionalErrorFilters(err, optionalFilters...)
+	}
+
+	if isClientError {
 		return i.failedClient.Inc()
 	}
 
 	return i.failedServer.Inc()
+}
+
+type OptionalErrorFilter func(error) bool
+
+var httpStatus4xxFilter = func(err error) bool {
+	if s, ok := status.FromError(err); ok && s.Code()/100 == 4 {
+		return true
+	}
+	return false
+}
+
+func applyOptionalErrorFilters(err error, filters ...OptionalErrorFilter) bool {
+	result := true
+	for _, filter := range filters {
+		result = result && filter(err)
+	}
+	return result
 }
 
 // DoBatch request against a set of keys in the ring, handling replication and
@@ -88,8 +80,11 @@ func (i *itemTracker) recordError(err error) int32 {
 //
 // cleanup() is always called, either on an error before starting the batches or after they all finish.
 //
+// optionalErrorFilters represent a set of conditions that an error returned
+// by the callback function should satisfy in order to be treated as a client error.
+//
 // Not implemented as a method on Ring so we can test separately.
-func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, cleanup func()) error {
+func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, cleanup func(), optionalErrorFilters ...OptionalErrorFilter) error {
 	if r.InstancesCount() <= 0 {
 		cleanup()
 		return fmt.Errorf("DoBatch: InstancesCount <= 0")
@@ -139,7 +134,7 @@ func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callb
 	for _, i := range instances {
 		go func(i instance) {
 			err := callback(i.desc, i.indexes)
-			tracker.record(i.itemTrackers, err)
+			tracker.record(i.itemTrackers, err, optionalErrorFilters...)
 			wg.Done()
 		}(i)
 	}
@@ -161,7 +156,7 @@ func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callb
 	}
 }
 
-func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
+func (b *batchTracker) record(itemTrackers []*itemTracker, err error, optionalErrorFilters ...OptionalErrorFilter) {
 	// If we reach the required number of successful puts on this item, then decrement the
 	// number of pending items by one.
 	//
@@ -176,12 +171,12 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error) {
 		if err != nil {
 			// Track the number of errors by error family, and if it exceeds maxFailures
 			// shortcut the waiting rpc.
-			errCount := itemTracker.recordError(err)
+			errCount := itemTracker.recordError(err, optionalErrorFilters...)
 			// We should return an error if we reach the maxFailure (quorum) on a given error family OR
 			// we don't have any remaining instances to try. In the following we use ClientError and ServerError
 			// to annotate instances of ring.Error whose IsClientError() returns true and false respectively.
 			//
-			// Ex: _ ClientError, SeriverError -> return ServerError
+			// Ex: _ ClientError, ServerError -> return ServerError
 			// Ex: ClientError, ClientError, _ -> return ClientError
 			// Ex: ServerError, _, ServerError -> return ServerError
 			//

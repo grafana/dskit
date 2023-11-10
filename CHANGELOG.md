@@ -93,7 +93,7 @@
 * [ENHANCEMENT] Runtimeconfig: Allow providing multiple runtime config yaml files as comma separated list file paths. #183
 * [ENHANCEMENT] Memberlist: Add cluster label support to memberlist client. #187
 * [ENHANCEMENT] Runtimeconfig: Don't unmarshal and merge runtime config yaml files if they haven't changed since last check. #218
-* [ENHANCEMENT] ring: DoBatch now differentiates between 4xx and 5xx GRPC errors, as well as between errors implementing `ring.Error` interface (client or server errors), and keeps track of them separately. It only returns when there is a quorum of either error class. #201 #427
+* [ENHANCEMENT] ring: DoBatch now differentiates between 4xx and 5xx GRPC errors, as well as between other errors satisfying or not optional conditions of type `ring.OptionalErrorFilter`, and keeps track of them separately. It only returns when there is a quorum of either error class. #201 #427
 * [ENHANCEMENT] Added `<prefix>.tls-min-version` and `<prefix>.tls-cipher-suites` flags to client configurations. #217
 * [ENHANCEMENT] Concurrency: Add LimitedConcurrencySingleFlight to run jobs concurrently and with in-flight deduplication. #214
 * [ENHANCEMENT] Add the ability to define custom gRPC health checks. #227

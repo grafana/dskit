@@ -172,18 +172,21 @@ func TestDoBatchZeroInstances(t *testing.T) {
 }
 
 func TestDoBatch_QuorumError(t *testing.T) {
-	// we should run several write request to make sure we don't have any race condition on the batchTracker code
-	const numberOfOperations = 10000
-	instanceReturnErrors := [3]error{nil, nil, nil}
+	const (
+		// we should run several write request to make sure we don't have any race condition on the batchTracker code
+		numberOfOperations = 10000
+		replicationFactor  = 3
+	)
+
 	desc := NewDesc()
-	for address := range instanceReturnErrors {
+	for address := 0; address < replicationFactor; address++ {
 		instTokens := GenerateTokens(128, nil)
 		instanceID := fmt.Sprintf("%d", address)
 		desc.AddIngester(instanceID, instanceID, "", instTokens, ACTIVE, time.Now())
 	}
 	ringConfig := Config{
 		HeartbeatTimeout:  time.Hour,
-		ReplicationFactor: 3,
+		ReplicationFactor: replicationFactor,
 	}
 	ring, err := NewWithStoreClientAndStrategy(ringConfig, "ingester", ringKey, nil, NewDefaultReplicationStrategy(), nil, log.NewNopLogger())
 	require.NoError(t, err)
@@ -191,14 +194,14 @@ func TestDoBatch_QuorumError(t *testing.T) {
 	operationKeys := []uint32{1, 10, 100}
 	ctx := context.Background()
 	unfinishedDoBatchCalls := sync.WaitGroup{}
-	runDoBatch := func() error {
+	runDoBatch := func(instanceReturnErrors [replicationFactor]error, optionalErrorFilters ...OptionalErrorFilter) error {
 		unfinishedDoBatchCalls.Add(1)
 		returnInstanceError := func(i InstanceDesc, _ []int) error {
 			instanceID, err := strconv.Atoi(i.Addr)
 			require.NoError(t, err)
 			return instanceReturnErrors[instanceID]
 		}
-		return DoBatch(ctx, Write, ring, operationKeys, returnInstanceError, unfinishedDoBatchCalls.Done)
+		return DoBatch(ctx, Write, ring, operationKeys, returnInstanceError, unfinishedDoBatchCalls.Done, optionalErrorFilters...)
 	}
 
 	updateState := func(instanceIDs []string, state InstanceState) {
@@ -213,79 +216,89 @@ func TestDoBatch_QuorumError(t *testing.T) {
 
 	http429Error := httpgrpc.Errorf(429, "Throttling")
 	http500Error := httpgrpc.Errorf(500, "InternalServerError")
-	ringClientError := batchError{isClientError: true}
-	ringServerError := batchError{isClientError: false}
+	mockClientError := mockError{isClientErr: true}
+	mockServerError := mockError{isClientErr: false}
+
+	var isClientErr OptionalErrorFilter = func(err error) bool {
+		if mockErr, ok := err.(mockError); ok {
+			return mockErr.isClientError()
+		}
+		return false
+	}
 
 	testCases := map[string]struct {
-		errors               [3]error
+		errors               [replicationFactor]error
 		unavailableInstances []string
+		optionalErrorFilters []OptionalErrorFilter
 		acceptableOutcomes   []error
 	}{
 		"no error should return no error": {
-			errors:             [3]error{nil, nil, nil},
+			errors:             [replicationFactor]error{nil, nil, nil},
 			acceptableOutcomes: nil,
 		},
-		"only one HTTP error should return no error": {
-			errors:             [3]error{http500Error, nil, nil},
+		"only one HTTP error without filters should return no error": {
+			errors:             [replicationFactor]error{http500Error, nil, nil},
 			acceptableOutcomes: nil,
 		},
-		"only one ring.Error error should return no error": {
-			errors:             [3]error{ringClientError, nil, nil},
+		"only one client error without filters should return no error": {
+			errors:             [replicationFactor]error{mockClientError, nil, nil},
 			acceptableOutcomes: nil,
 		},
-		"2 HTTP 4xx and 1 HTTP 5xx errors should return 4xx": {
-			errors:             [3]error{http429Error, http500Error, http429Error},
+		"2 HTTP 4xx and 1 HTTP 5xx errors without filters should return 4xx": {
+			errors:             [replicationFactor]error{http429Error, http500Error, http429Error},
 			acceptableOutcomes: []error{http429Error},
 		},
-		"2 HTTP 5xx and 1 HTTP 4xx errors should return 5xx": {
-			errors:             [3]error{http500Error, http429Error, http500Error},
+		"2 HTTP 5xx and 1 HTTP 4xx errors without filters should return 5xx": {
+			errors:             [replicationFactor]error{http500Error, http429Error, http500Error},
 			acceptableOutcomes: []error{http500Error},
 		},
-		"1 HTTP 4xx, 1 HTTP 5xx and 1 success should return one of the two HTTP errors": {
-			errors:             [3]error{http429Error, http500Error, nil},
+		"1 HTTP 4xx, 1 HTTP 5xx and 1 success without filters should return one of the two HTTP errors": {
+			errors:             [replicationFactor]error{http429Error, http500Error, nil},
 			acceptableOutcomes: []error{http429Error, http500Error},
 		},
-		"1 HTTP error and 1 unhealthy instance should return that error": {
-			errors:               [3]error{http500Error, nil, nil},
+		"1 HTTP error and 1 unhealthy instance without filters should return that error": {
+			errors:               [replicationFactor]error{http500Error, nil, nil},
 			unavailableInstances: []string{"2"},
 			acceptableOutcomes:   []error{http500Error},
 		},
-		"2 client and 1 server ring.Errors return a client ring.Error": {
-			errors:             [3]error{ringClientError, ringServerError, ringClientError},
-			acceptableOutcomes: []error{ringClientError},
+		"2 client and 1 server errors with client filter should return the client error": {
+			errors:               [replicationFactor]error{mockClientError, mockClientError, mockServerError},
+			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			acceptableOutcomes:   []error{mockClientError},
 		},
-		"2 server and 1 client ring.Errors return a server ring.Error": {
-			errors:             [3]error{ringServerError, ringClientError, ringServerError},
-			acceptableOutcomes: []error{ringServerError},
+		"2 server and 1 client errors with client filter should return the server error": {
+			errors:               [replicationFactor]error{mockServerError, mockClientError, mockServerError},
+			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			acceptableOutcomes:   []error{mockServerError},
 		},
-		"1 client, 1 server ring.Errors and 1 success return one of the two ring.Errors": {
-			errors:             [3]error{ringClientError, ringServerError, nil},
-			acceptableOutcomes: []error{ringClientError, ringServerError},
+		"1 client, 1 server error and 1 success with client filter return one of the two error": {
+			errors:               [replicationFactor]error{mockServerError, mockClientError, mockServerError},
+			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			acceptableOutcomes:   []error{mockClientError, mockServerError},
 		},
-		"1 ring.Error and 1 unhealthy instance should return that error": {
-			errors:               [3]error{ringClientError, nil, nil},
+		"1 client error and 1 unhealthy instance with the client filter should return that error": {
+			errors:               [replicationFactor]error{mockClientError, nil, nil},
+			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
 			unavailableInstances: []string{"2"},
-			acceptableOutcomes:   []error{ringClientError},
+			acceptableOutcomes:   []error{mockClientError},
+		},
+		"1 server error and 1 unhealthy instance with the client filter should return that error": {
+			errors:               [replicationFactor]error{mockServerError, nil, nil},
+			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			unavailableInstances: []string{"2"},
+			acceptableOutcomes:   []error{mockServerError},
 		},
 	}
 
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			instanceReturnErrors = testData.errors
 			updateState(testData.unavailableInstances, LEFT)
 			for i := 0; i < numberOfOperations; i++ {
-				err := runDoBatch()
+				err := runDoBatch(testData.errors, testData.optionalErrorFilters...)
 				if testData.acceptableOutcomes == nil {
 					require.NoError(t, err)
 				} else {
-					found := false
-					for i := 0; i < len(testData.acceptableOutcomes) && !found; i++ {
-						found = err == testData.acceptableOutcomes[i]
-					}
-					if !found {
-						fmt.Println(testName, err)
-					}
-					require.True(t, found)
+					require.Contains(t, testData.acceptableOutcomes, err)
 				}
 			}
 			unfinishedDoBatchCalls.Wait()
@@ -3234,4 +3247,17 @@ func TestCountTokensMultiZones(t *testing.T) {
 			assert.Equal(t, testData.expected, testData.ring.CountTokens())
 		})
 	}
+}
+
+type mockError struct {
+	isClientErr bool
+	message     string
+}
+
+func (e mockError) isClientError() bool {
+	return e.isClientErr
+}
+
+func (e mockError) Error() string {
+	return e.message
 }

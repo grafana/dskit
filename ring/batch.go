@@ -34,20 +34,12 @@ type itemTracker struct {
 	err          atomic.Error
 }
 
-func (i *itemTracker) recordError(err error, optionalFilters ...OptionalErrorFilter) int32 {
+func (i *itemTracker) recordError(err error, isClientError func(error) bool) int32 {
 	i.err.Store(err)
 
-	var isClientError bool
-	if optionalFilters == nil {
-		isClientError = isHTTPStatus4xx(err)
-	} else {
-		isClientError = applyOptionalErrorFilters(err, optionalFilters...)
-	}
-
-	if isClientError {
+	if isClientError(err) {
 		return i.failedClient.Inc()
 	}
-
 	return i.failedServer.Inc()
 }
 
@@ -58,32 +50,29 @@ func isHTTPStatus4xx(err error) bool {
 	return false
 }
 
-type OptionalErrorFilter func(error) bool
-
-func applyOptionalErrorFilters(err error, filters ...OptionalErrorFilter) bool {
-	result := false
-	for _, filter := range filters {
-		result = result || filter(err)
-	}
-	return result
+// DoBatch is a special case of DoBatchWithClientError where errors
+// containing HTTP status code 4xx are treated as client errors.
+func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, cleanup func()) error {
+	return DoBatchWithClientError(ctx, op, r, keys, callback, cleanup, isHTTPStatus4xx)
 }
 
-// DoBatch request against a set of keys in the ring, handling replication and
-// failures. For example if we want to write N items where they may all
-// hit different instances, and we want them all replicated R ways with
-// quorum writes, we track the relationship between batch RPCs and the items
-// within them.
+// DoBatchWithClientError request against a set of keys in the ring,
+// handling replication and failures. For example if we want to write
+// N items where they may all hit different instances, and we want them
+// all replicated R ways with quorum writes, we track the relationship
+// between batch RPCs and the items within them.
 //
-// Callback is passed the instance to target, and the indexes of the keys
+// callback() is passed the instance to target, and the indexes of the keys
 // to send to that instance.
 //
-// cleanup() is always called, either on an error before starting the batches or after they all finish.
+// cleanup() is always called, either on an error before starting the batches
+// or after they all finish.
 //
-// optionalErrorFilters represent a set of conditions that an error returned
-// by the callback function should satisfy in order to be treated as a client error.
+// isClientError() represents a condition that an error returned the callback
+// function should satisfy in order to be treated as a client error.
 //
-// Not implemented as a method on Ring so we can test separately.
-func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, cleanup func(), optionalErrorFilters ...OptionalErrorFilter) error {
+// Not implemented as a method on Ring, so we can test separately.
+func DoBatchWithClientError(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, cleanup func(), isClientError func(error) bool) error {
 	if r.InstancesCount() <= 0 {
 		cleanup()
 		return fmt.Errorf("DoBatch: InstancesCount <= 0")
@@ -133,7 +122,7 @@ func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callb
 	for _, i := range instances {
 		go func(i instance) {
 			err := callback(i.desc, i.indexes)
-			tracker.record(i.itemTrackers, err, optionalErrorFilters...)
+			tracker.record(i.itemTrackers, err, isClientError)
 			wg.Done()
 		}(i)
 	}
@@ -155,7 +144,7 @@ func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callb
 	}
 }
 
-func (b *batchTracker) record(itemTrackers []*itemTracker, err error, optionalErrorFilters ...OptionalErrorFilter) {
+func (b *batchTracker) record(itemTrackers []*itemTracker, err error, isClientError func(error) bool) {
 	// If we reach the required number of successful puts on this item, then decrement the
 	// number of pending items by one.
 	//
@@ -167,7 +156,7 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, optionalEr
 		if err != nil {
 			// Track the number of errors by error family, and if it exceeds maxFailures
 			// shortcut the waiting rpc.
-			errCount := itemTracker.recordError(err, optionalErrorFilters...)
+			errCount := itemTracker.recordError(err, isClientError)
 			// We should return an error if we reach the maxFailure (quorum) on a given error family OR
 			// we don't have any remaining instances to try. In the following we use ClientError and ServerError
 			// to annotate instances of ring.Error whose IsClientError() returns true and false respectively.

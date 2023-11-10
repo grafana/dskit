@@ -194,14 +194,14 @@ func TestDoBatch_QuorumError(t *testing.T) {
 	operationKeys := []uint32{1, 10, 100}
 	ctx := context.Background()
 	unfinishedDoBatchCalls := sync.WaitGroup{}
-	runDoBatch := func(instanceReturnErrors [replicationFactor]error, optionalErrorFilters ...OptionalErrorFilter) error {
+	runDoBatch := func(instanceReturnErrors [replicationFactor]error, isClientError func(error) bool) error {
 		unfinishedDoBatchCalls.Add(1)
 		returnInstanceError := func(i InstanceDesc, _ []int) error {
 			instanceID, err := strconv.Atoi(i.Addr)
 			require.NoError(t, err)
 			return instanceReturnErrors[instanceID]
 		}
-		return DoBatch(ctx, Write, ring, operationKeys, returnInstanceError, unfinishedDoBatchCalls.Done, optionalErrorFilters...)
+		return DoBatchWithClientError(ctx, Write, ring, operationKeys, returnInstanceError, unfinishedDoBatchCalls.Done, isClientError)
 	}
 
 	updateState := func(instanceIDs []string, state InstanceState) {
@@ -219,7 +219,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 	mockClientError := mockError{isClientErr: true}
 	mockServerError := mockError{isClientErr: false}
 
-	var isClientErr OptionalErrorFilter = func(err error) bool {
+	isClientErr := func(err error) bool {
 		if mockErr, ok := err.(mockError); ok {
 			return mockErr.isClientError()
 		}
@@ -229,82 +229,88 @@ func TestDoBatch_QuorumError(t *testing.T) {
 	testCases := map[string]struct {
 		errors               [replicationFactor]error
 		unavailableInstances []string
-		optionalErrorFilters []OptionalErrorFilter
+		isClientError        func(error) bool
 		acceptableOutcomes   []error
 	}{
 		"no error should return no error": {
 			errors:             [replicationFactor]error{nil, nil, nil},
 			acceptableOutcomes: nil,
 		},
-		"only one HTTP error without filters should return no error": {
+		"only one HTTP error with isHTTPStatus4xx filter should return no error": {
 			errors:             [replicationFactor]error{http500Error, nil, nil},
+			isClientError:      isHTTPStatus4xx,
 			acceptableOutcomes: nil,
 		},
-		"only one client error without filters should return no error": {
+		"only one client error with isHTTPStatus4xx filter should return no error": {
 			errors:             [replicationFactor]error{mockClientError, nil, nil},
+			isClientError:      isHTTPStatus4xx,
 			acceptableOutcomes: nil,
 		},
-		"2 HTTP 4xx and 1 HTTP 5xx errors without filters should return 4xx": {
+		"2 HTTP 4xx and 1 HTTP 5xx errors with isHTTPStatus4xx filter should return 4xx": {
 			errors:             [replicationFactor]error{http429Error, http500Error, http429Error},
+			isClientError:      isHTTPStatus4xx,
 			acceptableOutcomes: []error{http429Error},
 		},
-		"2 HTTP 5xx and 1 HTTP 4xx errors without filters should return 5xx": {
+		"2 HTTP 5xx and 1 HTTP 4xx errors with isHTTPStatus4xx filter should return 5xx": {
 			errors:             [replicationFactor]error{http500Error, http429Error, http500Error},
+			isClientError:      isHTTPStatus4xx,
 			acceptableOutcomes: []error{http500Error},
 		},
-		"1 HTTP 4xx, 1 HTTP 5xx and 1 success without filters should return one of the two HTTP errors": {
+		"1 HTTP 4xx, 1 HTTP 5xx and 1 success with isHTTPStatus4xx filter should return one of the two HTTP errors": {
 			errors:             [replicationFactor]error{http429Error, http500Error, nil},
+			isClientError:      isHTTPStatus4xx,
 			acceptableOutcomes: []error{http429Error, http500Error},
 		},
-		"1 HTTP error and 1 unhealthy instance without filters should return that error": {
+		"1 HTTP error and 1 unhealthy instance with isHTTPStatus4xx filter should return that error": {
 			errors:               [replicationFactor]error{http500Error, nil, nil},
+			isClientError:        isHTTPStatus4xx,
 			unavailableInstances: []string{"2"},
 			acceptableOutcomes:   []error{http500Error},
 		},
-		"2 client and 1 server errors with client filter should return the client error": {
-			errors:               [replicationFactor]error{mockClientError, mockClientError, mockServerError},
-			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
-			acceptableOutcomes:   []error{mockClientError},
+		"2 client and 1 server errors with isClientErr filter should return the client error": {
+			errors:             [replicationFactor]error{mockClientError, mockClientError, mockServerError},
+			isClientError:      isClientErr,
+			acceptableOutcomes: []error{mockClientError},
 		},
-		"2 server and 1 client errors with client filter should return the server error": {
-			errors:               [replicationFactor]error{mockServerError, mockClientError, mockServerError},
-			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
-			acceptableOutcomes:   []error{mockServerError},
+		"2 server and 1 client errors with isClientErr filter should return the server error": {
+			errors:             [replicationFactor]error{mockServerError, mockClientError, mockServerError},
+			isClientError:      isClientErr,
+			acceptableOutcomes: []error{mockServerError},
 		},
-		"1 client, 1 server error and 1 success with client filter return one of the two error": {
-			errors:               [replicationFactor]error{mockServerError, mockClientError, mockServerError},
-			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
-			acceptableOutcomes:   []error{mockClientError, mockServerError},
+		"1 client, 1 server error and 1 success with isClientErr filter return one of the two error": {
+			errors:             [replicationFactor]error{mockServerError, mockClientError, mockServerError},
+			isClientError:      isClientErr,
+			acceptableOutcomes: []error{mockClientError, mockServerError},
 		},
-		"1 client error and 1 unhealthy instance with the client filter should return that error": {
+		"1 client error and 1 unhealthy instance with isClientErr filter should return that error": {
 			errors:               [replicationFactor]error{mockClientError, nil, nil},
-			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			isClientError:        isClientErr,
 			unavailableInstances: []string{"2"},
 			acceptableOutcomes:   []error{mockClientError},
 		},
-		"1 server error and 1 unhealthy instance with the client filter should return that error": {
+		"1 server error and 1 unhealthy instance with isClientErr filter should return that error": {
 			errors:               [replicationFactor]error{mockServerError, nil, nil},
-			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
+			isClientError:        isClientErr,
 			unavailableInstances: []string{"2"},
 			acceptableOutcomes:   []error{mockServerError},
 		},
-		"2 HTTP 4xx and 1 client error with the client filter should return the HTTP 4xx error": {
+		"2 HTTP 4xx and 1 client error with isClientErr filter should return the HTTP 4xx error": {
 			// isClientErr filter applied to http429Error is false, so http429Error is not treated as a client error
-			errors:               [replicationFactor]error{http429Error, http429Error, mockClientError},
-			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
-			acceptableOutcomes:   []error{http429Error},
+			errors:             [replicationFactor]error{http429Error, http429Error, mockClientError},
+			isClientError:      isClientErr,
+			acceptableOutcomes: []error{http429Error},
 		},
-		"1 HTTP 4xx, 1 HTTP 5xx and 1 client error with the client filter should return either HTTP 4xx or HTTP 5xx error": {
+		"1 HTTP 4xx, 1 HTTP 5xx and 1 client error with isClientErr filter should return either HTTP 4xx or HTTP 5xx error": {
 			// isClientErr filter applied to http429Error is false, so http429Error is not treated as a client error
-			errors:               [replicationFactor]error{http429Error, http500Error, mockClientError},
-			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
-			acceptableOutcomes:   []error{http429Error, http500Error},
+			errors:             [replicationFactor]error{http429Error, http500Error, mockClientError},
+			isClientError:      isClientErr,
+			acceptableOutcomes: []error{http429Error, http500Error},
 		},
-		"1 HTTP 4xx, 1 client and 1 server error with the client filter should return either the HTTP 4xx or the server error": {
+		"1 HTTP 4xx, 1 client and 1 server error with isClientErr filter should return either the HTTP 4xx or the server error": {
 			// isClientErr filter applied to http429Error is false, so http429Error is not treated as a client error
-			errors:               [replicationFactor]error{http429Error, mockClientError, mockServerError},
-			optionalErrorFilters: []OptionalErrorFilter{isClientErr},
-			acceptableOutcomes:   []error{mockServerError, http429Error},
+			errors:             [replicationFactor]error{http429Error, mockClientError, mockServerError},
+			isClientError:      isClientErr,
+			acceptableOutcomes: []error{mockServerError, http429Error},
 		},
 	}
 
@@ -312,7 +318,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			updateState(testData.unavailableInstances, LEFT)
 			for i := 0; i < numberOfOperations; i++ {
-				err := runDoBatch(testData.errors, testData.optionalErrorFilters...)
+				err := runDoBatch(testData.errors, testData.isClientError)
 				if testData.acceptableOutcomes == nil {
 					require.NoError(t, err)
 				} else {

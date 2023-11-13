@@ -26,6 +26,10 @@ help: ## Display this help and any documented user-facing targets. Other undocum
 test: ## Runs Go tests
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
+.PHONY: test-benchmarks
+test-benchmarks: ## Runs Go benchmarks with 1 iteration to make sure they still make sense
+	go test -tags netgo -run=NONE -bench=. -benchtime=1x -timeout 30m ./...
+
 .PHONY: lint
 lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint ## Runs misspell, golangci-lint, and faillint
 	misspell -error README.md CONTRIBUTING.md LICENSE

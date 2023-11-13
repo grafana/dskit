@@ -15,6 +15,7 @@ endif
 ifeq ($(UNAME_S), Darwin)
 	PROTO_ZIP=protoc-3.6.1-osx-x86_64.zip
 endif
+GO_MODS=$(shell find . $(DONT_FIND) -type f -name 'go.mod' -print)
 
 .DEFAULT_GOAL := help
 
@@ -51,10 +52,7 @@ clean: ## Removes the .tools/ directory
 
 .PHONY: mod-check
 mod-check: ## Git diffs the go mod files
-	GO111MODULE=on go mod download
-	GO111MODULE=on go mod verify
-	GO111MODULE=on go mod tidy
-	@git diff --exit-code -- go.sum go.mod
+	@./.scripts/mod-check.sh $(GO_MODS)
 
 .PHONY: clean-protos
 clean-protos: ## Removes the proto files

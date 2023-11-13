@@ -71,4 +71,4 @@ require (
 
 replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 
-replace github.com/grafana/dskit => ../../../../dskit
+replace github.com/grafana/dskit => ../../../

@@ -68,8 +68,9 @@ func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callb
 // cleanup() is always called, either on an error before starting the batches
 // or after they all finish.
 //
-// isClientError() represents a condition that an error returned the callback
-// function should satisfy in order to be treated as a client error.
+// isClientError() classifies errors returned by `callback()` into client or
+// server errors. See `batchTracker.record()` function for details about how
+// errors are combined into final error returned by DoBatchWithClientError.
 //
 // Not implemented as a method on Ring, so we can test separately.
 func DoBatchWithClientError(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, cleanup func(), isClientError func(error) bool) error {
@@ -152,18 +153,18 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, isClientEr
 	// * rpcsPending and rpcsFailed guarantee only a single goroutine will write to either channel
 	// * succeeded, failedClient, failedServer and remaining guarantee that the "return decision" is made atomically
 	// avoiding race condition
-	for _, itemTracker := range itemTrackers {
+	for _, it := range itemTrackers {
 		if err != nil {
 			// Track the number of errors by error family, and if it exceeds maxFailures
 			// shortcut the waiting rpc.
-			errCount := itemTracker.recordError(err, isClientError)
+			errCount := it.recordError(err, isClientError)
 			// We should return an error if we reach the maxFailure (quorum) on a given error family OR
 			// we don't have any remaining instances to try. In the following we use ClientError and ServerError
-			// to annotate instances of ring.Error whose IsClientError() returns true and false respectively.
+			// to denote errors, for which isClientError() returns true and false respectively.
 			//
-			// Ex: _ ClientError, ServerError -> return ServerError
-			// Ex: ClientError, ClientError, _ -> return ClientError
-			// Ex: ServerError, _, ServerError -> return ServerError
+			// Ex: Success, ClientError, ServerError -> return ServerError
+			// Ex: ClientError, ClientError, Success -> return ClientError
+			// Ex: ServerError, Success, ServerError -> return ServerError
 			//
 			// The reason for searching for quorum in ClientError and ServerError errors separately is to give a more accurate
 			// response to the initial request. So if a quorum of instances rejects the request with ClientError, then the request should be rejected
@@ -173,7 +174,7 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, isClientEr
 			// Conversely, if a quorum of instances failed to process the request via ServerError and less-than-quorum
 			// instances rejected it with ClientError, then we do not have quorum to reject the request as a ClientError. Instead,
 			// we return the last ServerError error for debuggability.
-			if errCount > int32(itemTracker.maxFailures) || itemTracker.remaining.Dec() == 0 {
+			if errCount > int32(it.maxFailures) || it.remaining.Dec() == 0 {
 				if b.rpcsFailed.Inc() == 1 {
 					b.err <- err
 				}
@@ -181,7 +182,7 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, isClientEr
 		} else {
 			// If we successfully process items in minSuccess instances,
 			// then wake up the waiting rpc, so it can return early.
-			if itemTracker.succeeded.Inc() >= int32(itemTracker.minSuccess) {
+			if it.succeeded.Inc() >= int32(it.minSuccess) {
 				if b.rpcsPending.Dec() == 0 {
 					b.done <- struct{}{}
 				}
@@ -190,9 +191,9 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, isClientEr
 
 			// If we successfully called this particular instance, but we don't have any remaining instances to try,
 			// and we failed to call minSuccess instances, then we need to return the last error.
-			if itemTracker.remaining.Dec() == 0 {
+			if it.remaining.Dec() == 0 {
 				if b.rpcsFailed.Inc() == 1 {
-					b.err <- itemTracker.err.Load()
+					b.err <- it.err.Load()
 				}
 			}
 		}

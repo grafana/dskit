@@ -181,7 +181,8 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, isClientEr
 		} else {
 			// If we successfully process items in minSuccess instances,
 			// then wake up the waiting rpc, so it can return early.
-			if it.succeeded.Inc() == int32(it.minSuccess) {
+			succeeded := it.succeeded.Inc()
+			if succeeded == int32(it.minSuccess) {
 				if b.rpcsPending.Dec() == 0 {
 					b.done <- struct{}{}
 				}
@@ -190,7 +191,7 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, isClientEr
 
 			// If we successfully called this particular instance, but we don't have any remaining instances to try,
 			// and we failed to call minSuccess instances, then we need to return the last error.
-			if it.succeeded.Load() < int32(it.minSuccess) {
+			if succeeded < int32(it.minSuccess) {
 				if it.remaining.Dec() == 0 {
 					if b.rpcsFailed.Inc() == 1 {
 						b.err <- it.err.Load()

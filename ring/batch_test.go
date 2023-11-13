@@ -43,7 +43,7 @@ func TestBatchTracker_Record(t *testing.T) {
 	}
 
 	err := executeScenario(bt, badScenario)
-	require.NoError(t, err)
+	require.Error(t, err)
 
 	goodScenario := []scenario{
 		{itemTrackers: itemTrackers[:1], err: nil},

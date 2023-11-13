@@ -163,6 +163,7 @@
  * `middleware.StreamClientInstrumentInterceptor`
  * `middleware.Instrument`
 * [ENHANCEMENT] Server: Added new `-server.http-log-closed-connections-without-response-enabled` option to log details about closed connections that received no response. #426
+* [ENHANCEMENT] ring: Added new function `DoBatchWithClientError()` that extends an already existing `DoBatch()`. The former differentiates between client and server errors by the filtering function passed as a parameter. This way client and server errors can be tracked separately. The function returns only when there is a quorum of either error class. #427
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

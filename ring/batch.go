@@ -8,7 +8,8 @@ import (
 	"sync"
 
 	"go.uber.org/atomic"
-	"google.golang.org/grpc/status"
+
+	grpcUtils "github.com/grafana/dskit/grpcutil"
 )
 
 type batchTracker struct {
@@ -44,10 +45,8 @@ func (i *itemTracker) recordError(err error, isClientError func(error) bool) int
 }
 
 func isHTTPStatus4xx(err error) bool {
-	if s, ok := status.FromError(err); ok && s.Code()/100 == 4 {
-		return true
-	}
-	return false
+	code := grpcUtils.ErrorToStatusCode(err)
+	return code/100 == 4
 }
 
 // DoBatch is a special case of DoBatchWithClientError where errors

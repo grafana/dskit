@@ -49,7 +49,7 @@ func BenchmarkBatch100x1000(b *testing.B) {
 func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 	// Make a random ring with N instances, and M tokens per ingests
 	desc := NewDesc()
-	takenTokens := []uint32{}
+	var takenTokens []uint32
 	for i := 0; i < numInstances; i++ {
 		tokens := GenerateTokens(numTokens, takenTokens)
 		takenTokens = append(takenTokens, tokens...)
@@ -58,25 +58,20 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-	r := Ring{
-		cfg:      cfg,
-		ringDesc: desc,
-		strategy: NewDefaultReplicationStrategy(),
-	}
+	r, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), prometheus.NewRegistry(), log.NewNopLogger())
+	require.NoError(b, err)
+	r.updateRingState(desc)
 
 	ctx := context.Background()
-	callback := func(InstanceDesc, []int) error {
-		return nil
-	}
-	cleanup := func() {
-	}
+	callback := func(InstanceDesc, []int) error { return nil }
+	cleanup := func() {}
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	keys := make([]uint32, numKeys)
 	// Generate a batch of N random keys, and look them up
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		generateKeys(rnd, numKeys, keys)
-		err := DoBatch(ctx, Write, &r, keys, callback, cleanup)
+		err := DoBatch(ctx, Write, r, keys, callback, cleanup)
 		require.NoError(b, err)
 	}
 }

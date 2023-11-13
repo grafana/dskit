@@ -64,9 +64,7 @@ func BenchmarkMemberlistReceiveWithRingDesc(b *testing.B) {
 
 	var cfg memberlist.KVConfig
 	flagext.DefaultValues(&cfg)
-	cfg.TCPTransport = memberlist.TCPTransportConfig{
-		BindAddrs: []string{"localhost"},
-	}
+	cfg.TCPTransport = memberlist.TCPTransportConfig{}
 	cfg.Codecs = []codec.Codec{c}
 
 	mkv := memberlist.NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())

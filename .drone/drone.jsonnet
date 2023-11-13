@@ -29,9 +29,21 @@ local step = {
     image: images.golang(golang_version),
     commands: ['make test'],
   } + depends_on('make-lint'),
+
+  test_benchmarks(golang_version):: {
+    name: 'make-test-benchmarks (go %s)' % golang_version,
+    image: images.golang(golang_version),
+    commands: ['make test-benchmarks'],
+  } + depends_on('make-lint'),
 };
 
-local test_steps = [step.test(v) for v in supported_golang_versions];
+local test_steps = [
+  // Run tests with all supported golang versions.
+  step.test(v) for v in supported_golang_versions
+] + [
+  // Run benchmarks with one (the latest) supported golang version: we just want to make sure they're up to date.
+  step.test_benchmarks(supported_golang_versions[std.length(supported_golang_versions)-1]),
+];
 
 [
   pipeline.new('validate-pr') {

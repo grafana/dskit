@@ -7,7 +7,7 @@
          "commands": [
             "make mod-check"
          ],
-         "image": "golang:1.21.0",
+         "image": "golang:1.21.3",
          "name": "make-mod-check"
       },
       {
@@ -17,7 +17,7 @@
          "depends_on": [
             "make-mod-check"
          ],
-         "image": "golang:1.21.0",
+         "image": "golang:1.21.3",
          "name": "make-lint"
       },
       {
@@ -42,6 +42,16 @@
       },
       {
          "commands": [
+            "make test-benchmarks"
+         ],
+         "depends_on": [
+            "make-lint"
+         ],
+         "image": "golang:1.21.3",
+         "name": "make-test-benchmarks (go 1.21.3)"
+      },
+      {
+         "commands": [
             "apt-get update && apt-get -y install unzip",
             "go mod vendor",
             "make check-protos"
@@ -49,13 +59,13 @@
          "depends_on": [
             "make-mod-check"
          ],
-         "image": "golang:1.21.0",
+         "image": "golang:1.21.3",
          "name": "make-check-protos"
       }
    ]
 }
 ---
 kind: signature
-hmac: cc85df30ab5ea7fb028057d36dec2fb6676df9343afbac6bdc9ea99b2c913b74
+hmac: 2419eded398bf02c5da0040762394904d32600544b660d06378c1e75ec9432c4
 
 ...

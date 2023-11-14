@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	dsmath "github.com/grafana/dskit/internal/math"
@@ -58,28 +59,54 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
+	cfg.HeartbeatTimeout = time.Hour // A minute is not enough to run all benchmarks.
 	r, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), prometheus.NewRegistry(), log.NewNopLogger())
 	require.NoError(b, err)
 	r.updateRingState(desc)
 
 	ctx := context.Background()
-	callback := func(InstanceDesc, []int) error { return nil }
-	cleanup := func() {}
+	callback := func(InstanceDesc, []int) error { return deepStack(64) }
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	keys := make([]uint32, numKeys)
 	// Generate a batch of N random keys, and look them up
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		generateKeys(rnd, numKeys, keys)
-		err := DoBatch(ctx, Write, r, keys, callback, cleanup)
-		require.NoError(b, err)
-	}
+
+	// run with `benchstat -col /go` to get stats on different go= options.
+	// ref: https://pkg.go.dev/golang.org/x/perf/cmd/benchstat
+
+	b.Run("go=default", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			generateKeys(rnd, numKeys, keys)
+			err := DoBatchWithOptions(ctx, Write, r, keys, callback, DoBatchOptions{})
+			require.NoError(b, err)
+		}
+	})
+
+	b.Run("go=concurrency.ReusableGoroutinesPool", func(b *testing.B) {
+		pool := concurrency.NewReusableGoroutinesPool(100)
+		b.Cleanup(pool.Close)
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			generateKeys(rnd, numKeys, keys)
+			err := DoBatchWithOptions(ctx, Write, r, keys, callback, DoBatchOptions{Go: pool.Go})
+			require.NoError(b, err)
+		}
+	})
 }
 
 func generateKeys(r *rand.Rand, numTokens int, dest []uint32) {
 	for i := 0; i < numTokens; i++ {
 		dest[i] = r.Uint32()
 	}
+}
+
+//go:noinline
+func deepStack(depth int) error {
+	if depth == 0 {
+		return nil
+	}
+	return deepStack(depth - 1)
 }
 
 func BenchmarkUpdateRingState(b *testing.B) {
@@ -196,7 +223,10 @@ func TestDoBatch_QuorumError(t *testing.T) {
 			require.NoError(t, err)
 			return instanceReturnErrors[instanceID]
 		}
-		return DoBatchWithClientError(ctx, Write, ring, operationKeys, returnInstanceError, unfinishedDoBatchCalls.Done, isClientError)
+		return DoBatchWithOptions(ctx, Write, ring, operationKeys, returnInstanceError, DoBatchOptions{
+			Cleanup:       func() { unfinishedDoBatchCalls.Done() },
+			IsClientError: isClientError,
+		})
 	}
 
 	updateState := func(instanceIDs []string, state InstanceState) {

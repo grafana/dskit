@@ -57,6 +57,7 @@
 * [CHANGE] ring: Change `PoolFactory` function type to an interface and create function implementations. #387
 * [CHANGE] server: fix incorrect spelling of "gRPC" in `server.Config` fields. #422
 * [CHANGE] memberlist: re-resolve `JoinMembers` during full joins to the cluster (either at startup or periodic). The re-resolution happens on every 100 attempted nodes. This helps speed up joins and respect context cancelation #411
+* [CHANGE] ring: `ring.DoBatch()` was deprecated in favor of `DoBatchWithOptions()`. #431
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
@@ -165,6 +166,7 @@
  * `middleware.Instrument`
 * [ENHANCEMENT] Server: Added new `-server.http-log-closed-connections-without-response-enabled` option to log details about closed connections that received no response. #426
 * [ENHANCEMENT] ring: Added new function `DoBatchWithClientError()` that extends an already existing `DoBatch()`. The former differentiates between client and server errors by the filtering function passed as a parameter. This way client and server errors can be tracked separately. The function returns only when there is a quorum of either error class. #427
+* [ENHANCMENET] ring: Replaced `DoBatchWithClientError()` with `DoBatchWithOptions()`, allowing a new option to use a custom `Go(func())` implementation that may use pre-allocated workers instead of spawning a new goroutine for each request. #431
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

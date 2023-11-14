@@ -222,7 +222,7 @@ func generateRandomSuffix(logger log.Logger) string {
 // If joining of the cluster if configured, it is done in Running state, and if join fails and Abort flag is set, service
 // fails.
 type KV struct {
-	services.Service
+	services.NamedService
 
 	cfg        KVConfig
 	logger     log.Logger
@@ -374,7 +374,7 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 		mlkv.codecs[c.CodecID()] = c
 	}
 
-	mlkv.Service = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping).WithName("memberlist_kv")
+	mlkv.NamedService = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping).WithName("memberlist_kv")
 
 	return mlkv
 }

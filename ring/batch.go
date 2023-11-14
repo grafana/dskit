@@ -75,7 +75,7 @@ type DoBatchOptions struct {
 	Go func(func())
 }
 
-func (o *DoBatchOptions) setDefaults() {
+func (o *DoBatchOptions) replaceZeroValuesWithDefaults() {
 	if o.Cleanup == nil {
 		o.Cleanup = func() {}
 	}
@@ -96,7 +96,7 @@ func (o *DoBatchOptions) setDefaults() {
 //
 // Not implemented as a method on Ring, so we can test separately.
 func DoBatchWithOptions(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, o DoBatchOptions) error {
-	o.setDefaults()
+	o.replaceZeroValuesWithDefaults()
 
 	if r.InstancesCount() <= 0 {
 		o.Cleanup()

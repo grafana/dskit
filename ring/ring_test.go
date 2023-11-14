@@ -82,7 +82,7 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 		}
 	})
 
-	b.Run("go=concurrency.NonBlockingWorkerPool", func(b *testing.B) {
+	b.Run("go=concurrency.ReusableGoroutinesPool", func(b *testing.B) {
 		pool := concurrency.NewReusableGoroutinesPool(100)
 		b.Cleanup(pool.Close)
 

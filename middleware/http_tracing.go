@@ -107,6 +107,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 			parentSpan.SetTag("http.route", matchedRoute)
 			parentSpan.SetTag("http.user_agent", userAgent)
 			parentSpan.SetTag("root_action", childSpanName)
+			parentSpan = parentSpan.SetBaggageItem("root_action", childSpanName)
 		}
 
 		startSpanOpts := []opentracing.StartSpanOption{
@@ -128,6 +129,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		}
 
 		childSpan := tracer.StartSpan(childSpanName, startSpanOpts...)
+		childSpan = childSpan.SetBaggageItem("root_action", childSpanName)
 		defer childSpan.Finish()
 
 		r = r.WithContext(opentracing.ContextWithSpan(r.Context(), childSpan))

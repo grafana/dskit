@@ -96,17 +96,19 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		urlPath := r.URL.Path
 		userAgent := r.Header.Get("User-Agent")
 
+		// create and start child HTTP span
+		// mirroring opentracing-contrib/go-stdlib/nethttp.Middleware span name and tags
+		childSpanName := httpOperationNameFunc(r)
+
 		// tag parent httpgrpc.HTTP/Handle server span, if it exists
 		if parentSpan != nil {
 			parentSpan.SetTag(string(ext.HTTPUrl), urlPath)
 			parentSpan.SetTag(string(ext.HTTPMethod), method)
 			parentSpan.SetTag("http.route", matchedRoute)
 			parentSpan.SetTag("http.user_agent", userAgent)
+			parentSpan.SetTag("root_action", childSpanName)
 		}
 
-		// create and start child HTTP span
-		// mirroring opentracing-contrib/go-stdlib/nethttp.Middleware span name and tags
-		childSpanName := httpOperationNameFunc(r)
 		startSpanOpts := []opentracing.StartSpanOption{
 			ext.SpanKindRPCServer,
 			opentracing.Tag{Key: string(ext.Component), Value: "net/http"},
@@ -126,7 +128,6 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		}
 
 		childSpan := tracer.StartSpan(childSpanName, startSpanOpts...)
-		childSpan = childSpan.SetBaggageItem("root_action", childSpanName)
 		defer childSpan.Finish()
 
 		r = r.WithContext(opentracing.ContextWithSpan(r.Context(), childSpan))

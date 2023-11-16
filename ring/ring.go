@@ -9,7 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"sort"
+	goslices "slices"
 	"sync"
 	"time"
 
@@ -1091,31 +1091,25 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) ([]uint32, error) {
 	if !ok {
 		return nil, ErrInstanceNotFound
 	}
+	if instance.Zone == "" {
+		return nil, errors.New("zone not set")
+	}
 
 	rf := r.cfg.ReplicationFactor
 	numZones := len(r.ringTokensByZone)
 
-	if !r.cfg.ZoneAwarenessEnabled {
+	// To simplify computation of token ranges, we currently only support case where zone-awareness is enabled,
+	// and replicaction factor is equal to number of zones.
+	if !r.cfg.ZoneAwarenessEnabled || rf != numZones {
 		// if zoneAwareness is disabled we treat the whole ring as one big zone, and would
 		// need to walk the ring backwards looking for RF-1 tokens from other instances to determine the range
 		// ignore this for now
-		return nil, errors.New("zone aware replication disabled")
-	}
-
-	if rf != numZones {
-		// this is never true at GL, so ignore it for now
-		return nil, errors.New("replication factor does not equal number of zones")
+		return nil, errors.New("can't use ring configuration for computing token ranges")
 	}
 
 	// at this point zone-aware replication is enabled, and rf == numZones
 	// this means that we will write to one replica in each zone, so we can just consider the zonal ring for our instance
-
-	zone := instance.Zone
-	if zone == "" {
-		return nil, errors.New("zone not set")
-	}
-
-	subringTokens, ok := r.ringTokensByZone[zone]
+	subringTokens, ok := r.ringTokensByZone[instance.Zone]
 	if !ok || len(subringTokens) == 0 {
 		return nil, errors.New("no tokens for zone")
 	}
@@ -1127,7 +1121,7 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) ([]uint32, error) {
 	firstToken := subringTokens[0]
 	firstTokeninfo, ok := r.ringInstanceByToken[firstToken]
 	if !ok {
-		// This should never happen unless a bug in the ring code.
+		// This should never happen unless there's a bug in the ring code.
 		return nil, ErrInconsistentTokensInfo
 	}
 
@@ -1181,9 +1175,7 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) ([]uint32, error) {
 	}
 
 	// Ensure returned ranges are sorted.
-	sort.Slice(ranges, func(i, j int) bool {
-		return ranges[i] < ranges[j]
-	})
+	goslices.Sort(ranges)
 
 	return ranges, nil
 }

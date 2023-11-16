@@ -364,6 +364,25 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		return ReplicationSet{}, ErrEmptyRing
 	}
 
+	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, nil)
+	if err != nil {
+		return ReplicationSet{}, err
+	}
+
+	healthyInstances, maxFailure, err := r.strategy.Filter(instances, op, r.cfg.ReplicationFactor, r.cfg.HeartbeatTimeout, r.cfg.ZoneAwarenessEnabled)
+	if err != nil {
+		return ReplicationSet{}, err
+	}
+
+	return ReplicationSet{
+		Instances: healthyInstances,
+		MaxErrors: maxFailure,
+	}, nil
+}
+
+// Returns instances for given key and operation. Instances are not filtered through ReplicationStrategy.
+// InstanceFilter can ignore uninteresting instances that would otherwise be part of the output.
+func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, bufZones []string, instanceFilter func(d InstanceDesc) bool) ([]InstanceDesc, error) {
 	var (
 		n            = r.cfg.ReplicationFactor
 		instances    = bufDescs[:0]
@@ -386,7 +405,7 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		info, ok := r.ringInstanceByToken[token]
 		if !ok {
 			// This should never happen unless a bug in the ring code.
-			return ReplicationSet{}, ErrInconsistentTokensInfo
+			return nil, ErrInconsistentTokensInfo
 		}
 
 		// We want n *distinct* instances && distinct zones.
@@ -414,18 +433,11 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 			distinctZones = append(distinctZones, info.Zone)
 		}
 
-		instances = append(instances, instance)
+		if instanceFilter == nil || instanceFilter(instance) {
+			instances = append(instances, instance)
+		}
 	}
-
-	healthyInstances, maxFailure, err := r.strategy.Filter(instances, op, r.cfg.ReplicationFactor, r.cfg.HeartbeatTimeout, r.cfg.ZoneAwarenessEnabled)
-	if err != nil {
-		return ReplicationSet{}, err
-	}
-
-	return ReplicationSet{
-		Instances: healthyInstances,
-		MaxErrors: maxFailure,
-	}, nil
+	return instances, nil
 }
 
 // GetAllHealthy implements ReadRing.
@@ -1178,4 +1190,31 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) ([]uint32, error) {
 	goslices.Sort(ranges)
 
 	return ranges, nil
+}
+
+func (r *Ring) NumberOfKeysOwnedByInstance(keys []uint32, op Operation, instanceID string) (int, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	if r.ringDesc == nil || len(r.ringTokens) == 0 {
+		return 0, ErrEmptyRing
+	}
+
+	bufDescs := make([]InstanceDesc, 5)
+	bufHosts := make([]string, 1)
+	bufZones := make([]string, len(r.ringTokensByZone))
+
+	result := 0
+	for _, tok := range keys {
+		i, err := r.findInstancesForKey(tok, op, bufDescs, bufHosts, bufZones, func(d InstanceDesc) bool {
+			return d.Id == instanceID
+		})
+		if err != nil {
+			return 0, err
+		}
+		if len(i) > 0 {
+			result++
+		}
+	}
+	return result, nil
 }

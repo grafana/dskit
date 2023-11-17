@@ -11,14 +11,14 @@ import (
 )
 
 func TestKeyInTokenRanges(t *testing.T) {
-	ranges := []uint32{4, 8, 12, 16}
+	ranges := TokenRanges{4, 8, 12, 16}
 
-	require.False(t, KeyInTokenRanges(0, ranges))
-	require.True(t, KeyInTokenRanges(4, ranges))
-	require.True(t, KeyInTokenRanges(6, ranges))
-	require.True(t, KeyInTokenRanges(8, ranges))
-	require.False(t, KeyInTokenRanges(10, ranges))
-	require.False(t, KeyInTokenRanges(20, ranges))
+	require.False(t, ranges.IncludesKey(0))
+	require.True(t, ranges.IncludesKey(4))
+	require.True(t, ranges.IncludesKey(6))
+	require.True(t, ranges.IncludesKey(8))
+	require.False(t, ranges.IncludesKey(10))
+	require.False(t, ranges.IncludesKey(20))
 }
 
 func TestGetTokenRangesForInstance(t *testing.T) {
@@ -26,13 +26,13 @@ func TestGetTokenRangesForInstance(t *testing.T) {
 
 	tests := map[string]struct {
 		zoneTokens map[string][]uint32
-		expected   map[string][]uint32
+		expected   map[string]TokenRanges
 	}{
 		"single instance in zone": {
 			zoneTokens: map[string][]uint32{
 				"instance-0-0": GenerateTokens(512, nil),
 			},
-			expected: map[string][]uint32{
+			expected: map[string]TokenRanges{
 				"instance-0-0": {0, math.MaxUint32},
 			},
 		},
@@ -41,7 +41,7 @@ func TestGetTokenRangesForInstance(t *testing.T) {
 				"instance-0-0": {25, 75},
 				"instance-0-1": {10, 50, 100},
 			},
-			expected: map[string][]uint32{
+			expected: map[string]TokenRanges{
 				"instance-0-0": {10, 24, 50, 74},
 				"instance-0-1": {0, 9, 25, 49, 75, math.MaxUint32},
 			},
@@ -51,7 +51,7 @@ func TestGetTokenRangesForInstance(t *testing.T) {
 				"instance-0-0": {10, 20, 30, 40, 50},
 				"instance-0-1": {1000, 2000, 3000, 4000},
 			},
-			expected: map[string][]uint32{
+			expected: map[string]TokenRanges{
 				"instance-0-0": {0, 49, 4000, math.MaxUint32},
 				"instance-0-1": {50, 3999},
 			},
@@ -61,7 +61,7 @@ func TestGetTokenRangesForInstance(t *testing.T) {
 				"instance-0-0": {99},
 				"instance-0-1": {100},
 			},
-			expected: map[string][]uint32{
+			expected: map[string]TokenRanges{
 				"instance-0-0": {0, 98, 100, math.MaxUint32},
 				"instance-0-1": {99, 99},
 			},
@@ -71,7 +71,7 @@ func TestGetTokenRangesForInstance(t *testing.T) {
 				"instance-0-0": {0},
 				"instance-0-1": {math.MaxUint32},
 			},
-			expected: map[string][]uint32{
+			expected: map[string]TokenRanges{
 				"instance-0-0": {math.MaxUint32, math.MaxUint32},
 				"instance-0-1": {0, math.MaxUint32 - 1},
 			},
@@ -166,11 +166,11 @@ func benchmarkGetTokenRangesForInstance(b *testing.B, instancesPerZone int) {
 	}
 }
 
-func TestNumberOfKeysOwnedByInstance(t *testing.T) {
+func TestCheckingOfKeyOwnership(t *testing.T) {
 	const instancesPerZone = 100
 	const numZones = 3
 	const numTokens = 512
-	const replicationFactor = numZones
+	const replicationFactor = numZones // This is the only config supported by GetTokenRangesForInstance right now.
 
 	// Generate users with different number of tokens
 	userTokens := map[string][]uint32{}
@@ -214,24 +214,24 @@ func TestNumberOfKeysOwnedByInstance(t *testing.T) {
 			break
 		}
 
+		// Compute owned tokens by using token ranges.
 		ranges, err := subRing.GetTokenRangesForInstance(instanceID)
 		require.NoError(t, err)
 
 		cntViaTokens := 0
 		for _, t := range tokens {
-			if KeyInTokenRanges(t, ranges) {
+			if ranges.IncludesKey(t) {
 				cntViaTokens++
 			}
 		}
 
+		// Compute owned tokens using numberOfKeysOwnedByInstance.
 		bufDescs := make([]InstanceDesc, 5)
 		bufHosts := make([]string, 5)
 		bufZones := make([]string, numZones)
 
-		cntViaGet, err := sr.NumberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
+		cntViaGet, err := sr.numberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
 		require.NoError(t, err)
-
-		fmt.Println(uid, cntViaTokens, cntViaGet)
 
 		assert.Equal(t, cntViaTokens, cntViaGet)
 	}
@@ -271,7 +271,7 @@ func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
 		break
 	}
 
-	b.Run("ranges", func(b *testing.B) {
+	b.Run("GetTokenRangesForInstance", func(b *testing.B) {
 		tokenRange, err := subRing.GetTokenRangesForInstance(instanceID)
 		require.NoError(b, err)
 
@@ -279,7 +279,7 @@ func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			cntViaTokens := 0
 			for _, t := range seriesTokens {
-				if KeyInTokenRanges(t, tokenRange) {
+				if tokenRange.IncludesKey(t) {
 					cntViaTokens++
 				}
 			}
@@ -289,13 +289,13 @@ func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
 		}
 	})
 
-	b.Run("get", func(b *testing.B) {
+	b.Run("numberOfKeysOwnedByInstance", func(b *testing.B) {
 		bufDescs := make([]InstanceDesc, 5)
 		bufHosts := make([]string, 5)
 		bufZones := make([]string, numZones)
 
 		for i := 0; i < b.N; i++ {
-			cntViaGet, err := sr.NumberOfKeysOwnedByInstance(seriesTokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
+			cntViaGet, err := sr.numberOfKeysOwnedByInstance(seriesTokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
 			require.NoError(b, err)
 
 			if cntViaGet <= 0 {

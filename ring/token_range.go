@@ -7,7 +7,36 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (r *Ring) GetTokenRangesForInstance(instanceID string) ([]uint32, error) {
+// TokenRanges describes token ranges owned by an instance.
+// It consists of [start, end] pairs, where both start and end are inclusive.
+type TokenRanges []uint32
+
+func (tr TokenRanges) IncludesKey(key uint32) bool {
+	switch {
+	case len(tr) == 0:
+		return false
+	case key < tr[0]:
+		// key comes before the first range
+		return false
+	case key > tr[len(tr)-1]:
+		// key comes after the last range
+		return false
+	}
+
+	index, found := slices.BinarySearch(tr, key)
+	switch {
+	case found:
+		// ranges are closed
+		return true
+	case index%2 == 1:
+		// hash would be inserted after the start of a range (even index)
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *Ring) GetTokenRangesForInstance(instanceID string) (TokenRanges, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
@@ -102,29 +131,4 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) ([]uint32, error) {
 	slices.Sort(ranges)
 
 	return ranges, nil
-}
-
-func KeyInTokenRanges(key uint32, ranges []uint32) bool {
-	switch {
-	case len(ranges) == 0:
-		return false
-	case key < ranges[0]:
-		// key comes before the first range
-		return false
-	case key > ranges[len(ranges)-1]:
-		// key comes after the last range
-		return false
-	}
-
-	index, found := slices.BinarySearch(ranges, key)
-	switch {
-	case found:
-		// ranges are closed
-		return true
-	case index%2 == 1:
-		// hash would be inserted after the start of a range (even index)
-		return true
-	default:
-		return false
-	}
 }

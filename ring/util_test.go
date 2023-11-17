@@ -67,7 +67,7 @@ func (r *RingMock) HasInstance(_ string) bool {
 
 func (r *RingMock) CleanupShuffleShardCache(_ string) {}
 
-func (r *RingMock) GetTokenRangesForInstance(_ string) ([]uint32, error) {
+func (r *RingMock) GetTokenRangesForInstance(_ string) (TokenRanges, error) {
 	return []uint32{0, math.MaxUint32}, nil
 }
 

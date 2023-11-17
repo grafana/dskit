@@ -363,9 +363,7 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		return ReplicationSet{}, ErrEmptyRing
 	}
 
-	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, func(string) (include, keepGoing bool) {
-		return true, true
-	})
+	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, nil)
 	if err != nil {
 		return ReplicationSet{}, err
 	}
@@ -383,6 +381,7 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 
 // Returns instances for given key and operation. Instances are not filtered through ReplicationStrategy.
 // InstanceFilter can ignore uninteresting instances that would otherwise be part of the output, and can also stop search early.
+// This function needs to be called with read lock on the ring.
 func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, bufZones []string, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]InstanceDesc, error) {
 	var (
 		n            = r.cfg.ReplicationFactor

@@ -69,9 +69,7 @@ func executeScenario(bt batchTracker, scenarios []scenario) error {
 		}
 	}()
 
-	go func() {
-		wg.Wait()
-	}()
+	wg.Wait()
 
 	select {
 	case err := <-bt.err:

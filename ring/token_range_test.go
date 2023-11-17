@@ -266,7 +266,7 @@ func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
 
 	// find some instance in subring
 	var instanceID string
-	for id, _ := range sr.ringDesc.Ingesters {
+	for id := range sr.ringDesc.Ingesters {
 		instanceID = id
 		break
 	}

@@ -363,7 +363,7 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		return ReplicationSet{}, ErrEmptyRing
 	}
 
-	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, func(d InstanceDesc) (include, keepGoing bool) {
+	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, func(string) (include, keepGoing bool) {
 		return true, true
 	})
 	if err != nil {
@@ -383,7 +383,7 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 
 // Returns instances for given key and operation. Instances are not filtered through ReplicationStrategy.
 // InstanceFilter can ignore uninteresting instances that would otherwise be part of the output, and can also stop search early.
-func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, bufZones []string, instanceFilter func(d InstanceDesc) (include, keepGoing bool)) ([]InstanceDesc, error) {
+func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, bufZones []string, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]InstanceDesc, error) {
 	var (
 		n            = r.cfg.ReplicationFactor
 		instances    = bufDescs[:0]
@@ -436,7 +436,7 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 
 		include, keepGoing := true, true
 		if instanceFilter != nil {
-			include, keepGoing = instanceFilter(instance)
+			include, keepGoing = instanceFilter(info.InstanceID)
 		}
 		if include {
 			instances = append(instances, instance)
@@ -1103,7 +1103,7 @@ func (op Operation) ShouldExtendReplicaSetOnState(s InstanceState) bool {
 // All states are healthy, no states extend replica set.
 var allStatesRingOperation = Operation(0x0000ffff)
 
-func (r *Ring) NumberOfKeysOwnedByInstance(keys []uint32, op Operation, instanceID string) (int, error) {
+func (r *Ring) NumberOfKeysOwnedByInstance(keys []uint32, op Operation, instanceID string, bufDescs []InstanceDesc, bufHosts []string, bufZones []string) (int, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
@@ -1111,14 +1111,15 @@ func (r *Ring) NumberOfKeysOwnedByInstance(keys []uint32, op Operation, instance
 		return 0, ErrEmptyRing
 	}
 
-	bufDescs := make([]InstanceDesc, 5)
-	bufHosts := make([]string, 1)
-	bufZones := make([]string, len(r.ringTokensByZone))
+	// Instance is not in this ring, it can't own any key.
+	if _, ok := r.ringDesc.Ingesters[instanceID]; !ok {
+		return 0, nil
+	}
 
-	result := 0
+	owned := 0
 	for _, tok := range keys {
-		i, err := r.findInstancesForKey(tok, op, bufDescs, bufHosts, bufZones, func(d InstanceDesc) (include, keepGoing bool) {
-			if d.Id == instanceID {
+		i, err := r.findInstancesForKey(tok, op, bufDescs, bufHosts, bufZones, func(foundInstanceID string) (include, keepGoing bool) {
+			if foundInstanceID == instanceID {
 				// If we've found our instance, we can stop.
 				return true, false
 			}
@@ -1128,8 +1129,8 @@ func (r *Ring) NumberOfKeysOwnedByInstance(keys []uint32, op Operation, instance
 			return 0, err
 		}
 		if len(i) > 0 {
-			result++
+			owned++
 		}
 	}
-	return result, nil
+	return owned, nil
 }

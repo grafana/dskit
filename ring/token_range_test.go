@@ -165,3 +165,142 @@ func benchmarkGetTokenRangesForInstance(b *testing.B, instancesPerZone int) {
 		_, _ = ring.GetTokenRangesForInstance("instance-1")
 	}
 }
+
+func TestNumberOfKeysOwnedByInstance(t *testing.T) {
+	const instancesPerZone = 100
+	const numZones = 3
+	const numTokens = 512
+	const replicationFactor = numZones
+
+	// Generate users with different number of tokens
+	userTokens := map[string][]uint32{}
+	shardSizes := map[string]int{}
+	for _, cnt := range []int{1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000} {
+		uid := fmt.Sprintf("%dk", cnt/1000)
+		userTokens[uid] = GenerateTokens(cnt, nil)
+
+		shardSize := cnt / 7500
+		shardSize = (shardSize / numZones) * numZones // round down to numZones
+		if shardSize < numZones {
+			shardSize = numZones
+		}
+		shardSizes[uid] = shardSize
+	}
+
+	// Generate ring
+	ringDesc := &Desc{Ingesters: generateRingInstances(instancesPerZone*numZones, numZones, numTokens)}
+	ring := Ring{
+		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: false, ReplicationFactor: replicationFactor},
+		ringDesc:             ringDesc,
+		ringTokens:           ringDesc.GetTokens(),
+		ringTokensByZone:     ringDesc.getTokensByZone(),
+		ringInstanceByToken:  ringDesc.getTokensInfo(),
+		ringZones:            getZones(ringDesc.getTokensByZone()),
+		shuffledSubringCache: map[subringCacheKey]*Ring{},
+		strategy:             NewDefaultReplicationStrategy(),
+		lastTopologyChange:   time.Now(),
+	}
+
+	for uid, tokens := range userTokens {
+		shardSize := shardSizes[uid]
+
+		subRing := ring.ShuffleShard(uid, shardSize)
+		sr := subRing.(*Ring)
+
+		// find some instance in subring
+		var instanceID string
+		for id, _ := range sr.ringDesc.Ingesters {
+			instanceID = id
+			break
+		}
+
+		ranges, err := subRing.GetTokenRangesForInstance(instanceID)
+		require.NoError(t, err)
+
+		cntViaTokens := 0
+		for _, t := range tokens {
+			if KeyInTokenRanges(t, ranges) {
+				cntViaTokens++
+			}
+		}
+
+		bufDescs := make([]InstanceDesc, 5)
+		bufHosts := make([]string, 5)
+		bufZones := make([]string, numZones)
+
+		cntViaGet, err := sr.NumberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
+		require.NoError(t, err)
+
+		fmt.Println(uid, cntViaTokens, cntViaGet)
+
+		assert.Equal(t, cntViaTokens, cntViaGet)
+	}
+}
+
+func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
+	const instancesPerZone = 100
+	const numZones = 3
+	const numTokens = 512
+	const userTokens = 500000
+	const userShardsize = 60
+
+	seriesTokens := GenerateTokens(userTokens, nil)
+
+	// Generate ring
+	ringDesc := &Desc{Ingesters: generateRingInstances(instancesPerZone*numZones, numZones, numTokens)}
+	ring := Ring{
+		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: false, ReplicationFactor: numZones},
+		ringDesc:             ringDesc,
+		ringTokens:           ringDesc.GetTokens(),
+		ringTokensByZone:     ringDesc.getTokensByZone(),
+		ringInstanceByToken:  ringDesc.getTokensInfo(),
+		ringZones:            getZones(ringDesc.getTokensByZone()),
+		shuffledSubringCache: map[subringCacheKey]*Ring{},
+		strategy:             NewDefaultReplicationStrategy(),
+		lastTopologyChange:   time.Now(),
+	}
+
+	// compute and cache subrings for each user
+	subRing := ring.ShuffleShard("user", userShardsize)
+	sr := subRing.(*Ring)
+
+	// find some instance in subring
+	var instanceID string
+	for id, _ := range sr.ringDesc.Ingesters {
+		instanceID = id
+		break
+	}
+
+	b.Run("ranges", func(b *testing.B) {
+		tokenRange, err := subRing.GetTokenRangesForInstance(instanceID)
+		require.NoError(b, err)
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			cntViaTokens := 0
+			for _, t := range seriesTokens {
+				if KeyInTokenRanges(t, tokenRange) {
+					cntViaTokens++
+				}
+			}
+			if cntViaTokens <= 0 {
+				b.Fatal("no owned tokens found!")
+			}
+		}
+	})
+
+	b.Run("get", func(b *testing.B) {
+		bufDescs := make([]InstanceDesc, 5)
+		bufHosts := make([]string, 5)
+		bufZones := make([]string, numZones)
+
+		for i := 0; i < b.N; i++ {
+			cntViaGet, err := sr.NumberOfKeysOwnedByInstance(seriesTokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
+			require.NoError(b, err)
+
+			if cntViaGet <= 0 {
+				b.Fatal("no owned tokens found!")
+			}
+		}
+	})
+}

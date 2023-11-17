@@ -77,7 +77,7 @@ type ReadRing interface {
 	CleanupShuffleShardCache(identifier string)
 
 	// GetTokenRangesForInstance returns the token ranges owned by an instance in the ring
-	GetTokenRangesForInstance(instanceID string) ([]uint32, error)
+	GetTokenRangesForInstance(instanceID string) (TokenRanges, error)
 }
 
 var (
@@ -1103,7 +1103,8 @@ func (op Operation) ShouldExtendReplicaSetOnState(s InstanceState) bool {
 // All states are healthy, no states extend replica set.
 var allStatesRingOperation = Operation(0x0000ffff)
 
-func (r *Ring) NumberOfKeysOwnedByInstance(keys []uint32, op Operation, instanceID string, bufDescs []InstanceDesc, bufHosts []string, bufZones []string) (int, error) {
+// numberOfKeysOwnedByInstance returns how many of the supplied keys are owned by given instance.
+func (r *Ring) numberOfKeysOwnedByInstance(keys []uint32, op Operation, instanceID string, bufDescs []InstanceDesc, bufHosts []string, bufZones []string) (int, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 

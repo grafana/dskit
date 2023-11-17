@@ -36,6 +36,9 @@ func (tr TokenRanges) IncludesKey(key uint32) bool {
 	}
 }
 
+// GetTokenRangesForInstance returns the token ranges owned by an instance in the ring.
+//
+// Current implementation only works with multizone setup, where number of zones is equal to replication factor.
 func (r *Ring) GetTokenRangesForInstance(instanceID string) (TokenRanges, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
@@ -54,9 +57,8 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) (TokenRanges, error)
 	// To simplify computation of token ranges, we currently only support case where zone-awareness is enabled,
 	// and replicaction factor is equal to number of zones.
 	if !r.cfg.ZoneAwarenessEnabled || rf != numZones {
-		// if zoneAwareness is disabled we treat the whole ring as one big zone, and would
-		// need to walk the ring backwards looking for RF-1 tokens from other instances to determine the range
-		// ignore this for now
+		// if zoneAwareness is disabled we need to treat the whole ring as one big zone, and we would
+		// need to walk the ring backwards looking for RF-1 tokens from other instances to determine the range.
 		return nil, errors.New("can't use ring configuration for computing token ranges")
 	}
 

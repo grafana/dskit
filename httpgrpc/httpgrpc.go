@@ -5,8 +5,11 @@
 package httpgrpc
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 
 	"github.com/go-kit/log/level"
 	spb "github.com/gogo/googleapis/google/rpc"
@@ -15,9 +18,101 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/dskit/grpcutil"
-
 	"github.com/grafana/dskit/log"
 )
+
+var (
+	// DoNotLogErrorHeaderKey is a header key used for marking non-loggable errors. More precisely, if an HTTP response
+	// has a status code 5xx, and contains a header with key DoNotLogErrorHeaderKey and any values, the generated error
+	// will be marked as non-loggable.
+	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
+)
+
+const (
+	MetadataMethod = "httpgrpc-method"
+	MetadataURL    = "httpgrpc-url"
+)
+
+// AppendRequestMetadataToContext appends metadata of HTTPRequest into gRPC metadata.
+func AppendRequestMetadataToContext(ctx context.Context, req *HTTPRequest) context.Context {
+	return metadata.AppendToOutgoingContext(ctx,
+		MetadataMethod, req.Method,
+		MetadataURL, req.Url)
+}
+
+type nopCloser struct {
+	*bytes.Buffer
+}
+
+func (nopCloser) Close() error { return nil }
+
+// BytesBuffer returns the underlaying `bytes.buffer` used to build this io.ReadCloser.
+func (n nopCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }
+
+// FromHTTPRequest wraps an ordinary http.Request up into an httpgrpc.HTTPRequest
+func FromHTTPRequest(r *http.Request) (*HTTPRequest, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &HTTPRequest{
+		Method:  r.Method,
+		Url:     r.RequestURI,
+		Body:    body,
+		Headers: FromHeader(r.Header),
+	}, nil
+}
+
+// ToHTTPRequest unwraps an ordinary http.Request from an httpgrpc.HTTPRequest
+func ToHTTPRequest(ctx context.Context, r *HTTPRequest) (*http.Request, error) {
+	req, err := http.NewRequest(r.Method, r.Url, nopCloser{Buffer: bytes.NewBuffer(r.Body)})
+	if err != nil {
+		return nil, err
+	}
+	ToHeader(r.Headers, req.Header)
+	req = req.WithContext(ctx)
+	req.RequestURI = r.Url
+	req.ContentLength = int64(len(r.Body))
+	return req, nil
+}
+
+// WriteResponse converts an httpgrpc response to an HTTP one
+func WriteResponse(w http.ResponseWriter, resp *HTTPResponse) error {
+	ToHeader(resp.Headers, w.Header())
+	w.WriteHeader(int(resp.Code))
+	_, err := w.Write(resp.Body)
+	return err
+}
+
+// WriteError converts an httpgrpc error to an HTTP one
+func WriteError(w http.ResponseWriter, err error) {
+	resp, ok := HTTPResponseFromError(err)
+	if ok {
+		_ = WriteResponse(w, resp)
+	} else {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func ToHeader(hs []*Header, header http.Header) {
+	for _, h := range hs {
+		header[h.Key] = h.Values
+	}
+}
+
+func FromHeader(hs http.Header) []*Header {
+	result := make([]*Header, 0, len(hs))
+	for k, vs := range hs {
+		if k == DoNotLogErrorHeaderKey {
+			continue
+		}
+		result = append(result, &Header{
+			Key:    k,
+			Values: vs,
+		})
+	}
+	return result
+}
 
 // Errorf returns a HTTP gRPC error than is correctly forwarded over
 // gRPC, and can eventually be converted back to a HTTP response with
@@ -62,16 +157,4 @@ func HTTPResponseFromError(err error) (*HTTPResponse, bool) {
 	}
 
 	return &resp, true
-}
-
-const (
-	MetadataMethod = "httpgrpc-method"
-	MetadataURL    = "httpgrpc-url"
-)
-
-// AppendRequestMetadataToContext appends metadata of HTTPRequest into gRPC metadata.
-func AppendRequestMetadataToContext(ctx context.Context, req *HTTPRequest) context.Context {
-	return metadata.AppendToOutgoingContext(ctx,
-		MetadataMethod, req.Method,
-		MetadataURL, req.Url)
 }

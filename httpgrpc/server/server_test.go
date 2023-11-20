@@ -82,7 +82,7 @@ func TestError(t *testing.T) {
 		t.Run(fmt.Sprintf("test header when DoNotLogErrorHeaderKey is %spresent", stat), func(t *testing.T) {
 			server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if doNotLog {
-					w.Header().Set(DoNotLogErrorHeaderKey, "true")
+					w.Header().Set(httpgrpc.DoNotLogErrorHeaderKey, "true")
 				}
 				// Does a Fprintln, injecting a newline.
 				http.Error(w, "foo", http.StatusInternalServerError)
@@ -102,7 +102,7 @@ func TestError(t *testing.T) {
 
 			assert.Equal(t, "foo\n", recorder.Body.String())
 			assert.Equal(t, 500, recorder.Code)
-			assert.NotContains(t, recorder.Header(), DoNotLogErrorHeaderKey)
+			assert.NotContains(t, recorder.Header(), httpgrpc.DoNotLogErrorHeaderKey)
 		})
 	}
 }
@@ -137,7 +137,7 @@ func TestServerHandleDoNotLogError(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if testData.doNotLogError {
-					w.Header().Set(DoNotLogErrorHeaderKey, "true")
+					w.Header().Set(httpgrpc.DoNotLogErrorHeaderKey, "true")
 				}
 				http.Error(w, errMsg, testData.errorCode)
 			})
@@ -179,7 +179,7 @@ func checkHTTPResponse(t *testing.T, resp *httpgrpc.HTTPResponse, expectedCode i
 	require.Equal(t, fmt.Sprintf("%s\n", expectedBody), string(resp.GetBody()))
 	hs := resp.GetHeaders()
 	for _, h := range hs {
-		require.NotEqual(t, DoNotLogErrorHeaderKey, h.Key)
+		require.NotEqual(t, httpgrpc.DoNotLogErrorHeaderKey, h.Key)
 	}
 }
 

@@ -18,7 +18,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/dskit/httpgrpc"
-	httpgrpcServer "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 )
@@ -240,7 +239,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				client httpgrpc.HTTPClient, req *http.Request,
 			) (*httpgrpc.HTTPResponse, error) {
 				req.RequestURI = req.URL.String()
-				grpcReq, err := httpgrpcServer.WrapHTTPRequest(req)
+				grpcReq, err := httpgrpc.FromHTTPRequest(req)
 				require.NoError(t, err)
 				return client.Handle(req.Context(), grpcReq)
 			}

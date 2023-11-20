@@ -21,13 +21,6 @@ import (
 	"github.com/grafana/dskit/log"
 )
 
-var (
-	// DoNotLogErrorHeaderKey is a header key used for marking non-loggable errors. More precisely, if an HTTP response
-	// has a status code 5xx, and contains a header with key DoNotLogErrorHeaderKey and any values, the generated error
-	// will be marked as non-loggable.
-	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
-)
-
 const (
 	MetadataMethod = "httpgrpc-method"
 	MetadataURL    = "httpgrpc-url"
@@ -103,9 +96,6 @@ func ToHeader(hs []*Header, header http.Header) {
 func FromHeader(hs http.Header) []*Header {
 	result := make([]*Header, 0, len(hs))
 	for k, vs := range hs {
-		if k == DoNotLogErrorHeaderKey {
-			continue
-		}
 		result = append(result, &Header{
 			Key:    k,
 			Values: vs,

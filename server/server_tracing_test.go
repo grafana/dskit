@@ -240,7 +240,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				client httpgrpc.HTTPClient, req *http.Request,
 			) (*httpgrpc.HTTPResponse, error) {
 				req.RequestURI = req.URL.String()
-				grpcReq, err := httpgrpcServer.HTTPRequest(req)
+				grpcReq, err := httpgrpcServer.WrapHTTPRequest(req)
 				require.NoError(t, err)
 				return client.Handle(req.Context(), grpcReq)
 			}

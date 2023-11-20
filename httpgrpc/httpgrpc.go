@@ -42,7 +42,7 @@ func (nopCloser) Close() error { return nil }
 // BytesBuffer returns the underlaying `bytes.buffer` used to build this io.ReadCloser.
 func (n nopCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }
 
-// FromHTTPRequest wraps an ordinary http.Request up into an httpgrpc.HTTPRequest
+// FromHTTPRequest converts an ordinary http.Request into an httpgrpc.HTTPRequest
 func FromHTTPRequest(r *http.Request) (*HTTPRequest, error) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -56,7 +56,7 @@ func FromHTTPRequest(r *http.Request) (*HTTPRequest, error) {
 	}, nil
 }
 
-// ToHTTPRequest unwraps an ordinary http.Request from an httpgrpc.HTTPRequest
+// ToHTTPRequest converts httpgrpc.HTTPRequest to http.Request.
 func ToHTTPRequest(ctx context.Context, r *HTTPRequest) (*http.Request, error) {
 	req, err := http.NewRequest(r.Method, r.Url, nopCloser{Buffer: bytes.NewBuffer(r.Body)})
 	if err != nil {

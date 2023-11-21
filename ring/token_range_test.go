@@ -209,33 +209,28 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 		subRing := ring.ShuffleShard(uid, shardSize)
 		sr := subRing.(*Ring)
 
-		// find some instance in subring
-		var instanceID string
-		for id := range sr.ringDesc.Ingesters {
-			instanceID = id
-			break
-		}
+		for instanceID := range sr.ringDesc.Ingesters {
+			// Compute owned tokens by using token ranges.
+			ranges, err := subRing.GetTokenRangesForInstance(instanceID)
+			require.NoError(t, err)
 
-		// Compute owned tokens by using token ranges.
-		ranges, err := subRing.GetTokenRangesForInstance(instanceID)
-		require.NoError(t, err)
-
-		cntViaTokens := 0
-		for _, t := range tokens {
-			if ranges.IncludesKey(t) {
-				cntViaTokens++
+			cntViaTokens := 0
+			for _, t := range tokens {
+				if ranges.IncludesKey(t) {
+					cntViaTokens++
+				}
 			}
+
+			// Compute owned tokens using numberOfKeysOwnedByInstance.
+			bufDescs := make([]InstanceDesc, 5)
+			bufHosts := make([]string, 5)
+			bufZones := make([]string, numZones)
+
+			cntViaGet, err := sr.numberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
+			require.NoError(t, err)
+
+			assert.Equal(t, cntViaTokens, cntViaGet)
 		}
-
-		// Compute owned tokens using numberOfKeysOwnedByInstance.
-		bufDescs := make([]InstanceDesc, 5)
-		bufHosts := make([]string, 5)
-		bufZones := make([]string, numZones)
-
-		cntViaGet, err := sr.numberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
-		require.NoError(t, err)
-
-		assert.Equal(t, cntViaTokens, cntViaGet)
 	}
 }
 

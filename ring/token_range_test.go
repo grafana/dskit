@@ -143,12 +143,14 @@ func benchmarkGetTokenRangesForInstance(b *testing.B, instancesPerZone int) {
 	numZones := 3
 	numTokens := 512
 
+	gen := initTokenGenerator(b)
+
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
 		// Initialise the ring.
-		ringDesc := &Desc{Ingesters: generateRingInstances(instancesPerZone*numZones, numZones, numTokens)}
+		ringDesc := &Desc{Ingesters: generateRingInstances(gen, instancesPerZone*numZones, numZones, numTokens)}
 		ring := Ring{
 			cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: true, ReplicationFactor: numZones},
 			ringDesc:             ringDesc,
@@ -188,7 +190,7 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 	}
 
 	// Generate ring
-	ringDesc := &Desc{Ingesters: generateRingInstances(instancesPerZone*numZones, numZones, numTokens)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), instancesPerZone*numZones, numZones, numTokens)}
 	ring := Ring{
 		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: false, ReplicationFactor: replicationFactor},
 		ringDesc:             ringDesc,
@@ -244,10 +246,10 @@ func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
 	const userTokens = 500000
 	const userShardsize = 60
 
-	seriesTokens := GenerateTokens(userTokens, nil)
+	seriesTokens := initTokenGenerator(b).GenerateTokens(userTokens, nil)
 
 	// Generate ring
-	ringDesc := &Desc{Ingesters: generateRingInstances(instancesPerZone*numZones, numZones, numTokens)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), instancesPerZone*numZones, numZones, numTokens)}
 	ring := Ring{
 		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: false, ReplicationFactor: numZones},
 		ringDesc:             ringDesc,

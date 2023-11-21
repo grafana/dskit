@@ -74,13 +74,13 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) (TokenRanges, error)
 
 	// if this instance claimed the first token, it owns the wrap-around range, which we'll break into two separate ranges
 	firstToken := subringTokens[0]
-	firstTokeninfo, ok := r.ringInstanceByToken[firstToken]
+	firstTokenInfo, ok := r.ringInstanceByToken[firstToken]
 	if !ok {
 		// This should never happen unless there's a bug in the ring code.
 		return nil, ErrInconsistentTokensInfo
 	}
 
-	if firstTokeninfo.InstanceID == instanceID {
+	if firstTokenInfo.InstanceID == instanceID {
 		// we'll start by looking for the beginning of the range that ends with math.MaxUint32
 		rangeEnd = math.MaxUint32
 	}
@@ -118,11 +118,11 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) (TokenRanges, error)
 	//     - BUT, if the token itself is 0, do nothing, because we don't own the tokens themselves (we should be covered by the already added range that ends with MaxUint32)
 
 	if rangeEnd == 0 {
-		if firstTokeninfo.InstanceID == instanceID && firstToken != 0 {
+		if firstTokenInfo.InstanceID == instanceID && firstToken != 0 {
 			ranges = append(ranges, firstToken-1, 0)
 		}
 	} else {
-		if firstTokeninfo.InstanceID == instanceID {
+		if firstTokenInfo.InstanceID == instanceID {
 			ranges = append(ranges, rangeEnd, 0)
 		} else {
 			ranges = append(ranges, rangeEnd, firstToken)

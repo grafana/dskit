@@ -1257,7 +1257,7 @@ func TestRing_ShuffleShard_Stability(t *testing.T) {
 	)
 
 	// Initialise the ring.
-	ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, 128)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
 	ring := Ring{
 		cfg: Config{
 			HeartbeatTimeout:     time.Hour,
@@ -1288,6 +1288,12 @@ func TestRing_ShuffleShard_Stability(t *testing.T) {
 			}
 		}
 	}
+}
+
+func initTokenGenerator(t testing.TB) TokenGenerator {
+	seed := time.Now().UnixNano()
+	t.Log("token generator seed:", seed)
+	return NewRandomTokenGeneratorWithSeed(seed)
 }
 
 func TestRing_ShuffleShard_Shuffling(t *testing.T) {
@@ -1423,8 +1429,9 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
+			gen := initTokenGenerator(t)
 			// Initialise the ring.
-			ringDesc := &Desc{Ingesters: generateRingInstances(s.numInstances, s.numZones, 128)}
+			ringDesc := &Desc{Ingesters: generateRingInstances(gen, s.numInstances, s.numZones, 128)}
 			ring := Ring{
 				cfg: Config{
 					HeartbeatTimeout:     time.Hour,
@@ -1449,7 +1456,7 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 			// Update the ring.
 			switch s.ringChange {
 			case add:
-				newID, newDesc := generateRingInstance(s.numInstances+1, 0, 128)
+				newID, newDesc := generateRingInstance(gen, s.numInstances+1, 0, 128)
 				ringDesc.Ingesters[newID] = newDesc
 			case remove:
 				// Remove the first one.
@@ -1483,7 +1490,7 @@ func TestRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) {
 	// Create 30 instances in 3 zones.
 	ringInstances := map[string]InstanceDesc{}
 	for i := 0; i < 30; i++ {
-		name, desc := generateRingInstance(i, i%3, 128)
+		name, desc := generateRingInstance(initTokenGenerator(t), i, i%3, 128)
 		ringInstances[name] = desc
 	}
 
@@ -1560,7 +1567,7 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 	// Create 20 instances in 2 zones.
 	ringInstances := map[string]InstanceDesc{}
 	for i := 0; i < 20; i++ {
-		name, desc := generateRingInstance(i, i%2, 128)
+		name, desc := generateRingInstance(initTokenGenerator(t), i, i%2, 128)
 		ringInstances[name] = desc
 	}
 
@@ -1599,7 +1606,7 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 
 	// Scale up cluster, adding 10 instances in 1 new zone.
 	for i := 20; i < 30; i++ {
-		name, desc := generateRingInstance(i, 2, 128)
+		name, desc := generateRingInstance(initTokenGenerator(t), i, 2, 128)
 		ringInstances[name] = desc
 	}
 
@@ -1934,7 +1941,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 					t.Log("random generator seed:", seed)
 
 					// Initialise the ring.
-					ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, 128)}
+					ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
 					ring := Ring{
 						cfg: Config{
 							HeartbeatTimeout:     time.Hour,
@@ -2570,7 +2577,7 @@ func BenchmarkRing_ShuffleShard_LargeShardSize(b *testing.B) {
 
 func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, shardSize int, cache bool) {
 	// Initialise the ring.
-	ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, numTokens)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), numInstances, numZones, numTokens)}
 	ring := Ring{
 		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: !cache},
 		ringDesc:             ringDesc,
@@ -2620,7 +2627,7 @@ func BenchmarkRing_Get(b *testing.B) {
 
 	for benchName, benchCase := range benchCases {
 		// Initialise the ring.
-		ringDesc := &Desc{Ingesters: generateRingInstances(benchCase.numInstances, benchCase.numZones, numTokens)}
+		ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), benchCase.numInstances, benchCase.numZones, numTokens)}
 		ring := Ring{
 			cfg: Config{
 				HeartbeatTimeout:     time.Hour,
@@ -2658,7 +2665,7 @@ func BenchmarkRing_Get(b *testing.B) {
 
 func TestRing_Get_NoMemoryAllocations(t *testing.T) {
 	// Initialise the ring.
-	ringDesc := &Desc{Ingesters: generateRingInstances(3, 3, 128)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), 3, 3, 128)}
 	ring := Ring{
 		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: true, ReplicationFactor: 3},
 		ringDesc:             ringDesc,
@@ -2697,22 +2704,22 @@ func generateTokensLinear(instanceID, numInstances, numTokens int) []uint32 {
 	return tokens
 }
 
-func generateRingInstances(numInstances, numZones, numTokens int) map[string]InstanceDesc {
+func generateRingInstances(gen TokenGenerator, numInstances, numZones, numTokens int) map[string]InstanceDesc {
 	instances := make(map[string]InstanceDesc, numInstances)
 
 	for i := 1; i <= numInstances; i++ {
-		id, desc := generateRingInstance(i, i%numZones, numTokens)
+		id, desc := generateRingInstance(gen, i, i%numZones, numTokens)
 		instances[id] = desc
 	}
 
 	return instances
 }
 
-func generateRingInstance(id, zone, numTokens int) (string, InstanceDesc) {
+func generateRingInstance(gen TokenGenerator, id, zone, numTokens int) (string, InstanceDesc) {
 	instanceID := fmt.Sprintf("instance-%d", id)
 	zoneID := fmt.Sprintf("zone-%d", zone)
 
-	return instanceID, generateRingInstanceWithInfo(instanceID, zoneID, GenerateTokens(numTokens, nil), time.Now())
+	return instanceID, generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(numTokens, nil), time.Now())
 }
 
 func generateRingInstanceWithInfo(addr, zone string, tokens []uint32, registeredAt time.Time) InstanceDesc {

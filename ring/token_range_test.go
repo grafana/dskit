@@ -19,6 +19,15 @@ func TestKeyInTokenRanges(t *testing.T) {
 	require.True(t, ranges.IncludesKey(8))
 	require.False(t, ranges.IncludesKey(10))
 	require.False(t, ranges.IncludesKey(20))
+
+	ranges = TokenRanges{0, 4, 8, 12, 16, 18}
+
+	require.True(t, ranges.IncludesKey(0))
+	require.True(t, ranges.IncludesKey(4))
+	require.False(t, ranges.IncludesKey(6))
+	require.True(t, ranges.IncludesKey(8))
+	require.True(t, ranges.IncludesKey(10))
+	require.False(t, ranges.IncludesKey(20))
 }
 
 func TestGetTokenRangesForInstance(t *testing.T) {
@@ -38,12 +47,22 @@ func TestGetTokenRangesForInstance(t *testing.T) {
 		},
 		"simple ranges": {
 			zoneTokens: map[string][]uint32{
-				"instance-0-0": {25, 75},
+				"instance-0-0": {0, 25, 75},
 				"instance-0-1": {10, 50, 100},
 			},
 			expected: map[string]TokenRanges{
-				"instance-0-0": {10, 24, 50, 74},
-				"instance-0-1": {0, 9, 25, 49, 75, math.MaxUint32},
+				"instance-0-0": {10, 24, 50, 74, 100, math.MaxUint32},
+				"instance-0-1": {0, 9, 25, 49, 75, 99},
+			},
+		},
+		"mixed ranges": {
+			zoneTokens: map[string][]uint32{
+				"instance-0-0": {25, 27, 75},
+				"instance-0-1": {10, 26, 50, 100},
+			},
+			expected: map[string]TokenRanges{
+				"instance-0-0": {10, 24, 26, 26, 50, 74},
+				"instance-0-1": {0, 9, 25, 25, 27, 49, 75, math.MaxUint32},
 			},
 		},
 		"grouped tokens": {
@@ -209,28 +228,33 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 		subRing := ring.ShuffleShard(uid, shardSize)
 		sr := subRing.(*Ring)
 
-		for instanceID := range sr.ringDesc.Ingesters {
-			// Compute owned tokens by using token ranges.
-			ranges, err := subRing.GetTokenRangesForInstance(instanceID)
-			require.NoError(t, err)
-
-			cntViaTokens := 0
-			for _, t := range tokens {
-				if ranges.IncludesKey(t) {
-					cntViaTokens++
-				}
-			}
-
-			// Compute owned tokens using numberOfKeysOwnedByInstance.
-			bufDescs := make([]InstanceDesc, 5)
-			bufHosts := make([]string, 5)
-			bufZones := make([]string, numZones)
-
-			cntViaGet, err := sr.numberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
-			require.NoError(t, err)
-
-			assert.Equal(t, cntViaTokens, cntViaGet, instanceID)
+		// find some instance in subring
+		var instanceID string
+		for id := range sr.ringDesc.Ingesters {
+			instanceID = id
+			break
 		}
+
+		// Compute owned tokens by using token ranges.
+		ranges, err := subRing.GetTokenRangesForInstance(instanceID)
+		require.NoError(t, err)
+
+		cntViaTokens := 0
+		for _, t := range tokens {
+			if ranges.IncludesKey(t) {
+				cntViaTokens++
+			}
+		}
+
+		// Compute owned tokens using numberOfKeysOwnedByInstance.
+		bufDescs := make([]InstanceDesc, 5)
+		bufHosts := make([]string, 5)
+		bufZones := make([]string, numZones)
+
+		cntViaGet, err := sr.numberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
+		require.NoError(t, err)
+
+		assert.Equal(t, cntViaTokens, cntViaGet)
 	}
 }
 

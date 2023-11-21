@@ -70,67 +70,89 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) (TokenRanges, error)
 	}
 
 	ranges := make([]uint32, 0, 2*(len(instance.Tokens)+1)) // 1 range (2 values) per token + one additional if we need to split the rollover range
-	var rangeEnd uint32
 
-	// if this instance claimed the first token, it owns the wrap-around range, which we'll break into two separate ranges
-	firstToken := subringTokens[0]
-	firstTokenInfo, ok := r.ringInstanceByToken[firstToken]
+	tokenInfo, ok := r.ringInstanceByToken[subringTokens[0]]
 	if !ok {
 		// This should never happen unless there's a bug in the ring code.
 		return nil, ErrInconsistentTokensInfo
 	}
+	firstTokenOwned := tokenInfo.InstanceID == instanceID
 
-	if firstTokenInfo.InstanceID == instanceID {
-		// we'll start by looking for the beginning of the range that ends with math.MaxUint32
-		rangeEnd = math.MaxUint32
-	}
-
-	// walk the ring backwards, alternating looking for ends and starts of ranges
-	for i := len(subringTokens) - 1; i > 0; i-- {
-		token := subringTokens[i]
-		info, ok := r.ringInstanceByToken[token]
-		if !ok {
-			// This should never happen unless a bug in the ring code.
-			return nil, ErrInconsistentTokensInfo
-		}
-
-		if rangeEnd == 0 {
-			// we're looking for the end of the next range
-			if info.InstanceID == instanceID {
-				rangeEnd = token - 1
+	addMaxSingleton := false
+	currIndex := 0
+	rangeStart := uint32(0)
+	rangeEnd := uint32(math.MaxUint32)
+	for {
+		var token uint32
+		// We are looking for the highest token not owned by instanceID,
+		// to add it as the next sub-range start.
+		for currIndex < len(subringTokens) {
+			token = subringTokens[currIndex]
+			tokenInfo, ok := r.ringInstanceByToken[token]
+			if !ok {
+				// This should never happen unless there's a bug in the ring code.
+				return nil, ErrInconsistentTokensInfo
 			}
-		} else {
-			// we have a range end, and are looking for the start of the range
-			if info.InstanceID != instanceID {
-				ranges = append(ranges, rangeEnd, token)
-				rangeEnd = 0
+			if tokenInfo.InstanceID == instanceID {
+				break
 			}
+			rangeStart = token
+			currIndex++
 		}
-	}
 
-	// finally look at the first token again
-	// - if we have a range end, check if we claimed token 0
-	//   - if we don't, we have our start
-	//   - if we do, the start is 0
-	// - if we don't have a range end, check if we claimed token 0
-	//   - if we don't, do nothing
-	//   - if we do, add the range of [0, token-1]
-	//     - BUT, if the token itself is 0, do nothing, because we don't own the tokens themselves (we should be covered by the already added range that ends with MaxUint32)
-
-	if rangeEnd == 0 {
-		if firstTokenInfo.InstanceID == instanceID && firstToken != 0 {
-			ranges = append(ranges, firstToken-1, 0)
+		if currIndex == len(subringTokens) {
+			if firstTokenOwned {
+				// If we reach the end of the ring without finding other tokens owned by instanceID,
+				// another sub-range is added if the first token is owned by instanceID.
+				ranges = append(ranges, rangeStart, math.MaxUint32)
+			}
+			break
 		}
-	} else {
-		if firstTokenInfo.InstanceID == instanceID {
-			ranges = append(ranges, rangeEnd, 0)
+
+		// At this point we have the next sub-range start, and we are looking for the next sub-range end.
+		if token != 0 {
+			rangeEnd = token - 1
+		}
+		currIndex++
+		// We are looking for the highest token owned by instanceID,
+		// to add it as the next sub-range end.
+		for currIndex < len(subringTokens) {
+			token = subringTokens[currIndex]
+			tokenInfo, ok := r.ringInstanceByToken[token]
+			if !ok {
+				// This should never happen unless there's a bug in the ring code.
+				return nil, ErrInconsistentTokensInfo
+			}
+			if tokenInfo.InstanceID != instanceID {
+				break
+			}
+			rangeEnd = token - 1
+			currIndex++
+		}
+
+		// If we reached the end of the ring having only the tokens owned by instanceID,
+		// we add the last sub-range and terminate.
+		if currIndex == len(subringTokens) {
+			if firstTokenOwned {
+				rangeEnd = math.MaxUint32
+			}
+			ranges = append(ranges, rangeStart, rangeEnd)
+			break
+		}
+
+		// At this point we have the next sub-range end.
+		if rangeEnd == math.MaxUint32 {
+			addMaxSingleton = true
 		} else {
-			ranges = append(ranges, rangeEnd, firstToken)
+			ranges = append(ranges, rangeStart, rangeEnd)
 		}
+		rangeStart = token
+		currIndex++
 	}
 
-	// Ensure returned ranges are sorted.
-	slices.Sort(ranges)
+	if addMaxSingleton && ranges[len(ranges)-1] != math.MaxUint32 {
+		ranges = append(ranges, math.MaxUint32, math.MaxUint32)
+	}
 
 	return ranges, nil
 }

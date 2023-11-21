@@ -229,7 +229,7 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 			cntViaGet, err := sr.numberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
 			require.NoError(t, err)
 
-			assert.Equal(t, cntViaTokens, cntViaGet)
+			assert.Equal(t, cntViaTokens, cntViaGet, instanceID)
 		}
 	}
 }

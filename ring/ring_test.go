@@ -1472,7 +1472,7 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 			// Update the ring.
 			switch s.ringChange {
 			case add:
-				newID, newDesc := generateRingInstance(gen, s.numInstances+1, 0, 128)
+				newID, newDesc, _ := generateRingInstance(gen, s.numInstances+1, 0, 128, nil)
 				ringDesc.Ingesters[newID] = newDesc
 			case remove:
 				// Remove the first one.
@@ -1506,7 +1506,7 @@ func TestRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) {
 	// Create 30 instances in 3 zones.
 	ringInstances := map[string]InstanceDesc{}
 	for i := 0; i < 30; i++ {
-		name, desc := generateRingInstance(initTokenGenerator(t), i, i%3, 128)
+		name, desc, _ := generateRingInstance(initTokenGenerator(t), i, i%3, 128, nil)
 		ringInstances[name] = desc
 	}
 
@@ -1583,7 +1583,7 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 	// Create 20 instances in 2 zones.
 	ringInstances := map[string]InstanceDesc{}
 	for i := 0; i < 20; i++ {
-		name, desc := generateRingInstance(initTokenGenerator(t), i, i%2, 128)
+		name, desc, _ := generateRingInstance(initTokenGenerator(t), i, i%2, 128, nil)
 		ringInstances[name] = desc
 	}
 
@@ -1622,7 +1622,7 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 
 	// Scale up cluster, adding 10 instances in 1 new zone.
 	for i := 20; i < 30; i++ {
-		name, desc := generateRingInstance(initTokenGenerator(t), i, 2, 128)
+		name, desc, _ := generateRingInstance(initTokenGenerator(t), i, 2, 128, nil)
 		ringInstances[name] = desc
 	}
 
@@ -2726,19 +2726,23 @@ func generateTokensLinear(instanceID, numInstances, numTokens int) []uint32 {
 func generateRingInstances(gen TokenGenerator, numInstances, numZones, numTokens int) map[string]InstanceDesc {
 	instances := make(map[string]InstanceDesc, numInstances)
 
+	var allTokens []uint32
+
 	for i := 1; i <= numInstances; i++ {
-		id, desc := generateRingInstance(gen, i, i%numZones, numTokens)
+		id, desc, newTokens := generateRingInstance(gen, i, i%numZones, numTokens, allTokens)
 		instances[id] = desc
+		allTokens = append(allTokens, newTokens...)
 	}
 
 	return instances
 }
 
-func generateRingInstance(gen TokenGenerator, id, zone, numTokens int) (string, InstanceDesc) {
+func generateRingInstance(gen TokenGenerator, id, zone, numTokens int, usedTokens []uint32) (string, InstanceDesc, Tokens) {
 	instanceID := fmt.Sprintf("instance-%d", id)
 	zoneID := fmt.Sprintf("zone-%d", zone)
+	newTokens := gen.GenerateTokens(numTokens, usedTokens)
 
-	return instanceID, generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(numTokens, nil), time.Now())
+	return instanceID, generateRingInstanceWithInfo(instanceID, zoneID, newTokens, time.Now()), newTokens
 }
 
 func generateRingInstanceWithInfo(addr, zone string, tokens []uint32, registeredAt time.Time) InstanceDesc {

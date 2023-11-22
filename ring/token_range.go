@@ -11,6 +11,10 @@ import (
 // It consists of [start, end] pairs, where both start and end are inclusive.
 type TokenRanges []uint32
 
+func (tr TokenRanges) Len() int           { return len(tr) }
+func (tr TokenRanges) Less(i, j int) bool { return tr[i] < tr[j] }
+func (tr TokenRanges) Swap(i, j int)      { tr[i], tr[j] = tr[j], tr[i] }
+
 func (tr TokenRanges) IncludesKey(key uint32) bool {
 	switch {
 	case len(tr) == 0:
@@ -69,8 +73,10 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) (TokenRanges, error)
 		return nil, errors.New("no tokens for zone")
 	}
 
-	ranges := make([]uint32, 0, 2*(len(instance.Tokens)+1)) // 1 range (2 values) per token + one additional if we need to split the rollover range
-	var rangeEnd uint32
+	// 1 range (2 values) per token + one additional if we need to split the rollover range.
+	ranges := make(TokenRanges, 0, 2*(len(instance.Tokens)+1))
+	// non-zero value means we're now looking for start of the range. Zero value means we're looking for next end of range (ie. token owned by this instance).
+	rangeEnd := uint32(0)
 
 	// if this instance claimed the first token, it owns the wrap-around range, which we'll break into two separate ranges
 	firstToken := subringTokens[0]

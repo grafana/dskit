@@ -11,10 +11,6 @@ import (
 // It consists of [start, end] pairs, where both start and end are inclusive.
 type TokenRanges []uint32
 
-func (tr TokenRanges) Len() int           { return len(tr) }
-func (tr TokenRanges) Less(i, j int) bool { return tr[i] < tr[j] }
-func (tr TokenRanges) Swap(i, j int)      { tr[i], tr[j] = tr[j], tr[i] }
-
 func (tr TokenRanges) IncludesKey(key uint32) bool {
 	switch {
 	case len(tr) == 0:

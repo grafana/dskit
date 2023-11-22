@@ -245,10 +245,11 @@ func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
 	const userTokens = 500000
 	const userShardsize = 60
 
-	seriesTokens := initTokenGenerator(b).GenerateTokens(userTokens, nil)
+	gen := initTokenGenerator(b)
+	seriesTokens := gen.GenerateTokens(userTokens, nil)
 
 	// Generate ring
-	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), instancesPerZone*numZones, numZones, numTokens)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(gen, instancesPerZone*numZones, numZones, numTokens)}
 	ring := Ring{
 		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: false, ReplicationFactor: numZones},
 		ringDesc:             ringDesc,

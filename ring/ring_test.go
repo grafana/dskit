@@ -48,11 +48,15 @@ func BenchmarkBatch100x1000(b *testing.B) {
 }
 
 func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
+	seed := time.Now().UnixNano()
+	rnd := rand.New(rand.NewSource(seed))
+	gen := NewRandomTokenGeneratorWithSeed(seed)
+
 	// Make a random ring with N instances, and M tokens per ingests
 	desc := NewDesc()
 	var takenTokens []uint32
 	for i := 0; i < numInstances; i++ {
-		tokens := GenerateTokens(numTokens, takenTokens)
+		tokens := gen.GenerateTokens(numTokens, takenTokens)
 		takenTokens = append(takenTokens, tokens...)
 		desc.AddIngester(fmt.Sprintf("%d", i), fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, time.Now())
 	}
@@ -66,7 +70,6 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 
 	ctx := context.Background()
 	callback := func(InstanceDesc, []int) error { return deepStack(64) }
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	keys := make([]uint32, numKeys)
 	// Generate a batch of N random keys, and look them up
 	b.ResetTimer()
@@ -129,6 +132,8 @@ func benchmarkUpdateRingState(b *testing.B, numInstances, numTokens int, updateT
 		ZoneAwarenessEnabled: true,
 	}
 
+	gen := initTokenGenerator(b)
+
 	// create the ring to set up metrics, but do not start
 	registry := prometheus.NewRegistry()
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
@@ -141,13 +146,13 @@ func benchmarkUpdateRingState(b *testing.B, numInstances, numTokens int, updateT
 	takenTokens := []uint32{}
 	otherTakenTokens := []uint32{}
 	for i := 0; i < numInstances; i++ {
-		tokens := GenerateTokens(numTokens, takenTokens)
+		tokens := gen.GenerateTokens(numTokens, takenTokens)
 		takenTokens = append(takenTokens, tokens...)
 		now := time.Now()
 		id := fmt.Sprintf("%d", i)
 		desc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, now)
 		if updateTokens {
-			otherTokens := GenerateTokens(numTokens, otherTakenTokens)
+			otherTokens := gen.GenerateTokens(numTokens, otherTakenTokens)
 			otherTakenTokens = append(otherTakenTokens, otherTokens...)
 			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), otherTokens, ACTIVE, now)
 		} else {
@@ -200,9 +205,11 @@ func TestDoBatch_QuorumError(t *testing.T) {
 		replicationFactor  = 3
 	)
 
+	gen := initTokenGenerator(t)
+
 	desc := NewDesc()
 	for address := 0; address < replicationFactor; address++ {
-		instTokens := GenerateTokens(128, nil)
+		instTokens := gen.GenerateTokens(128, nil)
 		instanceID := fmt.Sprintf("%d", address)
 		desc.AddIngester(instanceID, instanceID, "", instTokens, ACTIVE, time.Now())
 	}
@@ -362,7 +369,7 @@ func TestAddIngester(t *testing.T) {
 	const ingName = "ing1"
 
 	now := time.Now()
-	ing1Tokens := GenerateTokens(128, nil)
+	ing1Tokens := initTokenGenerator(t).GenerateTokens(128, nil)
 
 	r.AddIngester(ingName, "addr", "1", ing1Tokens, ACTIVE, now)
 
@@ -382,7 +389,7 @@ func TestAddIngesterReplacesExistingTokens(t *testing.T) {
 		Tokens: []uint32{11111, 22222, 33333},
 	}
 
-	newTokens := GenerateTokens(128, nil)
+	newTokens := initTokenGenerator(t).GenerateTokens(128, nil)
 
 	r.AddIngester(ing1Name, "addr", "1", newTokens, ACTIVE, time.Now())
 
@@ -411,6 +418,8 @@ func TestRing_Get_ZoneAwarenessWithIngesterLeaving(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			gen := initTokenGenerator(t)
+
 			r := NewDesc()
 			instances := map[string]InstanceDesc{
 				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE},
@@ -422,7 +431,7 @@ func TestRing_Get_ZoneAwarenessWithIngesterLeaving(t *testing.T) {
 			}
 			var prevTokens []uint32
 			for id, instance := range instances {
-				ingTokens := GenerateTokens(128, prevTokens)
+				ingTokens := gen.GenerateTokens(128, prevTokens)
 				r.AddIngester(id, instance.Addr, instance.Zone, ingTokens, instance.State, time.Now())
 				prevTokens = append(prevTokens, ingTokens...)
 			}
@@ -448,7 +457,7 @@ func TestRing_Get_ZoneAwarenessWithIngesterLeaving(t *testing.T) {
 			_, bufHosts, bufZones := MakeBuffersForGet()
 
 			// Use the GenerateTokens to get an array of random uint32 values.
-			testValues := GenerateTokens(testCount, nil)
+			testValues := gen.GenerateTokens(testCount, nil)
 
 			for i := 0; i < testCount; i++ {
 				set, err := ring.Get(testValues[i], Write, instancesList, bufHosts, bufZones)
@@ -510,12 +519,14 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			gen := initTokenGenerator(t)
+
 			// Add instances to the ring.
 			r := NewDesc()
 			var prevTokens []uint32
 			for i := 0; i < testData.numInstances; i++ {
 				name := fmt.Sprintf("ing%v", i)
-				ingTokens := GenerateTokens(128, prevTokens)
+				ingTokens := gen.GenerateTokens(128, prevTokens)
 
 				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i%testData.numZones), ingTokens, ACTIVE, time.Now())
 
@@ -545,7 +556,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 			_, bufHosts, bufZones := MakeBuffersForGet()
 
 			// Use the GenerateTokens to get an array of random uint32 values.
-			testValues := GenerateTokens(testCount, nil)
+			testValues := gen.GenerateTokens(testCount, nil)
 
 			var set ReplicationSet
 			var err error
@@ -648,6 +659,7 @@ func TestRing_GetAllHealthy(t *testing.T) {
 
 func TestRing_GetReplicationSetForOperation(t *testing.T) {
 	now := time.Now()
+	gen := initTokenGenerator(t)
 
 	tests := map[string]struct {
 		ringInstances           map[string]InstanceDesc
@@ -670,11 +682,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should succeed on all healthy instances and RF=1": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-40 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-40 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    time.Minute,
 			ringReplicationFactor:   1,
@@ -684,11 +696,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should succeed on instances with old timestamps but heartbeat timeout disabled": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    0,
 			ringReplicationFactor:   1,
@@ -698,11 +710,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should fail on 1 unhealthy instance and RF=1": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    time.Minute,
 			ringReplicationFactor:   1,
@@ -712,11 +724,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should succeed on 1 unhealthy instances and RF=3": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    time.Minute,
 			ringReplicationFactor:   3,
@@ -726,11 +738,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should fail on 2 unhealthy instances and RF=3": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    time.Minute,
 			ringReplicationFactor:   3,
@@ -777,6 +789,8 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 }
 
 func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.T) {
+	gen := initTokenGenerator(t)
+
 	tests := map[string]struct {
 		ringInstances               map[string]InstanceDesc
 		unhealthyInstances          []string
@@ -792,8 +806,8 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=1, 1 zone": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2"},
 			replicationFactor:           1,
@@ -802,9 +816,9 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=1, 1 zone, one unhealthy instance": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			unhealthyInstances: []string{"instance-2"},
 			replicationFactor:  1,
@@ -812,9 +826,9 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=1, 3 zones, one unhealthy instance": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			unhealthyInstances: []string{"instance-3"},
 			replicationFactor:  1,
@@ -822,8 +836,8 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=2, 2 zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2"},
 			replicationFactor:           2,
@@ -831,8 +845,8 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=2, 2 zones, one unhealthy instance": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:  []string{"127.0.0.1"},
 			unhealthyInstances: []string{"instance-2"},
@@ -840,9 +854,9 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, 3 zones, one instance per zone": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.3"},
 			replicationFactor:           3,
@@ -851,9 +865,9 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, 3 zones, one instance per zone, one instance unhealthy": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.2", "127.0.0.3"},
 			unhealthyInstances:          []string{"instance-1"},
@@ -863,9 +877,9 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, 3 zones, one instance per zone, two instances unhealthy in separate zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			unhealthyInstances: []string{"instance-1", "instance-2"},
 			replicationFactor:  3,
@@ -873,9 +887,9 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, 3 zones, one instance per zone, all instances unhealthy": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			unhealthyInstances: []string{"instance-1", "instance-2", "instance-3"},
 			replicationFactor:  3,
@@ -883,12 +897,12 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, 3 zones, two instances per zone": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5", "127.0.0.6"},
 			replicationFactor:           3,
@@ -897,12 +911,12 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, 3 zones, two instances per zone, two instances unhealthy in same zone": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.5", "127.0.0.6"},
 			unhealthyInstances:          []string{"instance-3", "instance-4"},
@@ -912,15 +926,15 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, 3 zones, three instances per zone, two instances unhealthy in same zone": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-8": {Addr: "127.0.0.8", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-9": {Addr: "127.0.0.9", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-9": {Addr: "127.0.0.9", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.7", "127.0.0.8", "127.0.0.9"},
 			unhealthyInstances:          []string{"instance-4", "instance-6"},
@@ -930,10 +944,10 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, only 2 zones, two instances per zone": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4"},
 			replicationFactor:           3,
@@ -942,10 +956,10 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, only 2 zones, two instances per zone, one instance unhealthy": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2"},
 			unhealthyInstances:          []string{"instance-4"},
@@ -955,8 +969,8 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, only 1 zone, two instances per zone": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2"},
 			replicationFactor:           3,
@@ -965,8 +979,8 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=3, only 1 zone, two instances per zone, one instance unhealthy": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			unhealthyInstances: []string{"instance-2"},
 			replicationFactor:  3,
@@ -974,17 +988,17 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=5, 5 zones, two instances per zone except for one zone which has three": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1":  {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2":  {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3":  {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4":  {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5":  {Addr: "127.0.0.5", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-6":  {Addr: "127.0.0.6", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-7":  {Addr: "127.0.0.7", Zone: "zone-d", Tokens: GenerateTokens(128, nil)},
-				"instance-8":  {Addr: "127.0.0.8", Zone: "zone-d", Tokens: GenerateTokens(128, nil)},
-				"instance-9":  {Addr: "127.0.0.9", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
-				"instance-10": {Addr: "127.0.0.10", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
-				"instance-11": {Addr: "127.0.0.11", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
+				"instance-1":  {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2":  {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3":  {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4":  {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5":  {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6":  {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-7":  {Addr: "127.0.0.7", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8":  {Addr: "127.0.0.8", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-9":  {Addr: "127.0.0.9", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-10": {Addr: "127.0.0.10", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-11": {Addr: "127.0.0.11", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses: []string{
 				"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5",
@@ -996,17 +1010,17 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=5, 5 zones, two instances per zone except for one zone which has three, 2 unhealthy nodes in same zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1":  {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2":  {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3":  {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4":  {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5":  {Addr: "127.0.0.5", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-6":  {Addr: "127.0.0.6", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-7":  {Addr: "127.0.0.7", Zone: "zone-d", Tokens: GenerateTokens(128, nil)},
-				"instance-8":  {Addr: "127.0.0.8", Zone: "zone-d", Tokens: GenerateTokens(128, nil)},
-				"instance-9":  {Addr: "127.0.0.9", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
-				"instance-10": {Addr: "127.0.0.10", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
-				"instance-11": {Addr: "127.0.0.11", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
+				"instance-1":  {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2":  {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3":  {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4":  {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5":  {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6":  {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-7":  {Addr: "127.0.0.7", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8":  {Addr: "127.0.0.8", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-9":  {Addr: "127.0.0.9", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-10": {Addr: "127.0.0.10", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-11": {Addr: "127.0.0.11", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.5", "127.0.0.6", "127.0.0.7", "127.0.0.8", "127.0.0.9", "127.0.0.10", "127.0.0.11"},
 			unhealthyInstances:          []string{"instance-3", "instance-4"},
@@ -1016,17 +1030,17 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=5, 5 zones, two instances per zone except for one zone which has three, 2 unhealthy nodes in separate zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1":  {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2":  {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3":  {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4":  {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5":  {Addr: "127.0.0.5", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-6":  {Addr: "127.0.0.6", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-7":  {Addr: "127.0.0.7", Zone: "zone-d", Tokens: GenerateTokens(128, nil)},
-				"instance-8":  {Addr: "127.0.0.8", Zone: "zone-d", Tokens: GenerateTokens(128, nil)},
-				"instance-9":  {Addr: "127.0.0.9", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
-				"instance-10": {Addr: "127.0.0.10", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
-				"instance-11": {Addr: "127.0.0.11", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
+				"instance-1":  {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2":  {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3":  {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4":  {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5":  {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6":  {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-7":  {Addr: "127.0.0.7", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8":  {Addr: "127.0.0.8", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-9":  {Addr: "127.0.0.9", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-10": {Addr: "127.0.0.10", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-11": {Addr: "127.0.0.11", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.7", "127.0.0.8", "127.0.0.9", "127.0.0.10", "127.0.0.11"},
 			unhealthyInstances:          []string{"instance-3", "instance-5"},
@@ -1036,11 +1050,11 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		},
 		"RF=5, 5 zones, one instances per zone, three unhealthy instances": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-d", Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-e", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-e", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			unhealthyInstances: []string{"instance-2", "instance-4", "instance-5"},
 			replicationFactor:  5,
@@ -1107,6 +1121,8 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 }
 
 func TestRing_ShuffleShard(t *testing.T) {
+	gen := initTokenGenerator(t)
+
 	tests := map[string]struct {
 		ringInstances        map[string]InstanceDesc
 		shardSize            int
@@ -1123,8 +1139,8 @@ func TestRing_ShuffleShard(t *testing.T) {
 		},
 		"single zone, shard size > num instances": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			shardSize:            3,
 			zoneAwarenessEnabled: true,
@@ -1133,9 +1149,9 @@ func TestRing_ShuffleShard(t *testing.T) {
 		},
 		"single zone, shard size < num instances": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			shardSize:            2,
 			zoneAwarenessEnabled: true,
@@ -1144,9 +1160,9 @@ func TestRing_ShuffleShard(t *testing.T) {
 		},
 		"multiple zones, shard size < num zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			shardSize:            2,
 			zoneAwarenessEnabled: true,
@@ -1155,12 +1171,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 		},
 		"multiple zones, shard size divisible by num zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			shardSize:            3,
 			zoneAwarenessEnabled: true,
@@ -1169,12 +1185,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 		},
 		"multiple zones, shard size NOT divisible by num zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			shardSize:            4,
 			zoneAwarenessEnabled: true,
@@ -1183,12 +1199,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 		},
 		"multiple zones, shard size NOT divisible by num zones, but zone awareness is disabled": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
 			shardSize:            4,
 			zoneAwarenessEnabled: false,
@@ -1257,7 +1273,7 @@ func TestRing_ShuffleShard_Stability(t *testing.T) {
 	)
 
 	// Initialise the ring.
-	ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, 128)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
 	ring := Ring{
 		cfg: Config{
 			HeartbeatTimeout:     time.Hour,
@@ -1288,6 +1304,12 @@ func TestRing_ShuffleShard_Stability(t *testing.T) {
 			}
 		}
 	}
+}
+
+func initTokenGenerator(t testing.TB) TokenGenerator {
+	seed := time.Now().UnixNano()
+	t.Log("token generator seed:", seed)
+	return NewRandomTokenGeneratorWithSeed(seed)
 }
 
 func TestRing_ShuffleShard_Shuffling(t *testing.T) {
@@ -1423,8 +1445,9 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
+			gen := initTokenGenerator(t)
 			// Initialise the ring.
-			ringDesc := &Desc{Ingesters: generateRingInstances(s.numInstances, s.numZones, 128)}
+			ringDesc := &Desc{Ingesters: generateRingInstances(gen, s.numInstances, s.numZones, 128)}
 			ring := Ring{
 				cfg: Config{
 					HeartbeatTimeout:     time.Hour,
@@ -1449,7 +1472,7 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 			// Update the ring.
 			switch s.ringChange {
 			case add:
-				newID, newDesc := generateRingInstance(s.numInstances+1, 0, 128)
+				newID, newDesc := generateRingInstance(gen, s.numInstances+1, 0, 128)
 				ringDesc.Ingesters[newID] = newDesc
 			case remove:
 				// Remove the first one.
@@ -1483,7 +1506,7 @@ func TestRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) {
 	// Create 30 instances in 3 zones.
 	ringInstances := map[string]InstanceDesc{}
 	for i := 0; i < 30; i++ {
-		name, desc := generateRingInstance(i, i%3, 128)
+		name, desc := generateRingInstance(initTokenGenerator(t), i, i%3, 128)
 		ringInstances[name] = desc
 	}
 
@@ -1560,7 +1583,7 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 	// Create 20 instances in 2 zones.
 	ringInstances := map[string]InstanceDesc{}
 	for i := 0; i < 20; i++ {
-		name, desc := generateRingInstance(i, i%2, 128)
+		name, desc := generateRingInstance(initTokenGenerator(t), i, i%2, 128)
 		ringInstances[name] = desc
 	}
 
@@ -1599,7 +1622,7 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 
 	// Scale up cluster, adding 10 instances in 1 new zone.
 	for i := 20; i < 30; i++ {
-		name, desc := generateRingInstance(i, 2, 128)
+		name, desc := generateRingInstance(initTokenGenerator(t), i, 2, 128)
 		ringInstances[name] = desc
 	}
 
@@ -1932,9 +1955,10 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 					seed := time.Now().UnixNano()
 					rnd := rand.New(rand.NewSource(seed))
 					t.Log("random generator seed:", seed)
+					gen := NewRandomTokenGeneratorWithSeed(seed)
 
 					// Initialise the ring.
-					ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, 128)}
+					ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
 					ring := Ring{
 						cfg: Config{
 							HeartbeatTimeout:     time.Hour,
@@ -1982,7 +2006,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							zoneID := fmt.Sprintf("zone-%d", nextInstanceID%numZones)
 							nextInstanceID++
 
-							ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, GenerateTokens(128, nil), currTime)
+							ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, nil), currTime)
 
 							ring.ringTokens = ringDesc.GetTokens()
 							ring.ringTokensByZone = ringDesc.getTokensByZone()
@@ -2481,14 +2505,16 @@ func TestRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
 
+	gen := initTokenGenerator(t)
+
 	// Add some instances to the ring.
 	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{
-		"instance-1": generateRingInstanceWithInfo("instance-1", "zone-a", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-		"instance-2": generateRingInstanceWithInfo("instance-2", "zone-a", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-		"instance-3": generateRingInstanceWithInfo("instance-3", "zone-b", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-		"instance-4": generateRingInstanceWithInfo("instance-4", "zone-b", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-		"instance-5": generateRingInstanceWithInfo("instance-5", "zone-c", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-		"instance-6": generateRingInstanceWithInfo("instance-6", "zone-c", GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-1": generateRingInstanceWithInfo("instance-1", "zone-a", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-2": generateRingInstanceWithInfo("instance-2", "zone-a", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-3": generateRingInstanceWithInfo("instance-3", "zone-b", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-4": generateRingInstanceWithInfo("instance-4", "zone-b", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-5": generateRingInstanceWithInfo("instance-5", "zone-c", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-6": generateRingInstanceWithInfo("instance-6", "zone-c", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
 	}}
 
 	ring.updateRingState(ringDesc)
@@ -2570,7 +2596,7 @@ func BenchmarkRing_ShuffleShard_LargeShardSize(b *testing.B) {
 
 func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, shardSize int, cache bool) {
 	// Initialise the ring.
-	ringDesc := &Desc{Ingesters: generateRingInstances(numInstances, numZones, numTokens)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), numInstances, numZones, numTokens)}
 	ring := Ring{
 		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: !cache},
 		ringDesc:             ringDesc,
@@ -2620,7 +2646,7 @@ func BenchmarkRing_Get(b *testing.B) {
 
 	for benchName, benchCase := range benchCases {
 		// Initialise the ring.
-		ringDesc := &Desc{Ingesters: generateRingInstances(benchCase.numInstances, benchCase.numZones, numTokens)}
+		ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), benchCase.numInstances, benchCase.numZones, numTokens)}
 		ring := Ring{
 			cfg: Config{
 				HeartbeatTimeout:     time.Hour,
@@ -2658,7 +2684,7 @@ func BenchmarkRing_Get(b *testing.B) {
 
 func TestRing_Get_NoMemoryAllocations(t *testing.T) {
 	// Initialise the ring.
-	ringDesc := &Desc{Ingesters: generateRingInstances(3, 3, 128)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), 3, 3, 128)}
 	ring := Ring{
 		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: true, ReplicationFactor: 3},
 		ringDesc:             ringDesc,
@@ -2697,22 +2723,22 @@ func generateTokensLinear(instanceID, numInstances, numTokens int) []uint32 {
 	return tokens
 }
 
-func generateRingInstances(numInstances, numZones, numTokens int) map[string]InstanceDesc {
+func generateRingInstances(gen TokenGenerator, numInstances, numZones, numTokens int) map[string]InstanceDesc {
 	instances := make(map[string]InstanceDesc, numInstances)
 
 	for i := 1; i <= numInstances; i++ {
-		id, desc := generateRingInstance(i, i%numZones, numTokens)
+		id, desc := generateRingInstance(gen, i, i%numZones, numTokens)
 		instances[id] = desc
 	}
 
 	return instances
 }
 
-func generateRingInstance(id, zone, numTokens int) (string, InstanceDesc) {
+func generateRingInstance(gen TokenGenerator, id, zone, numTokens int) (string, InstanceDesc) {
 	instanceID := fmt.Sprintf("instance-%d", id)
 	zoneID := fmt.Sprintf("zone-%d", zone)
 
-	return instanceID, generateRingInstanceWithInfo(instanceID, zoneID, GenerateTokens(numTokens, nil), time.Now())
+	return instanceID, generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(numTokens, nil), time.Now())
 }
 
 func generateRingInstanceWithInfo(addr, zone string, tokens []uint32, registeredAt time.Time) InstanceDesc {

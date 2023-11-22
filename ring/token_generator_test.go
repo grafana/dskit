@@ -34,8 +34,3 @@ func TestRandomTokenGenerator_IgnoresOldTokens(t *testing.T) {
 		}
 	}
 }
-
-// GenerateTokens generates numTokens unique, random and sorted tokens for testing purposes.
-func GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
-	return NewRandomTokenGenerator().GenerateTokens(tokensCount, takenTokens)
-}

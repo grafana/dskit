@@ -174,12 +174,14 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 	const numTokens = 512
 	const replicationFactor = numZones // This is the only config supported by GetTokenRangesForInstance right now.
 
+	gen := initTokenGenerator(t)
+
 	// Generate users with different number of tokens
 	userTokens := map[string][]uint32{}
 	shardSizes := map[string]int{}
 	for _, cnt := range []int{1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000} {
 		uid := fmt.Sprintf("%dk", cnt/1000)
-		userTokens[uid] = GenerateTokens(cnt, nil)
+		userTokens[uid] = gen.GenerateTokens(cnt, nil)
 
 		shardSize := cnt / 7500
 		shardSize = (shardSize / numZones) * numZones // round down to numZones
@@ -190,7 +192,7 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 	}
 
 	// Generate ring
-	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), instancesPerZone*numZones, numZones, numTokens)}
+	ringDesc := &Desc{Ingesters: generateRingInstances(gen, instancesPerZone*numZones, numZones, numTokens)}
 	ring := Ring{
 		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: false, ReplicationFactor: replicationFactor},
 		ringDesc:             ringDesc,
@@ -229,7 +231,7 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 			cntViaGet, err := sr.numberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
 			require.NoError(t, err)
 
-			assert.Equal(t, cntViaTokens, cntViaGet, instanceID)
+			assert.Equal(t, cntViaTokens, cntViaGet, "user=%s, instance=%s", uid, instanceID)
 		}
 	}
 }

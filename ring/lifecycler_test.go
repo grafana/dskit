@@ -91,7 +91,7 @@ func TestLifecycler_TokenGenerator(t *testing.T) {
 	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true, log.NewNopLogger())
 	require.NoError(t, err)
 
-	tests := []TokenGenerator{nil, NewRandomTokenGenerator(), spreadMinimizingTokenGenerator}
+	tests := []TokenGenerator{nil, initTokenGenerator(t), spreadMinimizingTokenGenerator}
 
 	for _, testData := range tests {
 		cfg.RingTokenGenerator = testData
@@ -545,7 +545,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig.NumTokens = numTokens
 
 	// Simulate ingester with 64 tokens left the ring in LEAVING state
-	origTokens := GenerateTokens(64, nil)
+	origTokens := initTokenGenerator(t).GenerateTokens(64, nil)
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
 		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
@@ -621,7 +621,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig.NumTokens = numTokens
 
 	// Simulate ingester with 128 tokens left the ring in LEAVING state
-	origTokens := GenerateTokens(128, nil)
+	origTokens := initTokenGenerator(t).GenerateTokens(128, nil)
 	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
 		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
@@ -1019,7 +1019,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	origTokens := GenerateTokens(100, nil)
+	origTokens := initTokenGenerator(t).GenerateTokens(100, nil)
 
 	const id = "test"
 	registeredAt := time.Now().Add(-1 * time.Hour)
@@ -1356,7 +1356,7 @@ func TestWaitBeforeJoining(t *testing.T) {
 	}{
 		"RandomTokenGenerator never returns errors": {
 			targetInstanceID: instanceName(3, 1),
-			tokenGenerator:   NewRandomTokenGenerator(),
+			tokenGenerator:   initTokenGenerator(t),
 		},
 		"SpreadMinimizingTokenGenerator with CanJoinEnabled=false never returns errors": {
 			targetInstanceID: instanceName(3, 1),

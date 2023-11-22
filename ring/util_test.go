@@ -438,6 +438,7 @@ func TestSearchToken(t *testing.T) {
 
 func BenchmarkSearchToken(b *testing.B) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	gen := initTokenGenerator(b)
 
 	tokensPerInstance := 512
 	numInstances := []int{3, 9, 27, 81, 243, 729}
@@ -446,7 +447,7 @@ func BenchmarkSearchToken(b *testing.B) {
 		b.Run(fmt.Sprintf("searchToken_%d_instances", instances), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
-				tokens := GenerateTokens(instances*tokensPerInstance, []uint32{})
+				tokens := gen.GenerateTokens(instances*tokensPerInstance, []uint32{})
 				hash := r.Uint32()
 				b.StartTimer()
 				searchToken(tokens, hash)

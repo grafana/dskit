@@ -24,13 +24,15 @@ func TestKeyInTokenRanges(t *testing.T) {
 func TestGetTokenRangesForInstance(t *testing.T) {
 	numZones := 3
 
+	gen := initTokenGenerator(t)
+
 	tests := map[string]struct {
 		zoneTokens map[string][]uint32
 		expected   map[string]TokenRanges
 	}{
 		"single instance in zone": {
 			zoneTokens: map[string][]uint32{
-				"instance-0-0": GenerateTokens(512, nil),
+				"instance-0-0": gen.GenerateTokens(512, nil),
 			},
 			expected: map[string]TokenRanges{
 				"instance-0-0": {0, math.MaxUint32},
@@ -93,7 +95,7 @@ func TestGetTokenRangesForInstance(t *testing.T) {
 			for z := 1; z < numZones; z++ {
 				for i := 0; i < len(testData.zoneTokens); i++ {
 					id := fmt.Sprintf("instance-%d-%d", z, i)
-					tokens := GenerateTokens(512, allTokens)
+					tokens := gen.GenerateTokens(512, allTokens)
 					instances[id] = generateRingInstanceWithInfo(id, fmt.Sprintf("zone-%d", z), tokens, time.Now())
 					allTokens = append(allTokens, tokens...)
 				}

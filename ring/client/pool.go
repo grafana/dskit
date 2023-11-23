@@ -180,8 +180,7 @@ func (p *Pool) RemoveClient(client PoolClient, addr string) {
 	p.Lock()
 	defer p.Unlock()
 	if addr != "" {
-		cachedClient, _ := p.clients[addr]
-		if cachedClient != client {
+		if p.clients[addr] != client {
 			return
 		}
 		delete(p.clients, addr)

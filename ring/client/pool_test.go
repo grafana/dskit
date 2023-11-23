@@ -160,3 +160,86 @@ func TestCleanUnhealthy(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveClient(t *testing.T) {
+	const (
+		addr1 = "localhost:123"
+		addr2 = "localhost:234"
+	)
+
+	assertNotEqual := func(t *testing.T, clientA, clientB PoolClient, msg string) {
+		t.Helper()
+		// Using golang equality. `assert.NotEqual` inspects the value of the interface implementation.
+		if clientA == clientB {
+			t.Error(msg)
+		}
+	}
+
+	assertEqual := func(t *testing.T, clientA, clientB PoolClient, msg string) {
+		t.Helper()
+		// Using golang equality. `assert.Equal` inspects the value of the interface implementation.
+		if clientA != clientB {
+			t.Error(msg)
+		}
+	}
+
+	clientHappy := true
+	factory := PoolAddrFunc(func(addr string) (PoolClient, error) {
+		return &mockClient{happy: clientHappy, status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
+	})
+
+	cfg := PoolConfig{
+		CheckInterval:      time.Second,
+		HealthCheckEnabled: false,
+	}
+	pool := NewPool("test", cfg, nil, factory, nil, log.NewNopLogger())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), pool))
+	defer services.StopAndAwaitTerminated(context.Background(), pool) //nolint:errcheck
+
+	c1a, err := pool.GetClientFor(addr1)
+	require.NoError(t, err)
+
+	c2a, err := pool.GetClientFor(addr2)
+	require.NoError(t, err)
+	assertNotEqual(t, c1a, c2a, "clients for different addresses should be different")
+
+	// Remove without providing address
+	pool.RemoveClient(c1a, "")
+
+	c1b, err := pool.GetClientFor(addr1)
+	require.NoError(t, err)
+	assertNotEqual(t, c1a, c1b, "c1a should have been removed and c1b should be a different instance")
+
+	c2b, err := pool.GetClientFor(addr2)
+	require.NoError(t, err)
+	assertEqual(t, c2b, c2a, "c2b should be the same")
+
+	// Remove with providing an address
+	pool.RemoveClient(c1b, addr1)
+
+	// Prepare for cleaning up unhealthy instances later
+	clientHappy = false
+
+	c1c, err := pool.GetClientFor(addr1)
+	require.NoError(t, err)
+	assertNotEqual(t, c1a, c1c, "c1a should have been removed and c1c should be a different instance")
+	assertNotEqual(t, c1b, c1c, "c1b should have been removed and c1c should be a different instance")
+
+	c2c, err := pool.GetClientFor(addr2)
+	require.NoError(t, err)
+	assertEqual(t, c2c, c2a, "c2c should be the same")
+
+	// This should clean up c1c
+	pool.cleanUnhealthy()
+	// Removing c1c should be a noop
+	pool.RemoveClient(c1c, addr1)
+
+	c1d, err := pool.GetClientFor(addr1)
+	require.NoError(t, err)
+	assertNotEqual(t, c1a, c1d, "c1a should have been removed and c1d should be a different instance")
+	assertNotEqual(t, c1b, c1d, "c1b should have been removed and c1d should be a different instance")
+
+	c2d, err := pool.GetClientFor(addr2)
+	require.NoError(t, err)
+	assertEqual(t, c2d, c2a, "c2c should be the same")
+}

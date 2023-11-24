@@ -1355,6 +1355,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_ZoneSorting(t *testing.T) {
 	}
 
 	tracker := newZoneAwareResultTracker(instances, 2, zoneSorter, log.NewNopLogger())
+	tracker.startMinimumRequests()
 
 	for i := range instances {
 		i := i
@@ -1383,7 +1384,6 @@ func TestZoneAwareResultTracker_StartMinimumRequests_ZoneSorting(t *testing.T) {
 		}, time.Second, 10*time.Millisecond, msg+", zones released are: ", released)
 	}
 
-	tracker.startMinimumRequests()
 	requireZonesReleased([]bool{true, false, true, false}, "first two zones (A and C) should be released immediately")
 
 	tracker.done(&instances[0], errors.New("zone A failed"))

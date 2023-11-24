@@ -21,6 +21,15 @@ func TestKeyInTokenRanges(t *testing.T) {
 	require.False(t, ranges.IncludesKey(20))
 }
 
+func TestTokenRangesEqual(t *testing.T) {
+	ranges := TokenRanges{4, 8, 12, 16}
+	require.True(t, ranges.Equal(TokenRanges{4, 8, 12, 16}))
+	require.False(t, ranges.Equal(TokenRanges{4, 8}))
+	require.False(t, ranges.Equal(TokenRanges{4, 8, 12, 17}))
+	require.False(t, ranges.Equal(TokenRanges{4, 8, 12, 17, 20, 25}))
+	require.False(t, ranges.Equal(nil))
+}
+
 func TestGetTokenRangesForInstance(t *testing.T) {
 	numZones := 3
 

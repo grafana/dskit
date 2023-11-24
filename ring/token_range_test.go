@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"testing"
 	"time"
 
@@ -172,6 +173,14 @@ func benchmarkGetTokenRangesForInstance(b *testing.B, instancesPerZone int) {
 }
 
 func TestCheckingOfKeyOwnership(t *testing.T) {
+	for _, randomize := range []bool{false, true} {
+		t.Run("TestCheckingOfKeyOwnership/randomizeInstanceStates="+strconv.FormatBool(randomize), func(t *testing.T) {
+			testCheckingOfKeyOwnership(t, randomize)
+		})
+	}
+}
+
+func testCheckingOfKeyOwnership(t *testing.T, randomizeInstanceStates bool) {
 	const instancesPerZone = 100
 	const numZones = 3
 	const numTokens = 512
@@ -200,10 +209,12 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 
 	// Generate ring
 	ringDesc := &Desc{Ingesters: generateRingInstances(gen, instancesPerZone*numZones, numZones, numTokens)}
-	// Switch states of some ingesters
-	for ins, ing := range ringDesc.Ingesters {
-		ing.State = InstanceState(stateRand.Int31n(int32(LEFT))) // LEFT is not state that clients can see, so we don't test it.
-		ringDesc.Ingesters[ins] = ing
+
+	if randomizeInstanceStates {
+		for ins, ing := range ringDesc.Ingesters {
+			ing.State = InstanceState(stateRand.Int31n(int32(LEFT))) // LEFT is not state that clients can see, so we don't test it.
+			ringDesc.Ingesters[ins] = ing
+		}
 	}
 
 	ring := Ring{

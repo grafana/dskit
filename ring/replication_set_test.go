@@ -684,7 +684,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImme
 			case <-waitForFailingZoneToSeeCancelledContext:
 				// Nothing more to do.
 			case <-time.After(2 * time.Second):
-				require.FailNowf(t, "%s gave up waiting for instance in failing zone to report its context had been cancelled", instance.Addr)
+				require.FailNow(t, "gave up waiting for instance in failing zone to report its context had been cancelled: "+instance.Addr)
 			}
 		}
 

@@ -130,6 +130,7 @@ type DoUntilQuorumConfig struct {
 	//
 	// Earlier zones will be used first.
 	// The function can modify the provided slice of zones in place.
+	// All provided zones must be returned exactly once.
 	//
 	// This can be used to prioritise zones that are more likely to succeed, or are expected to complete
 	// faster, for example.

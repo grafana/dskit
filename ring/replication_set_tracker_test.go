@@ -803,7 +803,7 @@ func TestZoneAwareResultTracker(t *testing.T) {
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			testCase.run(t, newZoneAwareResultTracker(testCase.instances, testCase.maxUnavailableZones, log.NewNopLogger()))
+			testCase.run(t, newZoneAwareResultTracker(testCase.instances, testCase.maxUnavailableZones, nil, log.NewNopLogger()))
 		})
 	}
 }
@@ -811,7 +811,7 @@ func TestZoneAwareResultTracker(t *testing.T) {
 func TestZoneAwareResultTracker_AwaitStart_ContextCancelled(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instances := []InstanceDesc{instance1}
-	tracker := newZoneAwareResultTracker(instances, 0, log.NewNopLogger())
+	tracker := newZoneAwareResultTracker(instances, 0, nil, log.NewNopLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -834,7 +834,7 @@ func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6}
 
 	logger := &testLogger{}
-	tracker := newZoneAwareResultTracker(instances, 1, logger)
+	tracker := newZoneAwareResultTracker(instances, 1, nil, logger)
 
 	tracker.startAllRequests()
 
@@ -872,7 +872,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 
 	for testIteration := 0; testIteration < 900; testIteration++ {
 		logger := &testLogger{}
-		tracker := newZoneAwareResultTracker(instances, 1, logger)
+		tracker := newZoneAwareResultTracker(instances, 1, nil, logger)
 		tracker.startMinimumRequests()
 
 		mtx := sync.RWMutex{}
@@ -979,7 +979,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
 	logger := &testLogger{}
-	tracker := newZoneAwareResultTracker(instances, 2, logger)
+	tracker := newZoneAwareResultTracker(instances, 2, nil, logger)
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
@@ -1079,7 +1079,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
-	tracker := newZoneAwareResultTracker(instances, 2, log.NewNopLogger())
+	tracker := newZoneAwareResultTracker(instances, 2, nil, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
@@ -1184,7 +1184,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumA
 	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
-	tracker := newZoneAwareResultTracker(instances, 2, log.NewNopLogger())
+	tracker := newZoneAwareResultTracker(instances, 2, nil, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
@@ -1255,7 +1255,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaxi
 	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
-	tracker := newZoneAwareResultTracker(instances, 2, log.NewNopLogger())
+	tracker := newZoneAwareResultTracker(instances, 2, nil, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}
@@ -1311,7 +1311,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumber
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instances := []InstanceDesc{instance1, instance2}
-	tracker := newZoneAwareResultTracker(instances, 1, log.NewNopLogger())
+	tracker := newZoneAwareResultTracker(instances, 1, nil, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
 	wg := sync.WaitGroup{}
@@ -1341,6 +1341,58 @@ func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumber
 	}
 }
 
+func TestZoneAwareResultTracker_StartMinimumRequests_ZoneSorting(t *testing.T) {
+	zoneAInstance := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
+	zoneBInstance := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-b"}
+	zoneCInstance := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-c"}
+	zoneDInstance := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-d"}
+	instances := []InstanceDesc{zoneAInstance, zoneBInstance, zoneCInstance, zoneDInstance}
+	mtx := sync.Mutex{}
+	released := []bool{false, false, false, false}
+
+	zoneSorter := func(zones []string) []string {
+		return []string{"zone-c", "zone-a", "zone-d", "zone-b"}
+	}
+
+	tracker := newZoneAwareResultTracker(instances, 2, zoneSorter, log.NewNopLogger())
+	tracker.startMinimumRequests()
+
+	for i := range instances {
+		i := i
+		instance := &instances[i]
+		go func() {
+			err := tracker.awaitStart(context.Background(), instance)
+			require.NoError(t, err)
+			mtx.Lock()
+			released[i] = true
+			mtx.Unlock()
+		}()
+	}
+
+	requireZonesReleased := func(expected []bool, msg string) {
+		require.Eventually(t, func() bool {
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			for i, e := range expected {
+				if released[i] != e {
+					return false
+				}
+			}
+
+			return true
+		}, time.Second, 10*time.Millisecond, msg+", zones released are: ", released)
+	}
+
+	requireZonesReleased([]bool{true, false, true, false}, "first two zones (A and C) should be released immediately")
+
+	tracker.done(&instances[0], errors.New("zone A failed"))
+	requireZonesReleased([]bool{true, false, true, true}, "third zone (D) should be released after first failure")
+
+	tracker.done(&instances[3], errors.New("zone D failed"))
+	requireZonesReleased([]bool{true, true, true, true}, "final zone (C) should be released after first failure")
+}
+
 func TestZoneAwareResultTracker_StartAdditionalRequests(t *testing.T) {
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
@@ -1353,7 +1405,7 @@ func TestZoneAwareResultTracker_StartAdditionalRequests(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
 	logger := &testLogger{}
-	tracker := newZoneAwareResultTracker(instances, 2, logger)
+	tracker := newZoneAwareResultTracker(instances, 2, nil, logger)
 	tracker.startMinimumRequests()
 
 	mtx := sync.RWMutex{}

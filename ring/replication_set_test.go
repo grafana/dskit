@@ -629,6 +629,54 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_TerminalError(t *test
 	cleanupTracker.assertCorrectCleanup(nil, calledInstances[0:3])
 }
 
+func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ZoneSorting(t *testing.T) {
+	replicationSet := ReplicationSet{
+		Instances: []InstanceDesc{
+			{Addr: "zone-a-replica-1", Zone: "zone-a"},
+			{Addr: "zone-a-replica-2", Zone: "zone-a"},
+			{Addr: "zone-b-replica-1", Zone: "zone-b"},
+			{Addr: "zone-b-replica-2", Zone: "zone-b"},
+			{Addr: "zone-c-replica-1", Zone: "zone-c"},
+			{Addr: "zone-c-replica-2", Zone: "zone-c"},
+			{Addr: "zone-d-replica-1", Zone: "zone-d"},
+			{Addr: "zone-d-replica-2", Zone: "zone-d"},
+		},
+		MaxUnavailableZones: 2,
+	}
+
+	defer goleak.VerifyNone(t)
+
+	ctx := context.Background()
+	cleanupTracker := newCleanupTracker(t, 0)
+	mtx := &sync.RWMutex{}
+	calledInstances := []string{}
+
+	f := func(ctx context.Context, desc *InstanceDesc, cancel context.CancelFunc) (string, error) {
+		cleanupTracker.trackCall(ctx, desc, cancel)
+
+		mtx.Lock()
+		defer mtx.Unlock()
+		calledInstances = append(calledInstances, desc.Addr)
+
+		return desc.Addr, nil
+	}
+
+	cfg := DoUntilQuorumConfig{
+		MinimizeRequests: true,
+		ZoneSorter: func(zones []string) []string {
+			return []string{"zone-b", "zone-d", "zone-a", "zone-c"}
+		},
+	}
+
+	actualResults, err := DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, cfg, f, cleanupTracker.cleanup)
+	require.ElementsMatch(t, actualResults, []string{"zone-b-replica-1", "zone-b-replica-2", "zone-d-replica-1", "zone-d-replica-2"})
+	require.ElementsMatch(t, actualResults, calledInstances)
+	require.NoError(t, err)
+
+	cleanupTracker.collectCleanedUpInstances()
+	cleanupTracker.assertCorrectCleanup(calledInstances, nil)
+}
+
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImmediatelyOnSingleFailure(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
@@ -684,7 +732,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImme
 			case <-waitForFailingZoneToSeeCancelledContext:
 				// Nothing more to do.
 			case <-time.After(2 * time.Second):
-				require.FailNowf(t, "%s gave up waiting for instance in failing zone to report its context had been cancelled", instance.Addr)
+				require.FailNow(t, "gave up waiting for instance in failing zone to report its context had been cancelled: "+instance.Addr)
 			}
 		}
 

@@ -238,7 +238,7 @@ func TestGetSourceIPsWithCustomRegex(t *testing.T) {
 			req: &http.Request{
 				RemoteAddr: "192.168.1.100:3454",
 				Header: map[string][]string{
-					http.CanonicalHeaderKey("SomeHeader"): {"172.16.1.1", "172.16.2.1"},
+					http.CanonicalHeaderKey("SomeHeader"): {"172.16.1.1,172.16.2.1"},
 				},
 			},
 			want: "172.16.1.1, 192.168.1.100",

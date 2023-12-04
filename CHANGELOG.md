@@ -169,6 +169,7 @@
 * [ENHANCEMENT] ring: Added new function `DoBatchWithClientError()` that extends an already existing `DoBatch()`. The former differentiates between client and server errors by the filtering function passed as a parameter. This way client and server errors can be tracked separately. The function returns only when there is a quorum of either error class. #427
 * [ENHANCEMENT] ring: Replaced `DoBatchWithClientError()` with `DoBatchWithOptions()`, allowing a new option to use a custom `Go(func())` implementation that may use pre-allocated workers instead of spawning a new goroutine for each request. #431
 * [ENHANCEMENT] ring: add support for prioritising zones when using `DoUntilQuorum` with request minimisation and zone awareness. #440
+* [ENHANCEMENT] ballast: add utility function to allocate heap ballast. #446
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

@@ -1,4 +1,4 @@
-package pageidparser
+package clusterurl
 
 import (
 	"embed"

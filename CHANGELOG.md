@@ -170,6 +170,7 @@
 * [ENHANCEMENT] ring: Replaced `DoBatchWithClientError()` with `DoBatchWithOptions()`, allowing a new option to use a custom `Go(func())` implementation that may use pre-allocated workers instead of spawning a new goroutine for each request. #431
 * [ENHANCEMENT] ring: add support for prioritising zones when using `DoUntilQuorum` with request minimisation and zone awareness. #440
 * [ENHANCEMENT] ballast: add utility function to allocate heap ballast. #446
+* [ENHANCEMENT] SpanProfiler: add spanprofiler package.
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

@@ -3,6 +3,9 @@ package cancellation
 import (
 	"context"
 	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type cancellationError struct {
@@ -27,4 +30,8 @@ func (e cancellationError) Is(err error) bool {
 
 func (e cancellationError) Unwrap() error {
 	return e.inner
+}
+
+func (e cancellationError) GRPCStatus() *status.Status {
+	return status.New(codes.Canceled, e.Error())
 }

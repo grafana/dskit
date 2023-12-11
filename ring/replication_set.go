@@ -310,7 +310,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	}
 
 	terminate := func(err error) ([]T, error) {
-		if cfg.Logger != nil {
+		if cfg.Logger != nil && !errors.Is(err, context.Canceled) { // Cancellation is not an error.
 			ext.Error.Set(cfg.Logger.Span, true)
 		}
 

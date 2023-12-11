@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/cancellation"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/stretchr/testify/assert"
@@ -611,22 +613,28 @@ func TestDefaultContextTracker(t *testing.T) {
 	}
 
 	// Cancel a context for one instance using cancelContextFor and check that the others are not cancelled.
-	tracker.cancelContextFor(&instance1)
+	instance1Cause := cancellation.NewErrorf("instance 1 cancellation cause")
+	tracker.cancelContextFor(&instance1, instance1Cause)
 	require.Equal(t, context.Canceled, instance1Ctx.Err(), "instance context should be cancelled")
+	require.Equal(t, instance1Cause, context.Cause(instance1Ctx))
 	for _, ctx := range []context.Context{instance2Ctx, instance3Ctx, instance4Ctx} {
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
 	}
 
 	// Cancel another context using the cancellation function provided and check that the others are not cancelled.
-	instance2Cancel()
+	instance2Cause := cancellation.NewErrorf("instance 1 cancellation cause")
+	instance2Cancel(instance2Cause)
 	require.Equal(t, context.Canceled, instance2Ctx.Err(), "instance context should be cancelled")
+	require.Equal(t, instance2Cause, context.Cause(instance2Ctx))
 	for _, ctx := range []context.Context{instance3Ctx, instance4Ctx} {
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
 	}
 
-	tracker.cancelAllContexts()
-	for _, ctx := range []context.Context{instance1Ctx, instance2Ctx, instance3Ctx, instance4Ctx} {
+	remainingInstancesCause := cancellation.NewErrorf("remaining instances cancellation cause")
+	tracker.cancelAllContexts(remainingInstancesCause)
+	for _, ctx := range []context.Context{instance3Ctx, instance4Ctx} {
 		require.Equal(t, context.Canceled, ctx.Err(), "context for instance should be cancelled after cancelling all contexts")
+		require.Equal(t, remainingInstancesCause, context.Cause(ctx))
 	}
 }
 
@@ -1502,22 +1510,28 @@ func TestZoneAwareContextTracker(t *testing.T) {
 
 	// Cancel a context for one instance using cancelContextFor and check that the other context in its zone is cancelled, but others are
 	// unaffected.
-	tracker.cancelContextFor(&instance1)
+	instance1Cause := cancellation.NewErrorf("instance 1 cancellation cause")
+	tracker.cancelContextFor(&instance1, instance1Cause)
 	require.Equal(t, context.Canceled, instance1Ctx.Err(), "instance context should be cancelled")
 	require.Equal(t, context.Canceled, instance2Ctx.Err(), "context for instance in same zone as cancelled instance should also be cancelled")
+	require.Equal(t, instance1Cause, context.Cause(instance1Ctx))
+	require.Equal(t, instance1Cause, context.Cause(instance2Ctx))
 	for _, ctx := range []context.Context{instance3Ctx, instance4Ctx, instance5Ctx, instance6Ctx} {
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
 	}
 
 	// Cancel a context for one instance using the cancellation function provided and check that the other context in its zone is NOT cancelled.
-	instance3Cancel()
+	instance3Cause := cancellation.NewErrorf("instance 3 cancellation cause")
+	instance3Cancel(instance3Cause)
 	for _, ctx := range []context.Context{instance4Ctx, instance5Ctx, instance6Ctx} {
 		require.NoError(t, ctx.Err(), "context for instance should not be cancelled after cancelling the context of another instance")
 	}
 
-	tracker.cancelAllContexts()
-	for _, ctx := range []context.Context{instance1Ctx, instance2Ctx, instance3Ctx, instance4Ctx, instance5Ctx, instance6Ctx} {
+	remainingInstancesCause := cancellation.NewErrorf("remaining instances cancellation cause")
+	tracker.cancelAllContexts(remainingInstancesCause)
+	for _, ctx := range []context.Context{instance4Ctx, instance5Ctx, instance6Ctx} {
 		require.Equal(t, context.Canceled, ctx.Err(), "context for instance should be cancelled after cancelling all contexts")
+		require.Equal(t, remainingInstancesCause, context.Cause(ctx))
 	}
 }
 

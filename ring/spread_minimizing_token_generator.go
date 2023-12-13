@@ -69,17 +69,16 @@ func NewSpreadMinimizingTokenGenerator(instance, zone string, spreadMinimizingZo
 		return nil, err
 	}
 
-	return NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID(prefix, instanceID, zoneID, canJoinEnabled)
+	return NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID(prefix, instanceID, zoneID, canJoinEnabled), nil
 }
 
-func NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID(instancePrefix string, instanceID, zoneID int, canJoinEnabled bool) (*SpreadMinimizingTokenGenerator, error) {
-	tokenGenerator := &SpreadMinimizingTokenGenerator{
+func NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID(instancePrefix string, instanceID, zoneID int, canJoinEnabled bool) *SpreadMinimizingTokenGenerator {
+	return &SpreadMinimizingTokenGenerator{
 		instanceID:     instanceID,
 		instancePrefix: instancePrefix,
 		zoneID:         zoneID,
 		canJoinEnabled: canJoinEnabled,
 	}
-	return tokenGenerator, nil
 }
 
 func parseInstanceID(instanceID string) (string, int, error) {

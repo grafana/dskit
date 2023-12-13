@@ -28,21 +28,25 @@ var (
 
 func TestSpreadMinimizingTokenGenerator_ParseInstanceID(t *testing.T) {
 	tests := map[string]struct {
-		instanceID    string
-		expectedID    int
-		expectedError error
+		instanceID     string
+		expectedPrefix string
+		expectedID     int
+		expectedError  error
 	}{
 		"instance-zone-a-10 is correct": {
-			instanceID: "instance-zone-a-10",
-			expectedID: 10,
+			instanceID:     "instance-zone-a-10",
+			expectedPrefix: "instance-zone-a-",
+			expectedID:     10,
 		},
 		"instance-zone-b-0 is correct": {
-			instanceID: "instance-zone-b-0",
-			expectedID: 0,
+			instanceID:     "instance-zone-b-0",
+			expectedPrefix: "instance-zone-b-",
+			expectedID:     0,
 		},
 		"store-gateway-zone-c-7 is correct": {
-			instanceID: "store-gateway-zone-c-7",
-			expectedID: 7,
+			instanceID:     "store-gateway-zone-c-7",
+			expectedPrefix: "store-gateway-zone-c-",
+			expectedID:     7,
 		},
 		"instance-zone-c is not valid": {
 			instanceID:    "instance-zone-c",
@@ -54,56 +58,14 @@ func TestSpreadMinimizingTokenGenerator_ParseInstanceID(t *testing.T) {
 		},
 	}
 	for _, testData := range tests {
-		id, err := parseInstanceID(testData.instanceID)
+		prefix, id, err := parseInstanceID(testData.instanceID)
 		if testData.expectedError != nil {
 			require.Error(t, err)
 			require.Equal(t, testData.expectedError, err)
 		} else {
 			require.NoError(t, err)
+			require.Equal(t, testData.expectedPrefix, prefix)
 			require.Equal(t, testData.expectedID, id)
-		}
-	}
-}
-
-func TestSpreadMinimizingTokenGenerator_PreviousInstanceID(t *testing.T) {
-	tests := map[string]struct {
-		instanceID         string
-		expectedInstanceID string
-		expectedError      error
-	}{
-		"previous instance of instance-zone-a-10 is instance-zone-a-9": {
-			instanceID:         "instance-zone-a-10",
-			expectedInstanceID: "instance-zone-a-9",
-		},
-		"previous instance of instance-zone-b-1 is instance-zone-b-0": {
-			instanceID:         "instance-zone-b-1",
-			expectedInstanceID: "instance-zone-b-0",
-		},
-		"previous instance of store-gateway-zone-c-1000 is store-gateway-zone-c-999": {
-			instanceID:         "store-gateway-zone-c-1000",
-			expectedInstanceID: "store-gateway-zone-c-999",
-		},
-		"instance-zone-0 has no previous instance": {
-			instanceID:    "instance-zone-0",
-			expectedError: errorNoPreviousInstance,
-		},
-		"instance-zone-c is not valid": {
-			instanceID:    "instance-zone-c",
-			expectedError: errorBadInstanceIDFormat("instance-zone-c"),
-		},
-		"empty instance is not valid": {
-			instanceID:    "",
-			expectedError: errorBadInstanceIDFormat(""),
-		},
-	}
-	for _, testData := range tests {
-		id, err := previousInstance(testData.instanceID)
-		if testData.expectedError != nil {
-			require.Error(t, err)
-			require.Equal(t, testData.expectedError, err)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, testData.expectedInstanceID, id)
 		}
 	}
 }

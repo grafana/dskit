@@ -193,6 +193,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				jaeger.NewInMemoryReporter(),
 				jaeger.TracerOptions.ContribObserver(&observer),
 			)
+			t.Cleanup(func() { _ = closer.Close() })
 			opentracing.SetGlobalTracer(tracer)
 
 			var cfg Config
@@ -223,6 +224,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			go func() {
 				require.NoError(t, server.Run())
 			}()
+			t.Cleanup(server.Shutdown)
 
 			target := server.GRPCListenAddr()
 			conn, err := grpc.Dial(
@@ -231,6 +233,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)),
 			)
 			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
 			client := httpgrpc.NewHTTPClient(conn)
 
 			// emulateHTTPGRPCPRoxy mimics the usage of the Server type as a load balancing proxy,
@@ -258,10 +261,6 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			}
 
 			assertTracingSpans(t, observer.SpanObservers, test.expectedTagsByOpName)
-
-			conn.Close()
-			server.Shutdown()
-			closer.Close()
 		})
 	}
 }

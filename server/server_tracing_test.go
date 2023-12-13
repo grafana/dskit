@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/gorilla/mux"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/stretchr/testify/require"
@@ -83,7 +82,6 @@ func assertTracingSpans(
 }
 
 func TestHTTPGRPCTracing(t *testing.T) {
-
 	httpPort := 9099
 	httpAddress := "127.0.0.1"
 
@@ -186,7 +184,6 @@ func TestHTTPGRPCTracing(t *testing.T) {
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
-
 			observer := testObserver{}
 			tracer, closer := jaeger.NewTracer(
 				"test",
@@ -204,7 +201,6 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			cfg.GRPCListenPort = 1234
 			cfg.GRPCServerMaxRecvMsgSize = 4 * 1024 * 1024
 			cfg.GRPCServerMaxSendMsgSize = 4 * 1024 * 1024
-			cfg.Router = middleware.InitHTTPGRPCMiddleware(mux.NewRouter())
 			cfg.MetricsNamespace = "testing_httpgrpc_tracing_" + middleware.MakeLabelValue(testName)
 			var lvl log.Level
 			require.NoError(t, lvl.Set("info"))

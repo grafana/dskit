@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,6 +17,8 @@ import (
 	"golang.org/x/exp/maps"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/log"
@@ -122,6 +125,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 
 	tests := map[string]struct {
 		useHTTPOverGRPC      bool
+		useOtherGRPC         bool
 		routeName            string // leave blank for unnamed route tests
 		routeTmpl            string
 		reqURL               string
@@ -175,6 +179,14 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				expectedOpNameHelloPathParamHTTPSpan: expectedTagsHelloPathParamHTTPSpan,
 			},
 		},
+		"gRPC direct request": {
+			useOtherGRPC: true,
+			expectedTagsByOpName: map[string]map[string]string{
+				grpc_health_v1.Health_Check_FullMethodName: {
+					string(ext.Component): "gRPC",
+				},
+			},
+		},
 	}
 
 	for testName, test := range tests {
@@ -204,6 +216,8 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			server, err := New(cfg)
 			require.NoError(t, err)
 
+			grpc_health_v1.RegisterHealthServer(server.GRPC, health.NewServer())
+
 			handlerFunc := func(w http.ResponseWriter, r *http.Request) {}
 			if test.routeName != "" {
 				// explicitly-named routes will be labeled using the provided route name
@@ -226,7 +240,6 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = conn.Close() })
-			client := httpgrpc.NewHTTPClient(conn)
 
 			// emulateHTTPGRPCPRoxy mimics the usage of the Server type as a load balancing proxy,
 			// wrapping http requests into gRPC requests to utilize gRPC load balancing features
@@ -243,12 +256,17 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			require.NoError(t, err)
 
 			if test.useHTTPOverGRPC {
+				client := httpgrpc.NewHTTPClient(conn)
 				// http-over-grpc will be routed through HTTPGRPCTracer.Wrap middleware
-				_, err = emulateHTTPGRPCPRoxy(client, req)
+				_, err := emulateHTTPGRPCPRoxy(client, req)
+				require.NoError(t, err)
+			} else if test.useOtherGRPC {
+				client := grpc_health_v1.NewHealthClient(conn)
+				_, err := client.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
 				require.NoError(t, err)
 			} else {
 				// direct http requests will be routed through the default Tracer.Wrap HTTP middleware
-				_, err = http.DefaultClient.Do(req)
+				_, err := http.DefaultClient.Do(req)
 				require.NoError(t, err)
 			}
 

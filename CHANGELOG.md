@@ -201,3 +201,4 @@
 * [BUGFIX] Ring: use zone-aware logging when all zones are required for quorum. #403
 * [BUGFIX] Services: moduleService could drop stop signals to its underlying service. #409 #417
 * [BUGFIX] ring: don't mark trace spans as failed if `DoUntilQuorum` terminates due to cancellation. #449 
+* [BUGFIX] middleware: fix issue where applications that used the httpgrpc tracing middleware would generate duplicate spans for incoming HTTP requests. #451

@@ -124,15 +124,13 @@ func TestHTTPGRPCTracing(t *testing.T) {
 		useHTTPOverGRPC      bool
 		routeName            string // leave blank for unnamed route tests
 		routeTmpl            string
-		routeLabel           string
 		reqURL               string
 		expectedTagsByOpName map[string]map[string]string
 	}{
-		"http over grpc: named route with no params in path template": {
+		"HTTP over gRPC: named route with no params in path template": {
 			useHTTPOverGRPC: true,
 			routeName:       helloRouteName,
 			routeTmpl:       helloRouteTmpl,
-			routeLabel:      expectedHelloRouteLabel,
 			reqURL:          helloRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
 				"/httpgrpc.HTTP/Handle": {
@@ -144,21 +142,19 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				expectedOpNameHelloHTTPSpan: expectedTagsHelloHTTPSpan,
 			},
 		},
-		"http direct request: named route with no params in path template": {
+		"HTTP direct request: named route with no params in path template": {
 			useHTTPOverGRPC: false,
 			routeName:       helloRouteName,
 			routeTmpl:       helloRouteTmpl,
-			routeLabel:      expectedHelloRouteLabel,
 			reqURL:          helloRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
 				expectedOpNameHelloHTTPSpan: expectedTagsHelloHTTPSpan,
 			},
 		},
-		"http over grpc: unnamed route with params in path template": {
+		"HTTP over gRPC: unnamed route with params in path template": {
 			useHTTPOverGRPC: true,
 			routeName:       "",
 			routeTmpl:       helloPathParamRouteTmpl,
-			routeLabel:      expectedHelloPathParamRouteLabel,
 			reqURL:          helloPathParamRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
 				"/httpgrpc.HTTP/Handle": {
@@ -170,11 +166,10 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				expectedOpNameHelloPathParamHTTPSpan: expectedTagsHelloPathParamHTTPSpan,
 			},
 		},
-		"http direct request: unnamed route with params in path template": {
+		"HTTP direct request: unnamed route with params in path template": {
 			useHTTPOverGRPC: false,
 			routeName:       "",
 			routeTmpl:       helloPathParamRouteTmpl,
-			routeLabel:      expectedHelloPathParamRouteLabel,
 			reqURL:          helloPathParamRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
 				expectedOpNameHelloPathParamHTTPSpan: expectedTagsHelloPathParamHTTPSpan,

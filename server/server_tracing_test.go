@@ -14,6 +14,7 @@ import (
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
+	"golang.org/x/exp/maps"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -75,10 +76,10 @@ func assertTracingSpans(
 		// collect observed span operation names
 		observedSpanOpNames = append(observedSpanOpNames, spanObserver.OpName)
 	}
-	for opName := range expectedTagsByOpName {
-		// assert all expected operations were observed
-		require.Contains(t, observedSpanOpNames, opName)
-	}
+
+	// Make sure observed all the spans we expected (and that we only observed each one once)
+	expectedSpanOpNames := maps.Keys(expectedTagsByOpName)
+	require.ElementsMatch(t, observedSpanOpNames, expectedSpanOpNames)
 }
 
 func TestHTTPGRPCTracing(t *testing.T) {

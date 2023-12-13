@@ -70,7 +70,7 @@ func TestLifecyclerConfig_Validate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pathToTokens, cfg.TokensFilePath)
 
-	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true, log.NewNopLogger())
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true)
 	require.NoError(t, err)
 
 	cfg.RingTokenGenerator = spreadMinimizingTokenGenerator
@@ -88,7 +88,7 @@ func TestLifecycler_TokenGenerator(t *testing.T) {
 
 	cfg := testLifecyclerConfig(ringConfig, "instance-1")
 
-	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true, log.NewNopLogger())
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(cfg.ID, cfg.Zone, []string{zone(1), zone(2), zone(3)}, true)
 	require.NoError(t, err)
 
 	tests := []TokenGenerator{nil, initTokenGenerator(t), spreadMinimizingTokenGenerator}
@@ -1343,7 +1343,7 @@ func TestWaitBeforeJoining(t *testing.T) {
 	spreadMinimizingZones := []string{zone(1), zone(2), zone(3)}
 	canJoinTimeout := 5 * time.Second
 	spreadMinimizingTokenGenerator := func(targetInstanceID string, canJoinEnabled bool) TokenGenerator {
-		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(targetInstanceID, targetZone, spreadMinimizingZones, canJoinEnabled, log.NewNopLogger())
+		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(targetInstanceID, targetZone, spreadMinimizingZones, canJoinEnabled)
 		require.NoError(t, err)
 		return tokenGenerator
 	}
@@ -1476,7 +1476,7 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 
 	// Token generator of the instance with id 0 will call CanJoin with a delay of canJoinDelay,
 	// in such a way that instance with id 1 waits for it.
-	tokenGeneratorWithDelay, err := newSpreadMinimizingTokenGeneratorWithDelay(firstInstanceID, zoneID, spreadMinimizingZones, true, canJoinDelay, log.NewNopLogger())
+	tokenGeneratorWithDelay, err := newSpreadMinimizingTokenGeneratorWithDelay(firstInstanceID, zoneID, spreadMinimizingZones, true, canJoinDelay)
 	require.NoError(t, err)
 	firstCfg := testLifecyclerConfig(ringConfig, firstInstanceID)
 	firstCfg.NumTokens = optimalTokensPerInstance
@@ -1486,7 +1486,7 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), firstLifecycler))
 	defer services.StopAndAwaitTerminated(context.Background(), firstLifecycler) //nolint:errcheck
 
-	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(secondInstanceID, zoneID, spreadMinimizingZones, true, log.NewNopLogger())
+	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(secondInstanceID, zoneID, spreadMinimizingZones, true)
 	require.NoError(t, err)
 	secondCfg := testLifecyclerConfig(ringConfig, secondInstanceID)
 	secondCfg.NumTokens = optimalTokensPerInstance

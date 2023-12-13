@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] server: import godeltaprof/http/pprof adding /debug/pprof/delta_{heap,mutex,block} endpoints to DefaultServeMux #450
 * [CHANGE] Move httpgrpc request & response utils up from httpgrpc/server to httpgrpc package #434, #435
 * [CHANGE] Updated the minimum required Go version to 1.20 and update Drone config #420
 * [CHANGE] Change `WaitRingStability` and `WaitInstanceState` methods signature to rely on `ReadRing` instead. #251

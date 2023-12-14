@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -64,4 +65,122 @@ type mockReadRing struct {
 
 func (m *mockReadRing) GetAllHealthy(_ ring.Operation) (ring.ReplicationSet, error) {
 	return m.mockedReplicationSet, m.mockedErr
+}
+
+func TestNewPartitionRingServiceDiscovery(t *testing.T) {
+	const heartbeatTimeout = time.Minute
+
+	tests := map[string]struct {
+		partitions    map[int32]ring.PartitionDesc
+		owners        map[string]ring.OwnerDesc
+		expectedAddrs []string
+		expectedErr   error
+	}{
+		"no partitions": {
+			expectedErr:   nil,
+			expectedAddrs: nil,
+		},
+		"no owners": {
+			partitions: map[int32]ring.PartitionDesc{
+				1: {State: ring.PartitionActive},
+			},
+			owners:        map[string]ring.OwnerDesc{},
+			expectedErr:   ring.ErrTooManyUnhealthyInstances,
+			expectedAddrs: nil,
+		},
+		"no healthy owners": {
+			partitions: map[int32]ring.PartitionDesc{
+				1: {State: ring.PartitionActive},
+			},
+			owners: map[string]ring.OwnerDesc{
+				"1": {Addr: "1.1.1.1", Id: "1", State: ring.ACTIVE, OwnedPartition: 1, Heartbeat: time.Now().Add(-2 * heartbeatTimeout).Unix()},
+			},
+			expectedErr:   ring.ErrTooManyUnhealthyInstances,
+			expectedAddrs: nil,
+		},
+		"only leaving owners": {
+			partitions: map[int32]ring.PartitionDesc{
+				1: {State: ring.PartitionActive},
+			},
+			owners: map[string]ring.OwnerDesc{
+				"1": {Addr: "1.1.1.1", Id: "1", State: ring.LEAVING, OwnedPartition: 1, Heartbeat: time.Now().Unix()},
+			},
+			expectedAddrs: []string{"1.1.1.1"},
+		},
+		"inactive partition": {
+			partitions: map[int32]ring.PartitionDesc{
+				1: {State: ring.PartitionActive},
+				2: {State: ring.PartitionInactive},
+			},
+			owners: map[string]ring.OwnerDesc{
+				"1": {Addr: "1.1.1.1", Id: "1", State: ring.ACTIVE, OwnedPartition: 1, Heartbeat: time.Now().Unix()},
+				"2": {Addr: "2.2.2.2", Id: "2", State: ring.ACTIVE, OwnedPartition: 2, Heartbeat: time.Now().Unix()},
+			},
+			expectedAddrs: []string{"1.1.1.1", "2.2.2.2"},
+		},
+		"happy path": {
+			partitions: map[int32]ring.PartitionDesc{
+				1: {State: ring.PartitionActive},
+				2: {State: ring.PartitionActive},
+			},
+			owners: map[string]ring.OwnerDesc{
+				"1": {Addr: "1.1.1.1", Id: "1", State: ring.ACTIVE, OwnedPartition: 1, Heartbeat: time.Now().Unix()},
+				"2": {Addr: "2.2.2.2", Id: "2", State: ring.ACTIVE, OwnedPartition: 2, Heartbeat: time.Now().Unix()},
+			},
+			expectedAddrs: []string{"1.1.1.1", "2.2.2.2"},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			desc := ring.PartitionRingDesc{
+				Partitions: testData.partitions,
+				Owners:     testData.owners,
+			}
+			ringGetter := &mockPartitionRingGetter{ring.NewPartitionRing(desc, heartbeatTimeout)}
+
+			discover := NewPartitionRingServiceDiscovery(ringGetter)
+			addrs, err := discover()
+			assert.ErrorIs(t, err, testData.expectedErr)
+			assert.ElementsMatch(t, testData.expectedAddrs, addrs)
+		})
+	}
+}
+
+func TestNewPartitionRingServiceDiscovery_DoesntUseStaleRing(t *testing.T) {
+	desc := ring.PartitionRingDesc{
+		Partitions: map[int32]ring.PartitionDesc{
+			1: {State: ring.PartitionActive},
+		},
+		Owners: map[string]ring.OwnerDesc{
+			"1": {Addr: "1.1.1.1", Id: "1", State: ring.LEAVING, OwnedPartition: 1, Heartbeat: time.Now().Unix()},
+		},
+	}
+	ringGetter := &mockPartitionRingGetter{ring.NewPartitionRing(desc, time.Minute)}
+
+	discover := NewPartitionRingServiceDiscovery(ringGetter)
+	addrs, err := discover()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"1.1.1.1"}, addrs)
+
+	desc = ring.PartitionRingDesc{
+		Partitions: map[int32]ring.PartitionDesc{
+			1: {State: ring.PartitionActive},
+		},
+		Owners: map[string]ring.OwnerDesc{
+			"1": {Addr: "2.2.2.2", Id: "1", State: ring.LEAVING, OwnedPartition: 1, Heartbeat: time.Now().Unix()},
+		},
+	}
+	ringGetter.PartitionRing = ring.NewPartitionRing(desc, time.Minute)
+	addrs, err = discover()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"2.2.2.2"}, addrs)
+}
+
+type mockPartitionRingGetter struct {
+	*ring.PartitionRing
+}
+
+func (m *mockPartitionRingGetter) GetRing() *ring.PartitionRing {
+	return m.PartitionRing
 }

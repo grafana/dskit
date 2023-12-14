@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package ring;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "ring.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message PartitionRingDesc {
+  map<int32, PartitionDesc> partitions = 1 [(gogoproto.nullable) = false];
+
+  // Instances that own the partitions.
+  map<string, OwnerDesc> owners = 2 [(gogoproto.nullable) = false];
+}
+
+message PartitionDesc {
+  repeated uint32 tokens = 1;
+
+  // Unix timestamps in seconds since when this partition is active (if active >= inactive), inactive (if inactive > active), or deleted.
+  // Only max timestamp is used, other timestamps should be empty. In case of equal values, precedence is: 1. active, 2. inactive, 3. deleted.
+  int64 activeSince = 2;
+  int64 inactiveSince = 3;
+  int64 deletedSince = 4;
+}
+
+// Owner handles given partition. Multiple owners can own the same partition.
+message OwnerDesc {
+  // ID of the instance. This value is the same as the key in the ingesters map in Desc.
+  string id = 1;
+
+  string addr = 2;
+  string zone = 3;
+
+  int32 ownedPartition = 4;
+
+  // Unix timestamp in seconds of the last heartbeat sent by this instance.
+  int64 heartbeat = 6;
+  InstanceState state = 7;
+}

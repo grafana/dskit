@@ -80,7 +80,7 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 	b.Run("go=default", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			generateKeys(rnd, numKeys, keys)
-			err := DoBatchWithOptions(ctx, Write, r, keys, callback, DoBatchOptions{})
+			err := DoBatchWithOptions(ctx, Write, NewReadRingBatchAdapter(r), keys, callback, DoBatchOptions{})
 			require.NoError(b, err)
 		}
 	})
@@ -92,7 +92,7 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			generateKeys(rnd, numKeys, keys)
-			err := DoBatchWithOptions(ctx, Write, r, keys, callback, DoBatchOptions{Go: pool.Go})
+			err := DoBatchWithOptions(ctx, Write, NewReadRingBatchAdapter(r), keys, callback, DoBatchOptions{Go: pool.Go})
 			require.NoError(b, err)
 		}
 	})
@@ -282,7 +282,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 			require.NoError(t, err)
 			return instanceReturnErrors[instanceID]
 		}
-		return DoBatchWithOptions(ctx, Write, ring, operationKeys, returnInstanceError, DoBatchOptions{
+		return DoBatchWithOptions(ctx, Write, NewReadRingBatchAdapter(ring), operationKeys, returnInstanceError, DoBatchOptions{
 			Cleanup:       func() { unfinishedDoBatchCalls.Done() },
 			IsClientError: isClientError,
 		})

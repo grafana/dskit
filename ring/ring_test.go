@@ -80,7 +80,7 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 	b.Run("go=default", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			generateKeys(rnd, numKeys, keys)
-			err := DoBatchWithOptions(ctx, Write, r, keys, callback, DoBatchOptions{})
+			err := DoBatchWithOptions(ctx, Write, NewReadRingBatchAdapter(r), keys, callback, DoBatchOptions{})
 			require.NoError(b, err)
 		}
 	})
@@ -92,7 +92,7 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			generateKeys(rnd, numKeys, keys)
-			err := DoBatchWithOptions(ctx, Write, r, keys, callback, DoBatchOptions{Go: pool.Go})
+			err := DoBatchWithOptions(ctx, Write, NewReadRingBatchAdapter(r), keys, callback, DoBatchOptions{Go: pool.Go})
 			require.NoError(b, err)
 		}
 	})
@@ -225,9 +225,10 @@ func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
 		strategy:             NewDefaultReplicationStrategy(),
 		lastTopologyChange:   time.Now(),
 	}
+	ringAdapter := NewReadRingBatchAdapter(&r)
 	// Measure how long does it take for a call to succeed.
 	t0 := time.Now()
-	err := DoBatchWithOptions(context.Background(), Write, &r, keys, callback, DoBatchOptions{})
+	err := DoBatchWithOptions(context.Background(), Write, ringAdapter, keys, callback, DoBatchOptions{})
 	duration := time.Since(t0)
 	require.NoError(t, err)
 	t.Logf("Call took %s", duration)
@@ -239,7 +240,7 @@ func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	err = DoBatchWithOptions(ctx, Write, &r, keys, func(_ InstanceDesc, _ []int) error {
+	err = DoBatchWithOptions(ctx, Write, ringAdapter, keys, func(_ InstanceDesc, _ []int) error {
 		t.Errorf("should not be called.")
 		return nil
 	}, DoBatchOptions{Cleanup: wg.Done})
@@ -282,7 +283,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 			require.NoError(t, err)
 			return instanceReturnErrors[instanceID]
 		}
-		return DoBatchWithOptions(ctx, Write, ring, operationKeys, returnInstanceError, DoBatchOptions{
+		return DoBatchWithOptions(ctx, Write, NewReadRingBatchAdapter(ring), operationKeys, returnInstanceError, DoBatchOptions{
 			Cleanup:       func() { unfinishedDoBatchCalls.Done() },
 			IsClientError: isClientError,
 		})
@@ -2818,13 +2819,13 @@ func generateRingInstanceWithInfo(addr, zone string, tokens []uint32, registered
 func compareReplicationSets(first, second ReplicationSet) (added, removed []string) {
 	for _, instance := range first.Instances {
 		if !second.Includes(instance.Addr) {
-			added = append(added, instance.Addr)
+			removed = append(removed, instance.Addr)
 		}
 	}
 
 	for _, instance := range second.Instances {
 		if !first.Includes(instance.Addr) {
-			removed = append(removed, instance.Addr)
+			added = append(added, instance.Addr)
 		}
 	}
 

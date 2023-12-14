@@ -109,6 +109,37 @@ func (r *PartitionInstanceRing) ShuffleShardWithLookback(identifier string, size
 	return NewPartitionInstanceRing(newStaticPartitionRingReader(partitionsSubring), r.instancesRing, r.heartbeatTimeout), nil
 }
 
+func (pr *PartitionInstanceRing) InstancesCount() int {
+	// Number of partitions.
+	return len(pr.PartitionRing().PartitionOwners())
+}
+
+func (pr *PartitionInstanceRing) ReplicationFactor() int {
+	// Each key is always stored into single partition only.
+	return 1
+}
+
+func (pr *PartitionInstanceRing) Get(key uint32, _ Operation) (ReplicationSet, error) {
+	partitionsRing := pr.PartitionRing()
+
+	pid, err := partitionsRing.ActivePartitionForKey(key)
+	if err != nil {
+		return ReplicationSet{}, err
+	}
+
+	return ReplicationSet{
+		Instances: []InstanceDesc{{
+			Addr:      fmt.Sprintf("%d", pid),
+			Timestamp: time.Now().Unix(),
+			State:     ACTIVE,
+			Id:        fmt.Sprintf("%d", pid),
+		}},
+		MaxErrors:            0,
+		MaxUnavailableZones:  0,
+		ZoneAwarenessEnabled: false,
+	}, nil
+}
+
 type staticPartitionRingReader struct {
 	ring *PartitionRing
 }

@@ -32,7 +32,7 @@ func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 
 // ActivePartitionForKey returns partition that should receive given key. Only active partitions are considered,
 // and only one partition is returned.
-func (pr *PartitionRing) ActivePartitionForKey(key uint32) (PartitionDesc, error) {
+func (pr *PartitionRing) ActivePartitionForKey(key uint32) (PartitionID, PartitionDesc, error) {
 	start := searchToken(pr.ringTokens, key)
 	iterations := 0
 
@@ -48,32 +48,30 @@ func (pr *PartitionRing) ActivePartitionForKey(key uint32) (PartitionDesc, error
 
 		pid, ok := pr.tokenPartitions[Token(token)]
 		if !ok {
-			return PartitionDesc{}, ErrInconsistentTokensInfo
+			return 0, PartitionDesc{}, ErrInconsistentTokensInfo
 		}
 
 		p, ok := pr.desc.Partition(pid)
 		if !ok {
-			return PartitionDesc{}, ErrInconsistentTokensInfo
+			return 0, PartitionDesc{}, ErrInconsistentTokensInfo
 		}
 
 		if p.IsActive() {
-			return p, nil
+			return pid, p, nil
 		}
 	}
-	return PartitionDesc{}, ErrNoActivePartitionFound
+	return 0, PartitionDesc{}, ErrNoActivePartitionFound
 }
 
 func (pr *PartitionRing) ShuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
-	// TODO: add cache.
-
 	partitions, err := pr.shuffleRingPartitions(identifier, size, lookbackPeriod, now)
 	if err != nil {
 		return nil, err
 	}
 
-	// special value indicating all partitions
+	// nil is a special value indicating all partitions
 	if partitions == nil {
-		return pr, err
+		return pr, nil
 	}
 
 	return NewPartitionRing(pr.desc.WithPartitions(partitions)), nil
@@ -212,7 +210,7 @@ func (p PartitionBatchRing) ReplicationFactor() int {
 }
 
 func (p PartitionBatchRing) Get(key uint32, _ Operation) (ReplicationSet, error) {
-	pid, err := p.ring.ActivePartitionForKey(key)
+	pid, _, err := p.ring.ActivePartitionForKey(key)
 	if err != nil {
 		return ReplicationSet{}, err
 	}

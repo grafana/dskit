@@ -178,15 +178,23 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[PartitionID]struct{}) 
 	}
 }
 
-func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPartition int32, state InstanceState) {
-	m.Owners[id] = OwnerDesc{
+// AddOrUpdateOwner adds or updates owner entry in the ring. Returns true, if entry was added or updated, false if entry is unchanged.
+func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPartition PartitionID, state InstanceState, heartbeat time.Time) bool {
+	prev, ok := m.Owners[id]
+	updated := OwnerDesc{
 		Id:             id,
 		Addr:           address,
 		Zone:           zone,
-		OwnedPartition: ownedPartition,
-		Heartbeat:      time.Now().Unix(),
+		OwnedPartition: int32(ownedPartition),
+		Heartbeat:      heartbeat.Unix(),
 		State:          state,
 	}
+
+	if !ok || !prev.Equal(updated) {
+		m.Owners[id] = updated
+		return true
+	}
+	return false
 }
 
 func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool) (memberlist.Mergeable, error) {

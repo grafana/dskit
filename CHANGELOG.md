@@ -174,6 +174,7 @@
 * [ENHANCEMENT] ballast: add utility function to allocate heap ballast. #446
 * [ENHANCEMENT] ring: use and provide context cancellation causes in `DoUntilQuorum`. #449
 * [ENHANCEMENT] ring: `ring.DoBatch` and `ring.DoBatchWithOptions` now check the context cancellation while calculating the replication instances, failing if the context was canceld. #454
+* [ENHANCEMENT] Cache: Export Memcached and Redis client types instead of returning the interface, `RemoteCacheClient`, they implement. #453
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
@@ -202,5 +203,5 @@
 * [BUGFIX] Memberlist's TCP transport will now reject bind addresses that are not IP addresses, such as "localhost", rather than silently converting these to 0.0.0.0 and therefore listening on all addresses. #396
 * [BUGFIX] Ring: use zone-aware logging when all zones are required for quorum. #403
 * [BUGFIX] Services: moduleService could drop stop signals to its underlying service. #409 #417
-* [BUGFIX] ring: don't mark trace spans as failed if `DoUntilQuorum` terminates due to cancellation. #449 
+* [BUGFIX] ring: don't mark trace spans as failed if `DoUntilQuorum` terminates due to cancellation. #449
 * [BUGFIX] middleware: fix issue where applications that used the httpgrpc tracing middleware would generate duplicate spans for incoming HTTP requests. #451

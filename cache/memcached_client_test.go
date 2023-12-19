@@ -61,7 +61,7 @@ func TestMemcachedClientConfig_Validate(t *testing.T) {
 }
 
 func TestMemcachedClient_GetMulti(t *testing.T) {
-	setup := func() (*memcachedClient, *mockMemcachedClientBackend, error) {
+	setup := func() (*MemcachedClient, *mockMemcachedClientBackend, error) {
 		backend := newMockMemcachedClientBackend()
 		client, err := newMemcachedClient(
 			log.NewNopLogger(),
@@ -131,7 +131,7 @@ func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 	)
 
 	if err != nil {
-		b.Fatal("unexpected error creating memcachedClient", err)
+		b.Fatal("unexpected error creating MemcachedClient", err)
 	}
 
 	const numKeys = 10_000

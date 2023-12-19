@@ -2,14 +2,9 @@ package tenant
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/grafana/dskit/user"
-)
-
-var (
-	errInvalidTenantID = errors.New("invalid tenant ID")
 )
 
 // TenantID returns exactly a single tenant ID from the context. It should be
@@ -48,12 +43,9 @@ func TenantIDs(ctx context.Context) ([]string, error) {
 	}
 
 	orgIDs := strings.Split(orgID, tenantIDsSeparator)
-	for _, orgID := range orgIDs {
-		if err := ValidTenantID(orgID); err != nil {
+	for _, id := range orgIDs {
+		if err := ValidTenantID(id); err != nil {
 			return nil, err
-		}
-		if containsUnsafePathSegments(orgID) {
-			return nil, errInvalidTenantID
 		}
 	}
 
@@ -89,16 +81,4 @@ func (t *MultiResolver) TenantID(ctx context.Context) (string, error) {
 
 func (t *MultiResolver) TenantIDs(ctx context.Context) ([]string, error) {
 	return TenantIDs(ctx)
-}
-
-// containsUnsafePathSegments will return true if the string is a directory
-// reference like `.` and `..` or if any path separator character like `/` and
-// `\` can be found.
-func containsUnsafePathSegments(id string) bool {
-	// handle the relative reference to current and parent path.
-	if id == "." || id == ".." {
-		return true
-	}
-
-	return strings.ContainsAny(id, "\\/")
 }

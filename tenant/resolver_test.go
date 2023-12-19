@@ -44,14 +44,14 @@ func TestTenantIDs(t *testing.T) {
 		{
 			name:         "parent-dir",
 			headerValue:  strptr(".."),
-			errTenantID:  errInvalidTenantID,
-			errTenantIDs: errInvalidTenantID,
+			errTenantID:  errUnsafeTenantID,
+			errTenantIDs: errUnsafeTenantID,
 		},
 		{
 			name:         "current-dir",
 			headerValue:  strptr("."),
-			errTenantID:  errInvalidTenantID,
-			errTenantIDs: errInvalidTenantID,
+			errTenantID:  errUnsafeTenantID,
+			errTenantIDs: errUnsafeTenantID,
 		},
 		{
 			name:        "multi-tenant",
@@ -74,8 +74,8 @@ func TestTenantIDs(t *testing.T) {
 		{
 			name:         "multi-tenant-with-relative-path",
 			headerValue:  strptr("tenant-a|tenant-b|.."),
-			errTenantID:  errInvalidTenantID,
-			errTenantIDs: errInvalidTenantID,
+			errTenantID:  errUnsafeTenantID,
+			errTenantIDs: errUnsafeTenantID,
 		},
 		{
 			name:         "containing-forward-slash",

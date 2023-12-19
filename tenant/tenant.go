@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -19,6 +20,7 @@ const (
 
 var (
 	errTenantIDTooLong = fmt.Errorf("tenant ID is too long: max %d characters", MaxTenantIDLength)
+	errUnsafeTenantID  = errors.New("tenant ID is '.' or '..'")
 )
 
 type errTenantIDUnsupportedCharacter struct {
@@ -54,7 +56,7 @@ func NormalizeTenantIDs(tenantIDs []string) []string {
 	return tenantIDs[0:posOut]
 }
 
-// ValidTenantID returns an error if the tenant ID is invalid, nil otherwise
+// ValidTenantID returns an error if the single tenant ID is invalid, nil otherwise
 func ValidTenantID(s string) error {
 	// check if it contains invalid runes
 	for pos, r := range s {
@@ -68,6 +70,10 @@ func ValidTenantID(s string) error {
 
 	if len(s) > MaxTenantIDLength {
 		return errTenantIDTooLong
+	}
+
+	if containsUnsafePathSegments(s) {
+		return errUnsafeTenantID
 	}
 
 	return nil
@@ -125,4 +131,10 @@ func isSupported(c rune) bool {
 		c == '\'' ||
 		c == '(' ||
 		c == ')'
+}
+
+// containsUnsafePathSegments will return true if the string is a directory
+// reference like `.` and `..`
+func containsUnsafePathSegments(id string) bool {
+	return id == "." || id == ".."
 }

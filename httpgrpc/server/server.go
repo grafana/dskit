@@ -27,9 +27,14 @@ import (
 
 var (
 	// DoNotLogErrorHeaderKey is a header key used for marking non-loggable errors. More precisely, if an HTTP response
-	// has a status code 5xx, and contains a header with key DoNotLogErrorHeaderKey and any values, the generated error
+	// represents an error, and contains a header with key DoNotLogErrorHeaderKey and any value, the generated error
 	// will be marked as non-loggable.
 	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
+	// Return4XXErrorsKey is a header key used for denoting HTTP responses with a 4xx code that should be treated as
+	// erroneous. More precisely, if an HTTP response has a status code 4xx, and contains a header with key
+	// Return4XXErrorsKey and any value, an error will be generated out of the HTTP response and returned. Otherwise,
+	// the HTTP response with a status code 4xx will be treated as successful and no errors will be returned.
+	Return4XXErrorsKey = http.CanonicalHeaderKey("X-Return4XXErrors")
 )
 
 // Server implements HTTPServer.  HTTPServer is a generated interface that gRPC
@@ -56,18 +61,15 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 	s.handler.ServeHTTP(recorder, req)
 	header := recorder.Header()
 
-	doNotLogError := false
-	if _, ok := header[DoNotLogErrorHeaderKey]; ok {
-		doNotLogError = true
-		header.Del(DoNotLogErrorHeaderKey) // remove before converting to httpgrpc resp
-	}
+	doNotLogError := containsHeader(header, DoNotLogErrorHeaderKey, true)
+	return4XXErrors := containsHeader(header, Return4XXErrorsKey, true)
 
 	resp := &httpgrpc.HTTPResponse{
 		Code:    int32(recorder.Code),
 		Headers: httpgrpc.FromHeader(header),
 		Body:    recorder.Body.Bytes(),
 	}
-	if recorder.Code/100 == 5 {
+	if shouldReturnError(recorder.Code, return4XXErrors) {
 		err := httpgrpc.ErrorFromHTTPResponse(resp)
 		if doNotLogError {
 			err = middleware.DoNotLogError{Err: err}
@@ -75,6 +77,25 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 		return nil, err
 	}
 	return resp, nil
+}
+
+// containsHeader returns true if the given map of headers contains a header with key headerKey, or false otherwise.
+// If headerKey is present, it is removed from the map of headers, if the given removeHeaderKey is true.
+func containsHeader(headers http.Header, headerKey string, removeHeaderKey bool) bool {
+	if _, ok := headers[headerKey]; ok {
+		if removeHeaderKey {
+			headers.Del(headerKey)
+		}
+		return true
+	}
+	return false
+}
+
+// shouldReturnError returns true either if the given statusCode is a 5xx HTTP status code,
+// or if it is a 4xx HTTP status code, and return4XXXErrors is true.
+func shouldReturnError(statusCode int, return4XXErrors bool) bool {
+	mask := statusCode / 100
+	return mask == 5 || (return4XXErrors && mask == 4)
 }
 
 // Client is a http.Handler that forwards the request over gRPC.

@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/internal/slices"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
 )
@@ -158,28 +159,94 @@ func TestServerHandleDoNotLogError(t *testing.T) {
 				} else {
 					require.False(t, errors.As(err, &optional))
 				}
-				checkError(t, err, testData.errorCode, errMsg)
+				checkError(t, err, testData.errorCode, errMsg, []string{DoNotLogErrorHeaderKey})
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, resp)
-				checkHTTPResponse(t, resp, testData.errorCode, errMsg)
+				checkHTTPResponse(t, resp, testData.errorCode, errMsg, []string{DoNotLogErrorHeaderKey})
 			}
 		})
 	}
 }
 
-func checkError(t *testing.T, err error, expectedCode int, expectedMessage string) {
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	require.True(t, ok)
-	checkHTTPResponse(t, resp, expectedCode, expectedMessage)
+func TestServerHandleReturn4XXErrors(t *testing.T) {
+	testCases := map[string]struct {
+		errorCode       int
+		return4xxErrors bool
+		expectedError   bool
+	}{
+		"HTTPResponse with code 5xx and with Return4XXErrors header should return an error": {
+			errorCode:       http.StatusInternalServerError,
+			return4xxErrors: true,
+			expectedError:   true,
+		},
+		"HTTPResponse with code 5xx and without Return4XXErrors header should return a loggable error": {
+			errorCode:       http.StatusInternalServerError,
+			return4xxErrors: false,
+			expectedError:   true,
+		},
+		"HTTPResponse with code 4xx and with Return4XXErrors header should return an error": {
+			errorCode:       http.StatusBadRequest,
+			return4xxErrors: true,
+			expectedError:   true,
+		},
+		"HTTPResponse with code 4xx and without Return4XXErrors header should not return an error": {
+			errorCode:       http.StatusBadRequest,
+			return4xxErrors: false,
+			expectedError:   false,
+		},
+		"HTTPResponse with code different from 5xx and 4xx and with Return4XXErrors header should not return an error": {
+			errorCode:       http.StatusNoContent,
+			return4xxErrors: true,
+			expectedError:   false,
+		},
+		"HTTPResponse with code different from 5xx and 4xx and without Return4XXErrors header should not return an error": {
+			errorCode:       http.StatusNoContent,
+			return4xxErrors: false,
+			expectedError:   false,
+		},
+	}
+	errMsg := "this is an error"
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if testData.return4xxErrors {
+					w.Header().Set(Return4XXErrorsKey, "true")
+				}
+				http.Error(w, errMsg, testData.errorCode)
+			})
+
+			s := NewServer(h)
+			req := &httpgrpc.HTTPRequest{
+				Method: "GET",
+				Url:    "/test",
+			}
+			resp, err := s.Handle(context.Background(), req)
+			if testData.expectedError {
+				require.Error(t, err)
+				require.Nil(t, resp)
+				checkError(t, err, testData.errorCode, errMsg, []string{Return4XXErrorsKey})
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				checkHTTPResponse(t, resp, testData.errorCode, errMsg, []string{Return4XXErrorsKey})
+			}
+		})
+	}
 }
 
-func checkHTTPResponse(t *testing.T, resp *httpgrpc.HTTPResponse, expectedCode int, expectedBody string) {
+func checkError(t *testing.T, err error, expectedCode int, expectedMessage string, excludedHeaderKeys []string) {
+	resp, ok := httpgrpc.HTTPResponseFromError(err)
+	require.True(t, ok)
+	checkHTTPResponse(t, resp, expectedCode, expectedMessage, excludedHeaderKeys)
+}
+
+func checkHTTPResponse(t *testing.T, resp *httpgrpc.HTTPResponse, expectedCode int, expectedBody string, excludedHeaderKeys []string) {
 	require.Equal(t, int32(expectedCode), resp.GetCode())
 	require.Equal(t, fmt.Sprintf("%s\n", expectedBody), string(resp.GetBody()))
 	hs := resp.GetHeaders()
 	for _, h := range hs {
-		require.NotEqual(t, DoNotLogErrorHeaderKey, h.Key)
+		require.False(t, slices.Contains(excludedHeaderKeys, h.GetKey()))
 	}
 }
 

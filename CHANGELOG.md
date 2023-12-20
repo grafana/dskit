@@ -176,6 +176,7 @@
 * [ENHANCEMENT] ring: `ring.DoBatch` and `ring.DoBatchWithOptions` now check the context cancellation while calculating the replication instances, failing if the context was canceld. #454
 * [ENHANCEMENT] Cache: Export Memcached and Redis client types instead of returning the interface, `RemoteCacheClient`, they implement. #453
 * [ENHANCEMENT] SpanProfiler: add spanprofiler package. #448
+* [ENHANCEMENT] Make httpgrpc.Server return 4xx errors when a header with key `httpgrpc.Return4XXErrorsKey` and any value is present in the HTTP response. If `httpgrpc.Return4XXErrorsKey` is not present in the HTTP response, only 5xx errors are returned. #455
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

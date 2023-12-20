@@ -198,6 +198,58 @@ func TestDoBatchZeroInstances(t *testing.T) {
 	require.Error(t, DoBatch(ctx, Write, &r, keys, callback, cleanup))
 }
 
+func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
+	const (
+		numKeys      = 5e6
+		numInstances = 100
+		numZones     = 3
+	)
+	keys := make([]uint32, numKeys)
+	generateKeys(rand.New(rand.NewSource(0)), numKeys, keys)
+
+	callback := func(InstanceDesc, []int) error { return nil }
+	desc := &Desc{Ingesters: generateRingInstances(NewRandomTokenGeneratorWithSeed(0), numInstances, numZones, numTokens)}
+	r := Ring{
+		cfg: Config{
+			HeartbeatTimeout:     time.Hour,
+			ZoneAwarenessEnabled: true,
+			SubringCacheDisabled: true,
+			ReplicationFactor:    numZones,
+		},
+		ringDesc:             desc,
+		ringTokens:           desc.GetTokens(),
+		ringTokensByZone:     desc.getTokensByZone(),
+		ringInstanceByToken:  desc.getTokensInfo(),
+		ringZones:            getZones(desc.getTokensByZone()),
+		shuffledSubringCache: map[subringCacheKey]*Ring{},
+		strategy:             NewDefaultReplicationStrategy(),
+		lastTopologyChange:   time.Now(),
+	}
+	// Measure how long does it take for a call to succeed.
+	t0 := time.Now()
+	err := DoBatchWithOptions(context.Background(), Write, &r, keys, callback, DoBatchOptions{})
+	duration := time.Since(t0)
+	require.NoError(t, err)
+	t.Logf("Call took %s", duration)
+
+	// Make a second call cancelling after a hundredth of duration of the first one.
+	// For a 4s first call, this is 40ms: should be enough for this test to not be flaky.
+	ctx, cancel := context.WithTimeout(context.Background(), duration/100)
+	defer cancel()
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	err = DoBatchWithOptions(ctx, Write, &r, keys, func(_ InstanceDesc, _ []int) error {
+		t.Errorf("should not be called.")
+		return nil
+	}, DoBatchOptions{Cleanup: wg.Done})
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	// Wait until cleanup to make sure that callback was never called.
+	wg.Wait()
+}
+
 func TestDoBatch_QuorumError(t *testing.T) {
 	const (
 		// we should run several write request to make sure we don't have any race condition on the batchTracker code

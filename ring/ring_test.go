@@ -199,7 +199,6 @@ func TestDoBatchZeroInstances(t *testing.T) {
 }
 
 func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
-	// It takes ~4s to do 5M keys on my M3 laptop. So we're going to cancel the context after 400ms.
 	const (
 		numKeys      = 5e6
 		numInstances = 100

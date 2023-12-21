@@ -32,15 +32,13 @@ var (
 	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
 )
 
-type Options func(*Server)
+type Option func(*Server)
 
-var (
-	Return4XXErrorsOption Options = func(s *Server) {
-		s.return4XXErrors = true
-	}
-)
+func WithReturn4XXErrors(s *Server) {
+	s.return4XXErrors = true
+}
 
-func applyServerOptions(s *Server, opts ...Options) *Server {
+func applyServerOptions(s *Server, opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -55,7 +53,7 @@ type Server struct {
 }
 
 // NewServer makes a new Server.
-func NewServer(handler http.Handler, opts ...Options) *Server {
+func NewServer(handler http.Handler, opts ...Option) *Server {
 	return applyServerOptions(&Server{handler: handler}, opts...)
 }
 

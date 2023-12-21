@@ -34,7 +34,7 @@ func TestReturn4XXErrorsOption(t *testing.T) {
 	require.NotNil(t, server)
 	require.False(t, server.return4XXErrors)
 
-	server = NewServer(handler, []Options{Return4XXErrorsOption}...)
+	server = NewServer(handler, []Option{WithReturn4XXErrors}...)
 	require.NotNil(t, server)
 	require.True(t, server.return4XXErrors)
 }
@@ -226,9 +226,9 @@ func TestServerHandleReturn4XXErrors(t *testing.T) {
 				http.Error(w, errMsg, testData.errorCode)
 			})
 
-			var serverOptions []Options
+			var serverOptions []Option
 			if testData.return4xxErrors {
-				serverOptions = []Options{Return4XXErrorsOption}
+				serverOptions = []Option{WithReturn4XXErrors}
 			}
 			s := NewServer(h, serverOptions...)
 

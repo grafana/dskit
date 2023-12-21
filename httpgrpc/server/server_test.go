@@ -25,6 +25,20 @@ import (
 	"github.com/grafana/dskit/user"
 )
 
+func TestReturn4XXErrorsOption(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := fmt.Fprint(w, "test")
+		require.NoError(t, err)
+	})
+	server := NewServer(handler)
+	require.NotNil(t, server)
+	require.False(t, server.return4XXErrors)
+
+	server = NewServer(handler, []Options{Return4XXErrorsOption}...)
+	require.NotNil(t, server)
+	require.True(t, server.return4XXErrors)
+}
+
 type testServer struct {
 	*Server
 	URL        string
@@ -158,6 +172,74 @@ func TestServerHandleDoNotLogError(t *testing.T) {
 				} else {
 					require.False(t, errors.As(err, &optional))
 				}
+				checkError(t, err, testData.errorCode, errMsg)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				checkHTTPResponse(t, resp, testData.errorCode, errMsg)
+			}
+		})
+	}
+}
+
+func TestServerHandleReturn4XXErrors(t *testing.T) {
+	testCases := map[string]struct {
+		errorCode       int
+		return4xxErrors bool
+		expectedError   bool
+	}{
+		"HTTPResponse with code 5xx should return an error when server creates with Return4XXErrorsOption": {
+			errorCode:       http.StatusInternalServerError,
+			return4xxErrors: true,
+			expectedError:   true,
+		},
+		"HTTPResponse with code 5xx should return an error when server creates without Return4XXErrorsOption": {
+			errorCode:       http.StatusInternalServerError,
+			return4xxErrors: false,
+			expectedError:   true,
+		},
+		"HTTPResponse with code 4xx should return an error when server creates with Return4XXErrorsOption": {
+			errorCode:       http.StatusBadRequest,
+			return4xxErrors: true,
+			expectedError:   true,
+		},
+		"HTTPResponse with code 4xx should not return an error when server creates without Return4XXErrorsOption": {
+			errorCode:       http.StatusBadRequest,
+			return4xxErrors: false,
+			expectedError:   false,
+		},
+		"HTTPResponse with code different from 5xx and 4xx should not return an error when server creates with Return4XXErrorsOption": {
+			errorCode:       http.StatusNoContent,
+			return4xxErrors: true,
+			expectedError:   false,
+		},
+		"HTTPResponse with code different from 5xx and 4xx should not return an error when server creates without Return4XXErrorsOption": {
+			errorCode:       http.StatusNoContent,
+			return4xxErrors: false,
+			expectedError:   false,
+		},
+	}
+	errMsg := "this is an error"
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, errMsg, testData.errorCode)
+			})
+
+			var serverOptions []Options
+			if testData.return4xxErrors {
+				serverOptions = []Options{Return4XXErrorsOption}
+			}
+			s := NewServer(h, serverOptions...)
+
+			req := &httpgrpc.HTTPRequest{
+				Method: "GET",
+				Url:    "/test",
+			}
+			resp, err := s.Handle(context.Background(), req)
+			if testData.expectedError {
+				require.Error(t, err)
+				require.Nil(t, resp)
 				checkError(t, err, testData.errorCode, errMsg)
 			} else {
 				require.NoError(t, err)

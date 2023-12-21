@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,92 +23,36 @@ type resolverTestCase struct {
 	tenantIDs    []string
 }
 
-func (tc *resolverTestCase) test(r Resolver) func(t *testing.T) {
-	return func(t *testing.T) {
-
-		ctx := context.Background()
-		if tc.headerValue != nil {
-			ctx = user.InjectOrgID(ctx, *tc.headerValue)
-		}
-
-		tenantID, err := r.TenantID(ctx)
-		if tc.errTenantID != nil {
-			assert.Equal(t, tc.errTenantID, err)
-		} else {
-			assert.NoError(t, err)
-			assert.Equal(t, tc.tenantID, tenantID)
-		}
-
-		tenantIDs, err := r.TenantIDs(ctx)
-		if tc.errTenantIDs != nil {
-			assert.Equal(t, tc.errTenantIDs, err)
-		} else {
-			assert.NoError(t, err)
-			assert.Equal(t, tc.tenantIDs, tenantIDs)
-		}
-	}
-}
-
-var commonResolverTestCases = []resolverTestCase{
-	{
-		name:         "no-header",
-		errTenantID:  user.ErrNoOrgID,
-		errTenantIDs: user.ErrNoOrgID,
-	},
-	{
-		name:        "empty",
-		headerValue: strptr(""),
-		tenantIDs:   []string{""},
-	},
-	{
-		name:        "single-tenant",
-		headerValue: strptr("tenant-a"),
-		tenantID:    "tenant-a",
-		tenantIDs:   []string{"tenant-a"},
-	},
-	{
-		name:         "parent-dir",
-		headerValue:  strptr(".."),
-		errTenantID:  errInvalidTenantID,
-		errTenantIDs: errInvalidTenantID,
-	},
-	{
-		name:         "current-dir",
-		headerValue:  strptr("."),
-		errTenantID:  errInvalidTenantID,
-		errTenantIDs: errInvalidTenantID,
-	},
-}
-
-func TestSingleResolver(t *testing.T) {
-	r := NewSingleResolver()
-	for _, tc := range append(commonResolverTestCases, []resolverTestCase{
+func TestTenantIDs(t *testing.T) {
+	for _, tc := range []resolverTestCase{
 		{
-			name:        "multi-tenant",
-			headerValue: strptr("tenant-a|tenant-b"),
-			tenantID:    "tenant-a|tenant-b",
-			tenantIDs:   []string{"tenant-a|tenant-b"},
+			name:         "no-header",
+			errTenantID:  user.ErrNoOrgID,
+			errTenantIDs: user.ErrNoOrgID,
 		},
 		{
-			name:         "containing-forward-slash",
-			headerValue:  strptr("forward/slash"),
-			errTenantID:  errInvalidTenantID,
-			errTenantIDs: errInvalidTenantID,
+			name:        "empty",
+			headerValue: strptr(""),
+			tenantIDs:   []string{""},
 		},
 		{
-			name:         "containing-backward-slash",
-			headerValue:  strptr(`backward\slash`),
-			errTenantID:  errInvalidTenantID,
-			errTenantIDs: errInvalidTenantID,
+			name:        "single-tenant",
+			headerValue: strptr("tenant-a"),
+			tenantID:    "tenant-a",
+			tenantIDs:   []string{"tenant-a"},
 		},
-	}...) {
-		t.Run(tc.name, tc.test(r))
-	}
-}
-
-func TestMultiResolver(t *testing.T) {
-	r := NewMultiResolver()
-	for _, tc := range append(commonResolverTestCases, []resolverTestCase{
+		{
+			name:         "parent-dir",
+			headerValue:  strptr(".."),
+			errTenantID:  errUnsafeTenantID,
+			errTenantIDs: errUnsafeTenantID,
+		},
+		{
+			name:         "current-dir",
+			headerValue:  strptr("."),
+			errTenantID:  errUnsafeTenantID,
+			errTenantIDs: errUnsafeTenantID,
+		},
 		{
 			name:        "multi-tenant",
 			headerValue: strptr("tenant-a|tenant-b"),
@@ -129,8 +74,8 @@ func TestMultiResolver(t *testing.T) {
 		{
 			name:         "multi-tenant-with-relative-path",
 			headerValue:  strptr("tenant-a|tenant-b|.."),
-			errTenantID:  errInvalidTenantID,
-			errTenantIDs: errInvalidTenantID,
+			errTenantID:  errUnsafeTenantID,
+			errTenantIDs: errUnsafeTenantID,
 		},
 		{
 			name:         "containing-forward-slash",
@@ -144,7 +89,34 @@ func TestMultiResolver(t *testing.T) {
 			errTenantID:  &errTenantIDUnsupportedCharacter{pos: 8, tenantID: "backward\\slash"},
 			errTenantIDs: &errTenantIDUnsupportedCharacter{pos: 8, tenantID: "backward\\slash"},
 		},
-	}...) {
-		t.Run(tc.name, tc.test(r))
+		{
+			name:         "too-long",
+			headerValue:  strptr(strings.Repeat("123", MaxTenantIDLength)),
+			errTenantID:  errTenantIDTooLong,
+			errTenantIDs: errTenantIDTooLong,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			if tc.headerValue != nil {
+				ctx = user.InjectOrgID(ctx, *tc.headerValue)
+			}
+
+			tenantID, err := TenantID(ctx)
+			if tc.errTenantID != nil {
+				assert.Equal(t, tc.errTenantID, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.tenantID, tenantID)
+			}
+
+			tenantIDs, err := TenantIDs(ctx)
+			if tc.errTenantIDs != nil {
+				assert.Equal(t, tc.errTenantIDs, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.tenantIDs, tenantIDs)
+			}
+		})
 	}
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,13 +10,15 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/gorilla/mux"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
+	"golang.org/x/exp/maps"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/log"
@@ -75,14 +78,13 @@ func assertTracingSpans(
 		// collect observed span operation names
 		observedSpanOpNames = append(observedSpanOpNames, spanObserver.OpName)
 	}
-	for opName := range expectedTagsByOpName {
-		// assert all expected operations were observed
-		require.Contains(t, observedSpanOpNames, opName)
-	}
+
+	// Make sure observed all the spans we expected (and that we only observed each one once)
+	expectedSpanOpNames := maps.Keys(expectedTagsByOpName)
+	require.ElementsMatch(t, observedSpanOpNames, expectedSpanOpNames)
 }
 
 func TestHTTPGRPCTracing(t *testing.T) {
-
 	httpPort := 9099
 	httpAddress := "127.0.0.1"
 
@@ -123,17 +125,16 @@ func TestHTTPGRPCTracing(t *testing.T) {
 
 	tests := map[string]struct {
 		useHTTPOverGRPC      bool
+		useOtherGRPC         bool
 		routeName            string // leave blank for unnamed route tests
 		routeTmpl            string
-		routeLabel           string
 		reqURL               string
 		expectedTagsByOpName map[string]map[string]string
 	}{
-		"http over grpc: named route with no params in path template": {
+		"HTTP over gRPC: named route with no params in path template": {
 			useHTTPOverGRPC: true,
 			routeName:       helloRouteName,
 			routeTmpl:       helloRouteTmpl,
-			routeLabel:      expectedHelloRouteLabel,
 			reqURL:          helloRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
 				"/httpgrpc.HTTP/Handle": {
@@ -145,21 +146,19 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				expectedOpNameHelloHTTPSpan: expectedTagsHelloHTTPSpan,
 			},
 		},
-		"http direct request: named route with no params in path template": {
+		"HTTP direct request: named route with no params in path template": {
 			useHTTPOverGRPC: false,
 			routeName:       helloRouteName,
 			routeTmpl:       helloRouteTmpl,
-			routeLabel:      expectedHelloRouteLabel,
 			reqURL:          helloRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
 				expectedOpNameHelloHTTPSpan: expectedTagsHelloHTTPSpan,
 			},
 		},
-		"http over grpc: unnamed route with params in path template": {
+		"HTTP over gRPC: unnamed route with params in path template": {
 			useHTTPOverGRPC: true,
 			routeName:       "",
 			routeTmpl:       helloPathParamRouteTmpl,
-			routeLabel:      expectedHelloPathParamRouteLabel,
 			reqURL:          helloPathParamRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
 				"/httpgrpc.HTTP/Handle": {
@@ -171,21 +170,27 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				expectedOpNameHelloPathParamHTTPSpan: expectedTagsHelloPathParamHTTPSpan,
 			},
 		},
-		"http direct request: unnamed route with params in path template": {
+		"HTTP direct request: unnamed route with params in path template": {
 			useHTTPOverGRPC: false,
 			routeName:       "",
 			routeTmpl:       helloPathParamRouteTmpl,
-			routeLabel:      expectedHelloPathParamRouteLabel,
 			reqURL:          helloPathParamRouteURLRaw,
 			expectedTagsByOpName: map[string]map[string]string{
 				expectedOpNameHelloPathParamHTTPSpan: expectedTagsHelloPathParamHTTPSpan,
+			},
+		},
+		"gRPC direct request": {
+			useOtherGRPC: true,
+			expectedTagsByOpName: map[string]map[string]string{
+				grpc_health_v1.Health_Check_FullMethodName: {
+					string(ext.Component): "gRPC",
+				},
 			},
 		},
 	}
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
-
 			observer := testObserver{}
 			tracer, closer := jaeger.NewTracer(
 				"test",
@@ -193,6 +198,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				jaeger.NewInMemoryReporter(),
 				jaeger.TracerOptions.ContribObserver(&observer),
 			)
+			t.Cleanup(func() { _ = closer.Close() })
 			opentracing.SetGlobalTracer(tracer)
 
 			var cfg Config
@@ -202,7 +208,6 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			cfg.GRPCListenPort = 1234
 			cfg.GRPCServerMaxRecvMsgSize = 4 * 1024 * 1024
 			cfg.GRPCServerMaxSendMsgSize = 4 * 1024 * 1024
-			cfg.Router = middleware.InitHTTPGRPCMiddleware(mux.NewRouter())
 			cfg.MetricsNamespace = "testing_httpgrpc_tracing_" + middleware.MakeLabelValue(testName)
 			var lvl log.Level
 			require.NoError(t, lvl.Set("info"))
@@ -210,6 +215,8 @@ func TestHTTPGRPCTracing(t *testing.T) {
 
 			server, err := New(cfg)
 			require.NoError(t, err)
+
+			grpc_health_v1.RegisterHealthServer(server.GRPC, health.NewServer())
 
 			handlerFunc := func(w http.ResponseWriter, r *http.Request) {}
 			if test.routeName != "" {
@@ -223,6 +230,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			go func() {
 				require.NoError(t, server.Run())
 			}()
+			t.Cleanup(server.Shutdown)
 
 			target := server.GRPCListenAddr()
 			conn, err := grpc.Dial(
@@ -231,7 +239,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)),
 			)
 			require.NoError(t, err)
-			client := httpgrpc.NewHTTPClient(conn)
+			t.Cleanup(func() { _ = conn.Close() })
 
 			// emulateHTTPGRPCPRoxy mimics the usage of the Server type as a load balancing proxy,
 			// wrapping http requests into gRPC requests to utilize gRPC load balancing features
@@ -248,20 +256,21 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			require.NoError(t, err)
 
 			if test.useHTTPOverGRPC {
+				client := httpgrpc.NewHTTPClient(conn)
 				// http-over-grpc will be routed through HTTPGRPCTracer.Wrap middleware
-				_, err = emulateHTTPGRPCPRoxy(client, req)
+				_, err := emulateHTTPGRPCPRoxy(client, req)
+				require.NoError(t, err)
+			} else if test.useOtherGRPC {
+				client := grpc_health_v1.NewHealthClient(conn)
+				_, err := client.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
 				require.NoError(t, err)
 			} else {
 				// direct http requests will be routed through the default Tracer.Wrap HTTP middleware
-				_, err = http.DefaultClient.Do(req)
+				_, err := http.DefaultClient.Do(req)
 				require.NoError(t, err)
 			}
 
 			assertTracingSpans(t, observer.SpanObservers, test.expectedTagsByOpName)
-
-			conn.Close()
-			server.Shutdown()
-			closer.Close()
 		})
 	}
 }

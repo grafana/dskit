@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] server: import godeltaprof/http/pprof adding /debug/pprof/delta_{heap,mutex,block} endpoints to DefaultServeMux #450
 * [CHANGE] Move httpgrpc request & response utils up from httpgrpc/server to httpgrpc package #434, #435
 * [CHANGE] Updated the minimum required Go version to 1.20 and update Drone config #420
 * [CHANGE] Change `WaitRingStability` and `WaitInstanceState` methods signature to rely on `ReadRing` instead. #251
@@ -59,6 +60,7 @@
 * [CHANGE] server: fix incorrect spelling of "gRPC" in `server.Config` fields. #422
 * [CHANGE] memberlist: re-resolve `JoinMembers` during full joins to the cluster (either at startup or periodic). The re-resolution happens on every 100 attempted nodes. This helps speed up joins and respect context cancelation #411
 * [CHANGE] ring: `ring.DoBatch()` was deprecated in favor of `DoBatchWithOptions()`. #431
+* [CHANGE] tenant: Remove `tenant.WithDefaultResolver()` and `SingleResolver` in favor of global functions `tenant.TenantID()`, `tenant.TenantIDs()`,  or `MultiResolver`. #445
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
@@ -170,6 +172,9 @@
 * [ENHANCEMENT] ring: Replaced `DoBatchWithClientError()` with `DoBatchWithOptions()`, allowing a new option to use a custom `Go(func())` implementation that may use pre-allocated workers instead of spawning a new goroutine for each request. #431
 * [ENHANCEMENT] ring: add support for prioritising zones when using `DoUntilQuorum` with request minimisation and zone awareness. #440
 * [ENHANCEMENT] ballast: add utility function to allocate heap ballast. #446
+* [ENHANCEMENT] ring: use and provide context cancellation causes in `DoUntilQuorum`. #449
+* [ENHANCEMENT] ring: `ring.DoBatch` and `ring.DoBatchWithOptions` now check the context cancellation while calculating the replication instances, failing if the context was canceld. #454
+* [ENHANCEMENT] Cache: Export Memcached and Redis client types instead of returning the interface, `RemoteCacheClient`, they implement. #453
 * [ENHANCEMENT] SpanProfiler: add spanprofiler package. #448
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
@@ -199,3 +204,5 @@
 * [BUGFIX] Memberlist's TCP transport will now reject bind addresses that are not IP addresses, such as "localhost", rather than silently converting these to 0.0.0.0 and therefore listening on all addresses. #396
 * [BUGFIX] Ring: use zone-aware logging when all zones are required for quorum. #403
 * [BUGFIX] Services: moduleService could drop stop signals to its underlying service. #409 #417
+* [BUGFIX] ring: don't mark trace spans as failed if `DoUntilQuorum` terminates due to cancellation. #449
+* [BUGFIX] middleware: fix issue where applications that used the httpgrpc tracing middleware would generate duplicate spans for incoming HTTP requests. #451

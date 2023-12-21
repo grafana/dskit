@@ -21,6 +21,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/gomemcache v0.0.0-20231023152154-6947259a0586
+	github.com/grafana/pyroscope-go/godeltaprof v0.1.6
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-sockaddr v1.0.2
@@ -78,6 +79,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/serf v0.9.7 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
+	github.com/klauspost/compress v1.17.3 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect

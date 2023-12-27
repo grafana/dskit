@@ -30,11 +30,13 @@ func TestReturn4XXErrorsOption(t *testing.T) {
 		_, err := fmt.Fprint(w, "test")
 		require.NoError(t, err)
 	})
-	server := NewServer(handler)
+	serverOptions := make([]Option, 0, 1)
+	server := NewServer(handler, serverOptions...)
 	require.NotNil(t, server)
 	require.False(t, server.return4XXErrors)
 
-	server = NewServer(handler, []Option{WithReturn4XXErrors}...)
+	serverOptions = append(serverOptions, WithReturn4XXErrors)
+	server = NewServer(handler, serverOptions...)
 	require.NotNil(t, server)
 	require.True(t, server.return4XXErrors)
 }

@@ -551,9 +551,9 @@ func (s *Server) Run() error {
 		}
 	}()
 
-	var serverOptions []httpgrpc_server.Option
+	serverOptions := make([]httpgrpc_server.Option, 0, 1)
 	if s.cfg.ReportHTTP4XXCodesInInstrumentationLabel {
-		serverOptions = []httpgrpc_server.Option{httpgrpc_server.WithReturn4XXErrors}
+		serverOptions = append(serverOptions, httpgrpc_server.WithReturn4XXErrors)
 	}
 	// Setup gRPC server for HTTP over gRPC, ensure we don't double-count the middleware
 	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP, serverOptions...))

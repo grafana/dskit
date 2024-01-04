@@ -176,6 +176,7 @@
 * [ENHANCEMENT] ring: `ring.DoBatch` and `ring.DoBatchWithOptions` now check the context cancellation while calculating the replication instances, failing if the context was canceld. #454
 * [ENHANCEMENT] Cache: Export Memcached and Redis client types instead of returning the interface, `RemoteCacheClient`, they implement. #453
 * [ENHANCEMENT] SpanProfiler: add spanprofiler package. #448
+* [ENHANCEMENT] Server: Add support for `ReportHTTP4XXCodesInInstrumentationLabel`, which specifies whether HTTP 4xx status codes should be used in `status_code` label of request duration metric. It defaults to false, meaning that HTTP 4xx status codes are represented with `success` value. Moreover, when `ReportHTTP4XXCodesInInstrumentationLabel` is set to true, responses with HTTP status code `4xx` are returned as errors. #457
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

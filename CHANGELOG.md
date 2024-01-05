@@ -62,6 +62,7 @@
 * [CHANGE] ring: `ring.DoBatch()` was deprecated in favor of `DoBatchWithOptions()`. #431
 * [CHANGE] tenant: Remove `tenant.WithDefaultResolver()` and `SingleResolver` in favor of global functions `tenant.TenantID()`, `tenant.TenantIDs()`,  or `MultiResolver`. #445
 * [CHANGE] Cache: Remove legacy metrics from Memcached client that contained `_memcached_` in the name. #461
+* [CHANGE] memberlist: Change default for `memberlist.stream-timeout` from `10s` to `2s`. #458
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

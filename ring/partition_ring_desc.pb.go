@@ -12,6 +12,7 @@ import (
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
+	strconv "strconv"
 	strings "strings"
 )
 
@@ -25,6 +26,34 @@ var _ = math.Inf
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
+
+type PartitionState int32
+
+const (
+	PartitionUnknown  PartitionState = 0
+	PartitionActive   PartitionState = 1
+	PartitionInactive PartitionState = 2
+	// This state is not visible to ring clients, it's only used for gossiping, and partitions in this state are removed before client can see them.
+	PartitionDeleted PartitionState = 3
+)
+
+var PartitionState_name = map[int32]string{
+	0: "PartitionUnknown",
+	1: "PartitionActive",
+	2: "PartitionInactive",
+	3: "PartitionDeleted",
+}
+
+var PartitionState_value = map[string]int32{
+	"PartitionUnknown":  0,
+	"PartitionActive":   1,
+	"PartitionInactive": 2,
+	"PartitionDeleted":  3,
+}
+
+func (PartitionState) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_4df2762174d93dc4, []int{0}
+}
 
 type PartitionRingDesc struct {
 	Partitions map[int32]PartitionDesc `protobuf:"bytes,1,rep,name=partitions,proto3" json:"partitions" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
@@ -79,12 +108,11 @@ func (m *PartitionRingDesc) GetOwners() map[string]OwnerDesc {
 }
 
 type PartitionDesc struct {
-	Tokens []uint32 `protobuf:"varint,1,rep,packed,name=tokens,proto3" json:"tokens,omitempty"`
-	// Unix timestamps in seconds since when this partition is active (if active >= inactive), inactive (if inactive > active), or deleted.
-	// Only max timestamp is used, other timestamps should be empty. In case of equal values, precedence is: 1. active, 2. inactive, 3. deleted.
-	ActiveSince   int64 `protobuf:"varint,2,opt,name=activeSince,proto3" json:"activeSince,omitempty"`
-	InactiveSince int64 `protobuf:"varint,3,opt,name=inactiveSince,proto3" json:"inactiveSince,omitempty"`
-	DeletedSince  int64 `protobuf:"varint,4,opt,name=deletedSince,proto3" json:"deletedSince,omitempty"`
+	// Unique tokens, generated with deterministic token generator.
+	Tokens []uint32       `protobuf:"varint,1,rep,packed,name=tokens,proto3" json:"tokens,omitempty"`
+	State  PartitionState `protobuf:"varint,2,opt,name=state,proto3,enum=ring.PartitionState" json:"state,omitempty"`
+	// When has the state last changed for this partition. Unix timestamp in seconds.
+	StateTimestamp int64 `protobuf:"varint,3,opt,name=stateTimestamp,proto3" json:"stateTimestamp,omitempty"`
 }
 
 func (m *PartitionDesc) Reset()      { *m = PartitionDesc{} }
@@ -126,34 +154,28 @@ func (m *PartitionDesc) GetTokens() []uint32 {
 	return nil
 }
 
-func (m *PartitionDesc) GetActiveSince() int64 {
+func (m *PartitionDesc) GetState() PartitionState {
 	if m != nil {
-		return m.ActiveSince
+		return m.State
 	}
-	return 0
+	return PartitionUnknown
 }
 
-func (m *PartitionDesc) GetInactiveSince() int64 {
+func (m *PartitionDesc) GetStateTimestamp() int64 {
 	if m != nil {
-		return m.InactiveSince
-	}
-	return 0
-}
-
-func (m *PartitionDesc) GetDeletedSince() int64 {
-	if m != nil {
-		return m.DeletedSince
+		return m.StateTimestamp
 	}
 	return 0
 }
 
 // Owner handles given partition. Multiple owners can own the same partition.
 type OwnerDesc struct {
-	// ID of the instance. This value is the same as the key in the ingesters map in Desc.
-	Id             string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Addr           string `protobuf:"bytes,2,opt,name=addr,proto3" json:"addr,omitempty"`
-	Zone           string `protobuf:"bytes,3,opt,name=zone,proto3" json:"zone,omitempty"`
-	OwnedPartition int32  `protobuf:"varint,4,opt,name=ownedPartition,proto3" json:"ownedPartition,omitempty"`
+	// ID of the instance. This value is the same as the key in the owners map in PartitionRingDesc.
+	Id   string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Addr string `protobuf:"bytes,2,opt,name=addr,proto3" json:"addr,omitempty"`
+	Zone string `protobuf:"bytes,3,opt,name=zone,proto3" json:"zone,omitempty"`
+	// Partitions that belong to this owner.
+	OwnedPartitions []int32 `protobuf:"varint,4,rep,packed,name=ownedPartitions,proto3" json:"ownedPartitions,omitempty"`
 	// Unix timestamp in seconds of the last heartbeat sent by this instance.
 	Heartbeat int64         `protobuf:"varint,6,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"`
 	State     InstanceState `protobuf:"varint,7,opt,name=state,proto3,enum=ring.InstanceState" json:"state,omitempty"`
@@ -212,11 +234,11 @@ func (m *OwnerDesc) GetZone() string {
 	return ""
 }
 
-func (m *OwnerDesc) GetOwnedPartition() int32 {
+func (m *OwnerDesc) GetOwnedPartitions() []int32 {
 	if m != nil {
-		return m.OwnedPartition
+		return m.OwnedPartitions
 	}
-	return 0
+	return nil
 }
 
 func (m *OwnerDesc) GetHeartbeat() int64 {
@@ -234,6 +256,7 @@ func (m *OwnerDesc) GetState() InstanceState {
 }
 
 func init() {
+	proto.RegisterEnum("ring.PartitionState", PartitionState_name, PartitionState_value)
 	proto.RegisterType((*PartitionRingDesc)(nil), "ring.PartitionRingDesc")
 	proto.RegisterMapType((map[string]OwnerDesc)(nil), "ring.PartitionRingDesc.OwnersEntry")
 	proto.RegisterMapType((map[int32]PartitionDesc)(nil), "ring.PartitionRingDesc.PartitionsEntry")
@@ -244,39 +267,48 @@ func init() {
 func init() { proto.RegisterFile("partition_ring_desc.proto", fileDescriptor_4df2762174d93dc4) }
 
 var fileDescriptor_4df2762174d93dc4 = []byte{
-	// 467 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x74, 0x92, 0x4f, 0x6e, 0x13, 0x31,
-	0x14, 0xc6, 0xc7, 0x93, 0x3f, 0x68, 0x5e, 0x48, 0x0a, 0x46, 0x42, 0x43, 0x84, 0xcc, 0x28, 0xfc,
-	0x0b, 0x0b, 0x52, 0xa9, 0xb0, 0x40, 0xec, 0xa8, 0x60, 0x01, 0x12, 0x02, 0xb9, 0x07, 0xa8, 0x26,
-	0x63, 0x33, 0xb5, 0x5a, 0xec, 0x6a, 0xc6, 0x29, 0x2a, 0x2b, 0x8e, 0x80, 0xc4, 0x25, 0x38, 0x00,
-	0x57, 0x40, 0xea, 0x32, 0xcb, 0xae, 0x10, 0x99, 0x6c, 0x58, 0xf6, 0x08, 0xc8, 0xcf, 0x69, 0x32,
-	0x09, 0x62, 0xf7, 0xfc, 0xf9, 0x7b, 0xbf, 0xef, 0x79, 0xde, 0xc0, 0xad, 0xe3, 0xb4, 0xb0, 0xca,
-	0x2a, 0xa3, 0xf7, 0x0b, 0xa5, 0xf3, 0x7d, 0x21, 0xcb, 0x6c, 0x74, 0x5c, 0x18, 0x6b, 0x68, 0xd3,
-	0x09, 0xfd, 0xc7, 0xb9, 0xb2, 0x07, 0x93, 0xf1, 0x28, 0x33, 0x1f, 0xb7, 0x73, 0x93, 0x9b, 0x6d,
-	0xbc, 0x1c, 0x4f, 0x3e, 0xe0, 0x09, 0x0f, 0x58, 0xf9, 0xa6, 0x3e, 0xb8, 0x26, 0x5f, 0x0f, 0x7e,
-	0x86, 0x70, 0xfd, 0xfd, 0x25, 0x9e, 0x2b, 0x9d, 0xbf, 0x94, 0x65, 0x46, 0xdf, 0x02, 0x2c, 0x33,
-	0xcb, 0x98, 0x24, 0x8d, 0x61, 0x67, 0xe7, 0xe1, 0x08, 0xdb, 0xfe, 0x31, 0xaf, 0x94, 0xf2, 0x95,
-	0xb6, 0xc5, 0xe9, 0x6e, 0xf3, 0xec, 0xd7, 0x9d, 0x80, 0xd7, 0x00, 0xf4, 0x05, 0xb4, 0xcd, 0x27,
-	0x2d, 0x8b, 0x32, 0x0e, 0x11, 0x75, 0xf7, 0x7f, 0xa8, 0x77, 0xe8, 0xaa, 0x63, 0x16, 0x8d, 0x7d,
-	0x0e, 0x5b, 0x1b, 0x39, 0xf4, 0x1a, 0x34, 0x0e, 0xe5, 0x69, 0x4c, 0x12, 0x32, 0x6c, 0x71, 0x57,
-	0xd2, 0x47, 0xd0, 0x3a, 0x49, 0x8f, 0x26, 0x32, 0x0e, 0x13, 0x32, 0xec, 0xec, 0xdc, 0xd8, 0x88,
-	0x71, 0x11, 0xdc, 0x3b, 0x9e, 0x87, 0xcf, 0x48, 0xff, 0x0d, 0x74, 0x6a, 0x81, 0x75, 0x5e, 0xe4,
-	0x79, 0xf7, 0xd7, 0x79, 0x5b, 0x9e, 0x87, 0x3d, 0x1b, 0xac, 0xc1, 0x37, 0x02, 0xdd, 0xb5, 0x20,
-	0x7a, 0x13, 0xda, 0xd6, 0x1c, 0xca, 0xc5, 0xf7, 0xeb, 0xf2, 0xc5, 0x89, 0x26, 0xd0, 0x49, 0x33,
-	0xab, 0x4e, 0xe4, 0x9e, 0xd2, 0x99, 0x47, 0x37, 0x78, 0x5d, 0xa2, 0xf7, 0xa0, 0xab, 0x74, 0xdd,
-	0xd3, 0x40, 0xcf, 0xba, 0x48, 0x07, 0x70, 0x55, 0xc8, 0x23, 0x69, 0xa5, 0xf0, 0xa6, 0x26, 0x9a,
-	0xd6, 0xb4, 0xc1, 0x0f, 0x02, 0xd1, 0x72, 0x5c, 0xda, 0x83, 0x50, 0x89, 0xc5, 0xfb, 0x42, 0x25,
-	0x28, 0x85, 0x66, 0x2a, 0x44, 0x81, 0x23, 0x44, 0x1c, 0x6b, 0xa7, 0x7d, 0x36, 0xda, 0x47, 0x46,
-	0x1c, 0x6b, 0xfa, 0x00, 0x7a, 0x6e, 0x0b, 0x62, 0xf9, 0x3e, 0xcc, 0x6a, 0xf1, 0x0d, 0x95, 0xde,
-	0x86, 0xe8, 0x40, 0xa6, 0x85, 0x1d, 0xcb, 0xd4, 0xc6, 0x6d, 0x1c, 0x67, 0x25, 0xb8, 0xe5, 0x94,
-	0x36, 0xb5, 0x32, 0xbe, 0x92, 0x90, 0x61, 0xef, 0x72, 0x39, 0xaf, 0x75, 0x69, 0x53, 0x9d, 0xc9,
-	0x3d, 0x77, 0xc5, 0xbd, 0x63, 0xf7, 0xe9, 0x74, 0xc6, 0x82, 0xf3, 0x19, 0x0b, 0x2e, 0x66, 0x8c,
-	0x7c, 0xa9, 0x18, 0xf9, 0x5e, 0x31, 0x72, 0x56, 0x31, 0x32, 0xad, 0x18, 0xf9, 0x5d, 0x31, 0xf2,
-	0xa7, 0x62, 0xc1, 0x45, 0xc5, 0xc8, 0xd7, 0x39, 0x0b, 0xa6, 0x73, 0x16, 0x9c, 0xcf, 0x59, 0x30,
-	0x6e, 0xe3, 0x1f, 0xfd, 0xe4, 0x6f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xcb, 0x99, 0xf5, 0x96, 0x2f,
-	0x03, 0x00, 0x00,
+	// 505 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x74, 0x93, 0xc1, 0x6e, 0xd3, 0x30,
+	0x18, 0xc7, 0xe3, 0xa4, 0x2d, 0xca, 0x37, 0xad, 0x0d, 0xde, 0x40, 0xa1, 0x42, 0x26, 0x2a, 0x02,
+	0xc2, 0x24, 0x3a, 0xa9, 0x70, 0x40, 0xdc, 0x36, 0x8d, 0xc3, 0x90, 0x10, 0xc8, 0xc0, 0x79, 0x4a,
+	0x13, 0x93, 0x46, 0x5d, 0xed, 0x2a, 0x71, 0x37, 0x0d, 0x2e, 0x3c, 0x02, 0x8f, 0xc1, 0x13, 0xf0,
+	0x06, 0x48, 0x3b, 0xf6, 0xb8, 0x13, 0xa2, 0xe9, 0x85, 0xe3, 0x1e, 0x01, 0xc5, 0x0e, 0x6d, 0x1a,
+	0xc4, 0xed, 0xef, 0xbf, 0xbf, 0xef, 0xf7, 0xf7, 0x67, 0x27, 0x70, 0x67, 0x1a, 0xa4, 0x32, 0x91,
+	0x89, 0xe0, 0x27, 0x69, 0xc2, 0xe3, 0x93, 0x88, 0x65, 0x61, 0x7f, 0x9a, 0x0a, 0x29, 0x70, 0xa3,
+	0x30, 0xba, 0x4f, 0xe2, 0x44, 0x8e, 0x66, 0xc3, 0x7e, 0x28, 0x26, 0xfb, 0xb1, 0x88, 0xc5, 0xbe,
+	0xda, 0x1c, 0xce, 0x3e, 0xaa, 0x95, 0x5a, 0x28, 0xa5, 0x9b, 0xba, 0x50, 0x34, 0x69, 0xdd, 0xfb,
+	0x61, 0xc2, 0xcd, 0xb7, 0x7f, 0xf1, 0x34, 0xe1, 0xf1, 0x11, 0xcb, 0x42, 0xfc, 0x1a, 0x60, 0x95,
+	0x99, 0xb9, 0xc8, 0xb3, 0xfc, 0xad, 0xc1, 0xa3, 0xbe, 0x6a, 0xfb, 0xa7, 0x78, 0xed, 0x64, 0x2f,
+	0xb9, 0x4c, 0x2f, 0x0e, 0x1b, 0x97, 0x3f, 0xef, 0x19, 0xb4, 0x02, 0xc0, 0x07, 0xd0, 0x12, 0xe7,
+	0x9c, 0xa5, 0x99, 0x6b, 0x2a, 0xd4, 0xfd, 0xff, 0xa1, 0xde, 0xa8, 0xaa, 0x2a, 0xa6, 0x6c, 0xec,
+	0x52, 0xe8, 0xd4, 0x72, 0xb0, 0x03, 0xd6, 0x98, 0x5d, 0xb8, 0xc8, 0x43, 0x7e, 0x93, 0x16, 0x12,
+	0x3f, 0x86, 0xe6, 0x59, 0x70, 0x3a, 0x63, 0xae, 0xe9, 0x21, 0x7f, 0x6b, 0xb0, 0x53, 0x8b, 0x29,
+	0x22, 0xa8, 0xae, 0x78, 0x61, 0x3e, 0x47, 0xdd, 0x57, 0xb0, 0x55, 0x09, 0xac, 0xf2, 0x6c, 0xcd,
+	0x7b, 0xb0, 0xc9, 0xeb, 0x68, 0x9e, 0xea, 0xa9, 0xb1, 0x7a, 0x9f, 0x61, 0x7b, 0x23, 0x07, 0xdf,
+	0x86, 0x96, 0x14, 0x63, 0x56, 0x5e, 0xdf, 0x36, 0x2d, 0x57, 0x78, 0x0f, 0x9a, 0x99, 0x0c, 0xa4,
+	0x66, 0xb6, 0x07, 0xbb, 0xb5, 0x33, 0xbe, 0x2b, 0xf6, 0xa8, 0x2e, 0xc1, 0x0f, 0xa1, 0xad, 0xc4,
+	0xfb, 0x64, 0xc2, 0x32, 0x19, 0x4c, 0xa6, 0xae, 0xe5, 0x21, 0xdf, 0xa2, 0x35, 0xb7, 0xf7, 0x1d,
+	0x81, 0xbd, 0x3a, 0x15, 0x6e, 0x83, 0x99, 0x44, 0xe5, 0x18, 0x66, 0x12, 0x61, 0x0c, 0x8d, 0x20,
+	0x8a, 0x52, 0x15, 0x68, 0x53, 0xa5, 0x0b, 0xef, 0x93, 0xe0, 0x4c, 0xf1, 0x6c, 0xaa, 0x34, 0xf6,
+	0xa1, 0x53, 0x5c, 0x76, 0xb4, 0xbe, 0x67, 0xb7, 0xe1, 0x59, 0x7e, 0x93, 0xd6, 0x6d, 0x7c, 0x17,
+	0xec, 0x11, 0x0b, 0x52, 0x39, 0x64, 0x81, 0x74, 0x5b, 0xea, 0x48, 0x6b, 0xa3, 0x78, 0x05, 0x3d,
+	0xe1, 0x0d, 0x35, 0x61, 0xf9, 0x0a, 0xc7, 0x3c, 0x93, 0x01, 0x0f, 0x59, 0x75, 0xc0, 0xbd, 0x11,
+	0xb4, 0x37, 0x27, 0xc7, 0xbb, 0xe0, 0xac, 0x9c, 0x0f, 0x7c, 0xcc, 0xc5, 0x39, 0x77, 0x0c, 0xbc,
+	0x53, 0x79, 0xfd, 0x83, 0x50, 0x26, 0x67, 0xcc, 0x41, 0xf8, 0x56, 0xe5, 0xcb, 0x3d, 0xe6, 0x81,
+	0xb6, 0xcd, 0x0d, 0xc2, 0x11, 0x3b, 0x65, 0x92, 0x45, 0x8e, 0x75, 0xf8, 0x6c, 0xbe, 0x20, 0xc6,
+	0xd5, 0x82, 0x18, 0xd7, 0x0b, 0x82, 0xbe, 0xe4, 0x04, 0x7d, 0xcb, 0x09, 0xba, 0xcc, 0x09, 0x9a,
+	0xe7, 0x04, 0xfd, 0xca, 0x09, 0xfa, 0x9d, 0x13, 0xe3, 0x3a, 0x27, 0xe8, 0xeb, 0x92, 0x18, 0xf3,
+	0x25, 0x31, 0xae, 0x96, 0xc4, 0x18, 0xb6, 0xd4, 0x4f, 0xf2, 0xf4, 0x4f, 0x00, 0x00, 0x00, 0xff,
+	0xff, 0xc9, 0x22, 0xfa, 0x66, 0x82, 0x03, 0x00, 0x00,
 }
 
+func (x PartitionState) String() string {
+	s, ok := PartitionState_name[int32(x)]
+	if ok {
+		return s
+	}
+	return strconv.Itoa(int(x))
+}
 func (this *PartitionRingDesc) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -345,13 +377,10 @@ func (this *PartitionDesc) Equal(that interface{}) bool {
 			return false
 		}
 	}
-	if this.ActiveSince != that1.ActiveSince {
+	if this.State != that1.State {
 		return false
 	}
-	if this.InactiveSince != that1.InactiveSince {
-		return false
-	}
-	if this.DeletedSince != that1.DeletedSince {
+	if this.StateTimestamp != that1.StateTimestamp {
 		return false
 	}
 	return true
@@ -384,8 +413,13 @@ func (this *OwnerDesc) Equal(that interface{}) bool {
 	if this.Zone != that1.Zone {
 		return false
 	}
-	if this.OwnedPartition != that1.OwnedPartition {
+	if len(this.OwnedPartitions) != len(that1.OwnedPartitions) {
 		return false
+	}
+	for i := range this.OwnedPartitions {
+		if this.OwnedPartitions[i] != that1.OwnedPartitions[i] {
+			return false
+		}
 	}
 	if this.Heartbeat != that1.Heartbeat {
 		return false
@@ -434,12 +468,11 @@ func (this *PartitionDesc) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 8)
+	s := make([]string, 0, 7)
 	s = append(s, "&ring.PartitionDesc{")
 	s = append(s, "Tokens: "+fmt.Sprintf("%#v", this.Tokens)+",\n")
-	s = append(s, "ActiveSince: "+fmt.Sprintf("%#v", this.ActiveSince)+",\n")
-	s = append(s, "InactiveSince: "+fmt.Sprintf("%#v", this.InactiveSince)+",\n")
-	s = append(s, "DeletedSince: "+fmt.Sprintf("%#v", this.DeletedSince)+",\n")
+	s = append(s, "State: "+fmt.Sprintf("%#v", this.State)+",\n")
+	s = append(s, "StateTimestamp: "+fmt.Sprintf("%#v", this.StateTimestamp)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -452,7 +485,7 @@ func (this *OwnerDesc) GoString() string {
 	s = append(s, "Id: "+fmt.Sprintf("%#v", this.Id)+",\n")
 	s = append(s, "Addr: "+fmt.Sprintf("%#v", this.Addr)+",\n")
 	s = append(s, "Zone: "+fmt.Sprintf("%#v", this.Zone)+",\n")
-	s = append(s, "OwnedPartition: "+fmt.Sprintf("%#v", this.OwnedPartition)+",\n")
+	s = append(s, "OwnedPartitions: "+fmt.Sprintf("%#v", this.OwnedPartitions)+",\n")
 	s = append(s, "Heartbeat: "+fmt.Sprintf("%#v", this.Heartbeat)+",\n")
 	s = append(s, "State: "+fmt.Sprintf("%#v", this.State)+",\n")
 	s = append(s, "}")
@@ -555,18 +588,13 @@ func (m *PartitionDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.DeletedSince != 0 {
-		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.DeletedSince))
-		i--
-		dAtA[i] = 0x20
-	}
-	if m.InactiveSince != 0 {
-		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.InactiveSince))
+	if m.StateTimestamp != 0 {
+		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.StateTimestamp))
 		i--
 		dAtA[i] = 0x18
 	}
-	if m.ActiveSince != 0 {
-		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.ActiveSince))
+	if m.State != 0 {
+		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.State))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -621,10 +649,24 @@ func (m *OwnerDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x30
 	}
-	if m.OwnedPartition != 0 {
-		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.OwnedPartition))
+	if len(m.OwnedPartitions) > 0 {
+		dAtA6 := make([]byte, len(m.OwnedPartitions)*10)
+		var j5 int
+		for _, num1 := range m.OwnedPartitions {
+			num := uint64(num1)
+			for num >= 1<<7 {
+				dAtA6[j5] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j5++
+			}
+			dAtA6[j5] = uint8(num)
+			j5++
+		}
+		i -= j5
+		copy(dAtA[i:], dAtA6[:j5])
+		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(j5))
 		i--
-		dAtA[i] = 0x20
+		dAtA[i] = 0x22
 	}
 	if len(m.Zone) > 0 {
 		i -= len(m.Zone)
@@ -701,14 +743,11 @@ func (m *PartitionDesc) Size() (n int) {
 		}
 		n += 1 + sovPartitionRingDesc(uint64(l)) + l
 	}
-	if m.ActiveSince != 0 {
-		n += 1 + sovPartitionRingDesc(uint64(m.ActiveSince))
+	if m.State != 0 {
+		n += 1 + sovPartitionRingDesc(uint64(m.State))
 	}
-	if m.InactiveSince != 0 {
-		n += 1 + sovPartitionRingDesc(uint64(m.InactiveSince))
-	}
-	if m.DeletedSince != 0 {
-		n += 1 + sovPartitionRingDesc(uint64(m.DeletedSince))
+	if m.StateTimestamp != 0 {
+		n += 1 + sovPartitionRingDesc(uint64(m.StateTimestamp))
 	}
 	return n
 }
@@ -731,8 +770,12 @@ func (m *OwnerDesc) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovPartitionRingDesc(uint64(l))
 	}
-	if m.OwnedPartition != 0 {
-		n += 1 + sovPartitionRingDesc(uint64(m.OwnedPartition))
+	if len(m.OwnedPartitions) > 0 {
+		l = 0
+		for _, e := range m.OwnedPartitions {
+			l += sovPartitionRingDesc(uint64(e))
+		}
+		n += 1 + sovPartitionRingDesc(uint64(l)) + l
 	}
 	if m.Heartbeat != 0 {
 		n += 1 + sovPartitionRingDesc(uint64(m.Heartbeat))
@@ -786,9 +829,8 @@ func (this *PartitionDesc) String() string {
 	}
 	s := strings.Join([]string{`&PartitionDesc{`,
 		`Tokens:` + fmt.Sprintf("%v", this.Tokens) + `,`,
-		`ActiveSince:` + fmt.Sprintf("%v", this.ActiveSince) + `,`,
-		`InactiveSince:` + fmt.Sprintf("%v", this.InactiveSince) + `,`,
-		`DeletedSince:` + fmt.Sprintf("%v", this.DeletedSince) + `,`,
+		`State:` + fmt.Sprintf("%v", this.State) + `,`,
+		`StateTimestamp:` + fmt.Sprintf("%v", this.StateTimestamp) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -801,7 +843,7 @@ func (this *OwnerDesc) String() string {
 		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
 		`Addr:` + fmt.Sprintf("%v", this.Addr) + `,`,
 		`Zone:` + fmt.Sprintf("%v", this.Zone) + `,`,
-		`OwnedPartition:` + fmt.Sprintf("%v", this.OwnedPartition) + `,`,
+		`OwnedPartitions:` + fmt.Sprintf("%v", this.OwnedPartitions) + `,`,
 		`Heartbeat:` + fmt.Sprintf("%v", this.Heartbeat) + `,`,
 		`State:` + fmt.Sprintf("%v", this.State) + `,`,
 		`}`,
@@ -1220,9 +1262,9 @@ func (m *PartitionDesc) Unmarshal(dAtA []byte) error {
 			}
 		case 2:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ActiveSince", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field State", wireType)
 			}
-			m.ActiveSince = 0
+			m.State = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowPartitionRingDesc
@@ -1232,16 +1274,16 @@ func (m *PartitionDesc) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.ActiveSince |= int64(b&0x7F) << shift
+				m.State |= PartitionState(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
 		case 3:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field InactiveSince", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field StateTimestamp", wireType)
 			}
-			m.InactiveSince = 0
+			m.StateTimestamp = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowPartitionRingDesc
@@ -1251,26 +1293,7 @@ func (m *PartitionDesc) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.InactiveSince |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 4:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field DeletedSince", wireType)
-			}
-			m.DeletedSince = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowPartitionRingDesc
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.DeletedSince |= int64(b&0x7F) << shift
+				m.StateTimestamp |= int64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1425,23 +1448,80 @@ func (m *OwnerDesc) Unmarshal(dAtA []byte) error {
 			m.Zone = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 4:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field OwnedPartition", wireType)
-			}
-			m.OwnedPartition = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowPartitionRingDesc
+			if wireType == 0 {
+				var v int32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowPartitionRingDesc
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
 				}
-				if iNdEx >= l {
+				m.OwnedPartitions = append(m.OwnedPartitions, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowPartitionRingDesc
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthPartitionRingDesc
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthPartitionRingDesc
+				}
+				if postIndex > l {
 					return io.ErrUnexpectedEOF
 				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.OwnedPartition |= int32(b&0x7F) << shift
-				if b < 0x80 {
-					break
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
 				}
+				elementCount = count
+				if elementCount != 0 && len(m.OwnedPartitions) == 0 {
+					m.OwnedPartitions = make([]int32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v int32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowPartitionRingDesc
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= int32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.OwnedPartitions = append(m.OwnedPartitions, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field OwnedPartitions", wireType)
 			}
 		case 6:
 			if wireType != 0 {

@@ -14,8 +14,8 @@ type PartitionRing struct {
 	desc PartitionRingDesc
 
 	ringTokens      Tokens
-	tokenPartitions map[Token]PartitionID
-	partitionOwners map[PartitionID][]string
+	tokenPartitions map[Token]int32
+	partitionOwners map[int32][]string
 }
 
 func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
@@ -32,7 +32,7 @@ func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 
 // ActivePartitionForKey returns partition that should receive given key. Only active partitions are considered,
 // and only one partition is returned.
-func (pr *PartitionRing) ActivePartitionForKey(key uint32) (PartitionID, PartitionDesc, error) {
+func (pr *PartitionRing) ActivePartitionForKey(key uint32) (int32, PartitionDesc, error) {
 	start := searchToken(pr.ringTokens, key)
 	iterations := 0
 
@@ -77,7 +77,7 @@ func (pr *PartitionRing) ShuffleRingPartitions(identifier string, size int, look
 	return NewPartitionRing(pr.desc.WithPartitions(partitions)), nil
 }
 
-func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (map[PartitionID]struct{}, error) {
+func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (map[int32]struct{}, error) {
 	if size <= 0 || size >= len(pr.desc.Partitions) {
 		return nil, nil
 	}
@@ -93,7 +93,7 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 	// (if any) continuing walking the ring.
 	tokensCount := len(pr.ringTokens)
 
-	result := make(map[PartitionID]struct{}, size)
+	result := make(map[int32]struct{}, size)
 	for len(result) < size {
 		start := searchToken(pr.ringTokens, random.Uint32())
 		iterations := 0
@@ -155,7 +155,7 @@ func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation, heartbeatTimeo
 
 	result := make([]ReplicationSet, 0, len(pr.desc.Partitions))
 	for pid := range pr.desc.Partitions {
-		owners := pr.partitionOwners[PartitionID(pid)]
+		owners := pr.partitionOwners[pid]
 
 		instances := make([]InstanceDesc, 0, len(owners))
 		for _, o := range owners {

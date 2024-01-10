@@ -1,7 +1,6 @@
 package ring
 
 import (
-	"cmp"
 	"fmt"
 	"strconv"
 	"time"
@@ -13,61 +12,12 @@ import (
 	"github.com/grafana/dskit/kv/memberlist"
 )
 
-type PartitionID int32
-
-type PartitionState int
-
-const (
-	PartitionActive   PartitionState = 1
-	PartitionInactive                = 2
-	PartitionDeleted                 = 3 // This state is not visible to ring clients, it's only used for gossiping, and partitions in this state are removed before client can see them.
-)
-
-// State returns state of the partition. State is determined by highest state timestamp.
-// If all timestamps are equal, partition is "active".
-func (m *PartitionDesc) State() (PartitionState, int64) {
-	if m.ActiveSince >= m.InactiveSince {
-		if m.ActiveSince >= m.DeletedSince {
-			// Active >= Inactive && Active >= Deleted.
-			return PartitionActive, m.ActiveSince
-		}
-
-		// Deleted > Active >= Inactive.
-		return PartitionDeleted, m.DeletedSince
-	}
-
-	// Inactive > Active.
-	if m.InactiveSince >= m.DeletedSince {
-		// Inactive > Active && Inactive >= Deleted
-		return PartitionInactive, m.InactiveSince
-	}
-
-	// Deleted > Inactive > Active
-	return PartitionDeleted, m.DeletedSince
-}
-
-func (m *PartitionDesc) NormalizeTimestamps() {
-	s, _ := m.State()
-	switch s {
-	case PartitionActive:
-		m.InactiveSince = 0
-		m.DeletedSince = 0
-	case PartitionInactive:
-		m.ActiveSince = 0
-		m.DeletedSince = 0
-	case PartitionDeleted:
-		m.ActiveSince = 0
-		m.InactiveSince = 0
-	}
-}
-
 func (m *PartitionDesc) IsActive() bool {
-	s, _ := m.State()
-	return s == PartitionActive
+	return m.GetState() == PartitionActive
 }
 
 func (m *PartitionDesc) BecameActiveAfter(ts int64) bool {
-	return m.IsActive() && m.ActiveSince >= ts
+	return m.IsActive() && m.GetStateTimestamp() >= ts
 }
 
 func (m *OwnerDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, now time.Time) bool {
@@ -93,13 +43,13 @@ func GetPartitionRingCodec() codec.Codec {
 }
 
 // TokensAndTokenPartitions returns the list of tokens and a mapping of each token to its corresponding partition ID.
-func (m *PartitionRingDesc) TokensAndTokenPartitions() (Tokens, map[Token]PartitionID) {
+func (m *PartitionRingDesc) TokensAndTokenPartitions() (Tokens, map[Token]int32) {
 	allTokens := make(Tokens, 0, len(m.Partitions)*optimalTokensPerInstance)
 
-	out := make(map[Token]PartitionID, len(m.Partitions)*optimalTokensPerInstance)
+	out := make(map[Token]int32, len(m.Partitions)*optimalTokensPerInstance)
 	for partitionID, partition := range m.Partitions {
 		for _, token := range partition.Tokens {
-			out[Token(token)] = PartitionID(partitionID)
+			out[Token(token)] = partitionID
 
 			allTokens = append(allTokens, token)
 		}
@@ -109,65 +59,74 @@ func (m *PartitionRingDesc) TokensAndTokenPartitions() (Tokens, map[Token]Partit
 	return allTokens, out
 }
 
-func (m *PartitionRingDesc) PartitionOwners() map[PartitionID][]string {
-	out := make(map[PartitionID][]string, len(m.Partitions))
+func (m *PartitionRingDesc) PartitionOwners() map[int32][]string {
+	out := make(map[int32][]string, len(m.Partitions))
 	for id, o := range m.Owners {
-		pid := PartitionID(o.OwnedPartition)
-		out[pid] = append(out[pid], id)
+		for _, p := range o.OwnedPartitions {
+			out[p] = append(out[p], id)
+		}
 	}
 	return out
 }
 
-func (m *PartitionRingDesc) AddActivePartition(id PartitionID, now time.Time) {
+func (m *PartitionRingDesc) AddActivePartition(id int32, now time.Time) {
 	// Spread-minimizing token generator is deterministic unique-token generator for given id and zone.
 	// Partitions don't use zones.
 	tg := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
 
 	tokens := tg.GenerateTokens(optimalTokensPerInstance, nil)
 
-	m.Partitions[int32(id)] = PartitionDesc{
-		Tokens:      tokens,
-		ActiveSince: now.Unix(),
+	m.Partitions[id] = PartitionDesc{
+		Tokens:         tokens,
+		State:          PartitionActive,
+		StateTimestamp: now.Unix(),
 	}
 }
 
-func (m *PartitionRingDesc) DisablePartition(id PartitionID, now time.Time) {
+func (m *PartitionRingDesc) DisablePartition(id int32, now time.Time) {
 	d, ok := m.Partition(id)
 	if ok {
-		d.ActiveSince = 0
-		d.InactiveSince = now.Unix()
-		m.Partitions[int32(id)] = d
+		d.State = PartitionInactive
+		d.StateTimestamp = now.Unix()
+		m.Partitions[id] = d
 	}
 }
 
-func (m *PartitionRingDesc) ActivatePartition(id PartitionID, now time.Time) {
+func (m *PartitionRingDesc) ActivatePartition(id int32, now time.Time) {
 	d, ok := m.Partition(id)
 	if ok {
-		d.ActiveSince = now.Unix()
-		d.InactiveSince = 0
-		m.Partitions[int32(id)] = d
+		d.State = PartitionActive
+		d.StateTimestamp = now.Unix()
+		m.Partitions[id] = d
 	}
 }
 
-func (m *PartitionRingDesc) Partition(id PartitionID) (PartitionDesc, bool) {
-	p, ok := m.Partitions[int32(id)]
+func (m *PartitionRingDesc) Partition(id int32) (PartitionDesc, bool) {
+	p, ok := m.Partitions[id]
 	return p, ok
 }
 
 // WithPartitions returns a new PartitionRingDesc with only the specified partitions and their owners included.
-func (m *PartitionRingDesc) WithPartitions(partitions map[PartitionID]struct{}) PartitionRingDesc {
+func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) PartitionRingDesc {
 	newPartitions := make(map[int32]PartitionDesc, len(partitions))
 	newOwners := make(map[string]OwnerDesc, len(partitions)*2) // assuming two owners per partition.
 
 	for pid, p := range m.Partitions {
-		if _, ok := partitions[PartitionID(pid)]; ok {
+		if _, ok := partitions[pid]; ok {
 			newPartitions[pid] = p
 		}
 	}
 
 	for oid, o := range m.Owners {
-		pid := o.OwnedPartition
-		if _, ok := partitions[PartitionID(pid)]; ok {
+		addOwner := false
+		for _, p := range o.OwnedPartitions {
+			if _, ok := partitions[p]; ok {
+				addOwner = true
+				break
+			}
+		}
+
+		if addOwner {
 			newOwners[oid] = o
 		}
 	}
@@ -179,15 +138,15 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[PartitionID]struct{}) 
 }
 
 // AddOrUpdateOwner adds or updates owner entry in the ring. Returns true, if entry was added or updated, false if entry is unchanged.
-func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPartition PartitionID, state InstanceState, heartbeat time.Time) bool {
+func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPartitions []int32, state InstanceState, heartbeat time.Time) bool {
 	prev, ok := m.Owners[id]
 	updated := OwnerDesc{
-		Id:             id,
-		Addr:           address,
-		Zone:           zone,
-		OwnedPartition: int32(ownedPartition),
-		Heartbeat:      heartbeat.Unix(),
-		State:          state,
+		Id:              id,
+		Addr:            address,
+		Zone:            zone,
+		OwnedPartitions: ownedPartitions,
+		Heartbeat:       heartbeat.Unix(),
+		State:           state,
 	}
 
 	if !ok || !prev.Equal(updated) {
@@ -219,7 +178,7 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 			changed = true
 			thisPart = otherPart
 		} else {
-			// We don't need to check for conflicts, because all partitions have unique tokens already -- since our token generator is deterministic.
+			// We don't need to check for conflicts: all partitions have unique tokens already, since our token generator is deterministic.
 			// The only problem could be that over time token generation algorithm changes and starts producing different tokens.
 			// We can detect that by adding "token generator version" into the PartitionDesc, and then preserving tokens generated by latest version only.
 			// We can solve this in the future, when needed.
@@ -228,23 +187,15 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 				changed = true
 			}
 
-			oldState, oldTs := thisPart.State()
-
-			// Merge timestamps, but only report "change" if state or ts changes.
-			thisPart.ActiveSince = max(thisPart.ActiveSince, otherPart.ActiveSince)
-			thisPart.InactiveSince = max(thisPart.InactiveSince, otherPart.InactiveSince)
-			thisPart.DeletedSince = max(thisPart.DeletedSince, otherPart.DeletedSince)
-
-			newState, newTs := thisPart.State()
-
-			if oldState != newState || oldTs != newTs {
+			if otherPart.StateTimestamp > thisPart.StateTimestamp {
 				changed = true
+
+				thisPart.State = otherPart.State
+				thisPart.StateTimestamp = otherPart.StateTimestamp
 			}
 		}
 
 		if changed {
-			thisPart.NormalizeTimestamps()
-
 			m.Partitions[pid] = thisPart
 			change.Partitions[pid] = thisPart
 		}
@@ -256,9 +207,9 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 		for pid, thisPart := range m.Partitions {
 			_, exists := m.Partitions[pid]
 			if !exists {
-				// Partition was removed from the ring. We need to preserve it locally, but we set DeletedSince.
-				thisPart.DeletedSince = time.Now().Unix()
-				thisPart.ActiveSince = 0
+				// Partition was removed from the ring. We need to preserve it locally, but we set state to PartitionDeleted.
+				thisPart.State = PartitionDeleted
+				thisPart.StateTimestamp = time.Now().Unix()
 				m.Partitions[pid] = thisPart
 				change.Partitions[pid] = thisPart
 			}
@@ -269,7 +220,7 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 	for id, otherOwner := range other.Owners {
 		thisOwner := m.Owners[id]
 
-		// ting.Timestamp will be 0, if there was no such ingester in our version
+		// ting.Heartbeat will be 0, if there was no such ingester in our version
 		if otherOwner.Heartbeat > thisOwner.Heartbeat || (otherOwner.Heartbeat == thisOwner.Heartbeat && otherOwner.State == LEFT && thisOwner.State != LEFT) {
 			m.Owners[id] = otherOwner
 			change.Owners[id] = otherOwner
@@ -302,14 +253,6 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 	return change, nil
 }
 
-// Remove after switching to go 1.21.
-func max[T cmp.Ordered](x T, y T) T {
-	if x < y {
-		return y
-	}
-	return x
-}
-
 func (m *PartitionRingDesc) MergeContent() []string {
 	result := make([]string, len(m.Partitions)+len(m.Owners))
 
@@ -326,9 +269,8 @@ func (m *PartitionRingDesc) MergeContent() []string {
 
 func (m *PartitionRingDesc) RemoveTombstones(limit time.Time) (total, removed int) {
 	for pid, part := range m.Partitions {
-		st, ts := part.State()
-		if st == PartitionDeleted {
-			if limit.IsZero() || time.Unix(ts, 0).Before(limit) {
+		if part.State == PartitionDeleted {
+			if limit.IsZero() || time.Unix(part.StateTimestamp, 0).Before(limit) {
 				delete(m.Partitions, pid)
 				removed++
 			} else {

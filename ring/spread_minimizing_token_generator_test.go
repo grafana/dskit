@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -28,21 +26,25 @@ var (
 
 func TestSpreadMinimizingTokenGenerator_ParseInstanceID(t *testing.T) {
 	tests := map[string]struct {
-		instanceID    string
-		expectedID    int
-		expectedError error
+		instanceID     string
+		expectedPrefix string
+		expectedID     int
+		expectedError  error
 	}{
 		"instance-zone-a-10 is correct": {
-			instanceID: "instance-zone-a-10",
-			expectedID: 10,
+			instanceID:     "instance-zone-a-10",
+			expectedPrefix: "instance-zone-a-",
+			expectedID:     10,
 		},
 		"instance-zone-b-0 is correct": {
-			instanceID: "instance-zone-b-0",
-			expectedID: 0,
+			instanceID:     "instance-zone-b-0",
+			expectedPrefix: "instance-zone-b-",
+			expectedID:     0,
 		},
 		"store-gateway-zone-c-7 is correct": {
-			instanceID: "store-gateway-zone-c-7",
-			expectedID: 7,
+			instanceID:     "store-gateway-zone-c-7",
+			expectedPrefix: "store-gateway-zone-c-",
+			expectedID:     7,
 		},
 		"instance-zone-c is not valid": {
 			instanceID:    "instance-zone-c",
@@ -54,56 +56,14 @@ func TestSpreadMinimizingTokenGenerator_ParseInstanceID(t *testing.T) {
 		},
 	}
 	for _, testData := range tests {
-		id, err := parseInstanceID(testData.instanceID)
+		prefix, id, err := parseInstanceID(testData.instanceID)
 		if testData.expectedError != nil {
 			require.Error(t, err)
 			require.Equal(t, testData.expectedError, err)
 		} else {
 			require.NoError(t, err)
+			require.Equal(t, testData.expectedPrefix, prefix)
 			require.Equal(t, testData.expectedID, id)
-		}
-	}
-}
-
-func TestSpreadMinimizingTokenGenerator_PreviousInstanceID(t *testing.T) {
-	tests := map[string]struct {
-		instanceID         string
-		expectedInstanceID string
-		expectedError      error
-	}{
-		"previous instance of instance-zone-a-10 is instance-zone-a-9": {
-			instanceID:         "instance-zone-a-10",
-			expectedInstanceID: "instance-zone-a-9",
-		},
-		"previous instance of instance-zone-b-1 is instance-zone-b-0": {
-			instanceID:         "instance-zone-b-1",
-			expectedInstanceID: "instance-zone-b-0",
-		},
-		"previous instance of store-gateway-zone-c-1000 is store-gateway-zone-c-999": {
-			instanceID:         "store-gateway-zone-c-1000",
-			expectedInstanceID: "store-gateway-zone-c-999",
-		},
-		"instance-zone-0 has no previous instance": {
-			instanceID:    "instance-zone-0",
-			expectedError: errorNoPreviousInstance,
-		},
-		"instance-zone-c is not valid": {
-			instanceID:    "instance-zone-c",
-			expectedError: errorBadInstanceIDFormat("instance-zone-c"),
-		},
-		"empty instance is not valid": {
-			instanceID:    "",
-			expectedError: errorBadInstanceIDFormat(""),
-		},
-	}
-	for _, testData := range tests {
-		id, err := previousInstance(testData.instanceID)
-		if testData.expectedError != nil {
-			require.Error(t, err)
-			require.Equal(t, testData.expectedError, err)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, testData.expectedInstanceID, id)
 		}
 	}
 }
@@ -176,7 +136,7 @@ func TestSpreadMinimizingTokenGenerator_NewSpreadMinimizingTokenGenerator(t *tes
 
 	for _, testData := range tests {
 		instance := fmt.Sprintf("instance-%s-1", testData.zone)
-		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, testData.zone, testData.spreadMinimizingZones, true, log.NewNopLogger())
+		tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, testData.zone, testData.spreadMinimizingZones, true)
 		if testData.expectedError != nil {
 			require.Error(t, err)
 			require.Equal(t, testData.expectedError, err)
@@ -331,9 +291,11 @@ func TestSpreadMinimizingTokenGenerator_GenerateAllTokensIdempotent(t *testing.T
 		for _, zone := range zones {
 			instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
 			tokenGenerator := createSpreadMinimizingTokenGenerator(t, instance, zone, zones)
-			tokens1 := tokenGenerator.generateAllTokens()
+			tokens1, err := tokenGenerator.generateAllTokens()
+			require.NoError(t, err)
 			require.Len(t, tokens1, tokensPerInstance)
-			tokens2 := tokenGenerator.generateAllTokens()
+			tokens2, err := tokenGenerator.generateAllTokens()
+			require.NoError(t, err)
 			require.True(t, tokens1.Equals(tokens2))
 		}
 	}
@@ -382,7 +344,9 @@ func TestSpreadMinimizingTokenGenerator_CheckTokenUniqueness(t *testing.T) {
 	for _, zone := range zones {
 		instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, instance, zone, zones)
-		tokens := tokenGenerator.generateTokensByInstanceID()
+		tokens, err := tokenGenerator.generateTokensByInstanceID()
+		require.NoError(t, err)
+
 		for i := 0; i <= instanceID; i++ {
 			tks := tokens[i]
 			for _, token := range tks {
@@ -411,7 +375,8 @@ func TestSpreadMinimizingTokenGenerator_GenerateTokens(t *testing.T) {
 	instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
 	tokenGenerator := createSpreadMinimizingTokenGenerator(t, instance, zone, zones)
 	// this is the set of all sorted tokens assigned to instance
-	allTokens := tokenGenerator.generateAllTokens()
+	allTokens, err := tokenGenerator.generateAllTokens()
+	require.NoError(t, err)
 	require.Len(t, allTokens, tokensPerInstance)
 
 	takenTokens := make(Tokens, 0, tokensPerInstance)
@@ -501,7 +466,8 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 	targetInstance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
 	tokenGenerator = createSpreadMinimizingTokenGenerator(t, targetInstance, zone, zones)
 	// this is the set of all sorted tokens assigned to instance
-	allTokens := tokenGenerator.generateTokensByInstanceID()
+	allTokens, err := tokenGenerator.generateTokensByInstanceID()
+	require.NoError(t, err)
 	require.Len(t, allTokens, instanceID+1)
 
 	ringDesc := &Desc{}
@@ -554,7 +520,8 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 	for _, zone := range zones {
 		instance := fmt.Sprintf("instance-%s-%d", zone, maxInstanceID)
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, instance, zone, zones)
-		tokensByInstance := tokenGenerator.generateTokensByInstanceID()
+		tokensByInstance, err := tokenGenerator.generateTokensByInstanceID()
+		require.NoError(t, err)
 		for id, tokens := range tokensByInstance {
 			if !slices.IsSorted(tokens) {
 				slices.Sort(tokens)
@@ -584,7 +551,7 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 }
 
 func createSpreadMinimizingTokenGenerator(t testing.TB, instance, zone string, zones []string) *SpreadMinimizingTokenGenerator {
-	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, zones, true, log.NewLogfmtLogger(os.Stdout))
+	tokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, zones, true)
 	require.NoError(t, err)
 	require.NotNil(t, tokenGenerator)
 	return tokenGenerator
@@ -613,8 +580,8 @@ type spreadMinimizingTokenGeneratorWithDelay struct {
 	canJoinDelay time.Duration
 }
 
-func newSpreadMinimizingTokenGeneratorWithDelay(instance, zone string, spreadMinimizingZones []string, canJoinEnabled bool, canJoinDelay time.Duration, logger log.Logger) (*spreadMinimizingTokenGeneratorWithDelay, error) {
-	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, spreadMinimizingZones, canJoinEnabled, logger)
+func newSpreadMinimizingTokenGeneratorWithDelay(instance, zone string, spreadMinimizingZones []string, canJoinEnabled bool, canJoinDelay time.Duration) (*spreadMinimizingTokenGeneratorWithDelay, error) {
+	spreadMinimizingTokenGenerator, err := NewSpreadMinimizingTokenGenerator(instance, zone, spreadMinimizingZones, canJoinEnabled)
 	if err != nil {
 		return nil, err
 	}

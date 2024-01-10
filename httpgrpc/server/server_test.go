@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/dskit/user"
 )
 
-func TestReturn4XXErrorsOption(t *testing.T) {
+func TestWithReturn4XXErrors(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := fmt.Fprint(w, "test")
 		require.NoError(t, err)
@@ -39,6 +39,22 @@ func TestReturn4XXErrorsOption(t *testing.T) {
 	server = NewServer(handler, serverOptions...)
 	require.NotNil(t, server)
 	require.True(t, server.return4XXErrors)
+}
+
+func TestWithHTTPErrorsEnabled(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := fmt.Fprint(w, "test")
+		require.NoError(t, err)
+	})
+	serverOptions := make([]Option, 0, 1)
+	server := NewServer(handler, serverOptions...)
+	require.NotNil(t, server)
+	require.False(t, server.httpErrorsEnabled)
+
+	serverOptions = append(serverOptions, WithHTTPErrorsEnabled)
+	server = NewServer(handler, serverOptions...)
+	require.NotNil(t, server)
+	require.True(t, server.httpErrorsEnabled)
 }
 
 type testServer struct {
@@ -248,6 +264,55 @@ func TestServerHandleReturn4XXErrors(t *testing.T) {
 				require.NotNil(t, resp)
 				checkHTTPResponse(t, resp, testData.errorCode, errMsg)
 			}
+		})
+	}
+}
+
+func TestServerHandleWithErrors(t *testing.T) {
+	testCases := map[string]struct {
+		errorCode      int
+		withHTTPErrors bool
+		expectedError  bool
+	}{
+		"HTTPResponse with code 5xx should return the same code when server created with WithHTTPErrors": {
+			errorCode:      http.StatusInternalServerError,
+			withHTTPErrors: true,
+		},
+		"HTTPResponse with code 5xx should return the same code when server created without WithHTTPErrors": {
+			errorCode:      http.StatusInternalServerError,
+			withHTTPErrors: false,
+		},
+		"HTTPResponse with code 4xx should return the same code when server created with WithHTTPErrors": {
+			errorCode:      http.StatusUnprocessableEntity,
+			withHTTPErrors: true,
+		},
+		"HTTPResponse with code 4xx should return the same code when server created without WithHTTPErrors": {
+			errorCode:      http.StatusUnprocessableEntity,
+			withHTTPErrors: false,
+		},
+	}
+	errMsg := "this is an error"
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, errMsg, testData.errorCode)
+			})
+
+			serverOptions := make([]Option, 0, 2)
+			serverOptions = append(serverOptions, WithReturn4XXErrors)
+			if testData.withHTTPErrors {
+				serverOptions = append(serverOptions, WithHTTPErrorsEnabled)
+			}
+			s := NewServer(h, serverOptions...)
+
+			req := &httpgrpc.HTTPRequest{
+				Method: "GET",
+				Url:    "/test",
+			}
+			resp, err := s.Handle(context.Background(), req)
+			require.Error(t, err)
+			require.Nil(t, resp)
+			checkError(t, err, testData.errorCode, errMsg)
 		})
 	}
 }

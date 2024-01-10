@@ -14,6 +14,13 @@ import (
 	"github.com/grafana/dskit/loser"
 )
 
+// ByAddr is a sortable list of InstanceDesc.
+type ByAddr []InstanceDesc
+
+func (ts ByAddr) Len() int           { return len(ts) }
+func (ts ByAddr) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
+func (ts ByAddr) Less(i, j int) bool { return ts[i].Addr < ts[j].Addr }
+
 // ByID is a sortable list of InstanceDesc.
 type ByID []InstanceDesc
 

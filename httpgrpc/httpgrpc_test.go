@@ -30,13 +30,17 @@ func TestAppendMessageSizeToOutgoingContext(t *testing.T) {
 }
 
 func TestErrorf(t *testing.T) {
-	code := 400
-	errMsg := "this is an error"
+	const (
+		code   = 400
+		errMsg = "this is an error"
+	)
 	expectedHTTPResponse := &HTTPResponse{
 		Code: int32(code),
 		Body: []byte(errMsg),
 	}
 	err := Errorf(code, errMsg)
+	require.Error(t, err)
+
 	stat, ok := status.FromError(err)
 	require.True(t, ok)
 	require.Equal(t, code, int(stat.Code()))
@@ -44,22 +48,23 @@ func TestErrorf(t *testing.T) {
 	checkDetailAsHTTPResponse(t, expectedHTTPResponse, stat)
 }
 
-func TestHTTPErrorf(t *testing.T) {
-	httpErrorStatusCode := 400
-	httpErrorStatusMsg := "this is an error"
+func TestInternalErrorf(t *testing.T) {
+	const (
+		code   = 400
+		errMsg = "this is an error"
+	)
 	expectedHTTPResponse := &HTTPResponse{
-		Code: int32(httpErrorStatusCode),
-		Body: []byte(httpErrorStatusMsg),
+		Code: int32(code),
+		Body: []byte(errMsg),
 	}
 
-	err := HTTPErrorf(httpErrorStatusCode, httpErrorStatusMsg)
+	err := InternalErrorf(code, errMsg)
 	require.Error(t, err)
-	require.Equal(t, expectedHTTPResponse, err.GetHTTPResponse())
 
 	stat, ok := status.FromError(err)
 	require.True(t, ok)
 	require.Equal(t, codes.Internal, stat.Code())
-	require.Equal(t, httpErrorStatusMsg, stat.Message())
+	require.Equal(t, errMsg, stat.Message())
 	checkDetailAsHTTPResponse(t, expectedHTTPResponse, stat)
 }
 
@@ -83,10 +88,10 @@ func TestErrorFromHTTPResponse(t *testing.T) {
 	checkDetailAsHTTPResponse(t, resp, stat)
 }
 
-func TestHTTPErrorFromHTTPResponse(t *testing.T) {
+func TestInternalErrorFromHTTPResponse(t *testing.T) {
 	const (
-		code   = 400
-		errMsg = "this is an error"
+		code   int32 = 400
+		errMsg       = "this is an error"
 	)
 	headers := []*Header{{Key: "X-Header", Values: []string{"a", "b", "c"}}}
 	resp := &HTTPResponse{
@@ -94,7 +99,7 @@ func TestHTTPErrorFromHTTPResponse(t *testing.T) {
 		Headers: headers,
 		Body:    []byte(errMsg),
 	}
-	err := HTTPErrorFromHTTPResponse(resp)
+	err := InternalErrorFromHTTPResponse(resp)
 	require.Error(t, err)
 	stat, ok := status.FromError(err)
 	require.True(t, ok)
@@ -132,12 +137,12 @@ func TestHTTPResponseFromError(t *testing.T) {
 			err:                  fmt.Errorf("wrapped: %w", Errorf(400, msgErr)),
 			expectedHTTPResponse: resp,
 		},
-		"an instance of HTTPError can be parsed to an HTTPResponse": {
-			err:                  HTTPErrorFromHTTPResponse(resp),
+		"an internal gRPC error built by httpgrpc can be parsed to an HTTPResponse": {
+			err:                  InternalErrorf(400, msgErr),
 			expectedHTTPResponse: resp,
 		},
-		"a wrapped instance of HTTPError can be parsed to an HTTPResponse": {
-			err:                  fmt.Errorf("wrapped: %w", HTTPErrorFromHTTPResponse(resp)),
+		"a wrapped internal gRPC error built by httpgrpc can be parsed to an HTTPResponse": {
+			err:                  fmt.Errorf("wrapped: %w", InternalErrorf(400, msgErr)),
 			expectedHTTPResponse: resp,
 		},
 	}

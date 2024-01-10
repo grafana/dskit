@@ -7,7 +7,6 @@ package httpgrpc
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 	"github.com/gogo/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/log"
@@ -107,37 +105,10 @@ func FromHeader(hs http.Header) []*Header {
 	return result
 }
 
-type HTTPError struct {
-	resp *HTTPResponse
-	err  error
-}
-
-func (e HTTPError) Error() string {
-	return e.err.Error()
-}
-
-func (e HTTPError) Unwrap() error {
-	return e.err
-}
-
-// GRPCStatus with a *grpcstatus.Status as output is needed
-// for a correct execution of grpc/status.FromError().
-func (e HTTPError) GRPCStatus() *grpcstatus.Status {
-	if stat, ok := e.err.(interface{ GRPCStatus() *grpcstatus.Status }); ok {
-		return stat.GRPCStatus()
-	}
-	return nil
-}
-
-func (e HTTPError) GetHTTPResponse() *HTTPResponse {
-	return e.resp
-}
-
-// HTTPErrorf returns an HTTPError than is correctly forwarded over
-// gRPC, and can eventually be converted back to an HTTP response with
-// HTTPResponseFromError.
-func HTTPErrorf(code int, tmpl string, args ...interface{}) HTTPError {
-	return HTTPErrorFromHTTPResponse(&HTTPResponse{
+// InternalErrorf returns a gRPC error with code codes.Internal, that is correctly forwarded over
+// gRPC, and can eventually be converted back to an HTTP response with HTTPResponseFromError.
+func InternalErrorf(code int, tmpl string, args ...interface{}) error {
+	return InternalErrorFromHTTPResponse(&HTTPResponse{
 		Code: int32(code),
 		Body: []byte(fmt.Sprintf(tmpl, args...)),
 	})
@@ -153,12 +124,9 @@ func Errorf(code int, tmpl string, args ...interface{}) error {
 	})
 }
 
-// HTTPErrorFromHTTPResponse converts an HTTP response into an HTTPError.
-func HTTPErrorFromHTTPResponse(resp *HTTPResponse) HTTPError {
-	return HTTPError{
-		resp: resp,
-		err:  errorFromHTTPResponse(int32(codes.Internal), resp),
-	}
+// InternalErrorFromHTTPResponse converts an HTTP response into an internal gRPC error.
+func InternalErrorFromHTTPResponse(resp *HTTPResponse) error {
+	return errorFromHTTPResponse(int32(codes.Internal), resp)
 }
 
 // ErrorFromHTTPResponse converts an HTTP response into a grpc error.
@@ -181,10 +149,6 @@ func errorFromHTTPResponse(code int32, resp *HTTPResponse) error {
 
 // HTTPResponseFromError converts a grpc error into an HTTP response
 func HTTPResponseFromError(err error) (*HTTPResponse, bool) {
-	var httpError HTTPError
-	if errors.As(err, &httpError) {
-		return httpError.GetHTTPResponse(), true
-	}
 	s, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
 		return nil, false

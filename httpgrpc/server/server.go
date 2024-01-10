@@ -38,8 +38,8 @@ func WithReturn4XXErrors(s *Server) {
 	s.return4XXErrors = true
 }
 
-func WithHTTPErrorsEnabled(s *Server) {
-	s.httpErrorsEnabled = true
+func WithSendOverGRPCAsInternal(s *Server) {
+	s.sendOverGRPCAsInternal = true
 }
 
 func applyServerOptions(s *Server, opts ...Option) *Server {
@@ -52,9 +52,9 @@ func applyServerOptions(s *Server, opts ...Option) *Server {
 // Server implements HTTPServer.  HTTPServer is a generated interface that gRPC
 // servers must implement.
 type Server struct {
-	handler           http.Handler
-	return4XXErrors   bool
-	httpErrorsEnabled bool
+	handler                http.Handler
+	return4XXErrors        bool
+	sendOverGRPCAsInternal bool
 }
 
 // NewServer makes a new Server.
@@ -95,8 +95,8 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 }
 
 func (s Server) errorFromResponse(resp *httpgrpc.HTTPResponse) error {
-	if s.httpErrorsEnabled {
-		return httpgrpc.HTTPErrorFromHTTPResponse(resp)
+	if s.sendOverGRPCAsInternal {
+		return httpgrpc.InternalErrorFromHTTPResponse(resp)
 	}
 	return httpgrpc.ErrorFromHTTPResponse(resp)
 }

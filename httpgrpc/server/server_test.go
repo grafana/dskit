@@ -49,12 +49,12 @@ func TestWithHTTPErrorsEnabled(t *testing.T) {
 	serverOptions := make([]Option, 0, 1)
 	server := NewServer(handler, serverOptions...)
 	require.NotNil(t, server)
-	require.False(t, server.httpErrorsEnabled)
+	require.False(t, server.sendOverGRPCAsInternal)
 
-	serverOptions = append(serverOptions, WithHTTPErrorsEnabled)
+	serverOptions = append(serverOptions, WithSendOverGRPCAsInternal)
 	server = NewServer(handler, serverOptions...)
 	require.NotNil(t, server)
-	require.True(t, server.httpErrorsEnabled)
+	require.True(t, server.sendOverGRPCAsInternal)
 }
 
 type testServer struct {
@@ -274,19 +274,19 @@ func TestServerHandleWithErrors(t *testing.T) {
 		withHTTPErrors bool
 		expectedError  bool
 	}{
-		"HTTPResponse with code 5xx should return the same code when server created with WithHTTPErrors": {
+		"HTTPResponse with code 5xx should return the same code when server created with WithSendOverGRPCAsInternal": {
 			errorCode:      http.StatusInternalServerError,
 			withHTTPErrors: true,
 		},
-		"HTTPResponse with code 5xx should return the same code when server created without WithHTTPErrors": {
+		"HTTPResponse with code 5xx should return the same code when server created without WithSendOverGRPCAsInternal": {
 			errorCode:      http.StatusInternalServerError,
 			withHTTPErrors: false,
 		},
-		"HTTPResponse with code 4xx should return the same code when server created with WithHTTPErrors": {
+		"HTTPResponse with code 4xx should return the same code when server created with WithSendOverGRPCAsInternal": {
 			errorCode:      http.StatusUnprocessableEntity,
 			withHTTPErrors: true,
 		},
-		"HTTPResponse with code 4xx should return the same code when server created without WithHTTPErrors": {
+		"HTTPResponse with code 4xx should return the same code when server created without WithSendOverGRPCAsInternal": {
 			errorCode:      http.StatusUnprocessableEntity,
 			withHTTPErrors: false,
 		},
@@ -301,7 +301,7 @@ func TestServerHandleWithErrors(t *testing.T) {
 			serverOptions := make([]Option, 0, 2)
 			serverOptions = append(serverOptions, WithReturn4XXErrors)
 			if testData.withHTTPErrors {
-				serverOptions = append(serverOptions, WithHTTPErrorsEnabled)
+				serverOptions = append(serverOptions, WithSendOverGRPCAsInternal)
 			}
 			s := NewServer(h, serverOptions...)
 

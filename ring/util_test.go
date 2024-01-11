@@ -278,7 +278,9 @@ func changeStatePeriodically(ring *Ring) chan struct{} {
 				stateIdx++
 				ring.mtx.Lock()
 				ringDesc := ring.ringDesc
-				desc := InstanceDesc{Addr: "127.0.0.1", State: states[stateIdx%len(states)], Timestamp: time.Now().Unix()}
+				desc := ringDesc.Ingesters[instanceToMutate]
+				desc.State = states[stateIdx%len(states)]
+				desc.Timestamp = time.Now().Unix()
 				ringDesc.Ingesters[instanceToMutate] = desc
 				ring.mtx.Unlock()
 			}

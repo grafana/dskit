@@ -47,5 +47,6 @@ func TestAsyncQueue_QueueFullError(t *testing.T) {
 	for i := 0; i < queueLength; i++ {
 		require.NoError(t, q.submit(func() {}))
 	}
-	require.Equal(t, errAsyncQueueFull, q.submit(func() {}))
+
+	require.ErrorIs(t, q.submit(func() {}), errAsyncQueueFull)
 }

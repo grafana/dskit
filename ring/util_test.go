@@ -204,7 +204,7 @@ func addInstancesPeriodically(ring *Ring) chan struct{} {
 				ring.mtx.Lock()
 				ringDesc := ring.ringDesc
 				instanceID := fmt.Sprintf("127.0.0.%d", len(ringDesc.Ingesters)+1)
-				ringDesc.Ingesters[instanceID] = InstanceDesc{Addr: instanceID, State: ACTIVE, Timestamp: time.Now().Unix()}
+				ringDesc.Ingesters[instanceID] = InstanceDesc{Id: instanceID, Addr: instanceID, State: ACTIVE, Timestamp: time.Now().Unix()}
 				ring.ringDesc = ringDesc
 				ring.ringTokens = ringDesc.GetTokens()
 				ring.ringTokensByZone = ringDesc.getTokensByZone()

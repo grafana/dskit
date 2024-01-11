@@ -117,6 +117,10 @@ func (m *PartitionRingDesc) Partition(id int32) (PartitionDesc, bool) {
 	return p, ok
 }
 
+func (m *PartitionRingDesc) RemovePartition(id int32) {
+	delete(m.Partitions, id)
+}
+
 // WithPartitions returns a new PartitionRingDesc with only the specified partitions and their owners included.
 func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) PartitionRingDesc {
 	newPartitions := make(map[int32]PartitionDesc, len(partitions))

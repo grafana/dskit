@@ -1637,47 +1637,63 @@ func (c *cleanupTracker) assertCorrectCleanup(successfulInstances []string, fail
 var (
 	replicationSetChangesInitialState = ReplicationSet{
 		Instances: []InstanceDesc{
-			{Addr: "127.0.0.1"},
-			{Addr: "127.0.0.2"},
-			{Addr: "127.0.0.3"},
+			{Id: "ingester-0"},
+			{Id: "ingester-1"},
+			{Id: "ingester-2"},
 		},
 	}
 	replicationSetChangesTestCases = map[string]struct {
-		nextState                                  ReplicationSet
-		expectHasReplicationSetChanged             bool
-		expectHasReplicationSetChangedWithoutState bool
+		nextState                                        ReplicationSet
+		expectHasReplicationSetChanged                   bool
+		expectHasReplicationSetChangedWithoutState       bool
+		expectHasReplicationSetChangedWithoutStateOrAddr bool
 	}{
 		"timestamp changed": {
 			ReplicationSet{
 				Instances: []InstanceDesc{
-					{Addr: "127.0.0.1", Timestamp: time.Hour.Microseconds()},
-					{Addr: "127.0.0.2"},
-					{Addr: "127.0.0.3"},
+					{Id: "ingester-0", Timestamp: time.Hour.Microseconds()},
+					{Id: "ingester-1"},
+					{Id: "ingester-2"},
 				},
 			},
+			false,
 			false,
 			false,
 		},
 		"state changed": {
 			ReplicationSet{
 				Instances: []InstanceDesc{
-					{Addr: "127.0.0.1", State: PENDING},
-					{Addr: "127.0.0.2"},
-					{Addr: "127.0.0.3"},
+					{Id: "ingester-0", State: PENDING},
+					{Id: "ingester-1"},
+					{Id: "ingester-2"},
 				},
 			},
+			true,
+			false,
+			false,
+		},
+		"addr changed": {
+			ReplicationSet{
+				Instances: []InstanceDesc{
+					{Id: "ingester-0", Addr: "127.0.0.1"},
+					{Id: "ingester-1"},
+					{Id: "ingester-2"},
+				},
+			},
+			true,
 			true,
 			false,
 		},
 		"more instances": {
 			ReplicationSet{
 				Instances: []InstanceDesc{
-					{Addr: "127.0.0.1"},
-					{Addr: "127.0.0.2"},
-					{Addr: "127.0.0.3"},
-					{Addr: "127.0.0.4"},
+					{Id: "ingester-0"},
+					{Id: "ingester-1"},
+					{Id: "ingester-2"},
+					{Id: "ingester-4"},
 				},
 			},
+			true,
 			true,
 			true,
 		},
@@ -1698,6 +1714,15 @@ func TestHasReplicationSetChangedWithoutState_IgnoresTimeStampAndState(t *testin
 	for testName, testData := range replicationSetChangesTestCases {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expectHasReplicationSetChangedWithoutState, HasReplicationSetChangedWithoutState(replicationSetChangesInitialState, testData.nextState), "HasReplicationSetChangedWithoutState wrong result")
+		})
+	}
+}
+
+func TestHasReplicationSetChangedWithoutStateOrAddr_IgnoresTimeStampAndStateAndAddr(t *testing.T) {
+	// Only testing difference to underlying Equal function
+	for testName, testData := range replicationSetChangesTestCases {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expectHasReplicationSetChangedWithoutStateOrAddr, HasReplicationSetChangedWithoutStateOrAddr(replicationSetChangesInitialState, testData.nextState), "HasReplicationSetChangedWithoutStateOrAddr wrong result")
 		})
 	}
 }

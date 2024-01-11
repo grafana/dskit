@@ -74,11 +74,11 @@ func (r *RingMock) GetTokenRangesForInstance(_ string) (TokenRanges, error) {
 func createStartingRing() *Ring {
 	// Init the ring.
 	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{
-		"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: time.Now().Unix()},
-		"instance-2": {Addr: "127.0.0.2", State: PENDING, Timestamp: time.Now().Unix()},
-		"instance-3": {Addr: "127.0.0.3", State: JOINING, Timestamp: time.Now().Unix()},
-		"instance-4": {Addr: "127.0.0.4", State: LEAVING, Timestamp: time.Now().Unix()},
-		"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: time.Now().Unix()},
+		"instance-1": {Id: "instance-1", Addr: "127.0.0.1", State: ACTIVE, Timestamp: time.Now().Unix()},
+		"instance-2": {Id: "instance-2", Addr: "127.0.0.2", State: PENDING, Timestamp: time.Now().Unix()},
+		"instance-3": {Id: "instance-3", Addr: "127.0.0.3", State: JOINING, Timestamp: time.Now().Unix()},
+		"instance-4": {Id: "instance-4", Addr: "127.0.0.4", State: LEAVING, Timestamp: time.Now().Unix()},
+		"instance-5": {Id: "instance-5", Addr: "127.0.0.5", State: ACTIVE, Timestamp: time.Now().Unix()},
 	}}
 
 	ring := &Ring{
@@ -204,7 +204,7 @@ func addInstancesPeriodically(ring *Ring) chan struct{} {
 				ring.mtx.Lock()
 				ringDesc := ring.ringDesc
 				instanceID := fmt.Sprintf("127.0.0.%d", len(ringDesc.Ingesters)+1)
-				ringDesc.Ingesters[instanceID] = InstanceDesc{Addr: instanceID, State: ACTIVE, Timestamp: time.Now().Unix()}
+				ringDesc.Ingesters[instanceID] = InstanceDesc{Id: instanceID, Addr: instanceID, State: ACTIVE, Timestamp: time.Now().Unix()}
 				ring.ringDesc = ringDesc
 				ring.ringTokens = ringDesc.GetTokens()
 				ring.ringTokensByZone = ringDesc.getTokensByZone()
@@ -278,7 +278,9 @@ func changeStatePeriodically(ring *Ring) chan struct{} {
 				stateIdx++
 				ring.mtx.Lock()
 				ringDesc := ring.ringDesc
-				desc := InstanceDesc{Addr: "127.0.0.1", State: states[stateIdx%len(states)], Timestamp: time.Now().Unix()}
+				desc := ringDesc.Ingesters[instanceToMutate]
+				desc.State = states[stateIdx%len(states)]
+				desc.Timestamp = time.Now().Unix()
 				ringDesc.Ingesters[instanceToMutate] = desc
 				ring.mtx.Unlock()
 			}

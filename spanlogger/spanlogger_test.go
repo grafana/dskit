@@ -66,6 +66,53 @@ func TestSpanCreatedWithoutTenantTag(t *testing.T) {
 	require.False(t, exists)
 }
 
+func TestSpanLogger_SetSpanAndLogTag(t *testing.T) {
+	mockTracer := mocktracer.New()
+	opentracing.SetGlobalTracer(mockTracer)
+
+	logMessages := [][]interface{}{}
+	var logger funcLogger = func(keyvals ...interface{}) error {
+		logMessages = append(logMessages, keyvals)
+		return nil
+	}
+
+	spanLogger, _ := New(context.Background(), logger, "the_method", fakeResolver{})
+	require.NoError(t, spanLogger.Log("msg", "this is the first message"))
+
+	spanLogger.SetSpanAndLogTag("id", "123")
+	require.NoError(t, spanLogger.Log("msg", "this is the second message"))
+
+	spanLogger.SetSpanAndLogTag("more context", "abc")
+	require.NoError(t, spanLogger.Log("msg", "this is the third message"))
+
+	span := spanLogger.Span.(*mocktracer.MockSpan)
+	expectedTags := map[string]interface{}{
+		"id":           "123",
+		"more context": "abc",
+	}
+	require.Equal(t, expectedTags, span.Tags())
+
+	expectedLogMessages := [][]interface{}{
+		{
+			"method", "the_method",
+			"msg", "this is the first message",
+		},
+		{
+			"method", "the_method",
+			"id", "123",
+			"msg", "this is the second message",
+		},
+		{
+			"method", "the_method",
+			"id", "123",
+			"more context", "abc",
+			"msg", "this is the third message",
+		},
+	}
+
+	require.Equal(t, expectedLogMessages, logMessages)
+}
+
 func createSpan(ctx context.Context) *mocktracer.MockSpan {
 	mockTracer := mocktracer.New()
 	opentracing.SetGlobalTracer(mockTracer)

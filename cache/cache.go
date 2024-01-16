@@ -21,13 +21,12 @@ type RemoteCacheClient interface {
 	GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
 	// SetAsync enqueues an asynchronous operation to store a key into a cache.
-	// Returns an error in case it fails to enqueue the operation. In case the
-	// underlying async operation will fail, the error will be tracked/logged.
+	// In case the underlying async operation fails, the error will be tracked/logged.
 	SetAsync(key string, value []byte, ttl time.Duration)
 
 	// SetMultiAsync enqueues asynchronous operations to store a keys and values
-	// into a cache. Returns an error in case it fails to enqueue the operation. In
-	// case the underlying async operations fail, the error will be tracked/logged.
+	// into a cache. In case the underlying async operations fail, the error will
+	// be tracked/logged.
 	SetMultiAsync(data map[string][]byte, ttl time.Duration)
 
 	// Delete deletes a key from a cache.

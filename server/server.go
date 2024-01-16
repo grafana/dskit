@@ -439,39 +439,9 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	grpcServer := grpc.NewServer(grpcOptions...)
 	grpcOnHTTPServer := grpc.NewServer(grpcOptions...)
 
-	sourceIPs, err := middleware.NewSourceIPs(cfg.LogSourceIPsHeader, cfg.LogSourceIPsRegex)
+	httpMiddleware, err := BuildHTTPMiddleware(cfg, router, metrics, logger)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up source IP extraction: %v", err)
-	}
-	logSourceIPs := sourceIPs
-	if !cfg.LogSourceIPs {
-		// We always include the source IPs for traces,
-		// but only want to log them in the middleware if that is enabled.
-		logSourceIPs = nil
-	}
-
-	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, logSourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
-	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
-
-	defaultHTTPMiddleware := []middleware.Interface{
-		middleware.Tracer{
-			RouteMatcher: router,
-			SourceIPs:    sourceIPs,
-		},
-		defaultLogMiddleware,
-		middleware.Instrument{
-			RouteMatcher:     router,
-			Duration:         metrics.RequestDuration,
-			RequestBodySize:  metrics.ReceivedMessageSize,
-			ResponseBodySize: metrics.SentMessageSize,
-			InflightRequests: metrics.InflightRequests,
-		},
-	}
-	var httpMiddleware []middleware.Interface
-	if cfg.DoNotAddDefaultHTTPMiddleware {
-		httpMiddleware = cfg.HTTPMiddleware
-	} else {
-		httpMiddleware = append(defaultHTTPMiddleware, cfg.HTTPMiddleware...)
+		return nil, fmt.Errorf("error building http middleware: %w", err)
 	}
 
 	httpServer := &http.Server{
@@ -519,6 +489,45 @@ func RegisterInstrumentationWithGatherer(router *mux.Router, gatherer prometheus
 		EnableOpenMetrics: true,
 	}))
 	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
+}
+
+func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logger gokit_log.Logger) ([]middleware.Interface, error) {
+	sourceIPs, err := middleware.NewSourceIPs(cfg.LogSourceIPsHeader, cfg.LogSourceIPsRegex)
+	if err != nil {
+		return nil, fmt.Errorf("error setting up source IP extraction: %w", err)
+	}
+	logSourceIPs := sourceIPs
+	if !cfg.LogSourceIPs {
+		// We always include the source IPs for traces,
+		// but only want to log them in the middleware if that is enabled.
+		logSourceIPs = nil
+	}
+
+	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, logSourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
+	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
+
+	defaultHTTPMiddleware := []middleware.Interface{
+		middleware.Tracer{
+			RouteMatcher: router,
+			SourceIPs:    sourceIPs,
+		},
+		defaultLogMiddleware,
+		middleware.Instrument{
+			RouteMatcher:     router,
+			Duration:         metrics.RequestDuration,
+			RequestBodySize:  metrics.ReceivedMessageSize,
+			ResponseBodySize: metrics.SentMessageSize,
+			InflightRequests: metrics.InflightRequests,
+		},
+	}
+	var httpMiddleware []middleware.Interface
+	if cfg.DoNotAddDefaultHTTPMiddleware {
+		httpMiddleware = cfg.HTTPMiddleware
+	} else {
+		httpMiddleware = append(defaultHTTPMiddleware, cfg.HTTPMiddleware...)
+	}
+
+	return httpMiddleware, nil
 }
 
 // Run the server; blocks until SIGTERM (if signal handling is enabled), an error is received, or Stop() is called.

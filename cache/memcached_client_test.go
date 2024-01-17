@@ -82,7 +82,7 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 	t.Run("no allocator", func(t *testing.T) {
 		client, backend, err := setup()
 		require.NoError(t, err)
-		require.NoError(t, client.SetAsync("foo", []byte("bar"), 10*time.Second))
+		client.SetAsync("foo", []byte("bar"), 10*time.Second)
 		require.NoError(t, client.wait())
 
 		ctx := context.Background()
@@ -94,7 +94,7 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 	t.Run("with allocator", func(t *testing.T) {
 		client, backend, err := setup()
 		require.NoError(t, err)
-		require.NoError(t, client.SetAsync("foo", []byte("bar"), 10*time.Second))
+		client.SetAsync("foo", []byte("bar"), 10*time.Second)
 		require.NoError(t, client.wait())
 
 		res := client.GetMulti(context.Background(), []string{"foo"}, WithAllocator(&nopAllocator{}))

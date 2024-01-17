@@ -143,7 +143,7 @@ func TestRedisClient(t *testing.T) {
 					defer c.Stop()
 					defer s.FlushAll()
 					for k, v := range tt.args.data {
-						_ = c.SetAsync(k, v, time.Hour)
+						c.SetAsync(k, v, time.Hour)
 					}
 
 					test.Poll(t, time.Second, true, func() interface{} {
@@ -173,7 +173,7 @@ func TestRedisClientDelete(t *testing.T) {
 	key1 := "key1"
 	value1 := []byte{1}
 
-	_ = c.SetAsync(key1, value1, time.Hour)
+	c.SetAsync(key1, value1, time.Hour)
 
 	test.Poll(t, time.Second, true, func() interface{} {
 		hits := c.GetMulti(context.Background(), []string{key1})

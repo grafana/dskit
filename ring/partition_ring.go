@@ -184,9 +184,8 @@ func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation, heartbeatTimeo
 
 		result = append(result, ReplicationSet{
 			Instances:            instances,
-			MaxErrors:            len(instances) - 1, // We need response from at least 1 owner.
-			MaxUnavailableZones:  0,
-			ZoneAwarenessEnabled: false,
+			MaxUnavailableZones:  len(instances) - 1, // We need response from at least 1 owner.
+			ZoneAwarenessEnabled: true,
 		})
 	}
 	return result, nil

@@ -149,12 +149,15 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 	return result, nil
 }
 
-// ReplicationSetsForQuerying returns replica sets for querying all partitions.
+// GetReplicationSetsForOperation returns one ReplicationSet for each partition and returns ReplicationSet for all partitions.
 // If there are not enough owners for partitions, error is returned.
 //
-// For querying, basic idea is that we need to query *ALL* partitions in the ring (or subring). For each partition,
-// each owner is a full replica, so it's enough to query single instance only.
-func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation) ([]ReplicationSet, error) {
+// For querying instances, basic idea is that we need to query *ALL* partitions in the ring (or subring).
+// For each partition, each owner is a full replica, so it's enough to query single instance only.
+// GetReplicationSetsForOperation returns all healthy owners for each partition according to op and the heartbeat timeout.
+// GetReplicationSetsForOperation returns an error which Is(ErrTooManyUnhealthyInstances) if there are no healthy owners for some partition.
+// GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
+func (pr *PartitionRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
 	now := time.Now()
 
 	result := make([]ReplicationSet, 0, len(pr.desc.Partitions))

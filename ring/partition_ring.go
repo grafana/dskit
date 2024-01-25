@@ -158,6 +158,9 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 // GetReplicationSetsForOperation returns an error which Is(ErrTooManyUnhealthyInstances) if there are no healthy owners for some partition.
 // GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
 func (pr *PartitionRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
+	if len(pr.desc.Partitions) == 0 {
+		return nil, ErrEmptyRing
+	}
 	now := time.Now()
 
 	result := make([]ReplicationSet, 0, len(pr.desc.Partitions))
@@ -185,7 +188,7 @@ func (pr *PartitionRing) GetReplicationSetsForOperation(op Operation) ([]Replica
 		}
 
 		if len(instances) == 0 {
-			return nil, fmt.Errorf("no healthy owners found for partition %d", pid)
+			return nil, fmt.Errorf("partition %d: %w", pid, ErrTooManyUnhealthyInstances)
 		}
 
 		result = append(result, ReplicationSet{

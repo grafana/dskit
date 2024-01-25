@@ -17,16 +17,19 @@ type PartitionRing struct {
 	ringTokens      Tokens
 	tokenPartitions map[Token]int32
 	partitionOwners map[int32][]string
+
+	heartbeatTimeout time.Duration
 }
 
-func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
+func NewPartitionRing(desc PartitionRingDesc, heartbeatTimeout time.Duration) *PartitionRing {
 	tokens, tokenPartitions := desc.TokensAndTokenPartitions()
 
 	pr := PartitionRing{
-		desc:            desc,
-		ringTokens:      tokens,
-		tokenPartitions: tokenPartitions,
-		partitionOwners: desc.PartitionOwners(),
+		desc:             desc,
+		ringTokens:       tokens,
+		tokenPartitions:  tokenPartitions,
+		partitionOwners:  desc.PartitionOwners(),
+		heartbeatTimeout: heartbeatTimeout,
 	}
 	return &pr
 }
@@ -75,7 +78,7 @@ func (pr *PartitionRing) ShuffleRingPartitions(identifier string, size int, look
 		return pr, nil
 	}
 
-	return NewPartitionRing(pr.desc.WithPartitions(partitions)), nil
+	return NewPartitionRing(pr.desc.WithPartitions(partitions), pr.heartbeatTimeout), nil
 }
 
 func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (map[int32]struct{}, error) {
@@ -151,7 +154,7 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 //
 // For querying, basic idea is that we need to query *ALL* partitions in the ring (or subring). For each partition,
 // each owner is a full replica, so it's enough to query single instance only.
-func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation, heartbeatTimeout time.Duration) ([]ReplicationSet, error) {
+func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation) ([]ReplicationSet, error) {
 	now := time.Now()
 
 	result := make([]ReplicationSet, 0, len(pr.desc.Partitions))
@@ -165,7 +168,7 @@ func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation, heartbeatTimeo
 				return nil, ErrInstanceNotFound
 			}
 
-			if !own.IsHealthy(op, heartbeatTimeout, now) {
+			if !own.IsHealthy(op, pr.heartbeatTimeout, now) {
 				continue
 			}
 

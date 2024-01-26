@@ -225,9 +225,10 @@ func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
 		strategy:             NewDefaultReplicationStrategy(),
 		lastTopologyChange:   time.Now(),
 	}
+	ringAdapter := NewReadRingBatchAdapter(&r)
 	// Measure how long does it take for a call to succeed.
 	t0 := time.Now()
-	err := DoBatchWithOptions(context.Background(), Write, &r, keys, callback, DoBatchOptions{})
+	err := DoBatchWithOptions(context.Background(), Write, ringAdapter, keys, callback, DoBatchOptions{})
 	duration := time.Since(t0)
 	require.NoError(t, err)
 	t.Logf("Call took %s", duration)
@@ -239,7 +240,7 @@ func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	err = DoBatchWithOptions(ctx, Write, &r, keys, func(_ InstanceDesc, _ []int) error {
+	err = DoBatchWithOptions(ctx, Write, ringAdapter, keys, func(_ InstanceDesc, _ []int) error {
 		t.Errorf("should not be called.")
 		return nil
 	}, DoBatchOptions{Cleanup: wg.Done})

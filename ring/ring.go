@@ -1145,10 +1145,7 @@ type ReadRingBatchRingAdapter struct {
 
 func NewReadRingBatchAdapter(ring ReadRing) *ReadRingBatchRingAdapter {
 	return &ReadRingBatchRingAdapter{
-		ring:     ring,
-		bufDescs: [GetBufferSize]InstanceDesc{},
-		bufHosts: [GetBufferSize]string{},
-		bufZones: [GetBufferSize]string{},
+		ring: ring,
 	}
 }
 

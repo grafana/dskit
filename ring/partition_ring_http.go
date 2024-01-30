@@ -5,12 +5,18 @@ import (
 	"html/template"
 	"net/http"
 	"sort"
+	"time"
 )
 
 //go:embed partition_ring_status.gohtml
 var partitionRingPageContent string
 var partitionRingPageTemplate = template.Must(template.New("webpage").Funcs(template.FuncMap{
-	"mod": func(i, j int) bool { return i%j == 0 },
+	"mod": func(i, j int32) bool {
+		return i%j == 0
+	},
+	"formatTimestamp": func(ts time.Time) string {
+		return ts.Format("2006-01-02 15:04:05 MST")
+	},
 }).Parse(partitionRingPageContent))
 
 type PartitionRingReader interface {
@@ -38,11 +44,11 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 	// Prepare the data to render partitions in the page.
 	partitionsData := make([]partitionPageData, 0, len(ringDesc.Partitions))
 	for id, data := range ringDesc.Partitions {
-
 		partitionsData = append(partitionsData, partitionPageData{
-			ID:       id,
-			State:    data.State.String(),
-			OwnerIDs: ringOwners[id],
+			ID:             id,
+			State:          data.State.String(),
+			StateTimestamp: time.Unix(data.StateTimestamp, 0),
+			OwnerIDs:       ringOwners[id],
 		})
 	}
 
@@ -61,7 +67,8 @@ type partitionRingPageData struct {
 }
 
 type partitionPageData struct {
-	ID       int32    `json:"id"`
-	State    string   `json:"state"`
-	OwnerIDs []string `json:"owner_ids"`
+	ID             int32     `json:"id"`
+	State          string    `json:"state"`
+	StateTimestamp time.Time `json:"state_timestamp"`
+	OwnerIDs       []string  `json:"owner_ids"`
 }

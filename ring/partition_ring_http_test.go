@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -13,7 +14,16 @@ func TestPartitionRingPageHandler(t *testing.T) {
 	handler := NewPartitionRingPageHandler(
 		newStaticPartitionRingReader(
 			NewPartitionRing(PartitionRingDesc{
-				Partitions: nil,
+				Partitions: map[int32]PartitionDesc{
+					1: {
+						State:          PartitionActive,
+						StateTimestamp: time.Now().Unix(),
+					},
+					2: {
+						State:          PartitionInactive,
+						StateTimestamp: time.Now().Unix(),
+					},
+				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {
 						OwnedPartition: 1,

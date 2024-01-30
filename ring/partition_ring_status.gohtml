@@ -13,6 +13,7 @@
             <tr>
                 <th>Partition ID</th>
                 <th>State</th>
+                <th>State updated at</th>
                 <th>Owners</th>
             </tr>
         </thead>
@@ -21,6 +22,7 @@
             <tr {{ if mod $partition.ID 2 }}bgcolor="#BEBEBE"{{ end }}>
                 <td>{{ .ID }}</td>
                 <td>{{ .State }}</td>
+                <td>{{ .StateTimestamp | formatTimestamp }}</td>
                 <td>
                     {{ range $ownerID := $partition.OwnerIDs }}
                         {{$ownerID}} <br />

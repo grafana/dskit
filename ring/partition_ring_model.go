@@ -20,14 +20,6 @@ func (m *PartitionDesc) BecameActiveAfter(ts int64) bool {
 	return m.IsActive() && m.GetStateTimestamp() >= ts
 }
 
-/* TODO remove
-func (m *OwnerDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, now time.Time) bool {
-	healthy := op.IsInstanceInStateHealthy(m.State)
-
-	return healthy && IsHeartbeatHealthy(time.Unix(m.Heartbeat, 0), heartbeatTimeout, now)
-}
-*/
-
 func NewPartitionRingDesc() *PartitionRingDesc {
 	return &PartitionRingDesc{
 		Partitions: map[int32]PartitionDesc{},

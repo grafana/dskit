@@ -26,7 +26,7 @@ func NewRingServiceDiscovery(r ring.ReadRing) PoolServiceDiscovery {
 }
 
 type PartitionRingGetter interface {
-	GetRing() *ring.PartitionRing
+	GetRing() *ring.PartitionInstanceRing
 }
 
 func NewPartitionRingServiceDiscovery(r PartitionRingGetter) PoolServiceDiscovery {

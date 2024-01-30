@@ -16,7 +16,7 @@ type PartitionRing struct {
 
 	ringTokens      Tokens
 	tokenPartitions map[Token]int32
-	partitionOwners map[int32][]string
+	partitionOwners map[int32][]string // TODO remove
 
 	heartbeatTimeout time.Duration
 }
@@ -145,57 +145,6 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 		if !found {
 			break
 		}
-	}
-	return result, nil
-}
-
-// GetReplicationSetsForOperation returns one ReplicationSet for each partition and returns ReplicationSet for all partitions.
-// If there are not enough owners for partitions, error is returned.
-//
-// For querying instances, basic idea is that we need to query *ALL* partitions in the ring (or subring).
-// For each partition, each owner is a full replica, so it's enough to query single instance only.
-// GetReplicationSetsForOperation returns all healthy owners for each partition according to op and the heartbeat timeout.
-// GetReplicationSetsForOperation returns an error which Is(ErrTooManyUnhealthyInstances) if there are no healthy owners for some partition.
-// GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
-func (pr *PartitionRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
-	if len(pr.desc.Partitions) == 0 {
-		return nil, ErrEmptyRing
-	}
-	now := time.Now()
-
-	result := make([]ReplicationSet, 0, len(pr.desc.Partitions))
-	for pid := range pr.desc.Partitions {
-		owners := pr.partitionOwners[pid]
-
-		instances := make([]InstanceDesc, 0, len(owners))
-		for _, o := range owners {
-			own, ok := pr.desc.Owners[o]
-			if !ok {
-				return nil, ErrInstanceNotFound
-			}
-
-			if !own.IsHealthy(op, pr.heartbeatTimeout, now) {
-				continue
-			}
-
-			instances = append(instances, InstanceDesc{
-				Addr:      own.Addr,
-				Timestamp: own.Heartbeat,
-				State:     own.State,
-				Zone:      own.Zone,
-				Id:        own.Id,
-			})
-		}
-
-		if len(instances) == 0 {
-			return nil, fmt.Errorf("partition %d: %w", pid, ErrTooManyUnhealthyInstances)
-		}
-
-		result = append(result, ReplicationSet{
-			Instances:            instances,
-			MaxUnavailableZones:  len(instances) - 1, // We need response from at least 1 owner.
-			ZoneAwarenessEnabled: true,
-		})
 	}
 	return result, nil
 }

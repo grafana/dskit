@@ -149,10 +149,6 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 	return result, nil
 }
 
-func (pr *PartitionRing) BatchRing() PartitionBatchRing {
-	return PartitionBatchRing{ring: pr}
-}
-
 func (pr *PartitionRing) PartitionOwners() map[int32][]string {
 	return pr.partitionOwners
 }
@@ -164,39 +160,4 @@ func (pr *PartitionRing) String() string {
 	}
 
 	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(pr.desc.Owners), len(pr.desc.Owners), buf.String())
-}
-
-// PartitionBatchRing implements BatchRingAdapter for use with DoBatch function.
-// Instances returned from Get method are partitions.
-type PartitionBatchRing struct {
-	ring *PartitionRing
-}
-
-func (p PartitionBatchRing) InstancesCount() int {
-	// Number of partitions.
-	return len(p.ring.partitionOwners)
-}
-
-func (p PartitionBatchRing) ReplicationFactor() int {
-	// Each key is always stored into single partition only.
-	return 1
-}
-
-func (p PartitionBatchRing) Get(key uint32, _ Operation) (ReplicationSet, error) {
-	pid, _, err := p.ring.ActivePartitionForKey(key)
-	if err != nil {
-		return ReplicationSet{}, err
-	}
-
-	return ReplicationSet{
-		Instances: []InstanceDesc{{
-			Addr:      fmt.Sprintf("%d", pid),
-			Timestamp: time.Now().Unix(),
-			State:     ACTIVE,
-			Id:        fmt.Sprintf("%d", pid),
-		}},
-		MaxErrors:            0,
-		MaxUnavailableZones:  0,
-		ZoneAwarenessEnabled: false,
-	}, nil
 }

@@ -6,16 +6,16 @@ import (
 )
 
 type PartitionInstanceRing struct {
-	partitionsRing   *PartitionRingWatcher
-	instancesRing    *Ring
-	heartbeatTimeout time.Duration
+	partitionsRingWatcher *PartitionRingWatcher
+	instancesRing         *Ring
+	heartbeatTimeout      time.Duration
 }
 
-func NewPartitionInstanceRing(partitionsRing *PartitionRingWatcher, instancesRing *Ring, heartbeatTimeout time.Duration) *PartitionInstanceRing {
+func NewPartitionInstanceRing(partitionsRingWatcher *PartitionRingWatcher, instancesRing *Ring, heartbeatTimeout time.Duration) *PartitionInstanceRing {
 	return &PartitionInstanceRing{
-		partitionsRing:   partitionsRing,
-		instancesRing:    instancesRing,
-		heartbeatTimeout: heartbeatTimeout,
+		partitionsRingWatcher: partitionsRingWatcher,
+		instancesRing:         instancesRing,
+		heartbeatTimeout:      heartbeatTimeout,
 	}
 }
 
@@ -29,9 +29,9 @@ func NewPartitionInstanceRing(partitionsRing *PartitionRingWatcher, instancesRin
 // GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
 func (pr *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
 	// TODO cleanup this design to avoid having to access to .desc
-	partitionsRing := pr.partitionsRing.GetRing()
+	partitionsRing := pr.partitionsRingWatcher.GetRing()
 	partitionsRingDesc := partitionsRing.desc
-	partitionsRingOwners := partitionsRingDesc.PartitionOwners()
+	partitionsRingOwners := partitionsRing.PartitionOwners()
 
 	if len(partitionsRingDesc.Partitions) == 0 {
 		return nil, ErrEmptyRing
@@ -67,4 +67,35 @@ func (pr *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([
 		})
 	}
 	return result, nil
+}
+
+func (pr *PartitionInstanceRing) InstancesCount() int {
+	// Number of partitions.
+	return len(pr.partitionsRingWatcher.GetRing().PartitionOwners())
+}
+
+func (pr *PartitionInstanceRing) ReplicationFactor() int {
+	// Each key is always stored into single partition only.
+	return 1
+}
+
+func (pr *PartitionInstanceRing) Get(key uint32, _ Operation) (ReplicationSet, error) {
+	partitionsRing := pr.partitionsRingWatcher.GetRing()
+
+	pid, _, err := partitionsRing.ActivePartitionForKey(key)
+	if err != nil {
+		return ReplicationSet{}, err
+	}
+
+	return ReplicationSet{
+		Instances: []InstanceDesc{{
+			Addr:      fmt.Sprintf("%d", pid),
+			Timestamp: time.Now().Unix(),
+			State:     ACTIVE,
+			Id:        fmt.Sprintf("%d", pid),
+		}},
+		MaxErrors:            0,
+		MaxUnavailableZones:  0,
+		ZoneAwarenessEnabled: false,
+	}, nil
 }

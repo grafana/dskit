@@ -16,7 +16,7 @@ type PartitionRing struct {
 
 	ringTokens      Tokens
 	tokenPartitions map[Token]int32
-	partitionOwners map[int32][]string // TODO remove
+	partitionOwners map[int32][]string
 
 	heartbeatTimeout time.Duration
 }
@@ -151,6 +151,10 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 
 func (pr *PartitionRing) BatchRing() PartitionBatchRing {
 	return PartitionBatchRing{ring: pr}
+}
+
+func (pr *PartitionRing) PartitionOwners() map[int32][]string {
+	return pr.partitionOwners
 }
 
 func (pr *PartitionRing) String() string {

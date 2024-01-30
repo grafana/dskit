@@ -6,17 +6,15 @@ import (
 )
 
 type PartitionInstanceRing struct {
-	partitionsRing   *PartitionRingDesc
+	partitionsRing   *PartitionRingWatcher
 	instancesRing    *Ring
-	partitionOwners  map[int32][]string
 	heartbeatTimeout time.Duration
 }
 
-func NewPartitionInstanceRing(partitionsRing *PartitionRingDesc, instancesRing *Ring, heartbeatTimeout time.Duration) *PartitionInstanceRing {
+func NewPartitionInstanceRing(partitionsRing *PartitionRingWatcher, instancesRing *Ring, heartbeatTimeout time.Duration) *PartitionInstanceRing {
 	return &PartitionInstanceRing{
 		partitionsRing:   partitionsRing,
 		instancesRing:    instancesRing,
-		partitionOwners:  partitionsRing.PartitionOwners(),
 		heartbeatTimeout: heartbeatTimeout,
 	}
 }
@@ -30,14 +28,19 @@ func NewPartitionInstanceRing(partitionsRing *PartitionRingDesc, instancesRing *
 // GetReplicationSetsForOperation returns an error which Is(ErrTooManyUnhealthyInstances) if there are no healthy owners for some partition.
 // GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
 func (pr *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
-	if len(pr.partitionsRing.Partitions) == 0 {
+	// TODO cleanup this design to avoid having to access to .desc
+	partitionsRing := pr.partitionsRing.GetRing()
+	partitionsRingDesc := partitionsRing.desc
+	partitionsRingOwners := partitionsRingDesc.PartitionOwners()
+
+	if len(partitionsRingDesc.Partitions) == 0 {
 		return nil, ErrEmptyRing
 	}
 	now := time.Now()
 
-	result := make([]ReplicationSet, 0, len(pr.partitionsRing.Partitions))
-	for pid := range pr.partitionsRing.Partitions {
-		owners := pr.partitionOwners[pid]
+	result := make([]ReplicationSet, 0, len(partitionsRingDesc.Partitions))
+	for pid := range partitionsRingDesc.Partitions {
+		owners := partitionsRingOwners[pid]
 		instances := make([]InstanceDesc, 0, len(owners))
 
 		for _, instanceID := range owners {

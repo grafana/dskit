@@ -141,17 +141,11 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 	}
 }
 
-/*
 // AddOrUpdateOwner adds or updates owner entry in the ring. Returns true, if entry was added or updated, false if entry is unchanged.
-func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPartition int32, state InstanceState, heartbeat time.Time) bool {
+func (m *PartitionRingDesc) AddOrUpdateOwner(id string, ownedPartition int32) bool {
 	prev, ok := m.Owners[id]
 	updated := OwnerDesc{
-		Id:             id,
-		Addr:           address,
-		Zone:           zone,
 		OwnedPartition: ownedPartition,
-		Heartbeat:      heartbeat.Unix(),
-		State:          state,
 	}
 
 	if !ok || !prev.Equal(updated) {
@@ -160,7 +154,6 @@ func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPart
 	}
 	return false
 }
-*/
 
 func (m *PartitionRingDesc) RemoveOwner(id string) {
 	delete(m.Owners, id)

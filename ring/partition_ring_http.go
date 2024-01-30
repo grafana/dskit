@@ -4,8 +4,7 @@ import (
 	_ "embed"
 	"html/template"
 	"net/http"
-
-	"golang.org/x/exp/slices"
+	"sort"
 )
 
 //go:embed partition_ring_status.gohtml
@@ -48,8 +47,8 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 	}
 
 	// Sort partitions by ID.
-	slices.SortFunc(partitionsData, func(a, b partitionPageData) bool {
-		return a.ID < b.ID
+	sort.Slice(partitionsData, func(i, j int) bool {
+		return partitionsData[i].ID < partitionsData[j].ID
 	})
 
 	renderHTTPResponse(w, partitionRingPageData{

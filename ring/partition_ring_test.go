@@ -94,8 +94,7 @@ func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
 			for pIdx, p := range testCase.partitions {
 				desc.AddPartition(int32(pIdx), p.state, time.Now())
 			}
-			const heartbeatTimeout = -1 // heartbeat timeout doesn't matter in this test
-			pr := NewPartitionRing(*desc, heartbeatTimeout)
+			pr := NewPartitionRing(*desc)
 
 			partitionID, partition, err := pr.ActivePartitionForKey(testCase.key)
 
@@ -108,7 +107,7 @@ func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
 	}
 }
 
-func TestPartitionRing_ShuffleRingPartitions(t *testing.T) {
+func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 	type eventType int
 
 	const (
@@ -264,9 +263,8 @@ func TestPartitionRing_ShuffleRingPartitions(t *testing.T) {
 					delete(ringDesc.Partitions, event.partitionID)
 				case test:
 					// Create a new ring for every test so that it can create its own
-					const heartbeatTimeout = -1 // heartbeat timeout doesn't matter in this test
-					ring := NewPartitionRing(*ringDesc, heartbeatTimeout)
-					shuffledRing, err := ring.ShuffleRingPartitions(userID, event.shardSize, lookbackPeriod, now)
+					ring := NewPartitionRing(*ringDesc)
+					shuffledRing, err := ring.ShuffleShardWithLookback(userID, event.shardSize, lookbackPeriod, now)
 					assert.NoError(t, err, "step %d", ix)
 					assert.ElementsMatch(t, event.expected, maps.Keys(shuffledRing.desc.Partitions), "step %d", ix)
 				}

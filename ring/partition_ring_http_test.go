@@ -38,7 +38,7 @@ func TestPartitionRingPageHandler(t *testing.T) {
 						OwnedPartition: 2,
 					},
 				},
-			}, 0),
+			}),
 		),
 	)
 

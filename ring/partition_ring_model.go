@@ -279,7 +279,7 @@ func (m *PartitionRingDesc) MergeContent() []string {
 	}
 
 	for id := range m.Owners {
-		result = append(result, fmt.Sprintf(id))
+		result = append(result, id)
 	}
 	return result
 }
@@ -332,11 +332,5 @@ func (m *PartitionDesc) IsActive() bool {
 
 // CleanName returns the PartitionState name without the "Partition" prefix.
 func (s PartitionState) CleanName() string {
-	stateName := s.String()
-
-	if strings.HasPrefix(stateName, "Partition") {
-		stateName = stateName[len("Partition"):]
-	}
-
-	return stateName
+	return strings.TrimPrefix(s.String(), "Partition")
 }

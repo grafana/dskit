@@ -180,7 +180,6 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 
 	other, ok := mergeable.(*PartitionRingDesc)
 	if !ok {
-		// This method only deals with non-nil rings.
 		return nil, fmt.Errorf("expected *PartitionRingDesc, got %T", mergeable)
 	}
 

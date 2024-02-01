@@ -44,7 +44,11 @@ type memcachedClientBackend interface {
 	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 	Delete(key string) error
+	Increment(key string, delta uint64) (newValue uint64, err error)
+	Touch(key string, seconds int32) (err error)
 	Close()
+	CompareAndSwap(item *memcache.Item) error
+	FlushAll() error
 }
 
 // updatableServerSelector extends the interface used for picking a memcached server
@@ -329,6 +333,35 @@ func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) 
 	})
 }
 
+func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (newValue uint64, err error) {
+	return c.increment(ctx, key, delta, func(ctx context.Context, key string, delta uint64) (uint64, error) {
+		var (
+			err      error
+			newValue uint64
+		)
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		default:
+			newValue, err = c.client.Increment(key, delta)
+		}
+		return newValue, err
+	})
+}
+
+func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Duration) (err error) {
+	return c.touch(ctx, key, ttl, func(ctx context.Context, key string, ttl time.Duration) error {
+		var err error
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		default:
+			err = c.client.Touch(key, int32(ttl.Seconds()))
+		}
+		return err
+	})
+}
+
 func toMemcacheOptions(opts ...Option) []memcache.Option {
 	if len(opts) == 0 {
 		return nil
@@ -563,4 +596,35 @@ func (c *MemcachedClient) resolveAddrs() error {
 	}
 
 	return c.selector.SetServers(servers...)
+}
+
+func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	item := &memcache.Item{
+		Key:        key,
+		Value:      value,
+		Expiration: int32(ttl.Seconds()),
+	}
+	return c.compareAndSwap(ctx, key, value, ttl, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		var err error
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		default:
+			err = c.client.CompareAndSwap(item)
+		}
+		return err
+	})
+}
+
+func (c *MemcachedClient) FlushAll(ctx context.Context) error {
+	return c.flushAll(ctx, func(ctx context.Context) error {
+		var err error
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		default:
+			err = c.client.FlushAll()
+		}
+		return err
+	})
 }

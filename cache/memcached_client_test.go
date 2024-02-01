@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -61,23 +62,7 @@ func TestMemcachedClientConfig_Validate(t *testing.T) {
 }
 
 func TestMemcachedClient_GetMulti(t *testing.T) {
-	setup := func() (*MemcachedClient, *mockMemcachedClientBackend, error) {
-		backend := newMockMemcachedClientBackend()
-		client, err := newMemcachedClient(
-			log.NewNopLogger(),
-			backend,
-			&mockServerSelector{},
-			MemcachedClientConfig{
-				Addresses:           []string{"localhost"},
-				MaxAsyncConcurrency: 1,
-				MaxAsyncBufferSize:  10,
-			},
-			prometheus.NewPedanticRegistry(),
-			"test",
-		)
-
-		return client, backend, err
-	}
+	setup := setupDefaultMemcachedClient
 
 	t.Run("no allocator", func(t *testing.T) {
 		client, backend, err := setup()
@@ -101,6 +86,106 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
 		require.Equal(t, 1, backend.allocations)
 	})
+}
+
+func TestMemcachedClient_Increment(t *testing.T) {
+	client, _, err := setupDefaultMemcachedClient()
+	require.NoError(t, err)
+
+	key := "foo"
+	initialValue := []byte("2")
+
+	client.SetAsync(key, initialValue, 10*time.Second)
+	require.NoError(t, client.wait())
+
+	incrementedValue, err := client.Increment(context.Background(), key, 1)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), incrementedValue)
+}
+
+func TestMemcachedClient_Touch(t *testing.T) {
+	client, backend, err := setupDefaultMemcachedClient()
+	require.NoError(t, err)
+
+	key := "foo"
+	value := []byte("bar")
+	expiration := 10 * time.Second
+
+	client.SetAsync(key, value, expiration)
+	require.NoError(t, client.wait())
+
+	newExpiration := 20 * time.Second
+	err = client.Touch(context.Background(), key, newExpiration)
+	require.NoError(t, err)
+	require.Equal(t, int32(newExpiration.Seconds()), backend.values[key].Expiration)
+}
+
+func TestMemcachedClient_CompareAndSwap(t *testing.T) {
+	client, backend, err := setupDefaultMemcachedClient()
+	require.NoError(t, err)
+
+	key := "foo"
+	initialValue := []byte("bar")
+	expiration := 10 * time.Second
+
+	client.SetAsync(key, initialValue, expiration)
+	require.NoError(t, client.wait())
+
+	newValue := []byte("baz")
+	newExpiration := 20 * time.Second
+	err = client.CompareAndSwap(context.Background(), key, newValue, newExpiration)
+	require.NoError(t, err)
+
+	storedItem := backend.values[key]
+	require.Equal(t, newValue, storedItem.Value)
+	require.Equal(t, int32(newExpiration.Seconds()), storedItem.Expiration)
+}
+
+func TestMemcachedClient_FlushAll(t *testing.T) {
+	client, _, err := setupDefaultMemcachedClient()
+	require.NoError(t, err)
+
+	keys := []string{"foo", "bar"}
+	expiration := 10 * time.Second
+
+	client.SetMultiAsync(map[string][]byte{"foo": []byte("bar"), "bar": []byte("baz")}, expiration)
+	require.NoError(t, client.wait())
+
+	// Verify that the data is initially present
+	tmpRes := client.GetMulti(context.Background(), keys)
+	require.NotEmpty(t, tmpRes)
+
+	// FlushAll operation
+	err = client.FlushAll(context.Background())
+	require.NoError(t, err)
+
+	// Verify that the cash is empty after FlushAll
+	res := client.GetMulti(context.Background(), keys)
+	require.Empty(t, res)
+}
+
+func TestMemcachedClient_Delete(t *testing.T) {
+	client, _, err := setupDefaultMemcachedClient()
+	require.NoError(t, err)
+
+	key := "foo"
+	value := []byte("bar")
+	expiration := 10 * time.Second
+
+	client.SetAsync(key, value, expiration)
+	require.NoError(t, client.wait())
+
+	// Verify that the key is initially present
+	initialResult := client.GetMulti(context.Background(), []string{key})
+	require.Equal(t, map[string][]byte{key: value}, initialResult)
+
+	// Delete operation
+	err = client.Delete(context.Background(), key)
+	require.NoError(t, err)
+
+	// Verify that the key is no longer present after deletion
+	afterDeletionResult := client.GetMulti(context.Background(), []string{key})
+	require.Empty(t, afterDeletionResult)
 }
 
 func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
@@ -147,6 +232,24 @@ func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 	}
 }
 
+func setupDefaultMemcachedClient() (*MemcachedClient, *mockMemcachedClientBackend, error) {
+	backend := newMockMemcachedClientBackend()
+	client, err := newMemcachedClient(
+		log.NewNopLogger(),
+		backend,
+		&mockServerSelector{},
+		MemcachedClientConfig{
+			Addresses:           []string{"localhost"},
+			MaxAsyncConcurrency: 1,
+			MaxAsyncBufferSize:  10,
+		},
+		prometheus.NewPedanticRegistry(),
+		"test",
+	)
+
+	return client, backend, err
+}
+
 type mockMemcachedClientBackend struct {
 	allocations int
 	values      map[string]*memcache.Item
@@ -185,6 +288,28 @@ func (m *mockMemcachedClientBackend) Set(item *memcache.Item) error {
 
 func (m *mockMemcachedClientBackend) Delete(key string) error {
 	delete(m.values, key)
+	return nil
+}
+
+func (m *mockMemcachedClientBackend) Touch(key string, seconds int32) (err error) {
+	m.values[key].Expiration = seconds
+	return nil
+}
+
+func (m *mockMemcachedClientBackend) Increment(key string, delta uint64) (newValue uint64, err error) {
+	value, _ := strconv.ParseUint(string(m.values[key].Value), 10, 64)
+	value += delta
+	m.values[key].Value = []byte(strconv.FormatUint(value, 10))
+	return value, nil
+}
+
+func (m *mockMemcachedClientBackend) CompareAndSwap(item *memcache.Item) (err error) {
+	m.values[item.Key] = item
+	return nil
+}
+
+func (m *mockMemcachedClientBackend) FlushAll() (err error) {
+	m.values = make(map[string]*memcache.Item)
 	return nil
 }
 

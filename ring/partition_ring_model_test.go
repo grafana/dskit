@@ -577,6 +577,45 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 				Owners: map[string]OwnerDesc{},
 			},
 		},
+		"incoming change: partition removed with equal timestamp, deletion should win": {
+			localCAS: false,
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{
+					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
+					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerActive, UpdatedTimestamp: 20},
+				},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20}, // Partition deleted with equal timestamp.
+				},
+				Owners: map[string]OwnerDesc{
+					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
+					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerActive, UpdatedTimestamp: 20},
+				},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{
+					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
+					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerActive, UpdatedTimestamp: 20},
+				},
+			},
+			expectedChange: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+		},
 		"incoming change: partition removed with older timestamp": {
 			localCAS: false,
 			local: &PartitionRingDesc{
@@ -839,6 +878,45 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 				Partitions: map[int32]PartitionDesc{},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerDeleted, UpdatedTimestamp: 30},
+				},
+			},
+		},
+		"incoming change: owner removed with equal timestamp, deletion should win": {
+			localCAS: false,
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{
+					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
+					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerActive, UpdatedTimestamp: 20},
+				},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{
+					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
+					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerDeleted, UpdatedTimestamp: 20}, // Owner deleted with equal timestamp.
+				},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{
+					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
+					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerDeleted, UpdatedTimestamp: 20},
+				},
+			},
+			expectedChange: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{},
+				Owners: map[string]OwnerDesc{
+					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerDeleted, UpdatedTimestamp: 20},
 				},
 			},
 		},

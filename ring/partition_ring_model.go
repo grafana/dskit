@@ -208,7 +208,10 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 				changed = true
 			}
 
-			if otherPart.StateTimestamp > thisPart.StateTimestamp {
+			// In case the timestamp is equal we give priority to the deleted state.
+			// Reason is that timestamp has second precision, so we cover the case an
+			// update and subsequent deletion occur within the same second.
+			if otherPart.StateTimestamp > thisPart.StateTimestamp || (otherPart.StateTimestamp == thisPart.StateTimestamp && otherPart.State == PartitionDeleted && thisPart.State != PartitionDeleted) {
 				changed = true
 
 				thisPart.State = otherPart.State
@@ -240,6 +243,9 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 	for id, otherOwner := range other.Owners {
 		thisOwner := m.Owners[id]
 
+		// In case the timestamp is equal we give priority to the deleted state.
+		// Reason is that timestamp has second precision, so we cover the case an
+		// update and subsequent deletion occur within the same second.
 		if otherOwner.UpdatedTimestamp > thisOwner.UpdatedTimestamp || (otherOwner.UpdatedTimestamp == thisOwner.UpdatedTimestamp && otherOwner.State == OwnerDeleted && thisOwner.State != OwnerDeleted) {
 			m.Owners[id] = otherOwner
 			change.Owners[id] = otherOwner

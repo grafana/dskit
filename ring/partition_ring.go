@@ -206,6 +206,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 }
 
 func (r *PartitionRing) PartitionOwners() map[int32][]string {
+	// TODO returning by reference is risky
 	return r.partitionOwners
 }
 
@@ -215,6 +216,7 @@ func (r *PartitionRing) PartitionsCount() int {
 }
 
 // ActivePartitionIDs returns a list of all active partition IDs in the ring.
+// The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) ActivePartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
 

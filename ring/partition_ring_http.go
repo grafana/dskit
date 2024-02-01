@@ -48,7 +48,7 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 			ID:             id,
 			State:          data.State.String(),
 			StateTimestamp: time.Unix(data.StateTimestamp, 0),
-			OwnerIDs:       ringOwners[id],
+			OwnerIDs:       ringOwners[id], // TODO sort them, but pay attention that PartitionOwners() returns a reference, not a deep copy.
 		})
 	}
 

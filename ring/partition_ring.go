@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	shardUtil "github.com/grafana/dskit/ring/shard"
 )
 
@@ -183,6 +185,23 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 
 func (r *PartitionRing) PartitionOwners() map[int32][]string {
 	return r.partitionOwners
+}
+
+// PartitionsCount returns the number of partitions in the ring.
+func (r *PartitionRing) PartitionsCount() int {
+	return len(r.desc.Partitions)
+}
+
+// ActivePartitionIDs returns a list of all active partition IDs in the ring.
+func (r *PartitionRing) ActivePartitionIDs() []int32 {
+	ids := make([]int32, 0, len(r.desc.Partitions))
+
+	for id := range r.desc.Partitions {
+		ids = append(ids, id)
+	}
+
+	slices.Sort(ids)
+	return ids
 }
 
 func (r *PartitionRing) String() string {

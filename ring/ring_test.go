@@ -2819,13 +2819,13 @@ func generateRingInstanceWithInfo(addr, zone string, tokens []uint32, registered
 func compareReplicationSets(first, second ReplicationSet) (added, removed []string) {
 	for _, instance := range first.Instances {
 		if !second.Includes(instance.Addr) {
-			added = append(added, instance.Addr)
+			removed = append(removed, instance.Addr)
 		}
 	}
 
 	for _, instance := range second.Instances {
 		if !first.Includes(instance.Addr) {
-			removed = append(removed, instance.Addr)
+			added = append(added, instance.Addr)
 		}
 	}
 

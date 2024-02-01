@@ -13,7 +13,6 @@ import (
 
 var ErrNoActivePartitionFound = fmt.Errorf("no active partition found")
 
-// TODO doc
 type PartitionRing struct {
 	desc PartitionRingDesc
 
@@ -70,8 +69,25 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, PartitionDesc,
 	return 0, PartitionDesc{}, ErrNoActivePartitionFound
 }
 
-// TODO doc
-// TODO unit test
+// ShuffleShard returns a subring for the provided identifier (eg. a tenant ID)
+// and size (number of partitions).
+//
+// The algorithm used to build the subring is a shuffle sharder based on probabilistic
+// hashing. We pick N unique partitions, walking the ring starting from random but
+// predictable numbers. The random generator is initialised with a seed based on the
+// provided identifier.
+//
+// This function supports caching.
+//
+// This implementation guarantees:
+//
+//   - Stability: given the same ring, two invocations returns the same result.
+//
+//   - Consistency: adding/removing 1 partition from the ring generates a resulting
+//     subring with no more then 1 difference.
+//
+//   - Shuffling: probabilistically, for a large enough cluster each identifier gets a different
+//     set of instances, with a reduced number of overlapping instances between two identifiers.
 func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRing, error) {
 	if cached := r.shuffleShardCache.getSubring(identifier, size); cached != nil {
 		return cached, nil
@@ -92,8 +108,13 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 	return subring, nil
 }
 
-// TODO doc
-// TODO unit test (including the fuzzy one)
+// ShuffleShardWithLookback is like ShuffleShard() but the returned subring includes all instances
+// that have been part of the identifier's shard since "now - lookbackPeriod".
+//
+// The returned subring be never used for write operations (read only).
+//
+// This function supports caching, but the cache will only be effective if successive calls for the
+// same identifier are with the same lookbackPeriod and increasing values of now.
 func (r *PartitionRing) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
 	if cached := r.shuffleShardCache.getSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
 		return cached, nil

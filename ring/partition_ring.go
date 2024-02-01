@@ -180,6 +180,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 			break
 		}
 	}
+
 	return NewPartitionRing(r.desc.WithPartitions(result)), nil
 }
 

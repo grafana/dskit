@@ -3,6 +3,7 @@ package ring
 import (
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -351,7 +352,6 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) 
 	assert.Equal(t, firstPartitions, fifthPartitions)
 }
 
-// TODO review this test
 func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 	type eventType int
 
@@ -438,7 +438,7 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
 				// Partition 2 still inactive, but now falls outside the lookback period
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
-				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
+				{what: test, shardSize: 2, expected: []int32{2, 1, 0}}, // TODO why?
 				// Partition 2 becomes active again
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
@@ -458,11 +458,12 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
 				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
+				// Partition 2 switches to inactive
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
 				// Partition 2 still inactive, but now falls outside the lookback period
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
-				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
+				{what: test, shardSize: 2, expected: []int32{2, 1, 0}}, // TODO why?
 				// Partition 2 now gone
 				{what: remove, partitionID: 2},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
@@ -518,705 +519,367 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 	}
 }
 
-/*
-	TODO
+/* TODO
+func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
+	// The goal of this test is NOT to ensure that the minimum required number of partitions
+	// are returned at any given time, BUT at least all required partitions are returned.
+	var (
+		numInitialInstances = []int{9, 30, 60, 90}
+		numInitialZones     = []int{1, 3}
+		numEvents           = 100
+		lookbackPeriod      = time.Hour
+		delayBetweenEvents  = 5 * time.Minute // 12 events / hour
+		userID              = "user-1"
+	)
 
-	func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
-		// The goal of this test is NOT to ensure that the minimum required number of instances
-		// are returned at any given time, BUT at least all required instances are returned.
-		var (
-			numInitialInstances = []int{9, 30, 60, 90}
-			numInitialZones     = []int{1, 3}
-			numEvents           = 100
-			lookbackPeriod      = time.Hour
-			delayBetweenEvents  = 5 * time.Minute // 12 events / hour
-			userID              = "user-1"
-		)
+	for _, updateOldestRegisteredTimestamp := range []bool{false, true} {
+		updateOldestRegisteredTimestamp := updateOldestRegisteredTimestamp
 
-		for _, updateOldestRegisteredTimestamp := range []bool{false, true} {
-			updateOldestRegisteredTimestamp := updateOldestRegisteredTimestamp
+		for _, numInstances := range numInitialInstances {
+			numInstances := numInstances
 
-			for _, numInstances := range numInitialInstances {
-				numInstances := numInstances
+			for _, numZones := range numInitialZones {
+				numZones := numZones
 
-				for _, numZones := range numInitialZones {
-					numZones := numZones
+				testName := fmt.Sprintf("num instances = %d, num zones = %d, update oldest registered timestamp = %v", numInstances, numZones, updateOldestRegisteredTimestamp)
 
-					testName := fmt.Sprintf("num instances = %d, num zones = %d, update oldest registered timestamp = %v", numInstances, numZones, updateOldestRegisteredTimestamp)
+				t.Run(testName, func(t *testing.T) {
+					t.Parallel()
 
-					t.Run(testName, func(t *testing.T) {
-						t.Parallel()
+					// Randomise the seed but log it in case we need to reproduce the test on failure.
+					seed := time.Now().UnixNano()
+					rnd := rand.New(rand.NewSource(seed))
+					t.Log("random generator seed:", seed)
+					gen := NewRandomTokenGeneratorWithSeed(seed)
 
-						// Randomise the seed but log it in case we need to reproduce the test on failure.
-						seed := time.Now().UnixNano()
-						rnd := rand.New(rand.NewSource(seed))
-						t.Log("random generator seed:", seed)
-						gen := NewRandomTokenGeneratorWithSeed(seed)
+					// Initialise the ring.
+					ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
+					ring := Ring{
+						cfg: Config{
+							HeartbeatTimeout:     time.Hour,
+							ZoneAwarenessEnabled: true,
+							ReplicationFactor:    3,
+						},
+						ringDesc:            ringDesc,
+						ringTokens:          ringDesc.GetTokens(),
+						ringTokensByZone:    ringDesc.getTokensByZone(),
+						ringInstanceByToken: ringDesc.getTokensInfo(),
+						ringZones:           getZones(ringDesc.getTokensByZone()),
+						strategy:            NewDefaultReplicationStrategy(),
+					}
+					if updateOldestRegisteredTimestamp {
+						ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
+					}
 
-						// Initialise the ring.
-						ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
-						ring := Ring{
-							cfg: Config{
-								HeartbeatTimeout:     time.Hour,
-								ZoneAwarenessEnabled: true,
-								ReplicationFactor:    3,
-							},
-							ringDesc:            ringDesc,
-							ringTokens:          ringDesc.GetTokens(),
-							ringTokensByZone:    ringDesc.getTokensByZone(),
-							ringInstanceByToken: ringDesc.getTokensInfo(),
-							ringZones:           getZones(ringDesc.getTokensByZone()),
-							strategy:            NewDefaultReplicationStrategy(),
+					// The simulation starts with the minimum shard size. Random events can later increase it.
+					shardSize := numZones
+
+					// The simulation assumes the initial ring contains instances registered
+					// since more than the lookback period.
+					currTime := time.Now().Add(lookbackPeriod).Add(time.Minute)
+
+					// Add the initial shard to the history.
+					rs, err := ring.shuffleShard(userID, shardSize, 0, time.Now()).GetReplicationSetForOperation(Read)
+					require.NoError(t, err)
+
+					history := map[time.Time]ReplicationSet{
+						currTime: rs,
+					}
+
+					// Simulate a progression of random events over the time and, at each iteration of the simuation,
+					// make sure the subring includes all non-removed instances picked from previous versions of the
+					// ring up until the lookback period.
+					nextInstanceID := len(ringDesc.Ingesters) + 1
+
+					for i := 1; i <= numEvents; i++ {
+						currTime = currTime.Add(delayBetweenEvents)
+
+						switch r := rnd.Intn(100); {
+						case r < 80:
+							// Scale up instances by 1.
+							instanceID := fmt.Sprintf("instance-%d", nextInstanceID)
+							zoneID := fmt.Sprintf("zone-%d", nextInstanceID%numZones)
+							nextInstanceID++
+
+							ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, nil), currTime)
+
+							ring.ringTokens = ringDesc.GetTokens()
+							ring.ringTokensByZone = ringDesc.getTokensByZone()
+							ring.ringInstanceByToken = ringDesc.getTokensInfo()
+							ring.ringZones = getZones(ringDesc.getTokensByZone())
+							if updateOldestRegisteredTimestamp {
+								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
+							}
+						case r < 90:
+							// Scale down instances by 1. To make tests reproducible we get the instance IDs, sort them
+							// and then get a random index (using the random generator initialized with a constant seed).
+							instanceIDs := make([]string, 0, len(ringDesc.Ingesters))
+							for id := range ringDesc.Ingesters {
+								instanceIDs = append(instanceIDs, id)
+							}
+
+							sort.Strings(instanceIDs)
+
+							idxToRemove := rnd.Intn(len(instanceIDs))
+							idToRemove := instanceIDs[idxToRemove]
+							delete(ringDesc.Ingesters, idToRemove)
+
+							ring.ringTokens = ringDesc.GetTokens()
+							ring.ringTokensByZone = ringDesc.getTokensByZone()
+							ring.ringInstanceByToken = ringDesc.getTokensInfo()
+							ring.ringZones = getZones(ringDesc.getTokensByZone())
+							if updateOldestRegisteredTimestamp {
+								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
+							}
+
+							// Remove the terminated instance from the history.
+							for ringTime, ringState := range history {
+								for idx, desc := range ringState.Instances {
+									// In this simulation instance ID == instance address.
+									if desc.Addr != idToRemove {
+										continue
+									}
+
+									ringState.Instances = append(ringState.Instances[:idx], ringState.Instances[idx+1:]...)
+									history[ringTime] = ringState
+									break
+								}
+							}
+						default:
+							// Scale up shard size (keeping the per-zone balance).
+							shardSize += numZones
 						}
-						if updateOldestRegisteredTimestamp {
-							ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-						}
 
-						// The simulation starts with the minimum shard size. Random events can later increase it.
-						shardSize := numZones
+						// Add the current shard to the history.
+						rs, err = ring.shuffleShard(userID, shardSize, 0, time.Now()).GetReplicationSetForOperation(Read)
+						require.NoError(t, err)
+						history[currTime] = rs
 
-						// The simulation assumes the initial ring contains instances registered
-						// since more than the lookback period.
-						currTime := time.Now().Add(lookbackPeriod).Add(time.Minute)
-
-						// Add the initial shard to the history.
-						rs, err := ring.shuffleShard(userID, shardSize, 0, time.Now()).GetReplicationSetForOperation(Read)
+						// Ensure the shard with lookback includes all instances from previous states of the ring.
+						rsWithLookback, err := ring.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, currTime).GetReplicationSetForOperation(Read)
 						require.NoError(t, err)
 
-						history := map[time.Time]ReplicationSet{
-							currTime: rs,
-						}
-
-						// Simulate a progression of random events over the time and, at each iteration of the simuation,
-						// make sure the subring includes all non-removed instances picked from previous versions of the
-						// ring up until the lookback period.
-						nextInstanceID := len(ringDesc.Ingesters) + 1
-
-						for i := 1; i <= numEvents; i++ {
-							currTime = currTime.Add(delayBetweenEvents)
-
-							switch r := rnd.Intn(100); {
-							case r < 80:
-								// Scale up instances by 1.
-								instanceID := fmt.Sprintf("instance-%d", nextInstanceID)
-								zoneID := fmt.Sprintf("zone-%d", nextInstanceID%numZones)
-								nextInstanceID++
-
-								ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, nil), currTime)
-
-								ring.ringTokens = ringDesc.GetTokens()
-								ring.ringTokensByZone = ringDesc.getTokensByZone()
-								ring.ringInstanceByToken = ringDesc.getTokensInfo()
-								ring.ringZones = getZones(ringDesc.getTokensByZone())
-								if updateOldestRegisteredTimestamp {
-									ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-								}
-							case r < 90:
-								// Scale down instances by 1. To make tests reproducible we get the instance IDs, sort them
-								// and then get a random index (using the random generator initialized with a constant seed).
-								instanceIDs := make([]string, 0, len(ringDesc.Ingesters))
-								for id := range ringDesc.Ingesters {
-									instanceIDs = append(instanceIDs, id)
-								}
-
-								sort.Strings(instanceIDs)
-
-								idxToRemove := rnd.Intn(len(instanceIDs))
-								idToRemove := instanceIDs[idxToRemove]
-								delete(ringDesc.Ingesters, idToRemove)
-
-								ring.ringTokens = ringDesc.GetTokens()
-								ring.ringTokensByZone = ringDesc.getTokensByZone()
-								ring.ringInstanceByToken = ringDesc.getTokensInfo()
-								ring.ringZones = getZones(ringDesc.getTokensByZone())
-								if updateOldestRegisteredTimestamp {
-									ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-								}
-
-								// Remove the terminated instance from the history.
-								for ringTime, ringState := range history {
-									for idx, desc := range ringState.Instances {
-										// In this simulation instance ID == instance address.
-										if desc.Addr != idToRemove {
-											continue
-										}
-
-										ringState.Instances = append(ringState.Instances[:idx], ringState.Instances[idx+1:]...)
-										history[ringTime] = ringState
-										break
-									}
-								}
-							default:
-								// Scale up shard size (keeping the per-zone balance).
-								shardSize += numZones
+						for ringTime, ringState := range history {
+							if ringTime.Before(currTime.Add(-lookbackPeriod)) {
+								// This entry from the history is obsolete, we can remove it.
+								delete(history, ringTime)
+								continue
 							}
 
-							// Add the current shard to the history.
-							rs, err = ring.shuffleShard(userID, shardSize, 0, time.Now()).GetReplicationSetForOperation(Read)
-							require.NoError(t, err)
-							history[currTime] = rs
-
-							// Ensure the shard with lookback includes all instances from previous states of the ring.
-							rsWithLookback, err := ring.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, currTime).GetReplicationSetForOperation(Read)
-							require.NoError(t, err)
-
-							for ringTime, ringState := range history {
-								if ringTime.Before(currTime.Add(-lookbackPeriod)) {
-									// This entry from the history is obsolete, we can remove it.
-									delete(history, ringTime)
-									continue
-								}
-
-								for _, expectedAddr := range ringState.GetAddresses() {
-									if !rsWithLookback.Includes(expectedAddr) {
-										t.Fatalf(
-											"subring generated after event %d is expected to include instance %s from ring state at time %s but it's missing (actual instances are: %s)",
-											i, expectedAddr, ringTime.String(), strings.Join(rsWithLookback.GetAddresses(), ", "))
-									}
+							for _, expectedAddr := range ringState.GetAddresses() {
+								if !rsWithLookback.Includes(expectedAddr) {
+									t.Fatalf(
+										"subring generated after event %d is expected to include instance %s from ring state at time %s but it's missing (actual instances are: %s)",
+										i, expectedAddr, ringTime.String(), strings.Join(rsWithLookback.GetAddresses(), ", "))
 								}
 							}
 						}
-					})
-				}
+					}
+				})
 			}
 		}
 	}
+}
+*/
 
-	func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
-		t.Parallel()
+func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
+	var (
+		tenantID      = "user-1"
+		otherTenantID = "user-2"
+		subringSize   = 3
+		now           = time.Now()
+	)
 
-		userID := "user-1"
-		otherUserID := "user-2"
-		subringSize := 3
-		now := time.Now()
+	desc := NewPartitionRingDesc()
+	desc.AddPartition(1, PartitionActive, now.Add(-1*time.Hour))
+	desc.AddPartition(2, PartitionActive, now.Add(-90*time.Minute))
+	desc.AddPartition(3, PartitionActive, now.Add(-6*time.Hour))
+	desc.AddPartition(4, PartitionActive, now.Add(-6*time.Hour))
+	desc.AddPartition(5, PartitionActive, now.Add(-6*time.Hour))
+	desc.AddPartition(6, PartitionActive, now.Add(-6*time.Hour))
+	ring := NewPartitionRing(*desc)
 
-		scenarios := map[string]struct {
-			instances []InstanceDesc
-			test      func(t *testing.T, ring *Ring)
-		}{
-			"identical request": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					second := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.Same(t, first, second)
-
-					rs, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, rs.GetAddresses())
-				},
-			},
-			"identical request after cleaning subring cache": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					ring.CleanupShuffleShardCache(userID)
-					second := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.NotSame(t, first, second)
-
-					firstReplicationSet, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
-
-					secondReplicationSet, err := second.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
-				},
-			},
-			"different subring sizes": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					second := ring.ShuffleShardWithLookback(userID, subringSize+1, time.Hour, now)
-					require.NotSame(t, first, second)
-
-					firstReplicationSet, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
-
-					secondReplicationSet, err := second.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-4", "instance-5", "instance-6"}, secondReplicationSet.GetAddresses())
-				},
-			},
-			"different identifiers": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					second := ring.ShuffleShardWithLookback(otherUserID, subringSize, time.Hour, now)
-					require.NotSame(t, first, second)
-
-					firstReplicationSet, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
-
-					secondReplicationSet, err := second.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-2", "instance-3", "instance-6"}, secondReplicationSet.GetAddresses())
-				},
-			},
-			"all changes before beginning of either lookback window": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now.Add(-3*time.Minute))
-					second := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.Same(t, first, second)
-
-					rs, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, rs.GetAddresses())
-				},
-			},
-			"change within both lookback windows": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-5*time.Minute)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now.Add(-3*time.Minute))
-					second := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.Same(t, first, second)
-
-					rs, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, rs.GetAddresses())
-				},
-			},
-			"change on threshold of second lookback window": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-1*time.Hour)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now.Add(-3*time.Minute))
-					second := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.Same(t, first, second)
-
-					rs, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, rs.GetAddresses())
-				},
-			},
-			"change on threshold of first lookback window": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-63*time.Minute)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now.Add(-3*time.Minute))
-					second := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.NotSame(t, first, second)
-
-					firstReplicationSet, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
-
-					secondReplicationSet, err := second.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
-				},
-			},
-			"change between thresholds of first and second lookback windows": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-62*time.Minute)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					first := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now.Add(-3*time.Minute))
-					second := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.NotSame(t, first, second)
-
-					firstReplicationSet, err := first.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
-
-					secondReplicationSet, err := second.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
-				},
-			},
-			"change between thresholds of first and second lookback windows with out-of-order subring calls": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-62*time.Minute)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					firstEarlyThreshold := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now.Add(-3*time.Minute))
-					firstLaterThreshold := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.NotSame(t, firstEarlyThreshold, firstLaterThreshold)
-
-					secondEarlyThreshold := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now.Add(-3*time.Minute))
-					// The subring for the later lookback window should evict the cache entry for the earlier window.
-					require.NotSame(t, firstEarlyThreshold, secondEarlyThreshold)
-
-					secondLaterThreshold := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					// The subring for the later lookback window should still be cached.
-					require.Same(t, firstLaterThreshold, secondLaterThreshold)
-
-					firstEarlyReplicationSet, err := firstEarlyThreshold.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, firstEarlyReplicationSet.GetAddresses())
-
-					secondEarlyReplicationSet, err := secondEarlyThreshold.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, secondEarlyReplicationSet.GetAddresses())
-
-					laterReplicationSet, err := firstLaterThreshold.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, laterReplicationSet.GetAddresses())
-				},
-			},
-			"different lookback windows": {
-				instances: []InstanceDesc{
-					generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-1*time.Hour)),
-					generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-4", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 0) + 1}, now.Add(-2*time.Hour)),
-					generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
-				},
-				test: func(t *testing.T, ring *Ring) {
-					firstHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					firstHalfHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, 30*time.Minute, now)
-					require.NotSame(t, firstHourWindow, firstHalfHourWindow, "should not reuse subring for different lookback windows when results are not equivalent")
-
-					secondHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
-					require.Same(t, firstHourWindow, secondHourWindow, "should reuse subring for identical request")
-
-					secondHalfHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, 30*time.Minute, now)
-					require.Same(t, firstHalfHourWindow, secondHalfHourWindow, "should separately cache rings for different lookback windows")
-
-					hourReplicationSet, err := firstHourWindow.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, hourReplicationSet.GetAddresses())
-
-					halfHourReplicationSet, err := firstHalfHourWindow.GetAllHealthy(Read)
-					require.NoError(t, err)
-					require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, halfHourReplicationSet.GetAddresses())
-
-					twentyMinuteWindow := ring.ShuffleShardWithLookback(userID, subringSize, 20*time.Minute, now)
-					require.NotSame(t, firstHalfHourWindow, twentyMinuteWindow, "should not reuse subring for different lookback windows even if results are currently equivalent")
-				},
-			},
-		}
-
-		for name, scenario := range scenarios {
-			t.Run(name, func(t *testing.T) {
-				cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
-				registry := prometheus.NewRegistry()
-				ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
-				require.NoError(t, err)
-
-				instancesMap := make(map[string]InstanceDesc, len(scenario.instances))
-				for _, instance := range scenario.instances {
-					instancesMap[instance.Addr] = instance
-				}
-
-				require.Len(t, instancesMap, len(scenario.instances), "invalid test case: one or more instances share the same name")
-
-				ringDesc := &Desc{Ingesters: instancesMap}
-				ring.updateRingState(ringDesc)
-				scenario.test(t, ring)
-			})
-		}
-	}
-
-	func TestRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
-		const (
-			numWorkers           = 10
-			numRequestsPerWorker = 1000
-		)
-
-		now := time.Now()
-		cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
-		registry := prometheus.NewRegistry()
-		ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
+	t.Run("identical requests", func(t *testing.T) {
+		first, err := ring.ShuffleShardWithLookback(tenantID, subringSize, time.Minute, now)
 		require.NoError(t, err)
 
-		gen := initTokenGenerator(t)
-
-		// Add some instances to the ring.
-		ringDesc := &Desc{Ingesters: map[string]InstanceDesc{
-			"instance-1": generateRingInstanceWithInfo("instance-1", "zone-a", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-			"instance-2": generateRingInstanceWithInfo("instance-2", "zone-a", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-			"instance-3": generateRingInstanceWithInfo("instance-3", "zone-b", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-			"instance-4": generateRingInstanceWithInfo("instance-4", "zone-b", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-			"instance-5": generateRingInstanceWithInfo("instance-5", "zone-c", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-			"instance-6": generateRingInstanceWithInfo("instance-6", "zone-c", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-		}}
-
-		ring.updateRingState(ringDesc)
-
-		// Start the workers.
-		wg := sync.WaitGroup{}
-		wg.Add(numWorkers)
-
-		for w := 0; w < numWorkers; w++ {
-			go func(workerID int) {
-				defer wg.Done()
-
-				// Get the subring once. This is the one expected from subsequent requests.
-				userID := fmt.Sprintf("user-%d", workerID)
-				expected := ring.ShuffleShardWithLookback(userID, 3, time.Hour, now)
-
-				for r := 0; r < numRequestsPerWorker; r++ {
-					actual := ring.ShuffleShardWithLookback(userID, 3, time.Hour, now)
-					require.Equal(t, expected, actual)
-
-					// Get the subring for a new user each time too, in order to stress the setter too
-					// (if we only read from the cache there's no read/write concurrent access).
-					ring.ShuffleShardWithLookback(fmt.Sprintf("stress-%d", r), 3, time.Hour, now)
-				}
-			}(w)
-		}
-
-		// Wait until all workers have done.
-		wg.Wait()
-	}
-
-// This test checks if shuffle-sharded ring can be reused, and whether it receives
-// updates from "main" ring.
-
-	func TestRing_ShuffleShard_Caching(t *testing.T) {
-		t.Parallel()
-
-		inmem, closer := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
-			MaxCasRetries: 20,
-			CasRetryDelay: 500 * time.Millisecond,
-		}, log.NewNopLogger(), nil)
-		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-		cfg := Config{
-			KVStore:              kv.Config{Mock: inmem},
-			HeartbeatTimeout:     1 * time.Minute,
-			ReplicationFactor:    3,
-			ZoneAwarenessEnabled: true,
-		}
-
-		ring, err := New(cfg, "test", "test", log.NewNopLogger(), nil)
+		second, err := ring.ShuffleShardWithLookback(tenantID, subringSize, time.Minute, now)
 		require.NoError(t, err)
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ring))
-		t.Cleanup(func() {
-			_ = services.StopAndAwaitTerminated(context.Background(), ring)
-		})
 
-		// We will stop <number of zones> instances later, to see that subring is recomputed.
-		const zones = 3
-		const numLifecyclers = zones * 3 // 3 instances in each zone.
+		require.Same(t, first, second)
+		require.Equal(t, []int32{2, 3, 5}, first.ActivePartitionIDs())
+	})
 
-		lcs := []*Lifecycler(nil)
-		for i := 0; i < numLifecyclers; i++ {
-			lc := startLifecycler(t, cfg, 500*time.Millisecond, i, zones)
+	t.Run("different shard size", func(t *testing.T) {
+		first, err := ring.ShuffleShardWithLookback(tenantID, subringSize, time.Minute, now)
+		require.NoError(t, err)
 
-			lcs = append(lcs, lc)
-		}
+		second, err := ring.ShuffleShardWithLookback(tenantID, subringSize+1, time.Minute, now)
+		require.NoError(t, err)
 
-		// Wait until all instances in the ring are ACTIVE.
-		test.Poll(t, 5*time.Second, numLifecyclers, func() interface{} {
-			active := 0
-			rs, _ := ring.GetReplicationSetForOperation(Read)
-			for _, ing := range rs.Instances {
-				if ing.State == ACTIVE {
-					active++
-				}
-			}
-			return active
-		})
+		require.NotSame(t, first, second)
+		require.Equal(t, []int32{2, 3, 5}, first.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 3, 5}, second.ActivePartitionIDs())
+	})
 
-		// Use shardSize = zones, to get one instance from each zone.
-		const shardSize = zones
-		const user = "user"
+	t.Run("different identifiers", func(t *testing.T) {
+		first, err := ring.ShuffleShardWithLookback(tenantID, subringSize, time.Minute, now)
+		require.NoError(t, err)
 
-		// This subring should be cached, and reused.
-		subring := ring.ShuffleShard(user, shardSize)
+		second, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, time.Minute, now)
+		require.NoError(t, err)
 
-		// Do 100 iterations over two seconds. Make sure we get the same subring.
-		const iters = 100
-		sleep := (2 * time.Second) / iters
-		for i := 0; i < iters; i++ {
-			newSubring := ring.ShuffleShard(user, shardSize)
-			require.Same(t, subring, newSubring, "cached subring reused")
-			require.Equal(t, shardSize, subring.InstancesCount())
-			time.Sleep(sleep)
-		}
+		require.NotSame(t, first, second)
+		require.Equal(t, []int32{2, 3, 5}, first.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 4, 6}, second.ActivePartitionIDs())
+	})
 
-		// Make sure subring has up-to-date timestamps.
-		{
-			rs, err := subring.GetReplicationSetForOperation(Read)
+	t.Run("different lookback windows", func(t *testing.T) {
+		first, err := ring.ShuffleShardWithLookback(tenantID, subringSize, 30*time.Minute, now)
+		require.NoError(t, err)
+
+		second, err := ring.ShuffleShardWithLookback(tenantID, subringSize, 80*time.Minute, now)
+		require.NoError(t, err)
+
+		third, err := ring.ShuffleShardWithLookback(tenantID, subringSize, 100*time.Minute, now)
+		require.NoError(t, err)
+
+		require.NotSame(t, first, second)
+		require.NotSame(t, first, third)
+		require.Equal(t, []int32{2, 3, 5}, first.ActivePartitionIDs())
+		require.Equal(t, []int32{2, 3, 5}, second.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 3, 4, 5}, third.ActivePartitionIDs())
+	})
+
+	t.Run("same lookback window at different times, both over a period touching the most recent partition state change", func(t *testing.T) {
+		first, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 80*time.Minute, now)
+		require.NoError(t, err)
+
+		second, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 80*time.Minute, now.Add(5*time.Minute))
+		require.NoError(t, err)
+
+		require.Same(t, first, second)
+		require.Equal(t, []int32{1, 2, 4, 6}, first.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 4, 6}, second.ActivePartitionIDs())
+	})
+
+	t.Run("same lookback window at different times, crossing the period of the most recent partition state change", func(t *testing.T) {
+		first, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 80*time.Minute, now)
+		require.NoError(t, err)
+
+		second, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 80*time.Minute, now.Add(30*time.Minute))
+		require.NoError(t, err)
+
+		require.NotSame(t, first, second)
+		require.Equal(t, []int32{1, 2, 4, 6}, first.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 4, 6}, second.ActivePartitionIDs())
+	})
+
+	t.Run("same lookback window at different times, crossing the period of the 2 most recent partition state changes", func(t *testing.T) {
+		first, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 100*time.Minute, now)
+		require.NoError(t, err)
+
+		second, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 100*time.Minute, now.Add(60*time.Minute))
+		require.NoError(t, err)
+
+		require.NotSame(t, first, second)
+		require.Equal(t, []int32{1, 2, 3, 4, 6}, first.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 4, 6}, second.ActivePartitionIDs())
+	})
+
+	t.Run("same lookback window at different alternate times, crossing the period of the most recent partition state change", func(t *testing.T) {
+		firstEarly, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 62*time.Minute, now)
+		require.NoError(t, err)
+
+		firstLate, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 62*time.Minute, now.Add(5*time.Minute))
+		require.NoError(t, err)
+
+		require.NotSame(t, firstEarly, firstLate)
+		require.Equal(t, []int32{1, 2, 4, 6}, firstEarly.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 4, 6}, firstLate.ActivePartitionIDs())
+
+		// Run again the same requests.
+		secondEarly, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 62*time.Minute, now)
+		require.NoError(t, err)
+
+		secondLate, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 62*time.Minute, now.Add(5*time.Minute))
+		require.NoError(t, err)
+
+		require.NotSame(t, secondEarly, secondLate)
+		require.Equal(t, firstEarly.ActivePartitionIDs(), secondEarly.ActivePartitionIDs())
+		require.Equal(t, firstLate.ActivePartitionIDs(), secondLate.ActivePartitionIDs())
+
+		// The early cached entry should have been invalidated.
+		require.NotSame(t, firstEarly, secondEarly)
+
+		// The late cached entry is preserved because cache skips caching an entry if its timestamp is older
+		// than the one already cached.
+		require.Same(t, firstLate, secondLate)
+	})
+
+	t.Run("a lookback window that effectively includes all partitions", func(t *testing.T) {
+		first, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 12*time.Hour, now)
+		require.NoError(t, err)
+
+		second, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 12*time.Hour, now.Add(30*time.Minute))
+		require.NoError(t, err)
+
+		require.Same(t, first, second)
+		require.Equal(t, []int32{1, 2, 3, 4, 5, 6}, first.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 3, 4, 5, 6}, second.ActivePartitionIDs())
+	})
+}
+
+func TestPartitionRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
+	const (
+		numWorkers            = 10
+		numRequestsPerWorker  = 1000
+		numActivePartitions   = 100
+		numInactivePartitions = 10
+		shardSize             = 3
+		lookback              = time.Hour
+	)
+
+	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+
+	// Since partitions are created at time.Now(), we to advance the test mocked time
+	// so that we're outside the lookback window (otherwise there's no caching involved).
+	now := time.Now().Add(2 * time.Hour)
+
+	// Start the workers.
+	wg := sync.WaitGroup{}
+	wg.Add(numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func(workerID int) {
+			defer wg.Done()
+
+			// Get the subring once. This is the one expected from subsequent requests.
+			userID := fmt.Sprintf("user-%d", workerID)
+			expected, err := ring.ShuffleShardWithLookback(userID, shardSize, lookback, now)
 			require.NoError(t, err)
 
-			now := time.Now()
-			for _, ing := range rs.Instances {
-				// Lifecyclers use 500ms refresh, but timestamps use 1s resolution, so we better give it some extra buffer.
-				assert.InDelta(t, now.UnixNano(), time.Unix(ing.Timestamp, 0).UnixNano(), float64(2*time.Second.Nanoseconds()))
+			for r := 0; r < numRequestsPerWorker; r++ {
+				actual, err := ring.ShuffleShardWithLookback(userID, shardSize, lookback, now)
+				require.NoError(t, err)
+				require.Equal(t, expected, actual)
+
+				// Get the subring for a new user each time too, in order to stress the setter too
+				// (if we only read from the cache there's no read/write concurrent access).
+				_, err = ring.ShuffleShardWithLookback(fmt.Sprintf("stress-%d", r), 3, lookback, now)
+				require.NoError(t, err)
 			}
-		}
-
-		// Now stop one lifecycler from each zone. Subring needs to be recomputed.
-		for i := 0; i < zones; i++ {
-			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), lcs[i]))
-		}
-
-		test.Poll(t, 5*time.Second, numLifecyclers-zones, func() interface{} {
-			return ring.InstancesCount()
-		})
-
-		// Change of instances -> new subring needed.
-		newSubring := ring.ShuffleShard("user", zones)
-		require.NotSame(t, subring, newSubring)
-		require.Equal(t, zones, subring.InstancesCount())
-
-		// Change of shard size -> new subring needed.
-		subring = newSubring
-		newSubring = ring.ShuffleShard("user", 1)
-		require.NotSame(t, subring, newSubring)
-		// Zone-aware shuffle-shard gives all zones the same number of instances (at least one).
-		require.Equal(t, zones, newSubring.InstancesCount())
-
-		// Verify that getting the same subring uses cached instance.
-		subring = newSubring
-		newSubring = ring.ShuffleShard("user", 1)
-		require.Same(t, subring, newSubring)
-
-		// But after cleanup, it doesn't.
-		ring.CleanupShuffleShardCache("user")
-		newSubring = ring.ShuffleShard("user", 1)
-		require.NotSame(t, subring, newSubring)
-
-		// If we ask for ALL instances, we get original ring.
-		newSubring = ring.ShuffleShard("user", numLifecyclers)
-		require.Same(t, ring, newSubring)
-
-		// If we ask for single instance, but use long lookback, we get all instances again (original ring).
-		newSubring = ring.ShuffleShardWithLookback("user", 1, 10*time.Minute, time.Now())
-		require.Same(t, ring, newSubring)
+		}(w)
 	}
 
-	func BenchmarkRing_ShuffleShard(b *testing.B) {
-		for _, numInstances := range []int{50, 100, 1000} {
-			for _, numZones := range []int{1, 3} {
-				for _, shardSize := range []int{3, 10, 30} {
-					b.Run(fmt.Sprintf("num instances = %d, num zones = %d, shard size = %d", numInstances, numZones, shardSize), func(b *testing.B) {
-						benchmarkShuffleSharding(b, numInstances, numZones, 128, shardSize, false)
-					})
-				}
-			}
-		}
-	}
+	// Wait until all workers have done.
+	wg.Wait()
 
-	func BenchmarkRing_ShuffleShardCached(b *testing.B) {
-		for _, numInstances := range []int{50, 100, 1000} {
-			for _, numZones := range []int{1, 3} {
-				for _, shardSize := range []int{3, 10, 30} {
-					b.Run(fmt.Sprintf("num instances = %d, num zones = %d, shard size = %d", numInstances, numZones, shardSize), func(b *testing.B) {
-						benchmarkShuffleSharding(b, numInstances, numZones, 128, shardSize, true)
-					})
-				}
-			}
-		}
-	}
+	// Ensure the cache was populated.
+	assert.NotEmpty(t, ring.shuffleShardCache.cacheWithLookback)
+	assert.Empty(t, ring.shuffleShardCache.cacheWithoutLookback)
+}
 
-	func BenchmarkRing_ShuffleShard_512Tokens(b *testing.B) {
-		const (
-			numInstances = 30
-			numZones     = 3
-			numTokens    = 512
-			shardSize    = 9
-			cacheEnabled = false
-		)
-
-		benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
-	}
-
-	func BenchmarkRing_ShuffleShard_LargeShardSize(b *testing.B) {
-		const (
-			numInstances = 300 // = 100 per zone
-			numZones     = 3
-			numTokens    = 512
-			shardSize    = 270 // = 90 per zone
-			cacheEnabled = false
-		)
-
-		benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
-	}
-
-	func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, shardSize int, cache bool) {
-		// Initialise the ring.
-		ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), numInstances, numZones, numTokens)}
-		ring := Ring{
-			cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: !cache},
-			ringDesc:             ringDesc,
-			ringTokens:           ringDesc.GetTokens(),
-			ringTokensByZone:     ringDesc.getTokensByZone(),
-			ringInstanceByToken:  ringDesc.getTokensInfo(),
-			ringZones:            getZones(ringDesc.getTokensByZone()),
-			shuffledSubringCache: map[subringCacheKey]*Ring{},
-			strategy:             NewDefaultReplicationStrategy(),
-			lastTopologyChange:   time.Now(),
-		}
-
-		b.ResetTimer()
-
-		for n := 0; n < b.N; n++ {
-			ring.ShuffleShard("tenant-1", shardSize)
-		}
-	}
-*/
 func generatePartitionWithInfo(state PartitionState, stateTS time.Time) PartitionDesc {
 	return PartitionDesc{
 		State:          state,

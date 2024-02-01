@@ -77,6 +77,8 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, PartitionDesc,
 // predictable numbers. The random generator is initialised with a seed based on the
 // provided identifier.
 //
+// This function returns a subring containing ONLY ACTIVE partitions.
+//
 // This function supports caching.
 //
 // This implementation guarantees:
@@ -98,12 +100,6 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 		return nil, err
 	}
 
-	// The shuffleShard() function returns nil if the subring is equal to this ring.
-	// We don't cache it in that case, since it was shortcut by shuffleShard().
-	if subring == nil {
-		return r, nil
-	}
-
 	r.shuffleShardCache.setSubring(identifier, size, subring)
 	return subring, nil
 }
@@ -111,7 +107,8 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 // ShuffleShardWithLookback is like ShuffleShard() but the returned subring includes all instances
 // that have been part of the identifier's shard since "now - lookbackPeriod".
 //
-// The returned subring be never used for write operations (read only).
+// This function can return a mix of ACTIVE and INACTIVE partitions. INACTIVE partitions are only
+// included if they were part of the identifier's shard within the lookbackPeriod.
 //
 // This function supports caching, but the cache will only be effective if successive calls for the
 // same identifier are with the same lookbackPeriod and increasing values of now.
@@ -125,20 +122,15 @@ func (r *PartitionRing) ShuffleShardWithLookback(identifier string, size int, lo
 		return nil, err
 	}
 
-	// The shuffleShard() function returns nil if the subring is equal to this ring.
-	// We don't cache it in that case, since it was shortcut by shuffleShard().
-	if subring == nil {
-		return r, nil
-	}
-
 	r.shuffleShardCache.setSubringWithLookback(identifier, size, lookbackPeriod, now, subring)
 	return subring, nil
 }
 
 func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
-	// Nothing to do if the shard size is not smaller then the actual ring.
+	// If the size is too small or too large, run with a size equal to the total number of partitions.
+	// We have to run the function anyway because the logic may filter out some INACTIVE partitions.
 	if size <= 0 || size >= len(r.desc.Partitions) {
-		return nil, nil
+		size = len(r.desc.Partitions)
 	}
 
 	lookbackUntil := now.Add(-lookbackPeriod).Unix()
@@ -153,14 +145,17 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 	tokensCount := len(r.ringTokens)
 
 	result := make(map[int32]struct{}, size)
+	exclude := map[int32]struct{}{}
+
 	for len(result) < size {
 		start := searchToken(r.ringTokens, random.Uint32())
 		iterations := 0
-
 		found := false
+
 		for p := start; !found && iterations < tokensCount; p++ {
 			iterations++
 
+			// Wrap p around in the ring.
 			if p >= tokensCount {
 				p %= tokensCount
 			}
@@ -170,30 +165,60 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 				return nil, ErrInconsistentTokensInfo
 			}
 
-			// Ensure we select new partition.
+			// Ensure the partition has not already been included or excluded.
 			if _, ok := result[pid]; ok {
 				continue
 			}
-
-			// Include found partition in the result.
-			result[pid] = struct{}{}
+			if _, ok := exclude[pid]; ok {
+				continue
+			}
 
 			p, ok := r.desc.Partition(pid)
 			if !ok {
 				return nil, ErrInconsistentTokensInfo
 			}
 
-			// If this partition is inactive (read-only), or became active recently (based on lookback), we need to include more partitions.
-			if !p.IsActive() || (lookbackPeriod > 0 && p.BecameActiveAfter(lookbackUntil)) {
-				size++
+			var (
+				shouldInclude = false
+				shouldExtend  = false
+			)
 
-				// If we now need to find all partitions, just return nil to indicate that.
-				if size >= len(r.desc.Partitions) {
-					return nil, nil
+			// Check whether the partition should be included in the result and/or the result set extended.
+			if lookbackPeriod > 0 {
+				if p.IsActive() {
+					// The partition is active. We should include it. The result set is extended only
+					// if the partition became active within the lookback window.
+					shouldInclude = true
+					shouldExtend = p.GetStateTimestamp() >= lookbackUntil
+				} else {
+					// The partition is inactive. We should include it (and then extend the result set)
+					// only if became inactive within the lookback window.
+					shouldInclude = p.GetStateTimestamp() >= lookbackUntil
+					shouldExtend = shouldInclude
 				}
+			} else {
+				// No lookback was provided. We only include active partitions and don't lookback.
+				shouldInclude = p.IsActive()
+				shouldExtend = false
 			}
 
-			found = true
+			// Either include or exclude the found partition.
+			if shouldInclude {
+				result[pid] = struct{}{}
+			} else {
+				exclude[pid] = struct{}{}
+			}
+
+			// Extend the shard, if requested.
+			if shouldExtend {
+				size++
+			}
+
+			// We can stop searching for other partitions only if this partition was included
+			// and no extension was requested, which means it's the "stop partition" for this cycle.
+			if shouldInclude && !shouldExtend {
+				found = true
+			}
 		}
 
 		// If we iterated over all tokens, and no new partition has been found, we can stop looking for more partitions.
@@ -215,13 +240,55 @@ func (r *PartitionRing) PartitionsCount() int {
 	return len(r.desc.Partitions)
 }
 
-// ActivePartitionIDs returns a list of all active partition IDs in the ring.
+// Partitions returns the partitions in the ring.
+// The returned slice is a deep copy, so the caller can freely manipulate it.
+func (r *PartitionRing) Partitions() []PartitionDesc {
+	res := make([]PartitionDesc, 0, len(r.desc.Partitions))
+
+	for _, partition := range r.desc.Partitions {
+		res = append(res, partition.Clone())
+	}
+
+	return res
+}
+
+// PartitionIDs returns a list of all partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
-func (r *PartitionRing) ActivePartitionIDs() []int32 {
+func (r *PartitionRing) PartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
 
 	for id := range r.desc.Partitions {
 		ids = append(ids, id)
+	}
+
+	slices.Sort(ids)
+	return ids
+}
+
+// ActivePartitionIDs returns a list of all ACTIVE partition IDs in the ring.
+// The returned slice is a copy, so the caller can freely manipulate it.
+func (r *PartitionRing) ActivePartitionIDs() []int32 {
+	ids := make([]int32, 0, len(r.desc.Partitions))
+
+	for id, partition := range r.desc.Partitions {
+		if partition.IsActive() {
+			ids = append(ids, id)
+		}
+	}
+
+	slices.Sort(ids)
+	return ids
+}
+
+// InactivePartitionIDs returns a list of all INACTIVE partition IDs in the ring.
+// The returned slice is a copy, so the caller can freely manipulate it.
+func (r *PartitionRing) InactivePartitionIDs() []int32 {
+	ids := make([]int32, 0, len(r.desc.Partitions))
+
+	for id, partition := range r.desc.Partitions {
+		if !partition.IsActive() {
+			ids = append(ids, id)
+		}
 	}
 
 	slices.Sort(ids)

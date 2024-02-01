@@ -309,3 +309,7 @@ func (m *PartitionRingDesc) Clone() memberlist.Mergeable {
 
 	return clone
 }
+
+func (m PartitionDesc) Clone() PartitionDesc {
+	return *(proto.Clone(&m).(*PartitionDesc))
+}

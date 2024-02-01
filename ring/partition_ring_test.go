@@ -3,6 +3,7 @@ package ring
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -130,7 +131,23 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 		assert.Equal(t, numActivePartitions, subring.PartitionsCount())
 	})
 
-	// TODO logic around inactive partitions
+	t.Run("should never return INACTIVE partitions", func(t *testing.T) {
+		const (
+			numActivePartitions   = 5
+			numInactivePartitions = 5
+		)
+
+		ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+
+		for shardSize := 1; shardSize <= numActivePartitions+numInactivePartitions; shardSize++ {
+			subring, err := ring.ShuffleShard("tenant-id", shardSize)
+			require.NoError(t, err)
+
+			for _, partition := range subring.Partitions() {
+				assert.Equal(t, PartitionActive, partition.State)
+			}
+		}
+	})
 }
 
 // This test asserts on shard stability across multiple invocations and given the same input ring.
@@ -193,7 +210,7 @@ func TestPartitionRing_ShuffleShard_Shuffling(t *testing.T) {
 		subring, err := ring.ShuffleShard(tenantID, shardSize)
 		require.NoError(t, err)
 
-		partitionsByTenant[tenantID] = subring.ActivePartitionIDs()
+		partitionsByTenant[tenantID] = subring.PartitionIDs()
 	}
 
 	// Compute the distribution of matching partitions between every combination of shards.
@@ -228,7 +245,6 @@ func TestPartitionRing_ShuffleShard_Shuffling(t *testing.T) {
 	}
 }
 
-// TODO test with inactive partitions too
 func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *testing.T) {
 	type change string
 
@@ -240,16 +256,18 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 	}
 
 	const (
-		numTenants = 100
-		add        = change("add-partition")
-		remove     = change("remove-partition")
+		numTenants              = 100
+		addActivePartition      = change("add-active-partition")
+		switchInactivePartition = change("switch-inactive-partition")
+		removeActivePartition   = change("remove-active-partition")
+		removeInactivePartition = change("remove-inactive-partition")
 	)
 
 	// Generate all test scenarios.
 	var scenarios []scenario
 	for _, numPartitions := range []int{20, 30, 40, 50} {
 		for _, shardSize := range []int{3, 6, 9, 12, 15} {
-			for _, c := range []change{add, remove} {
+			for _, c := range []change{addActivePartition, switchInactivePartition, removeActivePartition, removeInactivePartition} {
 				scenarios = append(scenarios, scenario{
 					name:          fmt.Sprintf("partitions = %d, shard size = %d, ring operation = %s", numPartitions, shardSize, c),
 					numPartitions: numPartitions,
@@ -261,28 +279,42 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 	}
 
 	for _, s := range scenarios {
+		s := s
+
 		t.Run(s.name, func(t *testing.T) {
-			ring := createPartitionRingWithPartitions(s.numPartitions, 0)
+			t.Parallel()
+
+			// Always include 5 inactive partitions.
+			ring := createPartitionRingWithPartitions(s.numPartitions, 5)
 
 			// Compute the initial shard for each tenant.
 			initial := map[int][]int32{}
 			for id := 0; id < numTenants; id++ {
 				subring, err := ring.ShuffleShard(fmt.Sprintf("%d", id), s.shardSize)
 				require.NoError(t, err)
-				// TODO we should compare all partitions when adding inactive too
-				initial[id] = subring.ActivePartitionIDs()
+				initial[id] = subring.PartitionIDs()
 			}
 
 			// Update the ring.
 			switch s.ringChange {
-			case add:
+			case addActivePartition:
 				desc := &(ring.desc)
 				desc.AddPartition(int32(s.numPartitions+1), PartitionActive, time.Now())
 				ring = NewPartitionRing(*desc)
-			case remove:
-				// Remove the first one.
+			case switchInactivePartition:
+				// Switch to first active partition to inactive.
+				desc := &(ring.desc)
+				desc.UpdatePartitionState(ring.ActivePartitionIDs()[0], PartitionInactive, time.Now())
+				ring = NewPartitionRing(*desc)
+			case removeActivePartition:
+				// Remove the first active partition.
 				desc := &(ring.desc)
 				desc.RemovePartition(ring.ActivePartitionIDs()[0])
+				ring = NewPartitionRing(*desc)
+			case removeInactivePartition:
+				// Remove the first inactive partition.
+				desc := &(ring.desc)
+				desc.RemovePartition(ring.InactivePartitionIDs()[0])
 				ring = NewPartitionRing(*desc)
 			}
 
@@ -292,9 +324,7 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 			for id := 0; id < numTenants; id++ {
 				subring, err := ring.ShuffleShard(fmt.Sprintf("%d", id), s.shardSize)
 				require.NoError(t, err)
-
-				// TODO we should compare all partitions when adding inactive too
-				updated := subring.ActivePartitionIDs()
+				updated := subring.PartitionIDs()
 
 				added, removed := comparePartitionIDs(initial[id], updated)
 				assert.LessOrEqual(t, len(added), 1)
@@ -311,13 +341,13 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) 
 	firstShard, err := ring.ShuffleShard("tenant-id", 3)
 	require.NoError(t, err)
 	assert.Equal(t, 3, firstShard.PartitionsCount())
-	firstPartitions := firstShard.ActivePartitionIDs()
+	firstPartitions := firstShard.PartitionIDs()
 
 	// Increase shard size to 6.
 	secondShard, err := ring.ShuffleShard("tenant-id", 6)
 	require.NoError(t, err)
 	assert.Equal(t, 6, secondShard.PartitionsCount())
-	secondPartitions := secondShard.ActivePartitionIDs()
+	secondPartitions := secondShard.PartitionIDs()
 
 	for _, id := range firstPartitions {
 		assert.True(t, slices.Contains(secondPartitions, id), "new shard is expected to include previous partition %s", id)
@@ -327,7 +357,7 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) 
 	thirdShard, err := ring.ShuffleShard("tenant-id", 9)
 	require.NoError(t, err)
 	assert.Equal(t, 9, thirdShard.PartitionsCount())
-	thirdPartitions := thirdShard.ActivePartitionIDs()
+	thirdPartitions := thirdShard.PartitionIDs()
 
 	for _, id := range secondPartitions {
 		assert.True(t, slices.Contains(thirdPartitions, id), "new shard is expected to include previous partition %s", id)
@@ -337,7 +367,7 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) 
 	fourthShard, err := ring.ShuffleShard("tenant-id", 6)
 	require.NoError(t, err)
 	assert.Equal(t, 6, fourthShard.PartitionsCount())
-	fourthPartitions := fourthShard.ActivePartitionIDs()
+	fourthPartitions := fourthShard.PartitionIDs()
 
 	// We expect to have the same exact instances we had when the shard size was 6.
 	assert.Equal(t, secondPartitions, fourthPartitions)
@@ -346,7 +376,7 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) 
 	fifthShard, err := ring.ShuffleShard("tenant-id", 3)
 	require.NoError(t, err)
 	assert.Equal(t, 3, fifthShard.PartitionsCount())
-	fifthPartitions := fifthShard.ActivePartitionIDs()
+	fifthPartitions := fifthShard.PartitionIDs()
 
 	// We expect to have the same exact instances we had when the shard size was 3.
 	assert.Equal(t, firstPartitions, fifthPartitions)
@@ -436,9 +466,9 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still inactive, but now falls outside the lookback period
+				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to look back to partition 1
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
-				{what: test, shardSize: 2, expected: []int32{2, 1, 0}}, // TODO why?
+				{what: test, shardSize: 2, expected: []int32{1, 0}},
 				// Partition 2 becomes active again
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
@@ -461,9 +491,9 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				// Partition 2 switches to inactive
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still inactive, but now falls outside the lookback period
+				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to look back to partition 1
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
-				{what: test, shardSize: 2, expected: []int32{2, 1, 0}}, // TODO why?
+				{what: test, shardSize: 2, expected: []int32{1, 0}},
 				// Partition 2 now gone
 				{what: remove, partitionID: 2},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
@@ -519,168 +549,133 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 	}
 }
 
-/* TODO
 func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 	// The goal of this test is NOT to ensure that the minimum required number of partitions
 	// are returned at any given time, BUT at least all required partitions are returned.
 	var (
-		numInitialInstances = []int{9, 30, 60, 90}
-		numInitialZones     = []int{1, 3}
-		numEvents           = 100
-		lookbackPeriod      = time.Hour
-		delayBetweenEvents  = 5 * time.Minute // 12 events / hour
-		userID              = "user-1"
+		numInitialPartitions = []int{9, 30, 60, 90}
+		numEvents            = 100
+		lookbackPeriod       = time.Hour
+		delayBetweenEvents   = 5 * time.Minute // 12 events / hour
+		userID               = "user-1"
 	)
 
-	for _, updateOldestRegisteredTimestamp := range []bool{false, true} {
-		updateOldestRegisteredTimestamp := updateOldestRegisteredTimestamp
+	for _, numPartitions := range numInitialPartitions {
+		numPartitions := numPartitions
 
-		for _, numInstances := range numInitialInstances {
-			numInstances := numInstances
+		t.Run(fmt.Sprintf("partitions: %d", numPartitions), func(t *testing.T) {
+			t.Parallel()
 
-			for _, numZones := range numInitialZones {
-				numZones := numZones
+			// Randomise the seed but log it in case we need to reproduce the test on failure.
+			seed := time.Now().UnixNano()
+			rnd := rand.New(rand.NewSource(seed))
+			t.Log("random generator seed:", seed)
 
-				testName := fmt.Sprintf("num instances = %d, num zones = %d, update oldest registered timestamp = %v", numInstances, numZones, updateOldestRegisteredTimestamp)
+			// Initialise the ring.
+			ring := createPartitionRingWithPartitions(numPartitions, 0)
 
-				t.Run(testName, func(t *testing.T) {
-					t.Parallel()
+			// The simulation starts with the minimum shard size. Random events can later increase it.
+			shardSize := 1
 
-					// Randomise the seed but log it in case we need to reproduce the test on failure.
-					seed := time.Now().UnixNano()
-					rnd := rand.New(rand.NewSource(seed))
-					t.Log("random generator seed:", seed)
-					gen := NewRandomTokenGeneratorWithSeed(seed)
+			// Add the initial shard to the history.
+			currTime := time.Now()
+			subring, err := ring.shuffleShard(userID, shardSize, 0, currTime)
+			require.NoError(t, err)
 
-					// Initialise the ring.
-					ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
-					ring := Ring{
-						cfg: Config{
-							HeartbeatTimeout:     time.Hour,
-							ZoneAwarenessEnabled: true,
-							ReplicationFactor:    3,
-						},
-						ringDesc:            ringDesc,
-						ringTokens:          ringDesc.GetTokens(),
-						ringTokensByZone:    ringDesc.getTokensByZone(),
-						ringInstanceByToken: ringDesc.getTokensInfo(),
-						ringZones:           getZones(ringDesc.getTokensByZone()),
-						strategy:            NewDefaultReplicationStrategy(),
-					}
-					if updateOldestRegisteredTimestamp {
-						ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-					}
-
-					// The simulation starts with the minimum shard size. Random events can later increase it.
-					shardSize := numZones
-
-					// The simulation assumes the initial ring contains instances registered
-					// since more than the lookback period.
-					currTime := time.Now().Add(lookbackPeriod).Add(time.Minute)
-
-					// Add the initial shard to the history.
-					rs, err := ring.shuffleShard(userID, shardSize, 0, time.Now()).GetReplicationSetForOperation(Read)
-					require.NoError(t, err)
-
-					history := map[time.Time]ReplicationSet{
-						currTime: rs,
-					}
-
-					// Simulate a progression of random events over the time and, at each iteration of the simuation,
-					// make sure the subring includes all non-removed instances picked from previous versions of the
-					// ring up until the lookback period.
-					nextInstanceID := len(ringDesc.Ingesters) + 1
-
-					for i := 1; i <= numEvents; i++ {
-						currTime = currTime.Add(delayBetweenEvents)
-
-						switch r := rnd.Intn(100); {
-						case r < 80:
-							// Scale up instances by 1.
-							instanceID := fmt.Sprintf("instance-%d", nextInstanceID)
-							zoneID := fmt.Sprintf("zone-%d", nextInstanceID%numZones)
-							nextInstanceID++
-
-							ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, nil), currTime)
-
-							ring.ringTokens = ringDesc.GetTokens()
-							ring.ringTokensByZone = ringDesc.getTokensByZone()
-							ring.ringInstanceByToken = ringDesc.getTokensInfo()
-							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							if updateOldestRegisteredTimestamp {
-								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-							}
-						case r < 90:
-							// Scale down instances by 1. To make tests reproducible we get the instance IDs, sort them
-							// and then get a random index (using the random generator initialized with a constant seed).
-							instanceIDs := make([]string, 0, len(ringDesc.Ingesters))
-							for id := range ringDesc.Ingesters {
-								instanceIDs = append(instanceIDs, id)
-							}
-
-							sort.Strings(instanceIDs)
-
-							idxToRemove := rnd.Intn(len(instanceIDs))
-							idToRemove := instanceIDs[idxToRemove]
-							delete(ringDesc.Ingesters, idToRemove)
-
-							ring.ringTokens = ringDesc.GetTokens()
-							ring.ringTokensByZone = ringDesc.getTokensByZone()
-							ring.ringInstanceByToken = ringDesc.getTokensInfo()
-							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							if updateOldestRegisteredTimestamp {
-								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-							}
-
-							// Remove the terminated instance from the history.
-							for ringTime, ringState := range history {
-								for idx, desc := range ringState.Instances {
-									// In this simulation instance ID == instance address.
-									if desc.Addr != idToRemove {
-										continue
-									}
-
-									ringState.Instances = append(ringState.Instances[:idx], ringState.Instances[idx+1:]...)
-									history[ringTime] = ringState
-									break
-								}
-							}
-						default:
-							// Scale up shard size (keeping the per-zone balance).
-							shardSize += numZones
-						}
-
-						// Add the current shard to the history.
-						rs, err = ring.shuffleShard(userID, shardSize, 0, time.Now()).GetReplicationSetForOperation(Read)
-						require.NoError(t, err)
-						history[currTime] = rs
-
-						// Ensure the shard with lookback includes all instances from previous states of the ring.
-						rsWithLookback, err := ring.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, currTime).GetReplicationSetForOperation(Read)
-						require.NoError(t, err)
-
-						for ringTime, ringState := range history {
-							if ringTime.Before(currTime.Add(-lookbackPeriod)) {
-								// This entry from the history is obsolete, we can remove it.
-								delete(history, ringTime)
-								continue
-							}
-
-							for _, expectedAddr := range ringState.GetAddresses() {
-								if !rsWithLookback.Includes(expectedAddr) {
-									t.Fatalf(
-										"subring generated after event %d is expected to include instance %s from ring state at time %s but it's missing (actual instances are: %s)",
-										i, expectedAddr, ringTime.String(), strings.Join(rsWithLookback.GetAddresses(), ", "))
-								}
-							}
-						}
-					}
-				})
+			history := map[time.Time][]int32{
+				currTime: subring.PartitionIDs(),
 			}
-		}
+
+			// Advance the time. The simulation assumes the initial ring contains partitions added
+			// since more than the lookback period.
+			currTime = currTime.Add(lookbackPeriod).Add(time.Minute)
+
+			// Simulate a progression of random events over the time and, at each iteration of the simuation,
+			// make sure the subring includes all non-removed partitions picked from previous versions of the
+			// ring up until the lookback period.
+			nextPartitionID := ring.PartitionsCount()
+
+			for i := 1; i <= numEvents; i++ {
+				currTime = currTime.Add(delayBetweenEvents)
+
+				switch r := rnd.Intn(100); {
+				case r < 70:
+					// Add a partition.
+					desc := &(ring.desc)
+					desc.AddPartition(int32(nextPartitionID), PartitionActive, currTime)
+					ring = NewPartitionRing(*desc)
+
+					nextPartitionID++
+				case r < 80:
+					// Switch an active partition to inactive.
+					activeIDs := ring.ActivePartitionIDs()
+					if len(activeIDs) > 0 {
+						// Tests are reproducible because the list of partition IDs is sorted and the random
+						// generator is initialised with a known seed.
+						idToSwitch := int32(rnd.Intn(len(activeIDs)))
+
+						desc := &(ring.desc)
+						desc.UpdatePartitionState(idToSwitch, PartitionInactive, currTime)
+						ring = NewPartitionRing(*desc)
+					}
+				case r < 90:
+					// Remove an inactive partition.
+					inactiveIDs := ring.InactivePartitionIDs()
+					if len(inactiveIDs) > 0 {
+						// Tests are reproducible because the list of partition IDs is sorted and the random
+						// generator is initialised with a known seed.
+						idToRemove := int32(rnd.Intn(len(inactiveIDs)))
+
+						desc := &(ring.desc)
+						desc.RemovePartition(idToRemove)
+						ring = NewPartitionRing(*desc)
+
+						// Remove the partition from the history.
+						for ringTime, partitionIDs := range history {
+							for idx, partitionID := range partitionIDs {
+								if partitionID != idToRemove {
+									continue
+								}
+
+								history[ringTime] = append(partitionIDs[:idx], partitionIDs[idx+1:]...)
+								break
+							}
+						}
+					}
+				default:
+					// Scale up shard size.
+					shardSize++
+				}
+
+				// Add the current shard to the history.
+				subring, err = ring.shuffleShard(userID, shardSize, 0, time.Now())
+				require.NoError(t, err)
+				history[currTime] = subring.PartitionIDs()
+
+				// Ensure the shard with lookback includes all partitions from previous states of the ring.
+				subringWithLookback, err := ring.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, currTime)
+				require.NoError(t, err)
+				subringWithLookbackPartitionIDs := subringWithLookback.PartitionIDs()
+
+				for ringTime, ringPartitionIDs := range history {
+					if ringTime.Before(currTime.Add(-lookbackPeriod)) {
+						// This entry from the history is obsolete, we can remove it.
+						delete(history, ringTime)
+						continue
+					}
+
+					for _, expectedPartitionID := range ringPartitionIDs {
+						if !slices.Contains(subringWithLookbackPartitionIDs, expectedPartitionID) {
+							t.Fatalf(
+								"subring generated after event %d is expected to include partition %d from ring state at time %s but it's missing (actual partitions are: %v)",
+								i, expectedPartitionID, ringTime.String(), subringWithLookbackPartitionIDs)
+						}
+					}
+				}
+			}
+		})
 	}
 }
-*/
 
 func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 	var (
@@ -707,7 +702,7 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Same(t, first, second)
-		require.Equal(t, []int32{2, 3, 5}, first.ActivePartitionIDs())
+		require.Equal(t, []int32{2, 3, 5}, first.PartitionIDs())
 	})
 
 	t.Run("different shard size", func(t *testing.T) {
@@ -718,8 +713,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotSame(t, first, second)
-		require.Equal(t, []int32{2, 3, 5}, first.ActivePartitionIDs())
-		require.Equal(t, []int32{1, 2, 3, 5}, second.ActivePartitionIDs())
+		require.Equal(t, []int32{2, 3, 5}, first.PartitionIDs())
+		require.Equal(t, []int32{1, 2, 3, 5}, second.PartitionIDs())
 	})
 
 	t.Run("different identifiers", func(t *testing.T) {
@@ -730,8 +725,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotSame(t, first, second)
-		require.Equal(t, []int32{2, 3, 5}, first.ActivePartitionIDs())
-		require.Equal(t, []int32{1, 4, 6}, second.ActivePartitionIDs())
+		require.Equal(t, []int32{2, 3, 5}, first.PartitionIDs())
+		require.Equal(t, []int32{1, 4, 6}, second.PartitionIDs())
 	})
 
 	t.Run("different lookback windows", func(t *testing.T) {
@@ -746,9 +741,9 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 
 		require.NotSame(t, first, second)
 		require.NotSame(t, first, third)
-		require.Equal(t, []int32{2, 3, 5}, first.ActivePartitionIDs())
-		require.Equal(t, []int32{2, 3, 5}, second.ActivePartitionIDs())
-		require.Equal(t, []int32{1, 2, 3, 4, 5}, third.ActivePartitionIDs())
+		require.Equal(t, []int32{2, 3, 5}, first.PartitionIDs())
+		require.Equal(t, []int32{2, 3, 5}, second.PartitionIDs())
+		require.Equal(t, []int32{2, 3, 5, 6}, third.PartitionIDs())
 	})
 
 	t.Run("same lookback window at different times, both over a period touching the most recent partition state change", func(t *testing.T) {
@@ -759,8 +754,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Same(t, first, second)
-		require.Equal(t, []int32{1, 2, 4, 6}, first.ActivePartitionIDs())
-		require.Equal(t, []int32{1, 2, 4, 6}, second.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 4, 6}, first.PartitionIDs())
+		require.Equal(t, []int32{1, 2, 4, 6}, second.PartitionIDs())
 	})
 
 	t.Run("same lookback window at different times, crossing the period of the most recent partition state change", func(t *testing.T) {
@@ -771,8 +766,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotSame(t, first, second)
-		require.Equal(t, []int32{1, 2, 4, 6}, first.ActivePartitionIDs())
-		require.Equal(t, []int32{1, 4, 6}, second.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 4, 6}, first.PartitionIDs())
+		require.Equal(t, []int32{1, 4, 6}, second.PartitionIDs())
 	})
 
 	t.Run("same lookback window at different times, crossing the period of the 2 most recent partition state changes", func(t *testing.T) {
@@ -783,8 +778,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotSame(t, first, second)
-		require.Equal(t, []int32{1, 2, 3, 4, 6}, first.ActivePartitionIDs())
-		require.Equal(t, []int32{1, 4, 6}, second.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 4, 5, 6}, first.PartitionIDs())
+		require.Equal(t, []int32{1, 4, 6}, second.PartitionIDs())
 	})
 
 	t.Run("same lookback window at different alternate times, crossing the period of the most recent partition state change", func(t *testing.T) {
@@ -795,8 +790,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotSame(t, firstEarly, firstLate)
-		require.Equal(t, []int32{1, 2, 4, 6}, firstEarly.ActivePartitionIDs())
-		require.Equal(t, []int32{1, 4, 6}, firstLate.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 4, 6}, firstEarly.PartitionIDs())
+		require.Equal(t, []int32{1, 4, 6}, firstLate.PartitionIDs())
 
 		// Run again the same requests.
 		secondEarly, err := ring.ShuffleShardWithLookback(otherTenantID, subringSize, 62*time.Minute, now)
@@ -806,8 +801,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotSame(t, secondEarly, secondLate)
-		require.Equal(t, firstEarly.ActivePartitionIDs(), secondEarly.ActivePartitionIDs())
-		require.Equal(t, firstLate.ActivePartitionIDs(), secondLate.ActivePartitionIDs())
+		require.Equal(t, firstEarly.PartitionIDs(), secondEarly.PartitionIDs())
+		require.Equal(t, firstLate.PartitionIDs(), secondLate.PartitionIDs())
 
 		// The early cached entry should have been invalidated.
 		require.NotSame(t, firstEarly, secondEarly)
@@ -825,8 +820,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Same(t, first, second)
-		require.Equal(t, []int32{1, 2, 3, 4, 5, 6}, first.ActivePartitionIDs())
-		require.Equal(t, []int32{1, 2, 3, 4, 5, 6}, second.ActivePartitionIDs())
+		require.Equal(t, []int32{1, 2, 3, 4, 5, 6}, first.PartitionIDs())
+		require.Equal(t, []int32{1, 2, 3, 4, 5, 6}, second.PartitionIDs())
 	})
 }
 

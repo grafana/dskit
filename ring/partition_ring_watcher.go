@@ -92,7 +92,7 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 }
 
 // GetRing returns the most updated snapshot of the PartitionRing. The returned instance
-// is immutable and will not updated if new changes will be done to the ring.
+// is immutable and will not be updated if new changes are done to the ring.
 func (w *PartitionRingWatcher) GetRing() *PartitionRing {
 	w.ringMx.Lock()
 	defer w.ringMx.Unlock()

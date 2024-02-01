@@ -25,7 +25,7 @@ message PartitionDesc {
   // The state of the partition.
   PartitionState state = 2;
 
-  // Timestamp (with seconds precision) of when has the state changed last time for this partition.
+  // Unix timestamp (with seconds precision) of when has the state changed last time for this partition.
   int64 stateTimestamp = 3;
 }
 
@@ -35,27 +35,29 @@ enum PartitionState {
   // Active partition in read-write mode.
   PartitionActive = 1;
 
-  // Inactive partition in read-only mode. This partition will be deleted after a grace period.
+  // Inactive partition in read-only mode. This partition will be deleted after a grace period,
+  // unless its state changes to Active again.
   PartitionInactive = 2;
 
   // Deleted partition. This state is not visible to ring clients: it's only used to propagate
-  // via memberlist the information that a partition has been deleted. Partitions in this state
-  // are removed before client can see them.
+  // via memberlist the information that a partition has been deleted.
   PartitionDeleted = 3;
 }
 
-// Owner holds the information of a partition owner.
+// OwnerDesc holds the information of a partition owner.
 message OwnerDesc {
-  // Timestamp (with seconds precision) of when the data for the owner has been updated the last time.
-  // This timestamp is used to resolve conflicts when merging updates via memberlist (the most recent
-  // update wins).
-  int64 updatedTimestamp = 1;
-
-  OwnerState state = 2;
-
   // Partition that belongs to this owner. A owner can own only 1 partition, but 1 partition can be
   // owned by multiple owners.
-  int32 ownedPartition = 3;
+  int32 ownedPartition = 1;
+
+  // The owner state. This field is used to propagate deletions via memberlist.
+  OwnerState state = 2;
+
+  // Unix timestamp (with seconds precision) of when the data for the owner has been updated the last time.
+  // This timestamp is used to resolve conflicts when merging updates via memberlist (the most recent
+  // update wins).
+  int64 updatedTimestamp = 3;
+
 }
 
 enum OwnerState {

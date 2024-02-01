@@ -195,8 +195,8 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 			}
 
 			var (
-				shouldInclude = false
-				shouldExtend  = false
+				shouldInclude bool
+				shouldExtend  bool
 			)
 
 			// Check whether the partition should be included in the result and/or the result set extended.

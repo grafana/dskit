@@ -119,7 +119,7 @@ func TestPartitionRingDesc_AddOrUpdateOwner(t *testing.T) {
 		desc.AddOrUpdateOwner("instance-1", OwnerActive, 1, now)
 
 		// Update the owner.
-		desc.AddOrUpdateOwner("instance-1", OwnerActive, 1, now.Add(time.Second))
+		require.False(t, desc.AddOrUpdateOwner("instance-1", OwnerActive, 1, now.Add(time.Second)))
 
 		assert.Equal(t, &PartitionRingDesc{
 			Partitions: map[int32]PartitionDesc{},

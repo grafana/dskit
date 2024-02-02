@@ -189,33 +189,22 @@ func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f fun
 }
 
 func (c *baseClient) touch(ctx context.Context, key string, ttl time.Duration, f func(ctx context.Context, key string, ttl time.Duration) error) error {
-	errCh := make(chan error, 1)
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opTouch).Inc()
 
-	enqueueErr := c.asyncQueue.submit(func() {
-		start := time.Now()
-		c.metrics.operations.WithLabelValues(opTouch).Inc()
-
-		err := f(ctx, key, ttl)
-		if err != nil {
-			level.Debug(c.logger).Log(
-				"msg", "failed to touch cache item",
-				"key", key,
-				"err", err,
-			)
-			c.trackError(opTouch, err)
-		} else {
-			c.metrics.duration.WithLabelValues(opTouch).Observe(time.Since(start).Seconds())
-		}
-		errCh <- err
-	})
-
-	if errors.Is(enqueueErr, errAsyncQueueFull) {
-		c.metrics.skipped.WithLabelValues(opTouch, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to touch cache item because the async buffer is full", "err", enqueueErr, "size", c.asyncBuffSize)
-		return enqueueErr
+	err := f(ctx, key, ttl)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to touch cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opTouch, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opTouch).Observe(time.Since(start).Seconds())
 	}
-	// Wait for the touch operation to complete.
-	return <-errCh
+
+	return err
 }
 
 func (c *baseClient) increment(ctx context.Context, key string, delta uint64, f func(ctx context.Context, key string, delta uint64) (uint64, error)) (uint64, error) {
@@ -223,33 +212,22 @@ func (c *baseClient) increment(ctx context.Context, key string, delta uint64, f 
 		newValue uint64
 		err      error
 	)
-	errCh := make(chan error, 1)
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opIncrement).Inc()
 
-	enqueueErr := c.asyncQueue.submit(func() {
-		start := time.Now()
-		c.metrics.operations.WithLabelValues(opIncrement).Inc()
-
-		newValue, err = f(ctx, key, delta)
-		if err != nil {
-			level.Debug(c.logger).Log(
-				"msg", "failed to increment cache item",
-				"key", key,
-				"err", err,
-			)
-			c.trackError(opIncrement, err)
-		} else {
-			c.metrics.duration.WithLabelValues(opIncrement).Observe(time.Since(start).Seconds())
-		}
-		errCh <- err
-	})
-
-	if errors.Is(enqueueErr, errAsyncQueueFull) {
-		c.metrics.skipped.WithLabelValues(opIncrement, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to increment cache item because the async buffer is full", "err", enqueueErr, "size", c.asyncBuffSize)
-		return newValue, enqueueErr
+	newValue, err = f(ctx, key, delta)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to increment cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opIncrement, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opIncrement).Observe(time.Since(start).Seconds())
 	}
-	// Wait for the increment operation to complete.
-	return newValue, <-errCh
+
+	return newValue, err
 }
 
 // wait submits an async task and blocks until it completes. This can be used during
@@ -300,63 +278,41 @@ func (c *baseClient) delete(ctx context.Context, key string, f func(ctx context.
 }
 
 func (c *baseClient) compareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration, f func(ctx context.Context, key string, value []byte, ttl time.Duration) error) error {
-	errCh := make(chan error, 1)
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opCompareAndSwap).Inc()
 
-	enqueueErr := c.asyncQueue.submit(func() {
-		start := time.Now()
-		c.metrics.operations.WithLabelValues(opCompareAndSwap).Inc()
-
-		err := f(ctx, key, value, ttl)
-		if err != nil {
-			level.Debug(c.logger).Log(
-				"msg", "failed to compareAndSwap cache item",
-				"key", key,
-				"err", err,
-			)
-			c.trackError(opCompareAndSwap, err)
-		} else {
-			c.metrics.dataSize.WithLabelValues(opCompareAndSwap).Observe(float64(len(value)))
-			c.metrics.duration.WithLabelValues(opCompareAndSwap).Observe(time.Since(start).Seconds())
-		}
-		errCh <- err
-	})
-
-	if errors.Is(enqueueErr, errAsyncQueueFull) {
-		c.metrics.skipped.WithLabelValues(opCompareAndSwap, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to compareAndSwap cache item because the async buffer is full", "err", enqueueErr, "size", c.asyncBuffSize)
-		return enqueueErr
+	err := f(ctx, key, value, ttl)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to compareAndSwap cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opCompareAndSwap, err)
+	} else {
+		c.metrics.dataSize.WithLabelValues(opCompareAndSwap).Observe(float64(len(value)))
+		c.metrics.duration.WithLabelValues(opCompareAndSwap).Observe(time.Since(start).Seconds())
 	}
-	// Wait for the compareAndSwap operation to complete.
-	return <-errCh
+
+	return err
 }
 
 func (c *baseClient) flushAll(ctx context.Context, f func(ctx context.Context) error) error {
-	errCh := make(chan error, 1)
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opFlush).Inc()
 
-	enqueueErr := c.asyncQueue.submit(func() {
-		start := time.Now()
-		c.metrics.operations.WithLabelValues(opFlush).Inc()
-
-		err := f(ctx)
-		if err != nil {
-			level.Debug(c.logger).Log(
-				"msg", "failed to flush all cache",
-				"err", err,
-			)
-			c.trackError(opFlush, err)
-		} else {
-			c.metrics.duration.WithLabelValues(opFlush).Observe(time.Since(start).Seconds())
-		}
-		errCh <- err
-	})
-
-	if errors.Is(enqueueErr, errAsyncQueueFull) {
-		c.metrics.skipped.WithLabelValues(opFlush, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to flush all cache because the async buffer is full", "err", enqueueErr, "size", c.asyncBuffSize)
-		return enqueueErr
+	err := f(ctx)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to flush all cache",
+			"err", err,
+		)
+		c.trackError(opFlush, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opFlush).Observe(time.Since(start).Seconds())
 	}
-	// Wait for the flush  operation to complete.
-	return <-errCh
+
+	return err
 }
 
 func (c *baseClient) trackError(op string, err error) {

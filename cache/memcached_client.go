@@ -44,8 +44,8 @@ type memcachedClientBackend interface {
 	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 	Delete(key string) error
-	Increment(key string, delta uint64) (newValue uint64, err error)
-	Touch(key string, seconds int32) (err error)
+	Increment(key string, delta uint64) (uint64, error)
+	Touch(key string, seconds int32) error
 	Close()
 	CompareAndSwap(item *memcache.Item) error
 	FlushAll() error
@@ -333,7 +333,7 @@ func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) 
 	})
 }
 
-func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (newValue uint64, err error) {
+func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (uint64, error) {
 	return c.increment(ctx, key, delta, func(ctx context.Context, key string, delta uint64) (uint64, error) {
 		var (
 			err      error
@@ -349,7 +349,7 @@ func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint6
 	})
 }
 
-func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Duration) (err error) {
+func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Duration) error {
 	return c.touch(ctx, key, ttl, func(ctx context.Context, key string, ttl time.Duration) error {
 		var err error
 		select {

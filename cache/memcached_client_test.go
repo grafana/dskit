@@ -291,24 +291,24 @@ func (m *mockMemcachedClientBackend) Delete(key string) error {
 	return nil
 }
 
-func (m *mockMemcachedClientBackend) Touch(key string, seconds int32) (err error) {
+func (m *mockMemcachedClientBackend) Touch(key string, seconds int32) error {
 	m.values[key].Expiration = seconds
 	return nil
 }
 
-func (m *mockMemcachedClientBackend) Increment(key string, delta uint64) (newValue uint64, err error) {
+func (m *mockMemcachedClientBackend) Increment(key string, delta uint64) (uint64, error) {
 	value, _ := strconv.ParseUint(string(m.values[key].Value), 10, 64)
 	value += delta
 	m.values[key].Value = []byte(strconv.FormatUint(value, 10))
 	return value, nil
 }
 
-func (m *mockMemcachedClientBackend) CompareAndSwap(item *memcache.Item) (err error) {
+func (m *mockMemcachedClientBackend) CompareAndSwap(item *memcache.Item) error {
 	m.values[item.Key] = item
 	return nil
 }
 
-func (m *mockMemcachedClientBackend) FlushAll() (err error) {
+func (m *mockMemcachedClientBackend) FlushAll() error {
 	m.values = make(map[string]*memcache.Item)
 	return nil
 }

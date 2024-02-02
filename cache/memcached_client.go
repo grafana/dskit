@@ -628,3 +628,83 @@ func (c *MemcachedClient) FlushAll(ctx context.Context) error {
 		return err
 	})
 }
+
+func (c *MemcachedClient) touch(ctx context.Context, key string, ttl time.Duration, f func(ctx context.Context, key string, ttl time.Duration) error) error {
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opTouch).Inc()
+
+	err := f(ctx, key, ttl)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to touch cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opTouch, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opTouch).Observe(time.Since(start).Seconds())
+	}
+
+	return err
+}
+
+func (c *MemcachedClient) increment(ctx context.Context, key string, delta uint64, f func(ctx context.Context, key string, delta uint64) (uint64, error)) (uint64, error) {
+	var (
+		newValue uint64
+		err      error
+	)
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opIncrement).Inc()
+
+	newValue, err = f(ctx, key, delta)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to increment cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opIncrement, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opIncrement).Observe(time.Since(start).Seconds())
+	}
+
+	return newValue, err
+}
+
+func (c *MemcachedClient) compareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration, f func(ctx context.Context, key string, value []byte, ttl time.Duration) error) error {
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opCompareAndSwap).Inc()
+
+	err := f(ctx, key, value, ttl)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to compareAndSwap cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opCompareAndSwap, err)
+	} else {
+		c.metrics.dataSize.WithLabelValues(opCompareAndSwap).Observe(float64(len(value)))
+		c.metrics.duration.WithLabelValues(opCompareAndSwap).Observe(time.Since(start).Seconds())
+	}
+
+	return err
+}
+
+func (c *MemcachedClient) flushAll(ctx context.Context, f func(ctx context.Context) error) error {
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opFlush).Inc()
+
+	err := f(ctx)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to flush all cache",
+			"err", err,
+		)
+		c.trackError(opFlush, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opFlush).Observe(time.Since(start).Seconds())
+	}
+
+	return err
+}

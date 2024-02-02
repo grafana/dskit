@@ -333,35 +333,6 @@ func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) 
 	})
 }
 
-func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (uint64, error) {
-	return c.increment(ctx, key, delta, func(ctx context.Context, key string, delta uint64) (uint64, error) {
-		var (
-			err      error
-			newValue uint64
-		)
-		select {
-		case <-ctx.Done():
-			err = ctx.Err()
-		default:
-			newValue, err = c.client.Increment(key, delta)
-		}
-		return newValue, err
-	})
-}
-
-func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Duration) error {
-	return c.touch(ctx, key, ttl, func(ctx context.Context, key string, ttl time.Duration) error {
-		var err error
-		select {
-		case <-ctx.Done():
-			err = ctx.Err()
-		default:
-			err = c.client.Touch(key, int32(ttl.Seconds()))
-		}
-		return err
-	})
-}
-
 func toMemcacheOptions(opts ...Option) []memcache.Option {
 	if len(opts) == 0 {
 		return nil
@@ -425,6 +396,114 @@ func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
 		}
 		return err
 	})
+}
+
+func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (uint64, error) {
+	var (
+		newValue uint64
+		err      error
+	)
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opIncrement).Inc()
+
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		newValue, err = c.client.Increment(key, delta)
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to increment cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opIncrement, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opIncrement).Observe(time.Since(start).Seconds())
+	}
+
+	return newValue, err
+}
+
+func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Duration) error {
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opTouch).Inc()
+
+	var err error
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		err = c.client.Touch(key, int32(ttl.Seconds()))
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to touch cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opTouch, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opTouch).Observe(time.Since(start).Seconds())
+	}
+	return err
+}
+
+func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	var err error
+	item := &memcache.Item{
+		Key:        key,
+		Value:      value,
+		Expiration: int32(ttl.Seconds()),
+	}
+
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opCompareAndSwap).Inc()
+
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		err = c.client.CompareAndSwap(item)
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to compareAndSwap cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opCompareAndSwap, err)
+	} else {
+		c.metrics.dataSize.WithLabelValues(opCompareAndSwap).Observe(float64(len(value)))
+		c.metrics.duration.WithLabelValues(opCompareAndSwap).Observe(time.Since(start).Seconds())
+	}
+
+	return err
+}
+
+func (c *MemcachedClient) FlushAll(ctx context.Context) error {
+	var err error
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opFlush).Inc()
+
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		err = c.client.FlushAll()
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to flush all cache",
+			"err", err,
+		)
+		c.trackError(opFlush, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opFlush).Observe(time.Since(start).Seconds())
+	}
+
+	return err
 }
 
 func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
@@ -596,115 +675,4 @@ func (c *MemcachedClient) resolveAddrs() error {
 	}
 
 	return c.selector.SetServers(servers...)
-}
-
-func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	item := &memcache.Item{
-		Key:        key,
-		Value:      value,
-		Expiration: int32(ttl.Seconds()),
-	}
-	return c.compareAndSwap(ctx, key, value, ttl, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-		var err error
-		select {
-		case <-ctx.Done():
-			err = ctx.Err()
-		default:
-			err = c.client.CompareAndSwap(item)
-		}
-		return err
-	})
-}
-
-func (c *MemcachedClient) FlushAll(ctx context.Context) error {
-	return c.flushAll(ctx, func(ctx context.Context) error {
-		var err error
-		select {
-		case <-ctx.Done():
-			err = ctx.Err()
-		default:
-			err = c.client.FlushAll()
-		}
-		return err
-	})
-}
-
-func (c *MemcachedClient) touch(ctx context.Context, key string, ttl time.Duration, f func(ctx context.Context, key string, ttl time.Duration) error) error {
-	start := time.Now()
-	c.metrics.operations.WithLabelValues(opTouch).Inc()
-
-	err := f(ctx, key, ttl)
-	if err != nil {
-		level.Debug(c.logger).Log(
-			"msg", "failed to touch cache item",
-			"key", key,
-			"err", err,
-		)
-		c.trackError(opTouch, err)
-	} else {
-		c.metrics.duration.WithLabelValues(opTouch).Observe(time.Since(start).Seconds())
-	}
-
-	return err
-}
-
-func (c *MemcachedClient) increment(ctx context.Context, key string, delta uint64, f func(ctx context.Context, key string, delta uint64) (uint64, error)) (uint64, error) {
-	var (
-		newValue uint64
-		err      error
-	)
-	start := time.Now()
-	c.metrics.operations.WithLabelValues(opIncrement).Inc()
-
-	newValue, err = f(ctx, key, delta)
-	if err != nil {
-		level.Debug(c.logger).Log(
-			"msg", "failed to increment cache item",
-			"key", key,
-			"err", err,
-		)
-		c.trackError(opIncrement, err)
-	} else {
-		c.metrics.duration.WithLabelValues(opIncrement).Observe(time.Since(start).Seconds())
-	}
-
-	return newValue, err
-}
-
-func (c *MemcachedClient) compareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration, f func(ctx context.Context, key string, value []byte, ttl time.Duration) error) error {
-	start := time.Now()
-	c.metrics.operations.WithLabelValues(opCompareAndSwap).Inc()
-
-	err := f(ctx, key, value, ttl)
-	if err != nil {
-		level.Debug(c.logger).Log(
-			"msg", "failed to compareAndSwap cache item",
-			"key", key,
-			"err", err,
-		)
-		c.trackError(opCompareAndSwap, err)
-	} else {
-		c.metrics.dataSize.WithLabelValues(opCompareAndSwap).Observe(float64(len(value)))
-		c.metrics.duration.WithLabelValues(opCompareAndSwap).Observe(time.Since(start).Seconds())
-	}
-
-	return err
-}
-
-func (c *MemcachedClient) flushAll(ctx context.Context, f func(ctx context.Context) error) error {
-	start := time.Now()
-	c.metrics.operations.WithLabelValues(opFlush).Inc()
-
-	err := f(ctx)
-	if err != nil {
-		level.Debug(c.logger).Log(
-			"msg", "failed to flush all cache",
-			"err", err,
-		)
-		c.trackError(opFlush, err)
-	} else {
-		c.metrics.duration.WithLabelValues(opFlush).Observe(time.Since(start).Seconds())
-	}
-
-	return err
 }

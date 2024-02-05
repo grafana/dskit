@@ -503,13 +503,13 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to look back to partition 1
+				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to include partition 1
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
 				// Partition 2 becomes active again
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still active, but now falls outside the lookback period, there's no need to look back to partition 1
+				// Partition 2 still active, but now falls outside the lookback period, there's no need to include partition 1
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 			},
@@ -528,7 +528,7 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				// Partition 2 switches to inactive
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to look back to partition 1
+				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to include partition 1
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
 				// Partition 2 now gone
@@ -537,7 +537,7 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				// Partition 2 becomes active again
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still active, but now falls outside the lookback period, there's no need to look back to partition 1
+				// Partition 2 still active, but now falls outside the lookback period, there's no need to include partition 1
 				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 			},

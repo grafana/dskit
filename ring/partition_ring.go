@@ -292,6 +292,17 @@ func (r *PartitionRing) InactivePartitionIDs() []int32 {
 	return ids
 }
 
+// PartitionOwnerIDs returns a list of owner IDs for the given partitionID.
+// The returned slice is a copy, so the caller can freely manipulate it.
+func (r *PartitionRing) PartitionOwnerIDs(partitionID int32) []string {
+	ids := r.ownersByPartition[partitionID]
+	if len(ids) == 0 {
+		return nil
+	}
+
+	return slices.Clone(ids)
+}
+
 func (r *PartitionRing) String() string {
 	buf := bytes.Buffer{}
 	for pid, pd := range r.desc.Partitions {

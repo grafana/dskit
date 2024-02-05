@@ -624,7 +624,7 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 			}
 
 			// Advance the time. The simulation assumes the initial ring contains partitions added
-			// since more than the lookback period.
+			// outside of the lookback period.
 			currTime = currTime.Add(lookbackPeriod).Add(time.Minute)
 
 			// Simulate a progression of random events over the time and, at each iteration of the simuation,

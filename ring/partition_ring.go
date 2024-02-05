@@ -199,28 +199,10 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 			}
 
 			var (
-				shouldInclude bool
-				shouldExtend  bool
+				withinLookbackPeriod = lookbackPeriod > 0 && p.GetStateTimestamp() >= lookbackUntil
+				shouldExtend         = withinLookbackPeriod
+				shouldInclude        = p.IsActive() || withinLookbackPeriod
 			)
-
-			// Check whether the partition should be included in the result and/or the result set extended.
-			if lookbackPeriod > 0 {
-				if p.IsActive() {
-					// The partition is active. We should include it. The result set is extended only
-					// if the partition became active within the lookback window.
-					shouldInclude = true
-					shouldExtend = p.GetStateTimestamp() >= lookbackUntil
-				} else {
-					// The partition is inactive. We should include it (and then extend the result set)
-					// only if became inactive within the lookback window.
-					shouldInclude = p.GetStateTimestamp() >= lookbackUntil
-					shouldExtend = shouldInclude
-				}
-			} else {
-				// No lookback was provided. We only include active partitions and don't lookback.
-				shouldInclude = p.IsActive()
-				shouldExtend = false
-			}
 
 			// Either include or exclude the found partition.
 			if shouldInclude {

@@ -111,7 +111,8 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 		return cached, nil
 	}
 
-	subring, err := r.shuffleShard(identifier, size, 0, time.Now())
+	// No need to pass the time if there's no lookback.
+	subring, err := r.shuffleShard(identifier, size, 0, time.Time{})
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +150,10 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 		size = len(r.desc.Partitions)
 	}
 
-	lookbackUntil := now.Add(-lookbackPeriod).Unix()
+	var lookbackUntil int64
+	if lookbackPeriod > 0 {
+		lookbackUntil = now.Add(-lookbackPeriod).Unix()
+	}
 
 	// Initialise the random generator used to select instances in the ring.
 	// There are no zones

@@ -122,7 +122,7 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 }
 
 // ShuffleShardWithLookback is like ShuffleShard() but the returned subring includes all instances
-// that have been part of the identifier's shard since "now - lookbackPeriod".
+// that have been part of the identifier's shard in [now - lookbackPeriod, now] time window.
 //
 // This function can return a mix of ACTIVE and INACTIVE partitions. INACTIVE partitions are only
 // included if they were part of the identifier's shard within the lookbackPeriod.

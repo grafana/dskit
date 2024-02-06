@@ -191,6 +191,17 @@ func (m *PartitionRingDesc) HasOwner(id string) bool {
 	return ok
 }
 
+// PartitionOwnersCount returns the number of owners for a given partition.
+func (m *PartitionRingDesc) PartitionOwnersCount(partitionID int32) int {
+	owners := 0
+	for _, o := range m.Owners {
+		if o.OwnedPartition == partitionID {
+			owners++
+		}
+	}
+	return owners
+}
+
 // Merge implements memberlist.Mergeable.
 func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool) (memberlist.Mergeable, error) {
 	return m.mergeWithTime(mergeable, localCAS, time.Now())

@@ -34,7 +34,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
 	})
 
-	assert.Equal(t, 0, watcher.GetRing().PartitionsCount())
+	assert.Equal(t, 0, watcher.PartitionRing().PartitionsCount())
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
 		# TYPE partition_ring_partitions gauge
@@ -50,7 +50,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.GetRing().PartitionsCount() == 1
+		return watcher.PartitionRing().PartitionsCount() == 1
 	}, time.Second, 10*time.Millisecond)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -68,7 +68,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.GetRing().PartitionsCount() == 2
+		return watcher.PartitionRing().PartitionsCount() == 2
 	}, time.Second, 10*time.Millisecond)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`

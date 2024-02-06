@@ -303,6 +303,12 @@ func (r *PartitionRing) PartitionOwnerIDs(partitionID int32) []string {
 	return slices.Clone(ids)
 }
 
+// UnsafePartitionOwnerIDs is like PartitionOwnerIDs() but the returned slice is NOT a copy and
+// should be never modified by the caller.
+func (r *PartitionRing) UnsafePartitionOwnerIDs(partitionID int32) []string {
+	return r.ownersByPartition[partitionID]
+}
+
 func (r *PartitionRing) String() string {
 	buf := bytes.Buffer{}
 	for pid, pd := range r.desc.Partitions {

@@ -21,10 +21,6 @@ var partitionRingPageTemplate = template.Must(template.New("webpage").Funcs(temp
 	},
 }).Parse(partitionRingPageContent))
 
-type PartitionRingReader interface {
-	PartitionRing() *PartitionRing
-}
-
 type PartitionRingPageHandler struct {
 	ring PartitionRingReader
 }

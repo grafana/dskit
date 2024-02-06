@@ -86,8 +86,9 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 		}
 
 		result = append(result, ReplicationSet{
-			Instances: instances,
-			MaxErrors: len(instances) - 1, // We need response from at least 1 owner.
+			Instances:            instances,
+			MaxUnavailableZones:  len(instances) - 1, // We need response from at least 1 owner.
+			ZoneAwarenessEnabled: true,               // Partitions has no concept of zone, but we enable it in order to support ring's requests minimization feature.
 		})
 	}
 	return result, nil

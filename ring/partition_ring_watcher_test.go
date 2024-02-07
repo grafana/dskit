@@ -28,6 +28,9 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	watcher := NewPartitionRingWatcher("test", ringKey, store, logger, reg)
 
+	// PartitionRing should never return nil, even if the watcher hasn't been started yet.
+	assert.NotNil(t, watcher.PartitionRing())
+
 	// Start the watcher with an empty ring.
 	require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
 	t.Cleanup(func() {

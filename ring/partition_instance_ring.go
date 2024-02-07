@@ -6,6 +6,8 @@ import (
 )
 
 type PartitionRingReader interface {
+	// PartitionRing returns a snapshot of the PartitionRing. This function must never return nil.
+	// If the ring is empty or unknown, an empty PartitionRing can be returned.
 	PartitionRing() *PartitionRing
 }
 

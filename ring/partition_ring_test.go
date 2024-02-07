@@ -685,12 +685,12 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 					if len(pendingIDs) > 0 {
 						// Tests are reproducible because the list of partition IDs is sorted and the random
 						// generator is initialised with a known seed.
-						partitionIdToSwitch := pendingIDs[rnd.Intn(len(pendingIDs))]
+						partitionIDToSwitch := pendingIDs[rnd.Intn(len(pendingIDs))]
 
 						desc := &(ring.desc)
-						desc.UpdatePartitionState(partitionIdToSwitch, PartitionActive, currTime)
+						desc.UpdatePartitionState(partitionIDToSwitch, PartitionActive, currTime)
 						ring = NewPartitionRing(*desc)
-						t.Logf("- Switched partition %d from pending to active state", partitionIdToSwitch)
+						t.Logf("- Switched partition %d from pending to active state", partitionIDToSwitch)
 					}
 				case r < 80:
 					// Switch an active partition to inactive.
@@ -698,12 +698,12 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 					if len(activeIDs) > 0 {
 						// Tests are reproducible because the list of partition IDs is sorted and the random
 						// generator is initialised with a known seed.
-						partitionIdToSwitch := activeIDs[rnd.Intn(len(activeIDs))]
+						partitionIDToSwitch := activeIDs[rnd.Intn(len(activeIDs))]
 
 						desc := &(ring.desc)
-						desc.UpdatePartitionState(partitionIdToSwitch, PartitionInactive, currTime)
+						desc.UpdatePartitionState(partitionIDToSwitch, PartitionInactive, currTime)
 						ring = NewPartitionRing(*desc)
-						t.Logf("- Switched partition %d from active to inactive", partitionIdToSwitch)
+						t.Logf("- Switched partition %d from active to inactive", partitionIDToSwitch)
 					}
 				case r < 90:
 					// Remove an inactive partition.
@@ -711,17 +711,17 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 					if len(inactiveIDs) > 0 {
 						// Tests are reproducible because the list of partition IDs is sorted and the random
 						// generator is initialised with a known seed.
-						partitionIdToRemove := inactiveIDs[rnd.Intn(len(inactiveIDs))]
+						partitionIDToRemove := inactiveIDs[rnd.Intn(len(inactiveIDs))]
 
 						desc := &(ring.desc)
-						desc.RemovePartition(partitionIdToRemove)
+						desc.RemovePartition(partitionIDToRemove)
 						ring = NewPartitionRing(*desc)
-						t.Logf("- Removed inactive partition %d", partitionIdToRemove)
+						t.Logf("- Removed inactive partition %d", partitionIDToRemove)
 
 						// Remove the partition from the history.
 						for ringTime, partitionIDs := range history {
 							for idx, partitionID := range partitionIDs {
-								if partitionID != partitionIdToRemove {
+								if partitionID != partitionIDToRemove {
 									continue
 								}
 
@@ -1007,13 +1007,13 @@ func comparePartitionIDs(first, second []int32) (added, removed []int32) {
 
 func randomString(rnd *rand.Rand, length int) string {
 	const (
-		firstAsciiChar = '0'
-		lastAsciiChar  = 'Z'
+		firstASCIIChar = '0'
+		lastASCIIChar  = 'Z'
 	)
 
 	out := make([]byte, 0, length)
 	for i := 0; i < length; i++ {
-		out = append(out, byte(firstAsciiChar+rnd.Intn(lastAsciiChar-firstAsciiChar)))
+		out = append(out, byte(firstASCIIChar+rnd.Intn(lastASCIIChar-firstASCIIChar)))
 	}
 	return string(out)
 }

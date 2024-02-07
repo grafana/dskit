@@ -45,7 +45,7 @@ func TestPartitionRingDesc_countPartitionsByState(t *testing.T) {
 	t.Run("empty ring should return all states with 0 partitions each", func(t *testing.T) {
 		desc := &PartitionRingDesc{}
 
-		assert.Equal(t, map[PartitionState]int{PartitionActive: 0, PartitionInactive: 0}, desc.countPartitionsByState())
+		assert.Equal(t, map[PartitionState]int{PartitionPending: 0, PartitionActive: 0, PartitionInactive: 0}, desc.countPartitionsByState())
 	})
 
 	t.Run("ring with only active partitions should other states with 0 partitions each", func(t *testing.T) {
@@ -56,15 +56,18 @@ func TestPartitionRingDesc_countPartitionsByState(t *testing.T) {
 			Owners: map[string]OwnerDesc{},
 		}
 
-		assert.Equal(t, map[PartitionState]int{PartitionActive: 1, PartitionInactive: 0}, desc.countPartitionsByState())
+		assert.Equal(t, map[PartitionState]int{PartitionPending: 0, PartitionActive: 1, PartitionInactive: 0}, desc.countPartitionsByState())
 	})
 
 	t.Run("ring with some partitions in each state should correctly report the count", func(t *testing.T) {
 		desc := &PartitionRingDesc{
 			Partitions: map[int32]PartitionDesc{
-				1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-				2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
-				3: {Tokens: []uint32{7, 8, 9}, State: PartitionInactive, StateTimestamp: 30},
+				1: {Tokens: []uint32{1}, State: PartitionActive, StateTimestamp: 10},
+				2: {Tokens: []uint32{2}, State: PartitionActive, StateTimestamp: 20},
+				3: {Tokens: []uint32{3}, State: PartitionActive, StateTimestamp: 30},
+				4: {Tokens: []uint32{4}, State: PartitionInactive, StateTimestamp: 40},
+				5: {Tokens: []uint32{5}, State: PartitionInactive, StateTimestamp: 50},
+				6: {Tokens: []uint32{6}, State: PartitionPending, StateTimestamp: 60},
 			},
 			Owners: map[string]OwnerDesc{
 				"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -72,7 +75,7 @@ func TestPartitionRingDesc_countPartitionsByState(t *testing.T) {
 			},
 		}
 
-		assert.Equal(t, map[PartitionState]int{PartitionActive: 2, PartitionInactive: 1}, desc.countPartitionsByState())
+		assert.Equal(t, map[PartitionState]int{PartitionPending: 1, PartitionActive: 3, PartitionInactive: 2}, desc.countPartitionsByState())
 	})
 }
 

@@ -1,7 +1,6 @@
 package ring
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -124,33 +123,22 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			for _, staticPartitionsRing := range []bool{false, true} {
-				t.Run(fmt.Sprintf("static partitions ring: %t", staticPartitionsRing), func(t *testing.T) {
-					var r *PartitionInstanceRing
+			partitionsRing := NewPartitionRing(testData.partitionsRing)
+			instancesRing := &Ring{ringDesc: testData.instancesRing}
+			r := NewPartitionInstanceRing(newStaticPartitionRingReader(partitionsRing), instancesRing, heartbeatTimeout)
 
-					partitionsRing := NewPartitionRing(testData.partitionsRing)
-					instancesRing := &Ring{ringDesc: testData.instancesRing}
+			sets, err := r.GetReplicationSetsForOperation(op)
+			require.ErrorIs(t, err, testData.expectedErr)
 
-					if staticPartitionsRing {
-						r = newStaticPartitionInstanceRing(partitionsRing, instancesRing, heartbeatTimeout)
-					} else {
-						r = NewPartitionInstanceRing(partitionRingReaderMock{ring: partitionsRing}, instancesRing, heartbeatTimeout)
-					}
-
-					sets, err := r.GetReplicationSetsForOperation(op)
-					require.ErrorIs(t, err, testData.expectedErr)
-
-					// Build the actual replication sets to compare with the expected ones.
-					actual := make([][]string, 0, len(sets))
-					for _, set := range sets {
-						instanceIDs := set.GetIDs()
-						slices.Sort(instanceIDs)
-						actual = append(actual, instanceIDs)
-					}
-
-					assert.ElementsMatch(t, testData.expectedSets, actual)
-				})
+			// Build the actual replication sets to compare with the expected ones.
+			actual := make([][]string, 0, len(sets))
+			for _, set := range sets {
+				instanceIDs := set.GetIDs()
+				slices.Sort(instanceIDs)
+				actual = append(actual, instanceIDs)
 			}
+
+			assert.ElementsMatch(t, testData.expectedSets, actual)
 		})
 	}
 }
@@ -172,7 +160,7 @@ func TestPartitionInstanceRing_ShuffleShard(t *testing.T) {
 		"instance-3": {Id: "instance-3", State: ACTIVE, Timestamp: time.Now().Unix()},
 	}}
 
-	r := NewPartitionInstanceRing(partitionRingReaderMock{ring: NewPartitionRing(*partitionsRing)}, &Ring{ringDesc: instancesRing}, 0)
+	r := NewPartitionInstanceRing(newStaticPartitionRingReader(NewPartitionRing(*partitionsRing)), &Ring{ringDesc: instancesRing}, 0)
 
 	t.Run("ShuffleShard()", func(t *testing.T) {
 		actual, err := r.ShuffleShard("test", 2)
@@ -187,12 +175,4 @@ func TestPartitionInstanceRing_ShuffleShard(t *testing.T) {
 		assert.Equal(t, 3, actual.PartitionRing().PartitionsCount())
 		assert.Equal(t, 3, actual.InstanceRing().InstancesCount()) // Should be preserved.
 	})
-}
-
-type partitionRingReaderMock struct {
-	ring *PartitionRing
-}
-
-func (m partitionRingReaderMock) PartitionRing() *PartitionRing {
-	return m.ring
 }

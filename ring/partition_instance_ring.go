@@ -12,12 +12,9 @@ type PartitionRingReader interface {
 // PartitionInstanceRing holds a partitions ring and a instances ring, and provide functions
 // to look up the intersection of the two (e.g. healthy instances by partition).
 type PartitionInstanceRing struct {
-	// partitionsRingReader and partitionsRing are mutually exclusive.
 	partitionsRingReader PartitionRingReader
-	partitionsRing       *PartitionRing
-
-	instancesRing    *Ring
-	heartbeatTimeout time.Duration
+	instancesRing        *Ring
+	heartbeatTimeout     time.Duration
 }
 
 func NewPartitionInstanceRing(partitionsRingWatcher PartitionRingReader, instancesRing *Ring, heartbeatTimeout time.Duration) *PartitionInstanceRing {
@@ -28,20 +25,8 @@ func NewPartitionInstanceRing(partitionsRingWatcher PartitionRingReader, instanc
 	}
 }
 
-func newStaticPartitionInstanceRing(partitionsRing *PartitionRing, instancesRing *Ring, heartbeatTimeout time.Duration) *PartitionInstanceRing {
-	return &PartitionInstanceRing{
-		partitionsRing:   partitionsRing,
-		instancesRing:    instancesRing,
-		heartbeatTimeout: heartbeatTimeout,
-	}
-}
-
 func (r *PartitionInstanceRing) PartitionRing() *PartitionRing {
-	if r.partitionsRingReader != nil {
-		return r.partitionsRingReader.PartitionRing()
-	}
-
-	return r.partitionsRing
+	return r.partitionsRingReader.PartitionRing()
 }
 
 func (r *PartitionInstanceRing) InstanceRing() *Ring {
@@ -105,7 +90,7 @@ func (r *PartitionInstanceRing) ShuffleShard(identifier string, size int) (*Part
 		return nil, err
 	}
 
-	return newStaticPartitionInstanceRing(partitionsSubring, r.instancesRing, r.heartbeatTimeout), nil
+	return NewPartitionInstanceRing(newStaticPartitionRingReader(partitionsSubring), r.instancesRing, r.heartbeatTimeout), nil
 }
 
 // ShuffleShardWithLookback wraps PartitionRing.ShuffleShardWithLookback().
@@ -119,5 +104,19 @@ func (r *PartitionInstanceRing) ShuffleShardWithLookback(identifier string, size
 		return nil, err
 	}
 
-	return newStaticPartitionInstanceRing(partitionsSubring, r.instancesRing, r.heartbeatTimeout), nil
+	return NewPartitionInstanceRing(newStaticPartitionRingReader(partitionsSubring), r.instancesRing, r.heartbeatTimeout), nil
+}
+
+type staticPartitionRingReader struct {
+	ring *PartitionRing
+}
+
+func newStaticPartitionRingReader(ring *PartitionRing) staticPartitionRingReader {
+	return staticPartitionRingReader{
+		ring: ring,
+	}
+}
+
+func (m staticPartitionRingReader) PartitionRing() *PartitionRing {
+	return m.ring
 }

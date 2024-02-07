@@ -48,17 +48,3 @@ func TestPartitionRingPageHandler(t *testing.T) {
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
 }
-
-type staticPartitionRingReader struct {
-	ring *PartitionRing
-}
-
-func newStaticPartitionRingReader(ring *PartitionRing) *staticPartitionRingReader {
-	return &staticPartitionRingReader{
-		ring: ring,
-	}
-}
-
-func (r *staticPartitionRingReader) PartitionRing() *PartitionRing {
-	return r.ring
-}

@@ -21,10 +21,6 @@ var partitionRingPageTemplate = template.Must(template.New("webpage").Funcs(temp
 	},
 }).Parse(partitionRingPageContent))
 
-type PartitionRingReader interface {
-	PartitionRing() *PartitionRing
-}
-
 type PartitionRingPageHandler struct {
 	ring PartitionRingReader
 }
@@ -44,7 +40,7 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 	// Prepare the data to render partitions in the page.
 	partitionsData := make([]partitionPageData, 0, len(ringDesc.Partitions))
 	for id, partition := range ringDesc.Partitions {
-		owners := ring.PartitionOwnerIDs(id)
+		owners := ring.PartitionOwnerIDsCopy(id)
 		slices.Sort(owners)
 
 		partitionsData = append(partitionsData, partitionPageData{

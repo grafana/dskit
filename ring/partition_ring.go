@@ -293,8 +293,14 @@ func (r *PartitionRing) InactivePartitionIDs() []int32 {
 }
 
 // PartitionOwnerIDs returns a list of owner IDs for the given partitionID.
-// The returned slice is a copy, so the caller can freely manipulate it.
-func (r *PartitionRing) PartitionOwnerIDs(partitionID int32) []string {
+// The returned slice is NOT a copy and should be never modified by the caller.
+func (r *PartitionRing) PartitionOwnerIDs(partitionID int32) (doNotModify []string) {
+	return r.ownersByPartition[partitionID]
+}
+
+// PartitionOwnerIDsCopy is like PartitionOwnerIDs(), but the returned slice is a copy,
+// so the caller can freely manipulate it.
+func (r *PartitionRing) PartitionOwnerIDsCopy(partitionID int32) []string {
 	ids := r.ownersByPartition[partitionID]
 	if len(ids) == 0 {
 		return nil

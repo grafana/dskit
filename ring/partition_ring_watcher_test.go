@@ -28,13 +28,16 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	watcher := NewPartitionRingWatcher("test", ringKey, store, logger, reg)
 
+	// PartitionRing should never return nil, even if the watcher hasn't been started yet.
+	assert.NotNil(t, watcher.PartitionRing())
+
 	// Start the watcher with an empty ring.
 	require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
 	})
 
-	assert.Equal(t, 0, watcher.GetRing().PartitionsCount())
+	assert.Equal(t, 0, watcher.PartitionRing().PartitionsCount())
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
 		# TYPE partition_ring_partitions gauge
@@ -50,7 +53,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.GetRing().PartitionsCount() == 1
+		return watcher.PartitionRing().PartitionsCount() == 1
 	}, time.Second, 10*time.Millisecond)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -68,7 +71,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.GetRing().PartitionsCount() == 2
+		return watcher.PartitionRing().PartitionsCount() == 2
 	}, time.Second, 10*time.Millisecond)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`

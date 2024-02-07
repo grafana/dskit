@@ -50,11 +50,11 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 	result := make([]ReplicationSet, 0, len(partitionsRingDesc.Partitions))
 
 	for partitionID := range partitionsRingDesc.Partitions {
-		ownerIDs := partitionsRing.UnsafePartitionOwnerIDs(partitionID)
+		ownerIDs := partitionsRing.PartitionOwnerIDs(partitionID)
 		instances := make([]InstanceDesc, 0, len(ownerIDs))
 
 		for _, instanceID := range ownerIDs {
-			instance, err := r.instancesRing.UnsafeGetInstance(instanceID)
+			instance, err := r.instancesRing.GetInstance(instanceID)
 			if err != nil {
 				// If an instance doesn't exist in the instances ring we don't return an error
 				// but lookup for other instances of the partition.

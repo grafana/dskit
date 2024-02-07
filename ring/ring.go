@@ -866,10 +866,10 @@ func mergeTokenGroups(groupsByName map[string][]uint32) []uint32 {
 	return merged
 }
 
-// UnsafeGetInstance return the InstanceDesc for the given instanceID or an error
+// GetInstance return the InstanceDesc for the given instanceID or an error
 // if the instance doesn't exist in the ring. The returned InstanceDesc is NOT a
 // deep copy, so the caller should never modify it.
-func (r *Ring) UnsafeGetInstance(instanceID string) (InstanceDesc, error) {
+func (r *Ring) GetInstance(instanceID string) (doNotModify InstanceDesc, _ error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
@@ -889,7 +889,7 @@ func (r *Ring) UnsafeGetInstance(instanceID string) (InstanceDesc, error) {
 // GetInstanceState returns the current state of an instance or an error if the
 // instance does not exist in the ring.
 func (r *Ring) GetInstanceState(instanceID string) (InstanceState, error) {
-	instance, err := r.UnsafeGetInstance(instanceID)
+	instance, err := r.GetInstance(instanceID)
 	if err != nil {
 		return PENDING, err
 	}

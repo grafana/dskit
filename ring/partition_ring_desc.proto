@@ -32,12 +32,12 @@ message PartitionDesc {
 enum PartitionState {
   PartitionUnknown = 0;
 
-  // Active partition in read-write mode.
-  PartitionActive = 1;
+  // Partition in read-write mode.
+  PartitionReadWrite = 1;
 
-  // Inactive partition in read-only mode. This partition will be deleted after a grace period,
-  // unless its state changes to Active again.
-  PartitionInactive = 2;
+  // Partition in read-only mode. This partition will be deleted after a grace period,
+  // unless its state changes to PartitionReadWrite state again.
+  PartitionReadOnly = 2;
 
   // Deleted partition. This state is not visible to ring clients: it's only used to propagate
   // via memberlist the information that a partition has been deleted.

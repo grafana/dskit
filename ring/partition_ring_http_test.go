@@ -16,11 +16,11 @@ func TestPartitionRingPageHandler(t *testing.T) {
 			NewPartitionRing(PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
 					1: {
-						State:          PartitionActive,
+						State:          PartitionReadWrite,
 						StateTimestamp: time.Now().Unix(),
 					},
 					2: {
-						State:          PartitionInactive,
+						State:          PartitionReadOnly,
 						StateTimestamp: time.Now().Unix(),
 					},
 				},

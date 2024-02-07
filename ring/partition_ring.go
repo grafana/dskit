@@ -11,7 +11,7 @@ import (
 	shardUtil "github.com/grafana/dskit/ring/shard"
 )
 
-var ErrNoActivePartitionFound = fmt.Errorf("no active partition found")
+var ErrNoReadWritePartitionFound = fmt.Errorf("no read-write partition found")
 
 // PartitionRing holds an immutable view of the partitions ring.
 //
@@ -48,9 +48,9 @@ func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 	}
 }
 
-// ActivePartitionForKey returns partition for the given key. Only active partitions are considered.
+// ReadWritePartitionForKey returns partition for the given key. Only read-write partitions are considered.
 // Only one partition is returned: in other terms, the replication factor is always 1.
-func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
+func (r *PartitionRing) ReadWritePartitionForKey(key uint32) (int32, error) {
 	var (
 		start       = searchToken(r.ringTokens, key)
 		iterations  = 0
@@ -76,13 +76,13 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
 			return 0, ErrInconsistentTokensInfo
 		}
 
-		// If the partition is not active we'll keep walking the ring.
-		if partition.IsActive() {
+		// If the partition is not read-write we'll keep walking the ring.
+		if partition.IsReadWrite() {
 			return partitionID, nil
 		}
 	}
 
-	return 0, ErrNoActivePartitionFound
+	return 0, ErrNoReadWritePartitionFound
 }
 
 // ShuffleShard returns a subring for the provided identifier (eg. a tenant ID)
@@ -93,7 +93,7 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
 // predictable numbers. The random generator is initialised with a seed based on the
 // provided identifier.
 //
-// This function returns a subring containing ONLY ACTIVE partitions.
+// This function returns a subring containing ONLY read-write partitions.
 //
 // This function supports caching.
 //
@@ -124,7 +124,7 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 // ShuffleShardWithLookback is like ShuffleShard() but the returned subring includes all instances
 // that have been part of the identifier's shard in [now - lookbackPeriod, now] time window.
 //
-// This function can return a mix of ACTIVE and INACTIVE partitions. INACTIVE partitions are only
+// This function can return a mix of read-write and read-only partitions. Read-only partitions are only
 // included if they were part of the identifier's shard within the lookbackPeriod.
 //
 // This function supports caching, but the cache will only be effective if successive calls for the
@@ -145,7 +145,7 @@ func (r *PartitionRing) ShuffleShardWithLookback(identifier string, size int, lo
 
 func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
 	// If the size is too small or too large, run with a size equal to the total number of partitions.
-	// We have to run the function anyway because the logic may filter out some INACTIVE partitions.
+	// We have to run the function anyway because the logic may filter out some read-only partitions.
 	if size <= 0 || size >= len(r.desc.Partitions) {
 		size = len(r.desc.Partitions)
 	}
@@ -201,7 +201,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 			var (
 				withinLookbackPeriod = lookbackPeriod > 0 && p.GetStateTimestamp() >= lookbackUntil
 				shouldExtend         = withinLookbackPeriod
-				shouldInclude        = p.IsActive() || withinLookbackPeriod
+				shouldInclude        = p.IsReadWrite() || withinLookbackPeriod
 			)
 
 			// Either include or exclude the found partition.
@@ -262,13 +262,13 @@ func (r *PartitionRing) PartitionIDs() []int32 {
 	return ids
 }
 
-// ActivePartitionIDs returns a list of all ACTIVE partition IDs in the ring.
+// ReadWritePartitionIDs returns a list of all read-write partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
-func (r *PartitionRing) ActivePartitionIDs() []int32 {
+func (r *PartitionRing) ReadWritePartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
 
 	for id, partition := range r.desc.Partitions {
-		if partition.IsActive() {
+		if partition.IsReadWrite() {
 			ids = append(ids, id)
 		}
 	}
@@ -277,13 +277,13 @@ func (r *PartitionRing) ActivePartitionIDs() []int32 {
 	return ids
 }
 
-// InactivePartitionIDs returns a list of all INACTIVE partition IDs in the ring.
+// ReadOnlyPartitionIDs returns a list of all read-only partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
-func (r *PartitionRing) InactivePartitionIDs() []int32 {
+func (r *PartitionRing) ReadOnlyPartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
 
 	for id, partition := range r.desc.Partitions {
-		if !partition.IsActive() {
+		if !partition.IsReadWrite() {
 			ids = append(ids, id)
 		}
 	}

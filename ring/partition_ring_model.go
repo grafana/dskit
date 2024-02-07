@@ -351,8 +351,8 @@ func (m *PartitionRingDesc) Clone() memberlist.Mergeable {
 	return clone
 }
 
-func (m *PartitionDesc) IsActive() bool {
-	return m.GetState() == PartitionActive
+func (m *PartitionDesc) IsReadWrite() bool {
+	return m.GetState() == PartitionReadWrite
 }
 
 func (m *PartitionDesc) Clone() PartitionDesc {

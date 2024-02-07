@@ -41,14 +41,14 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
 		# TYPE partition_ring_partitions gauge
-		partition_ring_partitions{name="test",state="Active"} 0
-		partition_ring_partitions{name="test",state="Inactive"} 0
+		partition_ring_partitions{name="test",state="ReadWrite"} 0
+		partition_ring_partitions{name="test",state="ReadOnly"} 0
 	`)))
 
-	// Add an ACTIVE partition to the ring.
+	// Add a READWRITE partition to the ring.
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePartitionRingDesc(in)
-		desc.AddPartition(1, PartitionActive, time.Now())
+		desc.AddPartition(1, PartitionReadWrite, time.Now())
 		return desc, true, nil
 	}))
 
@@ -59,14 +59,14 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
 		# TYPE partition_ring_partitions gauge
-		partition_ring_partitions{name="test",state="Active"} 1
-		partition_ring_partitions{name="test",state="Inactive"} 0
+		partition_ring_partitions{name="test",state="ReadWrite"} 1
+		partition_ring_partitions{name="test",state="ReadOnly"} 0
 	`)))
 
-	// Add an INACTIVE partition to the ring.
+	// Add a READONLY partition to the ring.
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePartitionRingDesc(in)
-		desc.AddPartition(2, PartitionInactive, time.Now())
+		desc.AddPartition(2, PartitionReadOnly, time.Now())
 		return desc, true, nil
 	}))
 
@@ -77,7 +77,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
 		# TYPE partition_ring_partitions gauge
-		partition_ring_partitions{name="test",state="Active"} 1
-		partition_ring_partitions{name="test",state="Inactive"} 1
+		partition_ring_partitions{name="test",state="ReadWrite"} 1
+		partition_ring_partitions{name="test",state="ReadOnly"} 1
 	`)))
 }

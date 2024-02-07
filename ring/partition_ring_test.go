@@ -14,7 +14,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
+func TestPartitionRing_ReadWritePartitionForKey(t *testing.T) {
 	tokensForPartition := func(partitionID int32) Tokens {
 		tg := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(partitionID), 0, false)
 		return tg.GenerateTokens(optimalTokensPerInstance, nil)
@@ -33,61 +33,61 @@ func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
 	}{
 		"no partitions": {
 			key:         1,
-			expectedErr: ErrNoActivePartitionFound,
+			expectedErr: ErrNoReadWritePartitionFound,
 		},
 		"one partition": {
 			partitions: []addPartition{
-				{state: PartitionActive},
+				{state: PartitionReadWrite},
 			},
 			key:                 1,
 			expectedPartitionID: 0,
 		},
-		"one inactive partition": {
+		"one read-only partition": {
 			partitions: []addPartition{
-				{state: PartitionInactive},
+				{state: PartitionReadOnly},
 			},
 			key:         1,
-			expectedErr: ErrNoActivePartitionFound,
+			expectedErr: ErrNoReadWritePartitionFound,
 		},
 		"one deleted partition": {
 			partitions: []addPartition{
 				{state: PartitionDeleted},
 			},
 			key:         1,
-			expectedErr: ErrNoActivePartitionFound,
+			expectedErr: ErrNoReadWritePartitionFound,
 		},
-		"multiple active partitions": {
+		"multiple read-write partitions": {
 			partitions: []addPartition{
-				{state: PartitionActive},
-				{state: PartitionActive},
-				{state: PartitionActive},
+				{state: PartitionReadWrite},
+				{state: PartitionReadWrite},
+				{state: PartitionReadWrite},
 			},
 			key:                 tokensForPartition(2)[123] - 10,
 			expectedPartitionID: 2,
 		},
-		"multiple active partitions, one inactive partition": {
+		"multiple read-write partitions, one read-only partition": {
 			partitions: []addPartition{
-				{state: PartitionActive},
-				{state: PartitionActive},
-				{state: PartitionInactive},
+				{state: PartitionReadWrite},
+				{state: PartitionReadWrite},
+				{state: PartitionReadOnly},
 			},
 			key:                 tokensForPartition(2)[123] - 10,
-			expectedPartitionID: 1, // partition 2 is skipped, because it's inactive
+			expectedPartitionID: 1, // partition 2 is skipped, because it's read-only
 		},
-		"multiple active partitions, two inactive partitions": {
+		"multiple read-write partitions, two read-only partitions": {
 			partitions: []addPartition{
-				{state: PartitionActive},
-				{state: PartitionInactive},
-				{state: PartitionInactive},
+				{state: PartitionReadWrite},
+				{state: PartitionReadOnly},
+				{state: PartitionReadOnly},
 			},
 			key:                 tokensForPartition(2)[123] - 10,
-			expectedPartitionID: 0, // partition 1 and 2 are skipped, because they are inactive
+			expectedPartitionID: 0, // partition 1 and 2 are skipped, because they are read-only
 		},
-		"multiple active partitions, token exactly matches one partition's token": {
+		"multiple read-write partitions, token exactly matches one partition's token": {
 			partitions: []addPartition{
-				{state: PartitionActive},
-				{state: PartitionActive},
-				{state: PartitionActive},
+				{state: PartitionReadWrite},
+				{state: PartitionReadWrite},
+				{state: PartitionReadWrite},
 			},
 			key:                 tokensForPartition(1)[123],
 			expectedPartitionID: 0, // since we want token > key, the token is assigned to another partition (and because tokens are equally spread).
@@ -102,7 +102,7 @@ func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
 			}
 			pr := NewPartitionRing(*desc)
 
-			partitionID, err := pr.ActivePartitionForKey(testCase.key)
+			partitionID, err := pr.ReadWritePartitionForKey(testCase.key)
 
 			assert.ErrorIs(t, err, testCase.expectedErr)
 			if testCase.expectedErr == nil {
@@ -112,17 +112,17 @@ func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
 	}
 }
 
-func TestPartitionRing_ActivePartitionForKey_NoMemoryAllocations(t *testing.T) {
+func TestPartitionRing_ReadWritePartitionForKey_NoMemoryAllocations(t *testing.T) {
 	const (
-		numActivePartitions   = 100
-		numInactivePartitions = 10
+		numReadWritePartitions = 100
+		numReadOnlyPartitions  = 10
 	)
 
-	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+	ring := createPartitionRingWithPartitions(numReadWritePartitions, numReadOnlyPartitions)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	numAllocs := testing.AllocsPerRun(10, func() {
-		_, err := ring.ActivePartitionForKey(r.Uint32())
+		_, err := ring.ReadWritePartitionForKey(r.Uint32())
 		if err != nil {
 			t.Fail()
 		}
@@ -131,19 +131,19 @@ func TestPartitionRing_ActivePartitionForKey_NoMemoryAllocations(t *testing.T) {
 	assert.Equal(t, float64(0), numAllocs)
 }
 
-func BenchmarkPartitionRing_ActivePartitionForKey(b *testing.B) {
+func BenchmarkPartitionRing_ReadWritePartitionForKey(b *testing.B) {
 	const (
-		numActivePartitions   = 100
-		numInactivePartitions = 10
+		numReadWritePartitions = 100
+		numReadOnlyPartitions  = 10
 	)
 
-	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+	ring := createPartitionRingWithPartitions(numReadWritePartitions, numReadOnlyPartitions)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		_, err := ring.ActivePartitionForKey(r.Uint32())
+		_, err := ring.ReadWritePartitionForKey(r.Uint32())
 		if err != nil {
 			b.Fail()
 		}
@@ -151,37 +151,37 @@ func BenchmarkPartitionRing_ActivePartitionForKey(b *testing.B) {
 }
 func TestPartitionRing_ShuffleShard(t *testing.T) {
 	t.Run("should honor the shard size", func(t *testing.T) {
-		const numActivePartitions = 5
+		const numReadWritePartitions = 5
 
-		ring := createPartitionRingWithPartitions(numActivePartitions, 0)
+		ring := createPartitionRingWithPartitions(numReadWritePartitions, 0)
 
 		// Request a shard size up to the number of existing partitions.
-		for shardSize := 1; shardSize <= numActivePartitions; shardSize++ {
+		for shardSize := 1; shardSize <= numReadWritePartitions; shardSize++ {
 			subring, err := ring.ShuffleShard("tenant-id", shardSize)
 			require.NoError(t, err)
 			assert.Equal(t, shardSize, subring.PartitionsCount())
 		}
 
 		// Request a shard size greater than the number of existing partitions.
-		subring, err := ring.ShuffleShard("tenant-id", numActivePartitions+1)
+		subring, err := ring.ShuffleShard("tenant-id", numReadWritePartitions+1)
 		require.NoError(t, err)
-		assert.Equal(t, numActivePartitions, subring.PartitionsCount())
+		assert.Equal(t, numReadWritePartitions, subring.PartitionsCount())
 	})
 
-	t.Run("should never return INACTIVE partitions", func(t *testing.T) {
+	t.Run("should never return READONLY partitions", func(t *testing.T) {
 		const (
-			numActivePartitions   = 5
-			numInactivePartitions = 5
+			numReadWritePartitions = 5
+			numReadOnlyPartitions  = 5
 		)
 
-		ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+		ring := createPartitionRingWithPartitions(numReadWritePartitions, numReadOnlyPartitions)
 
-		for shardSize := 1; shardSize <= numActivePartitions+numInactivePartitions; shardSize++ {
+		for shardSize := 1; shardSize <= numReadWritePartitions+numReadOnlyPartitions; shardSize++ {
 			subring, err := ring.ShuffleShard("tenant-id", shardSize)
 			require.NoError(t, err)
 
 			for _, partition := range subring.Partitions() {
-				assert.Equal(t, PartitionActive, partition.State)
+				assert.Equal(t, PartitionReadWrite, partition.State)
 			}
 		}
 	})
@@ -190,15 +190,15 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 // This test asserts on shard stability across multiple invocations and given the same input ring.
 func TestPartitionRing_ShuffleShard_Stability(t *testing.T) {
 	var (
-		numTenants            = 100
-		numActivePartitions   = 50
-		numInactivePartitions = 10
-		numInvocations        = 10
-		shardSizes            = []int{3, 6, 9, 12, 15}
+		numTenants             = 100
+		numReadWritePartitions = 50
+		numReadOnlyPartitions  = 10
+		numInvocations         = 10
+		shardSizes             = []int{3, 6, 9, 12, 15}
 	)
 
 	// Initialise the ring.
-	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+	ring := createPartitionRingWithPartitions(numReadWritePartitions, numReadOnlyPartitions)
 
 	for i := 1; i <= numTenants; i++ {
 		tenantID := fmt.Sprintf("%d", i)
@@ -219,9 +219,9 @@ func TestPartitionRing_ShuffleShard_Stability(t *testing.T) {
 
 func TestPartitionRing_ShuffleShard_Shuffling(t *testing.T) {
 	var (
-		numTenants          = 1000
-		numActivePartitions = 90
-		shardSize           = 3
+		numTenants             = 1000
+		numReadWritePartitions = 90
+		shardSize              = 3
 
 		// This is the expected theoretical distribution of matching partitions
 		// between different shards, given the settings above. It has been computed
@@ -236,7 +236,7 @@ func TestPartitionRing_ShuffleShard_Shuffling(t *testing.T) {
 	)
 
 	// Initialise the ring.
-	ring := createPartitionRingWithPartitions(numActivePartitions, 0)
+	ring := createPartitionRingWithPartitions(numReadWritePartitions, 0)
 
 	// Compute the shard for each tenant.
 	partitionsByTenant := map[string][]int32{}
@@ -293,18 +293,18 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 	}
 
 	const (
-		numTenants              = 100
-		addActivePartition      = change("add-active-partition")
-		switchInactivePartition = change("switch-inactive-partition")
-		removeActivePartition   = change("remove-active-partition")
-		removeInactivePartition = change("remove-inactive-partition")
+		numTenants               = 100
+		addReadWritePartition    = change("add-read-write-partition")
+		switchReadOnlyPartition  = change("switch-read-only-partition")
+		removeReadWritePartition = change("remove-read-write-partition")
+		removeReadOnlyPartition  = change("remove-read-only-partition")
 	)
 
 	// Generate all test scenarios.
 	var scenarios []scenario
 	for _, numPartitions := range []int{20, 30, 40, 50} {
 		for _, shardSize := range []int{3, 6, 9, 12, 15} {
-			for _, c := range []change{addActivePartition, switchInactivePartition, removeActivePartition, removeInactivePartition} {
+			for _, c := range []change{addReadWritePartition, switchReadOnlyPartition, removeReadWritePartition, removeReadOnlyPartition} {
 				scenarios = append(scenarios, scenario{
 					name:          fmt.Sprintf("partitions = %d, shard size = %d, ring operation = %s", numPartitions, shardSize, c),
 					numPartitions: numPartitions,
@@ -321,7 +321,7 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 		t.Run(s.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Always include 5 inactive partitions.
+			// Always include 5 read-only partitions.
 			ring := createPartitionRingWithPartitions(s.numPartitions, 5)
 
 			// Compute the initial shard for each tenant.
@@ -334,24 +334,24 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 
 			// Update the ring.
 			switch s.ringChange {
-			case addActivePartition:
+			case addReadWritePartition:
 				desc := &(ring.desc)
-				desc.AddPartition(int32(s.numPartitions+1), PartitionActive, time.Now())
+				desc.AddPartition(int32(s.numPartitions+1), PartitionReadWrite, time.Now())
 				ring = NewPartitionRing(*desc)
-			case switchInactivePartition:
-				// Switch to first active partition to inactive.
+			case switchReadOnlyPartition:
+				// Switch to first read-write partition to read-only.
 				desc := &(ring.desc)
-				desc.UpdatePartitionState(ring.ActivePartitionIDs()[0], PartitionInactive, time.Now())
+				desc.UpdatePartitionState(ring.ReadWritePartitionIDs()[0], PartitionReadOnly, time.Now())
 				ring = NewPartitionRing(*desc)
-			case removeActivePartition:
-				// Remove the first active partition.
+			case removeReadWritePartition:
+				// Remove the first read-write partition.
 				desc := &(ring.desc)
-				desc.RemovePartition(ring.ActivePartitionIDs()[0])
+				desc.RemovePartition(ring.ReadWritePartitionIDs()[0])
 				ring = NewPartitionRing(*desc)
-			case removeInactivePartition:
-				// Remove the first inactive partition.
+			case removeReadOnlyPartition:
+				// Remove the first read-only partition.
 				desc := &(ring.desc)
-				desc.RemovePartition(ring.InactivePartitionIDs()[0])
+				desc.RemovePartition(ring.ReadOnlyPartitionIDs()[0])
 				ring = NewPartitionRing(*desc)
 			}
 
@@ -455,9 +455,9 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 2) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 4, expected: []int32{0, 1, 2}},
 			},
 		},
@@ -468,9 +468,9 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 2) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 1, expected: []int32{0}},
 			},
 		},
@@ -481,64 +481,64 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 1) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{0, 1}},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{0, 1, 2}},
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{0, 2}},
 			},
 		},
-		"shard size = 2, partition is marked as inactive then marked as active again": {
+		"shard size = 2, partition is marked as read-only then marked as read-write again": {
 			partitionTokens: map[int32][]uint32{
 				0: {userToken(userID, "", 1) + 1},
 				1: {userToken(userID, "", 2) + 1},
 				2: {userToken(userID, "", 0) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadOnly, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to include partition 1
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
+				// Partition 2 still read-only, but now falls outside the lookback period, there's no need to include partition 1
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadOnly, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
-				// Partition 2 becomes active again
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
+				// Partition 2 becomes read-write again
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still active, but now falls outside the lookback period, there's no need to include partition 1
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				// Partition 2 still read-write, but now falls outside the lookback period, there's no need to include partition 1
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 			},
 		},
-		"shard size = 2, partitions marked as inactive, deleted, and re-added": {
+		"shard size = 2, partitions marked as read-only, deleted, and re-added": {
 			partitionTokens: map[int32][]uint32{
 				0: {userToken(userID, "", 1) + 1},
 				1: {userToken(userID, "", 2) + 1},
 				2: {userToken(userID, "", 0) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
-				// Partition 2 switches to inactive
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
+				// Partition 2 switches to read-only
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadOnly, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to include partition 1
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
+				// Partition 2 still read-only, but now falls outside the lookback period, there's no need to include partition 1
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadOnly, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
 				// Partition 2 now gone
 				{what: remove, partitionID: 2},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
-				// Partition 2 becomes active again
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
+				// Partition 2 becomes read-write again
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
-				// Partition 2 still active, but now falls outside the lookback period, there's no need to include partition 1
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				// Partition 2 still read-write, but now falls outside the lookback period, there's no need to include partition 1
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 			},
 		},
@@ -549,9 +549,9 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 2) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionReadWrite, outsideLookback)},
 				{what: test, shardSize: 1, expected: []int32{0}},
 				{what: test, shardSize: 2, expected: []int32{0, 1}},
 				{what: test, shardSize: 3, expected: []int32{0, 1, 2}},
@@ -639,29 +639,29 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 				case r < 70:
 					// Add a partition.
 					desc := &(ring.desc)
-					desc.AddPartition(int32(nextPartitionID), PartitionActive, currTime)
+					desc.AddPartition(int32(nextPartitionID), PartitionReadWrite, currTime)
 					ring = NewPartitionRing(*desc)
 
 					nextPartitionID++
 				case r < 80:
-					// Switch an active partition to inactive.
-					activeIDs := ring.ActivePartitionIDs()
-					if len(activeIDs) > 0 {
+					// Switch an read-write partition to read-only.
+					readWriteIDs := ring.ReadWritePartitionIDs()
+					if len(readWriteIDs) > 0 {
 						// Tests are reproducible because the list of partition IDs is sorted and the random
 						// generator is initialised with a known seed.
-						idToSwitch := int32(rnd.Intn(len(activeIDs)))
+						idToSwitch := int32(rnd.Intn(len(readWriteIDs)))
 
 						desc := &(ring.desc)
-						desc.UpdatePartitionState(idToSwitch, PartitionInactive, currTime)
+						desc.UpdatePartitionState(idToSwitch, PartitionReadOnly, currTime)
 						ring = NewPartitionRing(*desc)
 					}
 				case r < 90:
-					// Remove an inactive partition.
-					inactiveIDs := ring.InactivePartitionIDs()
-					if len(inactiveIDs) > 0 {
+					// Remove an read-only partition.
+					readOnlyIDs := ring.ReadOnlyPartitionIDs()
+					if len(readOnlyIDs) > 0 {
 						// Tests are reproducible because the list of partition IDs is sorted and the random
 						// generator is initialised with a known seed.
-						idToRemove := int32(rnd.Intn(len(inactiveIDs)))
+						idToRemove := int32(rnd.Intn(len(readOnlyIDs)))
 
 						desc := &(ring.desc)
 						desc.RemovePartition(idToRemove)
@@ -723,12 +723,12 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 	)
 
 	desc := NewPartitionRingDesc()
-	desc.AddPartition(1, PartitionActive, now.Add(-1*time.Hour))
-	desc.AddPartition(2, PartitionActive, now.Add(-90*time.Minute))
-	desc.AddPartition(3, PartitionActive, now.Add(-6*time.Hour))
-	desc.AddPartition(4, PartitionActive, now.Add(-6*time.Hour))
-	desc.AddPartition(5, PartitionActive, now.Add(-6*time.Hour))
-	desc.AddPartition(6, PartitionActive, now.Add(-6*time.Hour))
+	desc.AddPartition(1, PartitionReadWrite, now.Add(-1*time.Hour))
+	desc.AddPartition(2, PartitionReadWrite, now.Add(-90*time.Minute))
+	desc.AddPartition(3, PartitionReadWrite, now.Add(-6*time.Hour))
+	desc.AddPartition(4, PartitionReadWrite, now.Add(-6*time.Hour))
+	desc.AddPartition(5, PartitionReadWrite, now.Add(-6*time.Hour))
+	desc.AddPartition(6, PartitionReadWrite, now.Add(-6*time.Hour))
 	ring := NewPartitionRing(*desc)
 
 	t.Run("identical requests", func(t *testing.T) {
@@ -864,15 +864,15 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 
 func TestPartitionRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
 	const (
-		numWorkers            = 10
-		numRequestsPerWorker  = 1000
-		numActivePartitions   = 100
-		numInactivePartitions = 10
-		shardSize             = 3
-		lookback              = time.Hour
+		numWorkers             = 10
+		numRequestsPerWorker   = 1000
+		numReadWritePartitions = 100
+		numReadOnlyPartitions  = 10
+		shardSize              = 3
+		lookback               = time.Hour
 	)
 
-	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+	ring := createPartitionRingWithPartitions(numReadWritePartitions, numReadOnlyPartitions)
 
 	// Since partitions are created at time.Now(), we to advance the test mocked time
 	// so that we're outside the lookback window (otherwise there's no caching involved).
@@ -919,14 +919,14 @@ func generatePartitionWithInfo(state PartitionState, stateTS time.Time) Partitio
 	}
 }
 
-func createPartitionRingWithPartitions(numActive, numInactive int) *PartitionRing {
+func createPartitionRingWithPartitions(numReadWrite, numReadOnly int) *PartitionRing {
 	desc := NewPartitionRingDesc()
 
-	for i := 0; i < numActive; i++ {
-		desc.AddPartition(int32(i), PartitionActive, time.Now())
+	for i := 0; i < numReadWrite; i++ {
+		desc.AddPartition(int32(i), PartitionReadWrite, time.Now())
 	}
-	for i := numActive; i < numActive+numInactive; i++ {
-		desc.AddPartition(int32(i), PartitionInactive, time.Now())
+	for i := numReadWrite; i < numReadWrite+numReadOnly; i++ {
+		desc.AddPartition(int32(i), PartitionReadOnly, time.Now())
 	}
 
 	return NewPartitionRing(*desc)

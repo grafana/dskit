@@ -45,7 +45,7 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 
 		partitionsData = append(partitionsData, partitionPageData{
 			ID:             id,
-			State:          partition.State.String(),
+			State:          partition.State.CleanName(),
 			StateTimestamp: time.Unix(partition.StateTimestamp, 0),
 			OwnerIDs:       owners,
 		})

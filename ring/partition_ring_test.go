@@ -83,6 +83,24 @@ func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
 			key:                 tokensForPartition(2)[123] - 10,
 			expectedPartitionID: 0, // partition 1 and 2 are skipped, because they are inactive
 		},
+		"multiple active partitions, one pending partition": {
+			partitions: []addPartition{
+				{state: PartitionActive},
+				{state: PartitionActive},
+				{state: PartitionPending},
+			},
+			key:                 tokensForPartition(2)[123] - 10,
+			expectedPartitionID: 1, // partition 2 is skipped, because it's pending
+		},
+		"multiple active partitions, two pending partitions": {
+			partitions: []addPartition{
+				{state: PartitionActive},
+				{state: PartitionPending},
+				{state: PartitionPending},
+			},
+			key:                 tokensForPartition(2)[123] - 10,
+			expectedPartitionID: 0, // partition 1 and 2 are skipped, because they are pending
+		},
 		"multiple active partitions, token exactly matches one partition's token": {
 			partitions: []addPartition{
 				{state: PartitionActive},
@@ -118,7 +136,7 @@ func TestPartitionRing_ActivePartitionForKey_NoMemoryAllocations(t *testing.T) {
 		numInactivePartitions = 10
 	)
 
-	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions, 0)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	numAllocs := testing.AllocsPerRun(10, func() {
@@ -137,7 +155,7 @@ func BenchmarkPartitionRing_ActivePartitionForKey(b *testing.B) {
 		numInactivePartitions = 10
 	)
 
-	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions, 0)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	b.ResetTimer()
@@ -149,11 +167,12 @@ func BenchmarkPartitionRing_ActivePartitionForKey(b *testing.B) {
 		}
 	}
 }
+
 func TestPartitionRing_ShuffleShard(t *testing.T) {
 	t.Run("should honor the shard size", func(t *testing.T) {
 		const numActivePartitions = 5
 
-		ring := createPartitionRingWithPartitions(numActivePartitions, 0)
+		ring := createPartitionRingWithPartitions(numActivePartitions, 0, 0)
 
 		// Request a shard size up to the number of existing partitions.
 		for shardSize := 1; shardSize <= numActivePartitions; shardSize++ {
@@ -168,15 +187,16 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 		assert.Equal(t, numActivePartitions, subring.PartitionsCount())
 	})
 
-	t.Run("should never return INACTIVE partitions", func(t *testing.T) {
+	t.Run("should never return INACTIVE or PENDING partitions", func(t *testing.T) {
 		const (
 			numActivePartitions   = 5
 			numInactivePartitions = 5
+			numPendingPartitions  = 5
 		)
 
-		ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+		ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions, numPendingPartitions)
 
-		for shardSize := 1; shardSize <= numActivePartitions+numInactivePartitions; shardSize++ {
+		for shardSize := 1; shardSize <= ring.PartitionsCount(); shardSize++ {
 			subring, err := ring.ShuffleShard("tenant-id", shardSize)
 			require.NoError(t, err)
 
@@ -193,12 +213,13 @@ func TestPartitionRing_ShuffleShard_Stability(t *testing.T) {
 		numTenants            = 100
 		numActivePartitions   = 50
 		numInactivePartitions = 10
+		numPendingPartitions  = 5
 		numInvocations        = 10
 		shardSizes            = []int{3, 6, 9, 12, 15}
 	)
 
 	// Initialise the ring.
-	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions, numPendingPartitions)
 
 	for i := 1; i <= numTenants; i++ {
 		tenantID := fmt.Sprintf("%d", i)
@@ -236,7 +257,7 @@ func TestPartitionRing_ShuffleShard_Shuffling(t *testing.T) {
 	)
 
 	// Initialise the ring.
-	ring := createPartitionRingWithPartitions(numActivePartitions, 0)
+	ring := createPartitionRingWithPartitions(numActivePartitions, 0, 0)
 
 	// Compute the shard for each tenant.
 	partitionsByTenant := map[string][]int32{}
@@ -293,18 +314,19 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 	}
 
 	const (
-		numTenants              = 100
-		addActivePartition      = change("add-active-partition")
-		switchInactivePartition = change("switch-inactive-partition")
-		removeActivePartition   = change("remove-active-partition")
-		removeInactivePartition = change("remove-inactive-partition")
+		numTenants                      = 100
+		addActivePartition              = change("add-active-partition")
+		switchPendingPartitionToActive  = change("switch-pending-partition-to-active")
+		switchActivePartitionToInactive = change("switch-active-partition-to-inactive")
+		removeActivePartition           = change("remove-active-partition")
+		removeInactivePartition         = change("remove-inactive-partition")
 	)
 
 	// Generate all test scenarios.
 	var scenarios []scenario
 	for _, numPartitions := range []int{20, 30, 40, 50} {
 		for _, shardSize := range []int{3, 6, 9, 12, 15} {
-			for _, c := range []change{addActivePartition, switchInactivePartition, removeActivePartition, removeInactivePartition} {
+			for _, c := range []change{addActivePartition, switchPendingPartitionToActive, switchActivePartitionToInactive, removeActivePartition, removeInactivePartition} {
 				scenarios = append(scenarios, scenario{
 					name:          fmt.Sprintf("partitions = %d, shard size = %d, ring operation = %s", numPartitions, shardSize, c),
 					numPartitions: numPartitions,
@@ -321,8 +343,11 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 		t.Run(s.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Always include 5 inactive partitions.
-			ring := createPartitionRingWithPartitions(s.numPartitions, 5)
+			// Always include 5 inactive and pending partitions.
+			ring := createPartitionRingWithPartitions(s.numPartitions, 5, 5)
+			require.Equal(t, s.numPartitions, len(ring.ActivePartitionIDs()))
+			require.Equal(t, 5, len(ring.InactivePartitionIDs()))
+			require.Equal(t, 5, len(ring.PendingPartitionIDs()))
 
 			// Compute the initial shard for each tenant.
 			initial := map[int][]int32{}
@@ -338,7 +363,12 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 				desc := &(ring.desc)
 				desc.AddPartition(int32(s.numPartitions+1), PartitionActive, time.Now())
 				ring = NewPartitionRing(*desc)
-			case switchInactivePartition:
+			case switchPendingPartitionToActive:
+				// Switch to first pending partition to active.
+				desc := &(ring.desc)
+				desc.UpdatePartitionState(ring.PendingPartitionIDs()[0], PartitionActive, time.Now())
+				ring = NewPartitionRing(*desc)
+			case switchActivePartitionToInactive:
 				// Switch to first active partition to inactive.
 				desc := &(ring.desc)
 				desc.UpdatePartitionState(ring.ActivePartitionIDs()[0], PartitionInactive, time.Now())
@@ -372,7 +402,7 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 }
 
 func TestPartitionRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) {
-	ring := createPartitionRingWithPartitions(30, 0)
+	ring := createPartitionRingWithPartitions(30, 0, 0)
 
 	// Get the replication set with shard size = 3.
 	firstShard, err := ring.ShuffleShard("tenant-id", 3)
@@ -594,7 +624,6 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 		numEvents            = 100
 		lookbackPeriod       = time.Hour
 		delayBetweenEvents   = 5 * time.Minute // 12 events / hour
-		userID               = "user-1"
 	)
 
 	for _, numPartitions := range numInitialPartitions {
@@ -609,10 +638,14 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 			t.Log("random generator seed:", seed)
 
 			// Initialise the ring.
-			ring := createPartitionRingWithPartitions(numPartitions, 0)
+			ring := createPartitionRingWithPartitions(numPartitions, 0, 0)
 
 			// The simulation starts with the minimum shard size. Random events can later increase it.
 			shardSize := 1
+
+			// Generate a random user id. Since tokens are deterministic, if we don't randomize the user ID
+			// we'll not really get any variance between 2 test executions in terms of partitions in the user's shard.
+			userID := randomString(rnd, 6)
 
 			// Add the initial shard to the history.
 			currTime := time.Now()
@@ -632,28 +665,45 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 			// ring up until the lookback period.
 			nextPartitionID := ring.PartitionsCount()
 
+			t.Log("Events:")
+
 			for i := 1; i <= numEvents; i++ {
 				currTime = currTime.Add(delayBetweenEvents)
 
 				switch r := rnd.Intn(100); {
-				case r < 70:
-					// Add a partition.
+				case r < 35:
+					// Add a pending partition.
 					desc := &(ring.desc)
-					desc.AddPartition(int32(nextPartitionID), PartitionActive, currTime)
+					desc.AddPartition(int32(nextPartitionID), PartitionPending, currTime)
 					ring = NewPartitionRing(*desc)
+					t.Logf("- Added partition %d in pending state", nextPartitionID)
 
 					nextPartitionID++
+				case r < 70:
+					// Switch a pending partition to active.
+					pendingIDs := ring.PendingPartitionIDs()
+					if len(pendingIDs) > 0 {
+						// Tests are reproducible because the list of partition IDs is sorted and the random
+						// generator is initialised with a known seed.
+						partitionIDToSwitch := pendingIDs[rnd.Intn(len(pendingIDs))]
+
+						desc := &(ring.desc)
+						desc.UpdatePartitionState(partitionIDToSwitch, PartitionActive, currTime)
+						ring = NewPartitionRing(*desc)
+						t.Logf("- Switched partition %d from pending to active state", partitionIDToSwitch)
+					}
 				case r < 80:
 					// Switch an active partition to inactive.
 					activeIDs := ring.ActivePartitionIDs()
 					if len(activeIDs) > 0 {
 						// Tests are reproducible because the list of partition IDs is sorted and the random
 						// generator is initialised with a known seed.
-						idToSwitch := int32(rnd.Intn(len(activeIDs)))
+						partitionIDToSwitch := activeIDs[rnd.Intn(len(activeIDs))]
 
 						desc := &(ring.desc)
-						desc.UpdatePartitionState(idToSwitch, PartitionInactive, currTime)
+						desc.UpdatePartitionState(partitionIDToSwitch, PartitionInactive, currTime)
 						ring = NewPartitionRing(*desc)
+						t.Logf("- Switched partition %d from active to inactive", partitionIDToSwitch)
 					}
 				case r < 90:
 					// Remove an inactive partition.
@@ -661,16 +711,17 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 					if len(inactiveIDs) > 0 {
 						// Tests are reproducible because the list of partition IDs is sorted and the random
 						// generator is initialised with a known seed.
-						idToRemove := int32(rnd.Intn(len(inactiveIDs)))
+						partitionIDToRemove := inactiveIDs[rnd.Intn(len(inactiveIDs))]
 
 						desc := &(ring.desc)
-						desc.RemovePartition(idToRemove)
+						desc.RemovePartition(partitionIDToRemove)
 						ring = NewPartitionRing(*desc)
+						t.Logf("- Removed inactive partition %d", partitionIDToRemove)
 
 						// Remove the partition from the history.
 						for ringTime, partitionIDs := range history {
 							for idx, partitionID := range partitionIDs {
-								if partitionID != idToRemove {
+								if partitionID != partitionIDToRemove {
 									continue
 								}
 
@@ -682,6 +733,7 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 				default:
 					// Scale up shard size.
 					shardSize++
+					t.Logf("- Increased shard size to %d (num active partitions: %d)", shardSize, len(ring.ActivePartitionIDs()))
 				}
 
 				// Add the current shard to the history.
@@ -868,11 +920,12 @@ func TestPartitionRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T)
 		numRequestsPerWorker  = 1000
 		numActivePartitions   = 100
 		numInactivePartitions = 10
+		numPendingPartitions  = 10
 		shardSize             = 3
 		lookback              = time.Hour
 	)
 
-	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions)
+	ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions, numPendingPartitions)
 
 	// Since partitions are created at time.Now(), we to advance the test mocked time
 	// so that we're outside the lookback window (otherwise there's no caching involved).
@@ -919,7 +972,7 @@ func generatePartitionWithInfo(state PartitionState, stateTS time.Time) Partitio
 	}
 }
 
-func createPartitionRingWithPartitions(numActive, numInactive int) *PartitionRing {
+func createPartitionRingWithPartitions(numActive, numInactive, numPending int) *PartitionRing {
 	desc := NewPartitionRingDesc()
 
 	for i := 0; i < numActive; i++ {
@@ -927,6 +980,9 @@ func createPartitionRingWithPartitions(numActive, numInactive int) *PartitionRin
 	}
 	for i := numActive; i < numActive+numInactive; i++ {
 		desc.AddPartition(int32(i), PartitionInactive, time.Now())
+	}
+	for i := numActive + numInactive; i < numActive+numInactive+numPending; i++ {
+		desc.AddPartition(int32(i), PartitionPending, time.Now())
 	}
 
 	return NewPartitionRing(*desc)
@@ -947,4 +1003,17 @@ func comparePartitionIDs(first, second []int32) (added, removed []int32) {
 	}
 
 	return
+}
+
+func randomString(rnd *rand.Rand, length int) string {
+	const (
+		firstASCIIChar = '0'
+		lastASCIIChar  = 'Z'
+	)
+
+	out := make([]byte, 0, length)
+	for i := 0; i < length; i++ {
+		out = append(out, byte(firstASCIIChar+rnd.Intn(lastASCIIChar-firstASCIIChar)))
+	}
+	return string(out)
 }

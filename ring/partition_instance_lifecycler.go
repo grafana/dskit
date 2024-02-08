@@ -132,6 +132,11 @@ func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, 
 				return false, ErrPartitionDoesNotExist
 			}
 
+			// TODO unit test: fromState == toState
+			if partition.State == toState {
+				return false, nil
+			}
+
 			if !isPartitionStateChangeAllowed(partition.State, toState) {
 				return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "from %s to %s", partition.State.String(), toState.String())
 			}
@@ -162,6 +167,7 @@ func (l *PartitionInstanceLifecycler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-reconcileTicker.C:
+			// TODO track metrics: reconcile_total and reconcile_failures_total
 			l.reconcileOwnedPartition(ctx, time.Now())
 			l.reconcileOtherPartitions(ctx, time.Now())
 
@@ -207,6 +213,7 @@ func (l *PartitionInstanceLifecycler) stopping(runningError error) error {
 				return false, nil
 			}
 
+			// TODO only if it's empty, otherwise other lifecyclers will start to complain. We have the 2x duration cleanup anyway.
 			ring.RemovePartition(l.cfg.PartitionID)
 			removed = true
 			return true, nil

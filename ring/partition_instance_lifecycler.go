@@ -349,6 +349,7 @@ func (l *PartitionInstanceLifecycler) reconcileOtherPartitions(ctx context.Conte
 					continue
 				}
 
+				// TODO better to stay on the safer side: remove it only if there are no owners. If there are still owners, better to leave it there for manual cleanup (e.g. via web UI).
 				if partition.IsInactiveSince(deleteBefore) {
 					ring.RemovePartition(partitionID)
 				}

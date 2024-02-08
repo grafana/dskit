@@ -15,8 +15,15 @@ import (
 )
 
 var (
-	ErrPartitionDoesNotExist  = errors.New("the partition does not exist")
-	ErrPartitionStateMismatch = errors.New("the partition state does not match the expected one")
+	ErrPartitionDoesNotExist          = errors.New("the partition does not exist")
+	ErrPartitionStateMismatch         = errors.New("the partition state does not match the expected one")
+	ErrPartitionStateChangeNotAllowed = errors.New("partition state change not allowed")
+
+	allowedPartitionStateChanges = map[PartitionState][]PartitionState{
+		PartitionPending:  {PartitionActive, PartitionInactive},
+		PartitionActive:   {PartitionInactive},
+		PartitionInactive: {PartitionPending, PartitionActive},
+	}
 )
 
 type PartitionInstanceLifecyclerConfig struct {
@@ -99,48 +106,28 @@ func (l *PartitionInstanceLifecycler) GetPartitionState(ctx context.Context) (Pa
 		return PartitionUnknown, time.Time{}, err
 	}
 
-	if !ring.HasPartition(l.cfg.PartitionID) {
+	partition, exists := ring.Partitions[l.cfg.PartitionID]
+	if !exists {
 		return PartitionUnknown, time.Time{}, ErrPartitionDoesNotExist
 	}
 
-	partition := ring.Partitions[l.cfg.PartitionID]
 	return partition.GetState(), time.Unix(partition.GetStateTimestamp(), 0), nil
 }
 
 // ChangePartitionState changes the partition state to toState.
 // This function returns ErrPartitionDoesNotExist if the partition doesn't exist,
+// and ErrPartitionStateChangeNotAllowed if the state change is not allowed.
 // TODO unit test
 func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, toState PartitionState) error {
 	return l.run(func() error {
 		err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-			if !ring.HasPartition(l.cfg.PartitionID) {
+			partition, exists := ring.Partitions[l.cfg.PartitionID]
+			if !exists {
 				return false, ErrPartitionDoesNotExist
 			}
 
-			return ring.UpdatePartitionState(l.cfg.PartitionID, toState, time.Now()), nil
-		})
-
-		if err != nil {
-			level.Warn(l.logger).Log("msg", "failed to change partition state", "to_state", toState, "err", err)
-		}
-
-		return err
-	})
-}
-
-// CASPartitionState changes the partition state from fromState to toState.
-// This function returns ErrPartitionDoesNotExist if the partition doesn't exist,
-// and ErrPartitionStateMismatch if the current partition state is different than fromState.
-// TODO unit test
-func (l *PartitionInstanceLifecycler) CASPartitionState(ctx context.Context, fromState, toState PartitionState) error {
-	return l.run(func() error {
-		err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-			if !ring.HasPartition(l.cfg.PartitionID) {
-				return false, ErrPartitionDoesNotExist
-			}
-
-			if ring.Partitions[l.cfg.PartitionID].State != fromState {
-				return false, ErrPartitionStateMismatch
+			if !isPartitionStateChangeAllowed(partition.State, toState) {
+				return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "from %s to %s", partition.State.String(), toState.String())
 			}
 
 			return ring.UpdatePartitionState(l.cfg.PartitionID, toState, time.Now()), nil
@@ -359,4 +346,14 @@ func (l *PartitionInstanceLifecycler) reconcileOtherPartitions(ctx context.Conte
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to reconcile other partitions", "err", err)
 	}
+}
+
+func isPartitionStateChangeAllowed(from, to PartitionState) bool {
+	for _, allowed := range allowedPartitionStateChanges[from] {
+		if to == allowed {
+			return true
+		}
+	}
+
+	return false
 }

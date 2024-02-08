@@ -49,6 +49,8 @@ type PartitionInstanceLifecyclerConfig struct {
 	// - The other partitions are deleted as part of a periodic reconciliation done by the
 	//   lifecycler if they've been in inactive state for longer than 2x DeleteInactivePartitionAfterDuration.
 	DeleteInactivePartitionAfterDuration time.Duration
+
+	reconcileInterval time.Duration
 }
 
 // PartitionInstanceLifecycler is responsible to manage the lifecycle of a single
@@ -71,6 +73,10 @@ type PartitionInstanceLifecycler struct {
 }
 
 func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringName, ringKey string, store kv.Client, logger log.Logger) *PartitionInstanceLifecycler {
+	if cfg.reconcileInterval == 0 {
+		cfg.reconcileInterval = 5 * time.Second
+	}
+
 	l := &PartitionInstanceLifecycler{
 		cfg:                   cfg,
 		ringName:              ringName,
@@ -150,7 +156,7 @@ func (l *PartitionInstanceLifecycler) starting(ctx context.Context) error {
 }
 
 func (l *PartitionInstanceLifecycler) running(ctx context.Context) error {
-	reconcileTicker := time.NewTicker(5 * time.Second)
+	reconcileTicker := time.NewTicker(l.cfg.reconcileInterval)
 	defer reconcileTicker.Stop()
 
 	for {
@@ -259,6 +265,7 @@ func (l *PartitionInstanceLifecycler) updateRing(ctx context.Context, update fun
 	})
 }
 
+// TODO rename because it also add the instance as owner
 func (l *PartitionInstanceLifecycler) createPartitionIfNotExist(ctx context.Context) error {
 	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 		now := time.Now()
@@ -281,7 +288,9 @@ func (l *PartitionInstanceLifecycler) createPartitionIfNotExist(ctx context.Cont
 		}
 
 		// Ensure the instance is added as partition owner.
-		changed = changed || ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerActive, l.cfg.PartitionID, now)
+		if ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerActive, l.cfg.PartitionID, now) {
+			changed = true
+		}
 
 		return changed, nil
 	})
@@ -304,8 +313,7 @@ func (l *PartitionInstanceLifecycler) reconcileOwnedPartition(ctx context.Contex
 		// have been added since more than the waiting period.
 		if partition.IsPending() && ring.PartitionOwnersCountUpdatedBefore(partitionID, now.Add(-l.cfg.WaitOwnersDurationOnPending)) >= l.cfg.WaitOwnersCountOnPending {
 			level.Info(l.logger).Log("msg", fmt.Sprintf("switching partition state from %s to %s because enough owners have been registered and minimum waiting time has elapsed", PartitionPending.CleanName(), PartitionActive.CleanName()))
-			ring.UpdatePartitionState(partitionID, PartitionActive, now)
-			return true, nil
+			return ring.UpdatePartitionState(partitionID, PartitionActive, now), nil
 		}
 
 		return false, nil

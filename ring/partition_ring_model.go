@@ -27,7 +27,12 @@ func GetOrCreatePartitionRingDesc(in any) *PartitionRingDesc {
 		return NewPartitionRingDesc()
 	}
 
-	return in.(*PartitionRingDesc)
+	desc := in.(*PartitionRingDesc)
+	if desc == nil {
+		return NewPartitionRingDesc()
+	}
+
+	return desc
 }
 
 func NewPartitionRingDesc() *PartitionRingDesc {

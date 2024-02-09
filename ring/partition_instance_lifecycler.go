@@ -183,9 +183,9 @@ func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, 
 func (l *PartitionInstanceLifecycler) starting(ctx context.Context) error {
 	if l.CreatePartitionOnStartup() {
 		return errors.Wrap(l.createPartitionAndRegisterOwner(ctx), "create partition and register owner")
-	} else {
-		return errors.Wrap(l.waitPartitionAndRegisterOwner(ctx), "wait partition and register owner")
 	}
+
+	return errors.Wrap(l.waitPartitionAndRegisterOwner(ctx), "wait partition and register owner")
 }
 
 func (l *PartitionInstanceLifecycler) running(ctx context.Context) error {

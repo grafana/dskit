@@ -49,8 +49,7 @@ type PartitionInstanceLifecyclerConfig struct {
 
 	// PollingInterval is the internal polling interval. This setting is useful to let
 	// upstream projects to lower it in unit tests.
-	PollingInterval           time.Duration
-	waitPartitionPollInterval time.Duration
+	PollingInterval time.Duration
 }
 
 // PartitionInstanceLifecycler is responsible to manage the lifecycle of a single

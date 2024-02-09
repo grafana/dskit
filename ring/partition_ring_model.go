@@ -74,6 +74,12 @@ func (m *PartitionRingDesc) ownersByPartition() map[int32][]string {
 	for id, o := range m.Owners {
 		out[o.OwnedPartition] = append(out[o.OwnedPartition], id)
 	}
+
+	// Sort owners to have predictable tests.
+	for id := range out {
+		slices.Sort(out[id])
+	}
+
 	return out
 }
 
@@ -400,6 +406,10 @@ func (m *PartitionDesc) IsInactive() bool {
 
 func (m *PartitionDesc) IsInactiveSince(since time.Time) bool {
 	return m.IsInactive() && m.GetStateTimestamp() < since.Unix()
+}
+
+func (m *PartitionDesc) GetStateTime() time.Time {
+	return time.Unix(m.GetStateTimestamp(), 0)
 }
 
 func (m *PartitionDesc) Clone() PartitionDesc {

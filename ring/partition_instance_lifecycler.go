@@ -2,12 +2,13 @@ package ring
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/kv"
@@ -42,12 +43,8 @@ type PartitionInstanceLifecyclerConfig struct {
 	WaitOwnersDurationOnPending time.Duration
 
 	// DeleteInactivePartitionAfterDuration is how long the lifecycler should wait before
-	// deleting inactive partitions. Inactive partitions are never removed if this value is 0.
-	//
-	// - The owned partition is deleted only when stopping the lifecycler and if it has been
-	//   in inactive state for longer than DeleteInactivePartitionAfterDuration.
-	// - The other partitions are deleted as part of a periodic reconciliation done by the
-	//   lifecycler if they've been in inactive state for longer than 2x DeleteInactivePartitionAfterDuration.
+	// deleting inactive partitions with no owners. Inactive partitions are never removed
+	// if this value is 0.
 	DeleteInactivePartitionAfterDuration time.Duration
 
 	reconcileInterval time.Duration
@@ -70,9 +67,13 @@ type PartitionInstanceLifecycler struct {
 
 	// Whether the lifecycler should remove the partition owner on shutdown.
 	removeOwnerOnShutdown *atomic.Bool
+
+	// Metrics.
+	reconcilesTotal       *prometheus.CounterVec
+	reconcilesFailedTotal *prometheus.CounterVec
 }
 
-func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringName, ringKey string, store kv.Client, logger log.Logger) *PartitionInstanceLifecycler {
+func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringName, ringKey string, store kv.Client, logger log.Logger, reg prometheus.Registerer) *PartitionInstanceLifecycler {
 	if cfg.reconcileInterval == 0 {
 		cfg.reconcileInterval = 5 * time.Second
 	}
@@ -82,9 +83,19 @@ func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringN
 		ringName:              ringName,
 		ringKey:               ringKey,
 		store:                 store,
-		logger:                log.With(logger, "ring", ringName, "partition", cfg.PartitionID),
+		logger:                log.With(logger, "ring", ringName),
 		actorChan:             make(chan func()),
 		removeOwnerOnShutdown: atomic.NewBool(false),
+		reconcilesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name:        "partition_ring_lifecycler_reconciles_total",
+			Help:        "Total number of reconciliations started.",
+			ConstLabels: map[string]string{"name": ringName},
+		}, []string{"type"}),
+		reconcilesFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name:        "partition_ring_lifecycler_reconciles_failed_total",
+			Help:        "Total number of reconciliations failed.",
+			ConstLabels: map[string]string{"name": ringName},
+		}, []string{"type"}),
 	}
 
 	l.BasicService = services.NewBasicService(l.starting, l.running, l.stopping)
@@ -105,7 +116,6 @@ func (l *PartitionInstanceLifecycler) SetRemoveOwnerOnShutdown(remove bool) {
 
 // GetPartitionState returns the current state of the partition, and the timestamp when the state was
 // changed the last time.
-// TODO unit test
 func (l *PartitionInstanceLifecycler) GetPartitionState(ctx context.Context) (PartitionState, time.Time, error) {
 	ring, err := l.getRing(ctx)
 	if err != nil {
@@ -117,13 +127,12 @@ func (l *PartitionInstanceLifecycler) GetPartitionState(ctx context.Context) (Pa
 		return PartitionUnknown, time.Time{}, ErrPartitionDoesNotExist
 	}
 
-	return partition.GetState(), time.Unix(partition.GetStateTimestamp(), 0), nil
+	return partition.GetState(), partition.GetStateTime(), nil
 }
 
 // ChangePartitionState changes the partition state to toState.
 // This function returns ErrPartitionDoesNotExist if the partition doesn't exist,
 // and ErrPartitionStateChangeNotAllowed if the state change is not allowed.
-// TODO unit test
 func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, toState PartitionState) error {
 	return l.run(func() error {
 		err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
@@ -132,7 +141,6 @@ func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, 
 				return false, ErrPartitionDoesNotExist
 			}
 
-			// TODO unit test: fromState == toState
 			if partition.State == toState {
 				return false, nil
 			}
@@ -145,7 +153,7 @@ func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, 
 		})
 
 		if err != nil {
-			level.Warn(l.logger).Log("msg", "failed to change partition state", "to_state", toState, "err", err)
+			level.Warn(l.logger).Log("msg", "failed to change partition state", "partition", l.cfg.PartitionID, "to_state", toState, "err", err)
 		}
 
 		return err
@@ -153,7 +161,33 @@ func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, 
 }
 
 func (l *PartitionInstanceLifecycler) starting(ctx context.Context) error {
-	if err := l.createPartitionIfNotExist(ctx); err != nil {
+	err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
+		now := time.Now()
+		changed := false
+
+		partitionDesc, exists := ring.Partitions[l.cfg.PartitionID]
+		if exists {
+			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID, "state", partitionDesc.GetState(), "state_timestamp", partitionDesc.GetState().String(), "tokens", len(partitionDesc.GetTokens()))
+		} else {
+			level.Info(l.logger).Log("msg", "partition not found in the ring", "partition", l.cfg.PartitionID)
+		}
+
+		if !exists {
+			// The partition doesn't exist, so we create a new one. A new partition should always be created
+			// in PENDING state.
+			ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
+			changed = true
+		}
+
+		// Ensure the instance is added as partition owner.
+		if ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerActive, l.cfg.PartitionID, now) {
+			changed = true
+		}
+
+		return changed, nil
+	})
+
+	if err != nil {
 		return errors.Wrap(err, "create partition in the ring")
 	}
 
@@ -167,7 +201,6 @@ func (l *PartitionInstanceLifecycler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-reconcileTicker.C:
-			// TODO track metrics: reconcile_total and reconcile_failures_total
 			l.reconcileOwnedPartition(ctx, time.Now())
 			l.reconcileOtherPartitions(ctx, time.Now())
 
@@ -193,36 +226,9 @@ func (l *PartitionInstanceLifecycler) stopping(runningError error) error {
 		})
 
 		if err != nil {
-			level.Error(l.logger).Log("msg", "failed to remove instance from partition owners on shutdown", "instance", l.cfg.InstanceID, "err", err)
+			level.Error(l.logger).Log("msg", "failed to remove instance from partition owners on shutdown", "instance", l.cfg.InstanceID, "partition", l.cfg.PartitionID, "err", err)
 		} else {
-			level.Info(l.logger).Log("msg", "instance removed from partition owners", "instance", l.cfg.InstanceID)
-		}
-	}
-
-	// Remove the partition if it's inactive since more than the minimum waiting period.
-	if l.cfg.DeleteInactivePartitionAfterDuration > 0 {
-		removed := false
-
-		err := l.updateRing(context.Background(), func(ring *PartitionRingDesc) (bool, error) {
-			partition, exists := ring.Partitions[l.cfg.PartitionID]
-			if !exists {
-				return false, nil
-			}
-
-			if !partition.IsInactiveSince(time.Now().Add(l.cfg.DeleteInactivePartitionAfterDuration)) {
-				return false, nil
-			}
-
-			// TODO only if it's empty, otherwise other lifecyclers will start to complain. We have the 2x duration cleanup anyway.
-			ring.RemovePartition(l.cfg.PartitionID)
-			removed = true
-			return true, nil
-		})
-
-		if err != nil {
-			level.Error(l.logger).Log("msg", "failed to remove inactive partition from the ring", "err", err)
-		} else if removed {
-			level.Info(l.logger).Log("msg", "inactive partition removed from the ring")
+			level.Info(l.logger).Log("msg", "instance removed from partition owners", "instance", l.cfg.InstanceID, "partition", l.cfg.PartitionID)
 		}
 	}
 
@@ -272,54 +278,24 @@ func (l *PartitionInstanceLifecycler) updateRing(ctx context.Context, update fun
 	})
 }
 
-// TODO rename because it also add the instance as owner
-func (l *PartitionInstanceLifecycler) createPartitionIfNotExist(ctx context.Context) error {
-	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-		now := time.Now()
-		changed := false
-
-		partitionDesc, exists := ring.Partitions[l.cfg.PartitionID]
-		if exists {
-			level.Info(l.logger).Log("msg", "partition found in the ring", "state", partitionDesc.GetState(), "state_timestamp", partitionDesc.GetState().String(), "tokens", len(partitionDesc.GetTokens()))
-		} else {
-			level.Info(l.logger).Log("msg", "partition not found in the ring")
-		}
-
-		// The partition does not exist:
-		// TODO - EDGE case: we shouldn't create the partition if there was a shutdown marker. But then this will make the lifecycler more complicated, because it currently assumes the partition exists.
-		if !exists {
-			// The partition doesn't exist, so we create a new one. A new partition should always be created
-			// in PENDING state.
-			ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
-			changed = true
-		}
-
-		// Ensure the instance is added as partition owner.
-		if ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerActive, l.cfg.PartitionID, now) {
-			changed = true
-		}
-
-		return changed, nil
-	})
-}
-
 // reconcileOwnedPartition reconciles the owned partition.
 // This function should be called periodically.
-// TODO unit test
 func (l *PartitionInstanceLifecycler) reconcileOwnedPartition(ctx context.Context, now time.Time) {
+	const reconcileType = "owned-partition"
+	l.reconcilesTotal.WithLabelValues(reconcileType).Inc()
+
 	err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 		partitionID := l.cfg.PartitionID
 
 		partition, exists := ring.Partitions[partitionID]
 		if !exists {
-			// TODO what should we do here? should be re-created? in which state?
 			return false, ErrPartitionDoesNotExist
 		}
 
 		// A pending partition should be switched to active if there are enough owners that
 		// have been added since more than the waiting period.
 		if partition.IsPending() && ring.PartitionOwnersCountUpdatedBefore(partitionID, now.Add(-l.cfg.WaitOwnersDurationOnPending)) >= l.cfg.WaitOwnersCountOnPending {
-			level.Info(l.logger).Log("msg", fmt.Sprintf("switching partition state from %s to %s because enough owners have been registered and minimum waiting time has elapsed", PartitionPending.CleanName(), PartitionActive.CleanName()))
+			level.Info(l.logger).Log("msg", "switching partition state because enough owners have been registered and minimum waiting time has elapsed", "partition", l.cfg.PartitionID, "from_state", PartitionPending, "to_state", PartitionActive)
 			return ring.UpdatePartitionState(partitionID, PartitionActive, now), nil
 		}
 
@@ -327,31 +303,36 @@ func (l *PartitionInstanceLifecycler) reconcileOwnedPartition(ctx context.Contex
 	})
 
 	if err != nil {
-		level.Warn(l.logger).Log("msg", "failed to reconcile owned partition", "err", err)
+		l.reconcilesFailedTotal.WithLabelValues(reconcileType).Inc()
+		level.Warn(l.logger).Log("msg", "failed to reconcile owned partition", "partition", l.cfg.PartitionID, "err", err)
 	}
 }
 
 // reconcileOtherPartitions reconciles other partitions.
 // This function should be called periodically.
-// TODO unit test
 func (l *PartitionInstanceLifecycler) reconcileOtherPartitions(ctx context.Context, now time.Time) {
+	const reconcileType = "other-partitions"
+	l.reconcilesTotal.WithLabelValues(reconcileType).Inc()
+
 	err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 		changed := false
 
-		// Delete other inactive partitions after 2x the deletion threshold time has passed.
-		// This logic is used to cleanup inactive partitions that may have been left over
-		// by non-graceful scale downs.
 		if l.cfg.DeleteInactivePartitionAfterDuration > 0 {
-			deleteBefore := now.Add(-2 * l.cfg.DeleteInactivePartitionAfterDuration)
+			deleteBefore := now.Add(-l.cfg.DeleteInactivePartitionAfterDuration)
 
 			for partitionID, partition := range ring.Partitions {
+				// Never delete the partition owned by this lifecycler, since it's expected to have at least
+				// this instance as owner.
 				if partitionID == l.cfg.PartitionID {
 					continue
 				}
 
-				// TODO better to stay on the safer side: remove it only if there are no owners. If there are still owners, better to leave it there for manual cleanup (e.g. via web UI).
-				if partition.IsInactiveSince(deleteBefore) {
+				// A partition is safe to be removed only if it's inactive since longer than the wait period
+				// and it has no owners registered.
+				if partition.IsInactiveSince(deleteBefore) && ring.PartitionOwnersCount(partitionID) == 0 {
+					level.Info(l.logger).Log("msg", "removing inactive partition from ring", "partition", partitionID, "state", partition.State.CleanName(), "state_timestamp", partition.GetStateTime().String())
 					ring.RemovePartition(partitionID)
+					changed = true
 				}
 			}
 		}
@@ -360,6 +341,7 @@ func (l *PartitionInstanceLifecycler) reconcileOtherPartitions(ctx context.Conte
 	})
 
 	if err != nil {
+		l.reconcilesFailedTotal.WithLabelValues(reconcileType).Inc()
 		level.Warn(l.logger).Log("msg", "failed to reconcile other partitions", "err", err)
 	}
 }

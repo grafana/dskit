@@ -47,7 +47,9 @@ type PartitionInstanceLifecyclerConfig struct {
 	// if this value is 0.
 	DeleteInactivePartitionAfterDuration time.Duration
 
-	reconcileInterval         time.Duration
+	// PollingInterval is the internal polling interval. This setting is useful to let
+	// upstream projects to lower it in unit tests.
+	PollingInterval           time.Duration
 	waitPartitionPollInterval time.Duration
 }
 
@@ -78,11 +80,8 @@ type PartitionInstanceLifecycler struct {
 }
 
 func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringName, ringKey string, store kv.Client, logger log.Logger, reg prometheus.Registerer) *PartitionInstanceLifecycler {
-	if cfg.reconcileInterval == 0 {
-		cfg.reconcileInterval = 5 * time.Second
-	}
-	if cfg.waitPartitionPollInterval == 0 {
-		cfg.waitPartitionPollInterval = 5 * time.Second
+	if cfg.PollingInterval == 0 {
+		cfg.PollingInterval = 5 * time.Second
 	}
 
 	l := &PartitionInstanceLifecycler{
@@ -189,7 +188,7 @@ func (l *PartitionInstanceLifecycler) starting(ctx context.Context) error {
 }
 
 func (l *PartitionInstanceLifecycler) running(ctx context.Context) error {
-	reconcileTicker := time.NewTicker(l.cfg.reconcileInterval)
+	reconcileTicker := time.NewTicker(l.cfg.PollingInterval)
 	defer reconcileTicker.Stop()
 
 	for {
@@ -301,7 +300,7 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 }
 
 func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.Context) error {
-	pollTicker := time.NewTicker(l.cfg.waitPartitionPollInterval)
+	pollTicker := time.NewTicker(l.cfg.PollingInterval)
 	defer pollTicker.Stop()
 
 	// Wait until the partition exists.

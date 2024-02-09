@@ -42,7 +42,7 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		})
 
 		// We expect the partition to NOT switch to active.
-		time.Sleep(2 * lifecycler1aConfig.reconcileInterval)
+		time.Sleep(2 * lifecycler1aConfig.PollingInterval)
 
 		actual := getPartitionRingFromStore(t, store, ringKey)
 		assert.Len(t, actual.Partitions, 1)
@@ -201,7 +201,7 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 
 		// No matter how long we wait, we expect the lifecycler be haven't been
 		// started yet and the partition not having being created.
-		time.Sleep(10 * cfg.waitPartitionPollInterval)
+		time.Sleep(10 * cfg.PollingInterval)
 
 		assert.Equal(t, services.Starting, lifecycler.State())
 		actual := getPartitionRingFromStore(t, store, ringKey)
@@ -250,7 +250,7 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 
 		// No matter how long we wait, we expect the lifecycler be haven't been
 		// started yet and the partition not having being created.
-		time.Sleep(10 * cfg.waitPartitionPollInterval)
+		time.Sleep(10 * cfg.PollingInterval)
 
 		assert.Equal(t, services.Starting, lifecycler.State())
 		actual := getPartitionRingFromStore(t, store, ringKey)
@@ -331,7 +331,6 @@ func createTestPartitionInstanceLifecyclerConfig(partitionID int32, instanceID s
 		WaitOwnersCountOnPending:             0,
 		WaitOwnersDurationOnPending:          0,
 		DeleteInactivePartitionAfterDuration: 0,
-		reconcileInterval:                    10 * time.Millisecond,
-		waitPartitionPollInterval:            10 * time.Millisecond,
+		PollingInterval:                      10 * time.Millisecond,
 	}
 }

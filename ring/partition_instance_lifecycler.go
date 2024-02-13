@@ -152,7 +152,7 @@ func (l *PartitionInstanceLifecycler) GetPartitionState(ctx context.Context) (Pa
 // This function returns ErrPartitionDoesNotExist if the partition doesn't exist,
 // and ErrPartitionStateChangeNotAllowed if the state change is not allowed.
 func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, toState PartitionState) error {
-	return l.run(func() error {
+	return l.runOnLifecyclerLoop(func() error {
 		err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 			partition, exists := ring.Partitions[l.cfg.PartitionID]
 			if !exists {
@@ -224,8 +224,8 @@ func (l *PartitionInstanceLifecycler) stopping(_ error) error {
 	return nil
 }
 
-// run a function within the lifecycler loop.
-func (l *PartitionInstanceLifecycler) run(fn func() error) error {
+// runOnLifecyclerLoop runs fn within the lifecycler loop.
+func (l *PartitionInstanceLifecycler) runOnLifecyclerLoop(fn func() error) error {
 	sc := l.ServiceContext()
 	if sc == nil {
 		return errors.New("lifecycler not running")

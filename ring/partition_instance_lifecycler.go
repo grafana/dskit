@@ -391,7 +391,7 @@ func (l *PartitionInstanceLifecycler) reconcileOtherPartitions(ctx context.Conte
 				// A partition is safe to be removed only if it's inactive since longer than the wait period
 				// and it has no owners registered.
 				if partition.IsInactiveSince(deleteBefore) && ring.PartitionOwnersCount(partitionID) == 0 {
-					level.Info(l.logger).Log("msg", "removing inactive partition from ring", "partition", partitionID, "state", partition.State.CleanName(), "state_timestamp", partition.GetStateTime().String())
+					level.Info(l.logger).Log("msg", "removing inactive partition with no owners from ring", "partition", partitionID, "state", partition.State.CleanName(), "state_timestamp", partition.GetStateTime().String())
 					ring.RemovePartition(partitionID)
 					changed = true
 				}

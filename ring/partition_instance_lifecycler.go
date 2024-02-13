@@ -200,16 +200,13 @@ func (l *PartitionInstanceLifecycler) running(ctx context.Context) error {
 			f()
 
 		case <-ctx.Done():
-			level.Info(l.logger).Log("msg", "partition ring lifecycler is shutting down", "ring", l.ringName)
 			return nil
 		}
 	}
 }
 
-func (l *PartitionInstanceLifecycler) stopping(runningError error) error {
-	if runningError != nil {
-		return nil
-	}
+func (l *PartitionInstanceLifecycler) stopping(_ error) error {
+	level.Info(l.logger).Log("msg", "partition ring lifecycler is shutting down", "ring", l.ringName)
 
 	// Remove the instance from partition owners, if configured to do so.
 	if l.RemoveOwnerOnShutdown() {

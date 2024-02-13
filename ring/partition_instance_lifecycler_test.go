@@ -21,7 +21,7 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
-	t.Run("should wait the configured minimum number of owners before switching a pending partition to active", func(t *testing.T) {
+	t.Run("should wait for the configured minimum number of owners before switching a pending partition to active", func(t *testing.T) {
 		t.Parallel()
 
 		lifecycler1aConfig := createTestPartitionInstanceLifecyclerConfig(1, "instance-zone-a-1")
@@ -67,7 +67,7 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		}, time.Second, eventuallyTick)
 	})
 
-	t.Run("should wait the configured minimum waiting time before switching a pending partition to active", func(t *testing.T) {
+	t.Run("should wait for the configured minimum waiting time before switching a pending partition to active", func(t *testing.T) {
 		t.Parallel()
 
 		lifecyclerConfig := createTestPartitionInstanceLifecyclerConfig(1, "instance-1")

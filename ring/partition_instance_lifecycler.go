@@ -164,7 +164,7 @@ func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, 
 			}
 
 			if !isPartitionStateChangeAllowed(partition.State, toState) {
-				return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "from %s to %s", partition.State.String(), toState.String())
+				return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "change partition state from %s to %s", partition.State.CleanName(), toState.CleanName())
 			}
 
 			return ring.UpdatePartitionState(l.cfg.PartitionID, toState, time.Now()), nil

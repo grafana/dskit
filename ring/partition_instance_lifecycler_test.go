@@ -175,7 +175,7 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		assert.True(t, actual.HasPartition(2))
 	})
 
-	t.Run("should not create the partition but wait until exist in the ring if lifecycler has been configured to not create partition at startup", func(t *testing.T) {
+	t.Run("should not create the partition but wait until partition exists in the ring if lifecycler has been configured to not create partition at startup", func(t *testing.T) {
 		t.Parallel()
 
 		cfg := createTestPartitionInstanceLifecyclerConfig(1, "instance-1")
@@ -199,8 +199,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 			})
 		}()
 
-		// No matter how long we wait, we expect the lifecycler be haven't been
-		// started yet and the partition not having being created.
+		// No matter how long we wait, we expect the lifecycler hasn't been
+		// started yet and the partition was not created.
 		time.Sleep(10 * cfg.PollingInterval)
 
 		assert.Equal(t, services.Starting, lifecycler.State())
@@ -248,8 +248,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 			require.ErrorIs(t, err, context.Canceled)
 		}()
 
-		// No matter how long we wait, we expect the lifecycler be haven't been
-		// started yet and the partition not having being created.
+		// No matter how long we wait, we expect the lifecycler hasn't been
+		// started yet and the partition was not created.
 		time.Sleep(10 * cfg.PollingInterval)
 
 		assert.Equal(t, services.Starting, lifecycler.State())

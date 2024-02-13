@@ -70,7 +70,7 @@ type PartitionInstanceLifecycler struct {
 	// Whether the partitions should be created on startup if it doesn't exist yet.
 	createPartitionOnStartup *atomic.Bool
 
-	// Whether the lifecycler should remove the partition owner on shutdown.
+	// Whether the lifecycler should remove the partition owner (identified by instance ID) on shutdown.
 	removeOwnerOnShutdown *atomic.Bool
 
 	// Metrics.

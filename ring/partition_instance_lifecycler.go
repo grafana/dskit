@@ -312,11 +312,11 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 		}
 
 		if ring.HasPartition(l.cfg.PartitionID) {
-			level.Info(l.logger).Log("msg", "partition not found in the ring", "partition", l.cfg.PartitionID)
+			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID)
 			return true, nil
 		}
 
-		level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID)
+		level.Info(l.logger).Log("msg", "partition not found in the ring", "partition", l.cfg.PartitionID)
 		return false, nil
 	}
 

@@ -1031,3 +1031,19 @@ func TestPartitionRingDesc_RemoveTombstones(t *testing.T) {
 		assert.False(t, desc.HasOwner("owner-3"))
 	})
 }
+
+func TestPartitionRingDesc_PartitionOwnersCountUpdatedBefore(t *testing.T) {
+	now := time.Now()
+
+	desc := NewPartitionRingDesc()
+	desc.AddPartition(1, PartitionActive, now)
+	desc.AddPartition(2, PartitionActive, now)
+	desc.AddOrUpdateOwner("owner-1-a", OwnerActive, 1, now)
+	desc.AddOrUpdateOwner("owner-1-b", OwnerActive, 1, now.Add(-1*time.Second))
+	desc.AddOrUpdateOwner("owner-1-c", OwnerActive, 1, now.Add(-2*time.Second))
+	desc.AddOrUpdateOwner("owner-2-a", OwnerActive, 2, now.Add(-3*time.Second))
+
+	assert.Equal(t, 2, desc.PartitionOwnersCountUpdatedBefore(1, now))
+	assert.Equal(t, 1, desc.PartitionOwnersCountUpdatedBefore(1, now.Add(-1*time.Second)))
+	assert.Equal(t, 0, desc.PartitionOwnersCountUpdatedBefore(1, now.Add(-2*time.Second)))
+}

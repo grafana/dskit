@@ -3,6 +3,7 @@ module github.com/grafana/dskit
 go 1.20
 
 require (
+	github.com/PuerkitoBio/goquery v1.8.1
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/alicebob/miniredis v2.5.0+incompatible
 	github.com/armon/go-metrics v0.3.10
@@ -57,7 +58,6 @@ require (
 
 require (
 	github.com/OneOfOne/xxhash v1.2.6 // indirect
-	github.com/PuerkitoBio/goquery v1.8.1 // indirect
 	github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

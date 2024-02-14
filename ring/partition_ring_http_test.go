@@ -79,6 +79,6 @@ func TestPartitionRingPageHandler(t *testing.T) {
 	row = doc.Find("table tbody tr:nth-child(3)")
 	require.Equal(t, 1, row.Length())
 	assert.Equal(t, "3", strings.TrimSpace(row.Find("td:nth-child(1)").Text()))
-	assert.Equal(t, "Corrupted", strings.TrimSpace(row.Find("td:nth-child(2)").Text()))
+	assert.Equal(t, "Corrupt", strings.TrimSpace(row.Find("td:nth-child(2)").Text()))
 	assert.Contains(t, strings.TrimSpace(row.Find("td:nth-child(4)").Text()), "ingester-zone-b-2")
 }

@@ -19,7 +19,7 @@
         </thead>
         <tbody>
         {{ range $partition := .Partitions }}
-            <tr {{ if eq .State "Corrupted" }}bgcolor="#FFDEDE"{{ else if mod $partition.ID 2 }}bgcolor="#BEBEBE"{{ end }}>
+            <tr {{ if eq .State "Corrupt" }}bgcolor="#FFDEDE"{{ else if mod $partition.ID 2 }}bgcolor="#BEBEBE"{{ end }}>
                 <td>{{ .ID }}</td>
                 <td>{{ .State }}</td>
                 <td>

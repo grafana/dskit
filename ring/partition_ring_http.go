@@ -59,7 +59,7 @@ func (h *PartitionRingPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 		if !exists {
 			partition = partitionPageData{
 				ID:             owner.OwnedPartition,
-				State:          "Corrupted",
+				State:          "Corrupt",
 				StateTimestamp: time.Time{},
 				OwnerIDs:       []string{ownerID},
 			}

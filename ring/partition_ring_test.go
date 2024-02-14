@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -963,6 +964,102 @@ func TestPartitionRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T)
 	// Ensure the cache was populated.
 	assert.NotEmpty(t, ring.shuffleShardCache.cacheWithLookback)
 	assert.Empty(t, ring.shuffleShardCache.cacheWithoutLookback)
+}
+
+func TestActivePartitionBatchRing(t *testing.T) {
+	t.Run("should implement DoBatchRing", func(t *testing.T) {
+		_ = DoBatchRing(&ActivePartitionBatchRing{})
+	})
+}
+
+func TestActivePartitionBatchRing_InstancesCount(t *testing.T) {
+	t.Run("should return the number of ACTIVE partitions", func(t *testing.T) {
+		activeRing := NewActivePartitionBatchRing(createPartitionRingWithPartitions(10, 3, 2))
+		assert.Equal(t, 10, activeRing.InstancesCount())
+	})
+}
+
+func TestActivePartitionBatchRing_Get(t *testing.T) {
+	const numRuns = 1000
+
+	ring := createPartitionRingWithPartitions(10, 5, 5)
+	activeRing := NewActivePartitionBatchRing(ring)
+	buf := [GetBufferSize]InstanceDesc{}
+
+	t.Run("should return a ReplicationSet with the active partition owning the input key", func(t *testing.T) {
+		for _, withBuffer := range []bool{true, false} {
+			t.Run(fmt.Sprintf("buffer: %t", withBuffer), func(t *testing.T) {
+				// Randomise the seed but log it in case we need to reproduce the test on failure.
+				seed := time.Now().UnixNano()
+				rnd := rand.New(rand.NewSource(seed))
+				t.Log("random generator seed:", seed)
+
+				var getBuf []InstanceDesc
+				if withBuffer {
+					getBuf = buf[:0]
+				}
+
+				for i := 0; i < numRuns; i++ {
+					key := uint32(rnd.Intn(math.MaxUint32))
+					expected, err := ring.ActivePartitionForKey(key)
+					require.NoError(t, err)
+
+					actual, err := activeRing.Get(key, WriteNoExtend, getBuf, nil, nil)
+					require.NoError(t, err)
+
+					require.Len(t, actual.Instances, 1)
+					assert.Equal(t, strconv.Itoa(int(expected)), actual.Instances[0].Id)
+					assert.Equal(t, strconv.Itoa(int(expected)), actual.Instances[0].Addr)
+					assert.Equal(t, 0, actual.MaxErrors)
+					assert.Equal(t, 0, actual.MaxUnavailableZones)
+					assert.False(t, actual.ZoneAwarenessEnabled)
+				}
+			})
+		}
+	})
+
+	t.Run("should not allocate memory with buffer is provided", func(t *testing.T) {
+		allocs := testing.AllocsPerRun(numRuns, func() {
+			_, err := activeRing.Get(12345, WriteNoExtend, buf[:0], nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		require.Equal(t, 0.0, allocs)
+	})
+}
+
+func BenchmarkActivePartitionBatchRing_Get(b *testing.B) {
+	benchCases := map[string]struct {
+		ring *ActivePartitionBatchRing
+	}{
+		"ACTIVE partitions only": {
+			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 0, 0)),
+		},
+		"ACTIVE and INACTIVE partitions": {
+			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 10, 0)),
+		},
+		"ACTIVE, INACTIVE and PENDING partitions": {
+			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 10, 10)),
+		},
+	}
+
+	for benchName, benchCase := range benchCases {
+		b.Run(benchName, func(b *testing.B) {
+			buf := [GetBufferSize]InstanceDesc{}
+
+			for n := 0; n < b.N; n++ {
+				set, err := benchCase.ring.Get(uint32(n), WriteNoExtend, buf[:0], nil, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if got, expected := len(set.Instances), 1; got != expected {
+					b.Fatalf("unexpected number of partitions (got: %d, expected: %d)", got, expected)
+				}
+			}
+		})
+	}
 }
 
 func generatePartitionWithInfo(state PartitionState, stateTS time.Time) PartitionDesc {

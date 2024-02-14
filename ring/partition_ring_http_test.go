@@ -2,15 +2,15 @@ package ring
 
 import (
 	_ "embed"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPartitionRingPageHandler(t *testing.T) {
@@ -56,29 +56,24 @@ func TestPartitionRingPageHandler(t *testing.T) {
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
 
-	doc, err := goquery.NewDocumentFromReader(recorder.Body)
-	require.NoError(t, err)
+	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+		"<td>", "1", "</td>",
+		"<td>", "Active", "</td>",
+		"<td>", "[^<]+", "</td>",
+		"<td>", "ingester-zone-a-0", "<br />", "ingester-zone-b-0", "<br />", "</td>",
+	}, `\s*`))), recorder.Body.String())
 
-	rows := doc.Find("table tbody tr")
-	require.Equal(t, 3, rows.Length())
+	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+		"<td>", "2", "</td>",
+		"<td>", "Inactive", "</td>",
+		"<td>", "[^<]+", "</td>",
+		"<td>", "ingester-zone-a-1", "<br />", "ingester-zone-b-1", "<br />", "</td>",
+	}, `\s*`))), recorder.Body.String())
 
-	row := doc.Find("table tbody tr:nth-child(1)")
-	require.Equal(t, 1, row.Length())
-	assert.Equal(t, "1", strings.TrimSpace(row.Find("td:nth-child(1)").Text()))
-	assert.Equal(t, "Active", strings.TrimSpace(row.Find("td:nth-child(2)").Text()))
-	assert.Contains(t, strings.TrimSpace(row.Find("td:nth-child(4)").Text()), "ingester-zone-a-0")
-	assert.Contains(t, strings.TrimSpace(row.Find("td:nth-child(4)").Text()), "ingester-zone-b-0")
-
-	row = doc.Find("table tbody tr:nth-child(2)")
-	require.Equal(t, 1, row.Length())
-	assert.Equal(t, "2", strings.TrimSpace(row.Find("td:nth-child(1)").Text()))
-	assert.Equal(t, "Inactive", strings.TrimSpace(row.Find("td:nth-child(2)").Text()))
-	assert.Contains(t, strings.TrimSpace(row.Find("td:nth-child(4)").Text()), "ingester-zone-a-1")
-	assert.Contains(t, strings.TrimSpace(row.Find("td:nth-child(4)").Text()), "ingester-zone-b-1")
-
-	row = doc.Find("table tbody tr:nth-child(3)")
-	require.Equal(t, 1, row.Length())
-	assert.Equal(t, "3", strings.TrimSpace(row.Find("td:nth-child(1)").Text()))
-	assert.Equal(t, "Corrupt", strings.TrimSpace(row.Find("td:nth-child(2)").Text()))
-	assert.Contains(t, strings.TrimSpace(row.Find("td:nth-child(4)").Text()), "ingester-zone-b-2")
+	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+		"<td>", "3", "</td>",
+		"<td>", "Corrupt", "</td>",
+		"<td>", "N/A", "</td>",
+		"<td>", "ingester-zone-b-2", "<br />", "</td>",
+	}, `\s*`))), recorder.Body.String())
 }

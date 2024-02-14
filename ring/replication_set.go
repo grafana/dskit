@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	kitlog "github.com/go-kit/log"
@@ -392,6 +393,80 @@ type instanceResult[T any] struct {
 	result   T
 	err      error
 	instance *InstanceDesc
+}
+
+// DoForReplicationSets runs fn for each ring.ReplicationSet in parallel, and returns a list with all merged results.
+// If any invocation returns an error, DoForReplicationSets returns without waiting for the other invocations to finish.
+func DoForReplicationSets[T any](ctx context.Context, sets []ReplicationSet, fn func(context.Context, ReplicationSet) ([]T, error)) ([]T, error) {
+	if len(sets) == 0 {
+		return nil, nil
+	}
+	if len(sets) == 1 {
+		return fn(ctx, sets[0])
+	}
+
+	var (
+		resultsC           = make(chan []T)
+		errorC             = make(chan error)
+		done               = make(chan struct{})
+		fnCtx, cancelFnCtx = context.WithCancel(ctx)
+	)
+
+	defer func() {
+		close(done)
+
+		// Ensure the fnCtx is canceled if it wasn't already.
+		if !errors.Is(fnCtx.Err(), context.Canceled) {
+			cancelFnCtx()
+		}
+	}()
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(sets))
+
+	// Run fn for each replication set.
+	for _, set := range sets {
+		go func(rs ReplicationSet) {
+			defer wg.Done()
+
+			res, err := fn(fnCtx, rs)
+			if err != nil {
+				select {
+				case errorC <- err:
+				case <-done:
+				}
+				return
+			}
+
+			select {
+			case resultsC <- res:
+			case <-done:
+			}
+		}(set)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultsC)
+	}()
+
+	result := make([]T, 0, len(sets)) // expect at least one result from each replication set.
+	for {
+		select {
+		case err := <-errorC:
+			// An error occurred in one of the callback functions. We can cancel fnCtx to early
+			// stop the remaining running callback functions.
+			cancelFnCtx()
+
+			return nil, err
+		case res, ok := <-resultsC:
+			if !ok {
+				// Channel has been closed. It means all results have been received.
+				return result, nil
+			}
+			result = append(result, res...)
+		}
+	}
 }
 
 // Includes returns whether the replication set includes the replica with the provided addr.

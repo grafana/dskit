@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 )
 
 func TestForEachUser(t *testing.T) {
@@ -235,4 +236,122 @@ func TestForEach_ShouldReturnImmediatelyOnNoJobsProvided(t *testing.T) {
 	require.NoError(t, ForEach(context.Background(), nil, 2, func(ctx context.Context, job interface{}) error {
 		return nil
 	}))
+}
+
+func TestForEachJobMergeResults(t *testing.T) {
+	// Ensure none of these tests leak goroutines.
+	t.Cleanup(func() {
+		goleak.VerifyNone(t)
+	})
+
+	generateCallbackFunction := func() func(context.Context, []string) ([]string, error) {
+		return func(_ context.Context, job []string) ([]string, error) {
+			return job, nil
+		}
+	}
+
+	t.Run("should return no results and no error on no jobs", func(t *testing.T) {
+		actual, err := ForEachJobMergeResults[[]string, string](context.Background(), nil, 0, generateCallbackFunction())
+		require.NoError(t, err)
+		assert.Empty(t, actual)
+	})
+
+	t.Run("should call the function once for each input job and merge the results", func(t *testing.T) {
+		jobs := [][]string{
+			{"1", "2"},
+			{"3"},
+			{"4", "5"},
+		}
+
+		actual, err := ForEachJobMergeResults[[]string, string](context.Background(), jobs, 0, generateCallbackFunction())
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"1", "2", "3", "4", "5"}, actual)
+	})
+
+	t.Run("should call the function concurrently for every input job", func(t *testing.T) {
+		jobs := [][]string{
+			{"1"},
+			{"2"},
+			{"3"},
+			{"4"},
+			{"5"},
+		}
+
+		startTime := time.Now()
+		actual, err := ForEachJobMergeResults[[]string, string](context.Background(), jobs, 0, func(_ context.Context, job []string) ([]string, error) {
+			time.Sleep(time.Second)
+			return job, nil
+		})
+
+		require.Less(t, time.Since(startTime), 2*time.Second)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"1", "2", "3", "4", "5"}, actual)
+	})
+
+	t.Run("should return as soon as the first error is returned by the callback function", func(t *testing.T) {
+		jobs := [][]string{
+			{"1"},
+			{"2"},
+			{"3"},
+		}
+
+		wg := sync.WaitGroup{}
+		wg.Add(len(jobs))
+
+		startTime := time.Now()
+		actual, err := ForEachJobMergeResults[[]string, string](context.Background(), jobs, 0, func(ctx context.Context, job []string) ([]string, error) {
+			defer wg.Done()
+
+			if len(job) == 1 && job[0] == "3" {
+				return nil, errors.New("mocked error")
+			}
+
+			select {
+			// We expect context to get canceled.
+			case <-ctx.Done():
+
+			// Slow down successful executions.
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "context has not been canceled")
+			}
+
+			return job, nil
+		})
+
+		require.Less(t, time.Since(startTime), time.Second)
+		require.Error(t, err)
+		assert.Empty(t, actual)
+
+		// Wait until all callback functions return.
+		wg.Wait()
+	})
+
+	t.Run("should not leak goroutines when all callback functions return an error nearly at the same time", func(t *testing.T) {
+		jobs := [][]string{
+			{"1"},
+			{"2"},
+			{"3"},
+		}
+
+		waitBeforeReturningError := make(chan struct{})
+		callbacksStarted := sync.WaitGroup{}
+		callbacksStarted.Add(len(jobs))
+
+		go func() {
+			// Wait until all callback functions start.
+			callbacksStarted.Wait()
+
+			// Let all goroutines returning error.
+			close(waitBeforeReturningError)
+		}()
+
+		_, err := ForEachJobMergeResults[[]string, string](context.Background(), jobs, 0, func(ctx context.Context, job []string) ([]string, error) {
+			callbacksStarted.Done()
+			<-waitBeforeReturningError
+
+			return nil, errors.New("mocked error")
+		})
+
+		require.Error(t, err)
+	})
 }

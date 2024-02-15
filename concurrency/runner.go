@@ -120,7 +120,7 @@ func ForEachJob(ctx context.Context, jobs int, concurrency int, jobFunc func(ctx
 
 // ForEachJobMergeResults is like ForEachJob but expects jobFunc to return a slice of results which are then
 // merged with results from all jobs. This function returns no results if an error occurred running any jobFunc.
-func ForEachJobMergeResults[T any, R any](ctx context.Context, jobs []T, concurrency int, jobFunc func(ctx context.Context, job T) ([]R, error)) ([]R, error) {
+func ForEachJobMergeResults[J any, R any](ctx context.Context, jobs []J, concurrency int, jobFunc func(ctx context.Context, job J) ([]R, error)) ([]R, error) {
 	var (
 		resultsMx sync.Mutex
 		results   = make([]R, 0, len(jobs)) // Assume at least 1 result per job.

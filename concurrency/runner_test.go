@@ -256,6 +256,16 @@ func TestForEachJobMergeResults(t *testing.T) {
 		assert.Empty(t, actual)
 	})
 
+	t.Run("should call the function straightaway if there is only 1 input job", func(t *testing.T) {
+		jobs := [][]string{
+			{"1", "2"},
+		}
+
+		actual, err := ForEachJobMergeResults[[]string, string](context.Background(), jobs, 0, generateCallbackFunction())
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"1", "2"}, actual)
+	})
+
 	t.Run("should call the function once for each input job and merge the results", func(t *testing.T) {
 		jobs := [][]string{
 			{"1", "2"},

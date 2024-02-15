@@ -89,6 +89,9 @@ func ForEachJob(ctx context.Context, jobs int, concurrency int, jobFunc func(ctx
 	if jobs == 0 {
 		return nil
 	}
+	if jobs == 1 {
+		return jobFunc(ctx, 0)
+	}
 	if concurrency <= 0 {
 		concurrency = jobs
 	}

@@ -2,8 +2,11 @@ package ring
 
 import (
 	_ "embed"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +40,11 @@ func TestPartitionRingPageHandler(t *testing.T) {
 					"ingester-zone-b-1": {
 						OwnedPartition: 2,
 					},
+
+					// Simulate a corrupted partition, with a dangling owner but no partition.
+					"ingester-zone-b-2": {
+						OwnedPartition: 3,
+					},
 				},
 			}),
 		),
@@ -47,4 +55,25 @@ func TestPartitionRingPageHandler(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
+
+	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+		"<td>", "1", "</td>",
+		"<td>", "Active", "</td>",
+		"<td>", "[^<]+", "</td>",
+		"<td>", "ingester-zone-a-0", "<br />", "ingester-zone-b-0", "<br />", "</td>",
+	}, `\s*`))), recorder.Body.String())
+
+	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+		"<td>", "2", "</td>",
+		"<td>", "Inactive", "</td>",
+		"<td>", "[^<]+", "</td>",
+		"<td>", "ingester-zone-a-1", "<br />", "ingester-zone-b-1", "<br />", "</td>",
+	}, `\s*`))), recorder.Body.String())
+
+	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+		"<td>", "3", "</td>",
+		"<td>", "Corrupt", "</td>",
+		"<td>", "N/A", "</td>",
+		"<td>", "ingester-zone-b-2", "<br />", "</td>",
+	}, `\s*`))), recorder.Body.String())
 }

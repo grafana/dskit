@@ -966,6 +966,121 @@ func TestPartitionRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T)
 	assert.Empty(t, ring.shuffleShardCache.cacheWithoutLookback)
 }
 
+func TestPartitionRingGetTokenRangesForInstance(t *testing.T) {
+	gen := initTokenGenerator(t)
+
+	tests := map[string]struct {
+		partitionTokens map[int][]uint32
+		expected        map[int]TokenRanges
+	}{
+		"single instance in zone": {
+			partitionTokens: map[int][]uint32{
+				0: gen.GenerateTokens(512, nil),
+			},
+			expected: map[int]TokenRanges{
+				0: {0, math.MaxUint32},
+			},
+		},
+		"simple ranges": {
+			partitionTokens: map[int][]uint32{
+				0: {25, 75},
+				1: {10, 50, 100},
+			},
+			expected: map[int]TokenRanges{
+				0: {10, 24, 50, 74},
+				1: {0, 9, 25, 49, 75, math.MaxUint32},
+			},
+		},
+		"grouped tokens": {
+			partitionTokens: map[int][]uint32{
+				0: {10, 20, 30, 40, 50},
+				1: {1000, 2000, 3000, 4000},
+			},
+			expected: map[int]TokenRanges{
+				0: {0, 49, 4000, math.MaxUint32},
+				1: {50, 3999},
+			},
+		},
+		"consecutive tokens": {
+			partitionTokens: map[int][]uint32{
+				0: {99},
+				1: {100},
+			},
+			expected: map[int]TokenRanges{
+				0: {0, 98, 100, math.MaxUint32},
+				1: {99, 99},
+			},
+		},
+		"extremes": {
+			partitionTokens: map[int][]uint32{
+				0: {0},
+				1: {math.MaxUint32},
+			},
+			expected: map[int]TokenRanges{
+				0: {math.MaxUint32, math.MaxUint32},
+				1: {0, math.MaxUint32 - 1},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ringDesc := PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{},
+			}
+
+			for p, t := range testData.partitionTokens {
+				ringDesc.Partitions[int32(p)] = PartitionDesc{
+					Tokens: t,
+				}
+			}
+
+			r := NewPartitionRing(ringDesc)
+
+			for id, exp := range testData.expected {
+				ranges, err := r.GetTokenRangesForPartition(int32(id))
+				require.NoError(t, err)
+				assert.Equal(t, exp, ranges)
+
+				// validate that the endpoints of the ranges map to the expected instances
+				for _, token := range ranges {
+					i := searchToken(r.ringTokens, token)
+					tok := r.ringTokens[i]
+					p, ok := r.partitionByToken[Token(tok)]
+					require.True(t, ok)
+					assert.Equal(t, int32(id), p)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkPartitionRingGetTokenRangesForInstance(b *testing.B) {
+	partitionsCount := []int{1, 3, 9, 27, 81, 243 /* , 729 */}
+
+	for _, n := range partitionsCount {
+		b.Run(fmt.Sprintf("%d partitions", n), func(b *testing.B) {
+			benchmarkPartitionRingGetTokenRangesForInstance(b, n)
+		})
+	}
+}
+
+func benchmarkPartitionRingGetTokenRangesForInstance(b *testing.B, partitions int) {
+	prd := NewPartitionRingDesc()
+
+	now := time.Now()
+	for pid := 0; pid < partitions; pid++ {
+		prd.AddPartition(int32(pid), PartitionActive, now)
+	}
+	r := NewPartitionRing(*prd)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		_, _ = r.GetTokenRangesForPartition(0)
+	}
+}
+
 func TestActivePartitionBatchRing(t *testing.T) {
 	t.Run("should implement DoBatchRing", func(t *testing.T) {
 		_ = DoBatchRing(&ActivePartitionBatchRing{})

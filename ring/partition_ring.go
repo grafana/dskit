@@ -3,6 +3,7 @@ package ring
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
 	"time"
@@ -351,6 +352,80 @@ func (r *PartitionRing) String() string {
 	}
 
 	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(r.desc.Owners), len(r.desc.Partitions), buf.String())
+}
+
+func (r *PartitionRing) GetTokenRangesForPartition(partitionID int32) (TokenRanges, error) {
+	partition, ok := r.desc.Partitions[partitionID]
+	if !ok {
+		return nil, ErrPartitionDoesNotExist
+	}
+
+	// 1 range (2 values) per token + one additional if we need to split the rollover range.
+	ranges := make(TokenRanges, 0, 2*(len(partition.Tokens)+1))
+	// non-zero value means we're now looking for start of the range. Zero value means we're looking for next end of range (ie. token owned by this instance).
+	rangeEnd := uint32(0)
+
+	// if this instance claimed the first token, it owns the wrap-around range, which we'll break into two separate ranges
+	firstToken := r.ringTokens[0]
+	firstTokenPartition, ok := r.partitionByToken[Token(firstToken)]
+	if !ok {
+		// This should never happen unless there's a bug in the ring code.
+		return nil, ErrInconsistentTokensInfo
+	}
+
+	if firstTokenPartition == partitionID {
+		// we'll start by looking for the beginning of the range that ends with math.MaxUint32
+		rangeEnd = math.MaxUint32
+	}
+
+	// walk the ring backwards, alternating looking for ends and starts of ranges
+	for i := len(r.ringTokens) - 1; i > 0; i-- {
+		token := r.ringTokens[i]
+		pid, ok := r.partitionByToken[Token(token)]
+		if !ok {
+			// This should never happen unless a bug in the ring code.
+			return nil, ErrInconsistentTokensInfo
+		}
+
+		if rangeEnd == 0 {
+			// we're looking for the end of the next range
+			if pid == partitionID {
+				rangeEnd = token - 1
+			}
+		} else {
+			// we have a range end, and are looking for the start of the range
+			if pid != partitionID {
+				ranges = append(ranges, rangeEnd, token)
+				rangeEnd = 0
+			}
+		}
+	}
+
+	// finally look at the first token again
+	// - if we have a range end, check if we claimed token 0
+	//   - if we don't, we have our start
+	//   - if we do, the start is 0
+	// - if we don't have a range end, check if we claimed token 0
+	//   - if we don't, do nothing
+	//   - if we do, add the range of [0, token-1]
+	//     - BUT, if the token itself is 0, do nothing, because we don't own the tokens themselves (we should be covered by the already added range that ends with MaxUint32)
+
+	if rangeEnd == 0 {
+		if firstTokenPartition == partitionID && firstToken != 0 {
+			ranges = append(ranges, firstToken-1, 0)
+		}
+	} else {
+		if firstTokenPartition == partitionID {
+			ranges = append(ranges, rangeEnd, 0)
+		} else {
+			ranges = append(ranges, rangeEnd, firstToken)
+		}
+	}
+
+	// Ensure returned ranges are sorted.
+	slices.Sort(ranges)
+
+	return ranges, nil
 }
 
 // ActivePartitionBatchRing wraps PartitionRing and implements DoBatchRing to lookup ACTIVE partitions.

@@ -1055,8 +1055,28 @@ func TestPartitionRingGetTokenRangesForInstance(t *testing.T) {
 	}
 }
 
+// These rings are immutable, we can cache them between benchmarks.
+// It makes benchmarks run faster, esp. for big number of partitions, because preparing ring takes long time.
+var cachedRings = map[int]*PartitionRing{}
+
+func preparePartitionRingForBenchmarks(partitions int) *PartitionRing {
+	pr := cachedRings[partitions]
+	if pr != nil {
+		return pr
+	}
+
+	prd := NewPartitionRingDesc()
+
+	for pid := 0; pid < partitions; pid++ {
+		prd.AddPartition(int32(pid), PartitionActive, time.Time{}) // benchmark doesn't use state or time.
+	}
+	pr = NewPartitionRing(*prd)
+	cachedRings[partitions] = pr
+	return pr
+}
+
 func BenchmarkPartitionRingGetTokenRangesForInstance(b *testing.B) {
-	partitionsCount := []int{1, 3, 9, 27, 81, 243 /* , 729 */}
+	partitionsCount := []int{1, 3, 9, 27, 81, 243, 729}
 
 	for _, n := range partitionsCount {
 		b.Run(fmt.Sprintf("%d partitions", n), func(b *testing.B) {
@@ -1066,18 +1086,14 @@ func BenchmarkPartitionRingGetTokenRangesForInstance(b *testing.B) {
 }
 
 func benchmarkPartitionRingGetTokenRangesForInstance(b *testing.B, partitions int) {
-	prd := NewPartitionRingDesc()
-
-	now := time.Now()
-	for pid := 0; pid < partitions; pid++ {
-		prd.AddPartition(int32(pid), PartitionActive, now)
-	}
-	r := NewPartitionRing(*prd)
-
+	r := preparePartitionRingForBenchmarks(partitions)
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		_, _ = r.GetTokenRangesForPartition(0)
+		_, err := r.GetTokenRangesForPartition(0)
+		if err != nil {
+			b.Fatal("unexpected error", err)
+		}
 	}
 }
 

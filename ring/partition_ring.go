@@ -362,68 +362,56 @@ func (r *PartitionRing) GetTokenRangesForPartition(partitionID int32) (TokenRang
 
 	// 1 range (2 values) per token + one additional if we need to split the rollover range.
 	ranges := make(TokenRanges, 0, 2*(len(partition.Tokens)+1))
-	// non-zero value means we're now looking for start of the range. Zero value means we're looking for next end of range (ie. token owned by this instance).
-	rangeEnd := uint32(0)
 
-	// if this instance claimed the first token, it owns the wrap-around range, which we'll break into two separate ranges
-	firstToken := r.ringTokens[0]
-	firstTokenPartition, ok := r.partitionByToken[Token(firstToken)]
-	if !ok {
-		// This should never happen unless there's a bug in the ring code.
-		return nil, ErrInconsistentTokensInfo
-	}
-
-	if firstTokenPartition == partitionID {
-		// we'll start by looking for the beginning of the range that ends with math.MaxUint32
-		rangeEnd = math.MaxUint32
-	}
-
-	// walk the ring backwards, alternating looking for ends and starts of ranges
-	for i := len(r.ringTokens) - 1; i > 0; i-- {
-		token := r.ringTokens[i]
-		pid, ok := r.partitionByToken[Token(token)]
-		if !ok {
-			// This should never happen unless a bug in the ring code.
-			return nil, ErrInconsistentTokensInfo
+	addRange := func(start, end uint32) {
+		// check if we can group ranges. If so, we just update end of previous range.
+		if len(ranges) > 0 && ranges[len(ranges)-1] == start-1 {
+			ranges[len(ranges)-1] = end
+		} else {
+			ranges = append(ranges, start, end)
 		}
+	}
 
-		if rangeEnd == 0 {
-			// we're looking for the end of the next range
-			if pid == partitionID {
-				rangeEnd = token - 1
+	// "last" range is range that includes token math.MaxUint32.
+	ownsLastRange := false
+	startOfLastRange := uint32(0)
+
+	// We start with all tokens, but will remove tokens we already skipped, to let binary search do less work.
+	ringTokens := r.ringTokens
+
+	for iter, t := range partition.Tokens {
+		lastOwnedToken := t - 1
+
+		ix := searchToken(ringTokens, lastOwnedToken)
+		prevIx := ix - 1
+
+		if prevIx < 0 {
+			// We can only find "last" range during first iteration.
+			if iter > 0 {
+				return nil, ErrInconsistentTokensInfo
+			}
+
+			prevIx = len(ringTokens) - 1
+			ownsLastRange = true
+
+			startOfLastRange = ringTokens[prevIx]
+
+			// We can only claim token 0 if our actual token in the ring (which is exclusive end of range) was not 0.
+			if t > 0 {
+				addRange(0, lastOwnedToken)
 			}
 		} else {
-			// we have a range end, and are looking for the start of the range
-			if pid != partitionID {
-				ranges = append(ranges, rangeEnd, token)
-				rangeEnd = 0
-			}
+			addRange(ringTokens[prevIx], lastOwnedToken)
 		}
+
+		// Reduce number of tokens we need to search through. We keep current token to serve as min boundary for next search,
+		// to make sure we don't find another "last" range (where prevIx < 0).
+		ringTokens = ringTokens[ix:]
 	}
 
-	// finally look at the first token again
-	// - if we have a range end, check if we claimed token 0
-	//   - if we don't, we have our start
-	//   - if we do, the start is 0
-	// - if we don't have a range end, check if we claimed token 0
-	//   - if we don't, do nothing
-	//   - if we do, add the range of [0, token-1]
-	//     - BUT, if the token itself is 0, do nothing, because we don't own the tokens themselves (we should be covered by the already added range that ends with MaxUint32)
-
-	if rangeEnd == 0 {
-		if firstTokenPartition == partitionID && firstToken != 0 {
-			ranges = append(ranges, firstToken-1, 0)
-		}
-	} else {
-		if firstTokenPartition == partitionID {
-			ranges = append(ranges, rangeEnd, 0)
-		} else {
-			ranges = append(ranges, rangeEnd, firstToken)
-		}
+	if ownsLastRange {
+		addRange(startOfLastRange, math.MaxUint32)
 	}
-
-	// Ensure returned ranges are sorted.
-	slices.Sort(ranges)
 
 	return ranges, nil
 }

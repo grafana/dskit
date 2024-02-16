@@ -966,7 +966,7 @@ func TestPartitionRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T)
 	assert.Empty(t, ring.shuffleShardCache.cacheWithoutLookback)
 }
 
-func TestPartitionRingGetTokenRangesForInstance(t *testing.T) {
+func TestPartitionRingGetTokenRangesForPartition(t *testing.T) {
 	gen := initTokenGenerator(t)
 
 	tests := map[string]struct {
@@ -1075,7 +1075,7 @@ func preparePartitionRingForBenchmarks(partitions int) *PartitionRing {
 	return pr
 }
 
-func BenchmarkPartitionRingGetTokenRangesForInstance(b *testing.B) {
+func BenchmarkPartitionRingGetTokenRangesForPartition(b *testing.B) {
 	partitionsCount := []int{1, 3, 9, 27, 81, 243, 729}
 
 	for _, n := range partitionsCount {

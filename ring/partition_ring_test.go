@@ -1055,11 +1055,54 @@ func TestPartitionRingGetTokenRangesForPartition(t *testing.T) {
 	}
 }
 
+func TestPartitionRingGetTokenRangesForPartitionExhaustive(t *testing.T) {
+	// We don't test with bigger number of partitions, because setup takes too long.
+	partitionsCount := []int{1, 3, 9, 27, 81}
+
+	for _, partitions := range partitionsCount {
+		t.Run(fmt.Sprintf("%d", partitions), func(t *testing.T) {
+			pr := preparePartitionRingWithActivePartitions(partitions)
+
+			for partition := int32(0); partition < int32(partitions); partition++ {
+				ranges, err := pr.GetTokenRangesForPartition(partition)
+				require.NoError(t, err)
+
+				for rng := 0; rng < len(ranges); rng += 2 {
+					pid, err := pr.ActivePartitionForKey(ranges[rng])
+					require.NoError(t, err)
+					require.Equal(t, partition, pid, "first token in the range")
+
+					pid, err = pr.ActivePartitionForKey(ranges[rng+1])
+					require.NoError(t, err)
+					require.Equal(t, partition, pid, "last token in the range")
+
+					tokenInTheMiddle := uint32((uint64(ranges[rng]) + uint64(ranges[rng+1])) / 2)
+					pid, err = pr.ActivePartitionForKey(tokenInTheMiddle)
+					require.NoError(t, err)
+					require.Equal(t, partition, pid, "middle token in the range")
+
+					if ranges[rng] > 0 {
+						pid, err = pr.ActivePartitionForKey(ranges[rng] - 1)
+						require.NoError(t, err)
+						require.NotEqual(t, partition, pid, "token just before the range start")
+					}
+
+					if ranges[rng+1] < math.MaxUint32 {
+						pid, err = pr.ActivePartitionForKey(ranges[rng+1] + 1)
+						require.NoError(t, err)
+						require.NotEqual(t, partition, pid, "token just after the range end")
+					}
+				}
+			}
+		})
+	}
+}
+
 // These rings are immutable, we can cache them between benchmarks.
 // It makes benchmarks run faster, esp. for big number of partitions, because preparing ring takes long time.
 var cachedRings = map[int]*PartitionRing{}
 
-func preparePartitionRingForBenchmarks(partitions int) *PartitionRing {
+func preparePartitionRingWithActivePartitions(partitions int) *PartitionRing {
 	pr := cachedRings[partitions]
 	if pr != nil {
 		return pr
@@ -1086,13 +1129,13 @@ func BenchmarkPartitionRingGetTokenRangesForPartition(b *testing.B) {
 }
 
 func benchmarkPartitionRingGetTokenRangesForInstance(b *testing.B, partitions int) {
-	r := preparePartitionRingForBenchmarks(partitions)
+	r := preparePartitionRingWithActivePartitions(partitions)
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
 		_, err := r.GetTokenRangesForPartition(0)
 		if err != nil {
-			b.Fatal("unexpected error", err)
+			b.Fatal("unexpected error:", err)
 		}
 	}
 }

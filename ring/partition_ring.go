@@ -354,6 +354,9 @@ func (r *PartitionRing) String() string {
 	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(r.desc.Owners), len(r.desc.Partitions), buf.String())
 }
 
+// GetTokenRangesForPartition returns token-range owned by given partition. Note that this
+// method does NOT take partition state into account, so if only active partitions should be
+// considered, then PartitionRing with only active partitions must be created first (e.g. using ShuffleShard method).
 func (r *PartitionRing) GetTokenRangesForPartition(partitionID int32) (TokenRanges, error) {
 	partition, ok := r.desc.Partitions[partitionID]
 	if !ok {

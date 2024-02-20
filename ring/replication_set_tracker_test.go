@@ -290,8 +290,10 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 
 	// With 1000 iterations, 4 instances and max 1 error, we'd expect each instance to receive
 	// 750 calls each (each instance has a 3-in-4 chance of being called in each iteration).
+	const expectedAverageCallsPerInstance = 750
+	const tolerancePerc = 0.2
 	for _, instanceRequestCount := range instanceRequestCounts {
-		require.InDeltaf(t, 750, instanceRequestCount.Load(), 50, "expected roughly even distribution of requests across all instances, but got %v", instanceRequestCounts)
+		require.InDeltaf(t, expectedAverageCallsPerInstance, instanceRequestCount.Load(), expectedAverageCallsPerInstance*tolerancePerc, "expected roughly even distribution of requests across all instances, but got %v", instanceRequestCounts)
 	}
 }
 
@@ -970,8 +972,10 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 
 	// With 900 iterations, 3 zones and max 1 failing zone, we'd expect each zone to receive
 	// 600 calls each (each zone has a 2-in-3 chance of being called in each iteration).
+	const expectedAverageCallsPerZone = 600
+	const tolerancePerc = 0.2
 	for _, zoneRequestCount := range zoneRequestCounts {
-		require.InDeltaf(t, 600, zoneRequestCount, 50, "expected roughly even distribution of requests across all zones, but got %v", zoneRequestCount)
+		require.InDeltaf(t, expectedAverageCallsPerZone, zoneRequestCount, expectedAverageCallsPerZone*tolerancePerc, "expected roughly even distribution of requests across all zones, but got %v", zoneRequestCount)
 	}
 }
 

@@ -55,19 +55,19 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					2: {State: PartitionInactive},
 				},
 				Owners: map[string]OwnerDesc{
-					"instance-1-a": {OwnedPartition: 1},
-					"instance-2-a": {OwnedPartition: 2},
-					"instance-2-b": {OwnedPartition: 2},
+					"instance-zone-a-1": {OwnedPartition: 1},
+					"instance-zone-a-2": {OwnedPartition: 2},
+					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-1-a": {Id: "instance-1-a", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-2-a": {Id: "instance-2-a", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-2-b": {Id: "instance-2-b", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-a-2": {Id: "instance-zone-a-2", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
-				{instances: []string{"instance-1-a"}, maxUnavailableZones: 0},
-				{instances: []string{"instance-2-a", "instance-2-b"}, maxUnavailableZones: 1},
+				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-2", "instance-zone-b-2"}, maxUnavailableZones: 1},
 			},
 		},
 		"should return error if there are no healthy instances for a partition": {
@@ -77,14 +77,14 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					2: {State: PartitionInactive},
 				},
 				Owners: map[string]OwnerDesc{
-					"instance-1-a": {OwnedPartition: 1},
-					"instance-2-a": {OwnedPartition: 2},
-					"instance-2-b": {OwnedPartition: 2},
+					"instance-zone-a-1": {OwnedPartition: 1},
+					"instance-zone-a-2": {OwnedPartition: 2},
+					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-1-a": {Id: "instance-1-a", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-2-a": {Id: "instance-2-a", State: ACTIVE, Zone: "a", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy.
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-a-2": {Id: "instance-zone-a-2", State: ACTIVE, Zone: "a", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy.
 			}},
 			expectedErr: ErrTooManyUnhealthyInstances,
 		},
@@ -95,21 +95,21 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					2: {State: PartitionInactive},
 				},
 				Owners: map[string]OwnerDesc{
-					"instance-1-a": {OwnedPartition: 1},
-					"instance-1-b": {OwnedPartition: 1},
-					"instance-2-a": {OwnedPartition: 2},
-					"instance-2-b": {OwnedPartition: 2},
+					"instance-zone-a-1": {OwnedPartition: 1},
+					"instance-zone-b-1": {OwnedPartition: 1},
+					"instance-zone-a-2": {OwnedPartition: 2},
+					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-1-a": {Id: "instance-1-a", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-1-b": {Id: "instance-1-a", State: LEAVING, Zone: "a", Timestamp: now.Unix()}, // Unhealthy because of the state.
-				"instance-2-a": {Id: "instance-2-a", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-2-b": {Id: "instance-2-b", State: ACTIVE, Zone: "b", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy because of the heartbeat.
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-b-1": {Id: "instance-zone-a-1", State: LEAVING, Zone: "a", Timestamp: now.Unix()}, // Unhealthy because of the state.
+				"instance-zone-a-2": {Id: "instance-zone-a-2", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy because of the heartbeat.
 			}},
 			expectedSets: []comparableReplicationSet{
-				{instances: []string{"instance-1-a"}, maxUnavailableZones: 0},
-				{instances: []string{"instance-2-a"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-2"}, maxUnavailableZones: 0},
 			},
 		},
 		"should NOT return error if an instance is missing in the instances ring but there's another healthy instance for the partition": {
@@ -119,19 +119,19 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					2: {State: PartitionInactive},
 				},
 				Owners: map[string]OwnerDesc{
-					"instance-1-a": {OwnedPartition: 1},
-					"instance-1-b": {OwnedPartition: 1}, // Missing in the instances ring.
-					"instance-2-a": {OwnedPartition: 2}, // Missing in the instances ring.
-					"instance-2-b": {OwnedPartition: 2},
+					"instance-zone-a-1": {OwnedPartition: 1},
+					"instance-zone-b-1": {OwnedPartition: 1}, // Missing in the instances ring.
+					"instance-zone-a-2": {OwnedPartition: 2}, // Missing in the instances ring.
+					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-1-a": {Id: "instance-1-a", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-2-b": {Id: "instance-2-b", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
-				{instances: []string{"instance-1-a"}, maxUnavailableZones: 0},
-				{instances: []string{"instance-2-b"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-b-2"}, maxUnavailableZones: 0},
 			},
 		},
 		"should return replication sets with MaxUnavailableZones=0 if there are multiple instances per zone but all instances belong to the same zone": {
@@ -141,21 +141,21 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					2: {State: PartitionInactive},
 				},
 				Owners: map[string]OwnerDesc{
-					"instance-1-a": {OwnedPartition: 1},
-					"instance-1-b": {OwnedPartition: 1},
-					"instance-2-a": {OwnedPartition: 2},
-					"instance-2-b": {OwnedPartition: 2},
+					"instance-zone-a-1": {OwnedPartition: 1},
+					"instance-zone-b-1": {OwnedPartition: 1},
+					"instance-zone-a-2": {OwnedPartition: 2},
+					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-1-a": {Id: "instance-1-a", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
-				"instance-1-b": {Id: "instance-1-b", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
-				"instance-2-a": {Id: "instance-2-a", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
-				"instance-2-b": {Id: "instance-2-b", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
+				"instance-zone-b-1": {Id: "instance-zone-b-1", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
+				"instance-zone-a-2": {Id: "instance-zone-a-2", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
+				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
-				{instances: []string{"instance-1-a", "instance-1-b"}, maxUnavailableZones: 0},
-				{instances: []string{"instance-2-a", "instance-2-b"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-1", "instance-zone-b-1"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-2", "instance-zone-b-2"}, maxUnavailableZones: 0},
 			},
 		},
 	}

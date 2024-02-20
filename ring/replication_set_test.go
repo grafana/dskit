@@ -1543,6 +1543,240 @@ func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
 	}
 }
 
+func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
+	cfg := DoUntilQuorumConfig{
+		MinimizeRequests: false,
+	}
+
+	// If you change the instances in these replication sets you will also have to change tests accordingly.
+	sets := []ReplicationSet{
+		{Instances: []InstanceDesc{{Addr: "instance-1"}, {Addr: "instance-2"}}, MaxErrors: 0},
+		{Instances: []InstanceDesc{{Addr: "instance-3"}}, MaxErrors: 0},
+	}
+
+	t.Run("should run successfully if all callback functions return no error and they cancel context before returning", func(t *testing.T) {
+		t.Parallel()
+
+		f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+			// Since DoMultiUntilQuorumWithoutSuccessfulContextCancellation() wraps the cancel function we assert
+			// that calling it will effectively cancel the context passed to this callback.
+			assert.NoError(t, ctx.Err())
+			cancelCtx(nil)
+			assert.ErrorIs(t, ctx.Err(), context.Canceled)
+
+			return instance.Addr, nil
+		}
+
+		results, workersCtx, err := doMultiUntilQuorumWithoutSuccessfulContextCancellation[string](context.Background(), sets, cfg, f, func(string) {})
+		require.NoError(t, err)
+
+		assert.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3"}, results)
+		assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
+		assert.EqualError(t, context.Cause(workersCtx), "all requests completed")
+	})
+
+	t.Run("should run successfully if all callback functions return no error and they cancel context after returning", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			// Keep track of callback contexts and cancel functions.
+			mx       = sync.Mutex{}
+			contexts []context.Context
+			cancels  []context.CancelCauseFunc
+		)
+
+		f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+			mx.Lock()
+			contexts = append(contexts, ctx)
+			cancels = append(cancels, cancelCtx)
+			mx.Unlock()
+
+			return instance.Addr, nil
+		}
+
+		results, workersCtx, err := doMultiUntilQuorumWithoutSuccessfulContextCancellation[string](context.Background(), sets, cfg, f, func(string) {})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3"}, results)
+
+		// We expect the workers context to get canceled only after all callback functions canceled their own context.
+		for i := 0; i < len(contexts); i++ {
+			assert.Nil(t, workersCtx.Err())
+
+			assert.Nil(t, contexts[i].Err())
+			cancels[i](nil)
+		}
+
+		assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
+		assert.EqualError(t, context.Cause(workersCtx), "all requests completed")
+	})
+
+	t.Run("should run successfully if some callback fails but quorum is still reached", func(t *testing.T) {
+		t.Parallel()
+
+		for _, minimizeRequests := range []bool{false, true} {
+			t.Run(fmt.Sprintf("minimize requets: %t", minimizeRequests), func(t *testing.T) {
+				cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+				sets := []ReplicationSet{
+					{Instances: []InstanceDesc{{Addr: "instance-fail"}, {Addr: "instance-success"}}, MaxErrors: 1},
+					{Instances: []InstanceDesc{{Addr: "instance-fail"}, {Addr: "instance-success"}}, MaxErrors: 1},
+				}
+
+				f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+					defer cancelCtx(nil)
+
+					if instance.Addr == "instance-fail" {
+						return "", errors.New("mocked error")
+					}
+
+					// Successful callbacks wait a bit to ensure context is NOT cancelled in the meanwhile.
+					select {
+					case <-ctx.Done():
+						t.Fatal("expected the context to not get canceled but it was")
+						return "", ctx.Err()
+					case <-time.After(time.Second):
+						return instance.Addr, nil
+					}
+				}
+
+				results, workersCtx, err := doMultiUntilQuorumWithoutSuccessfulContextCancellation[string](context.Background(), sets, cfg, f, func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, []string{"instance-success", "instance-success"}, results)
+				assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
+			})
+		}
+	})
+
+	t.Run("should break on first error returned by DoUntilQuorumWithoutSuccessfulContextCancellation()", func(t *testing.T) {
+		t.Parallel()
+
+		errMock := errors.New("mocked error")
+
+		for _, failingInstance := range []string{"instance-1", "instance-2", "instance-3"} {
+			t.Run(fmt.Sprintf("failing instance: %s", failingInstance), func(t *testing.T) {
+				callbacksStarted := sync.WaitGroup{}
+				callbacksEnded := sync.WaitGroup{}
+
+				callbacksStarted.Add(3)
+				callbacksEnded.Add(3)
+
+				f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+					defer cancelCtx(nil)
+					defer callbacksEnded.Done()
+
+					// Wait until all callbacks started.
+					callbacksStarted.Done()
+					callbacksStarted.Wait()
+
+					if instance.Addr == failingInstance {
+						return "", errMock
+					}
+
+					select {
+					case <-ctx.Done():
+						assert.ErrorIs(t, ctx.Err(), context.Canceled)
+
+						// Depending on timing we may either get the actual error or quorum not reached.
+						assert.Contains(t, []string{errMock.Error(), "context canceled: quorum cannot be reached"}, context.Cause(ctx).Error())
+						return "", ctx.Err()
+					case <-time.After(time.Second):
+						t.Fatal("expected the context to get canceled but it wasn't")
+						return "", nil
+					}
+				}
+
+				results, workersCtx, err := doMultiUntilQuorumWithoutSuccessfulContextCancellation[string](context.Background(), sets, cfg, f, func(string) {})
+				require.Equal(t, errMock, err)
+				assert.Nil(t, results)
+
+				assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
+				assert.EqualError(t, context.Cause(workersCtx), errMock.Error())
+
+				// Ensure all callback functions terminated.
+				callbacksEnded.Wait()
+			})
+		}
+	})
+
+	t.Run("should return the first encountered error by DoUntilQuorumWithoutSuccessfulContextCancellation()", func(t *testing.T) {
+		t.Parallel()
+
+		const expectedErr = "mock error from instance-3"
+
+		wg := sync.WaitGroup{}
+		wg.Add(3)
+
+		f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+			defer cancelCtx(nil)
+
+			// Wait until all functions have been called.
+			wg.Done()
+			wg.Wait()
+
+			// Add a delay to all functions, except one, which is the one from which we expect the returned error.
+			if instance.Addr != "instance-3" {
+				select {
+				case <-ctx.Done():
+					assert.ErrorIs(t, ctx.Err(), context.Canceled)
+					assert.EqualError(t, context.Cause(ctx), expectedErr)
+					return "", ctx.Err()
+				case <-time.After(time.Second):
+					t.Fatal("expected the context to get canceled but it wasn't")
+					return "", nil
+				}
+			}
+
+			return "", fmt.Errorf("mock error from %s", instance.Addr)
+		}
+
+		results, workersCtx, err := doMultiUntilQuorumWithoutSuccessfulContextCancellation[string](context.Background(), sets, cfg, f, func(string) {})
+		require.EqualError(t, err, expectedErr)
+		assert.Nil(t, results)
+
+		assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
+		assert.EqualError(t, context.Cause(workersCtx), expectedErr)
+	})
+
+	t.Run("should interrupt execution if caller context is canceled", func(t *testing.T) {
+		t.Parallel()
+
+		callbacksStarted := sync.WaitGroup{}
+		callbacksEnded := sync.WaitGroup{}
+		callbacksStarted.Add(3)
+		callbacksEnded.Add(3)
+
+		f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+			callbacksStarted.Done()
+			defer callbacksEnded.Done()
+
+			select {
+			case <-ctx.Done():
+				assert.ErrorIs(t, ctx.Err(), context.Canceled)
+				return "", ctx.Err()
+			case <-time.After(time.Second):
+				t.Fatal("expected the context to get canceled but it wasn't")
+				return "", nil
+			}
+		}
+
+		callerCtx, cancelCallerCtx := context.WithCancel(context.Background())
+
+		// Start a goroutine that will cancel the caller context once all callback functions have started.
+		go func() {
+			callbacksStarted.Wait()
+			cancelCallerCtx()
+		}()
+
+		results, workersCtx, err := doMultiUntilQuorumWithoutSuccessfulContextCancellation[string](callerCtx, sets, cfg, f, func(string) {})
+		require.ErrorIs(t, err, context.Canceled)
+		assert.Nil(t, results)
+
+		assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
+
+		// Ensure all callback functions have terminated (we assert on context cancellation there).
+		callbacksEnded.Wait()
+	})
+}
+
 type cleanupTracker struct {
 	t                                            *testing.T
 	maximumExpectedCleanupCalls                  int

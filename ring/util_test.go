@@ -71,7 +71,7 @@ func (r *RingMock) GetTokenRangesForInstance(_ string) (TokenRanges, error) {
 	return []uint32{0, math.MaxUint32}, nil
 }
 
-func (r *RingMock) InstancesInZoneCount(zone string) int {
+func (r *RingMock) InstancesInZoneCount(_ string) int {
 	return 0
 }
 

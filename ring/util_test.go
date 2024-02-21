@@ -71,6 +71,14 @@ func (r *RingMock) GetTokenRangesForInstance(_ string) (TokenRanges, error) {
 	return []uint32{0, math.MaxUint32}, nil
 }
 
+func (r *RingMock) InstancesInZoneCount(_ string) int {
+	return 0
+}
+
+func (r *RingMock) ZonesCount() int {
+	return 0
+}
+
 func createStartingRing() *Ring {
 	// Init the ring.
 	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{

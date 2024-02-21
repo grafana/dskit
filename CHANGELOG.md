@@ -79,6 +79,7 @@
 * [FEATURE] Add `PartitionRing`. The partitions ring is hash ring to shard data between partitions. #474 #476 #478 #479 #481 #483 #484 #485 #488 #489 #493
 * [FEATURE] Add methods `Increment`, `FlushAll`, `CompareAndSwap`, `Touch` to `cache.MemcachedClient` #477
 * [FEATURE] Add `concurrency.ForEachJobMergeResults()` utility function. #486
+* [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
 * [ENHANCEMENT] Add ability to log all source hosts from http header instead of only the first one. #444
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
 * [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274
@@ -192,6 +193,7 @@
 * [ENHANCEMENT] SpanLogger: Add `SetSpanAndLogTag` method. #467
 * [ENHANCEMENT] Add servicediscovery package. #469
 * [ENHANCEMENT] Expose `InstancesInZoneCount` and `ZonesCount` in `ring.ReadRing` interface. #494
+* [ENHANCEMENT] Add optimization to run `concurrency.ForEachJob()` with no parallelism when there's only 1 job. #486 #495
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

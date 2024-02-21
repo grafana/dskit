@@ -1176,11 +1176,13 @@ func TestRing_ShuffleShard(t *testing.T) {
 	gen := initTokenGenerator(t)
 
 	tests := map[string]struct {
-		ringInstances        map[string]InstanceDesc
-		shardSize            int
-		zoneAwarenessEnabled bool
-		expectedSize         int
-		expectedDistribution []int
+		ringInstances                map[string]InstanceDesc
+		shardSize                    int
+		zoneAwarenessEnabled         bool
+		expectedSize                 int
+		expectedDistribution         []int
+		expectedZoneCount            int
+		expectedInstancesInZoneCount map[string]int
 	}{
 		"empty ring": {
 			ringInstances:        nil,
@@ -1194,10 +1196,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 			},
-			shardSize:            3,
-			zoneAwarenessEnabled: true,
-			expectedSize:         2,
-			expectedDistribution: []int{2},
+			shardSize:                    3,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 2,
+			expectedDistribution:         []int{2},
+			expectedZoneCount:            1,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 2},
 		},
 		"single zone, shard size < num instances": {
 			ringInstances: map[string]InstanceDesc{
@@ -1205,10 +1209,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
 			},
-			shardSize:            2,
-			zoneAwarenessEnabled: true,
-			expectedSize:         2,
-			expectedDistribution: []int{2},
+			shardSize:                    2,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 2,
+			expectedDistribution:         []int{2},
+			expectedZoneCount:            1,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 2},
 		},
 		"multiple zones, shard size < num zones": {
 			ringInstances: map[string]InstanceDesc{
@@ -1216,10 +1222,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
 				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
-			shardSize:            2,
-			zoneAwarenessEnabled: true,
-			expectedSize:         3,
-			expectedDistribution: []int{1, 1, 1},
+			shardSize:                    2,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 3,
+			expectedDistribution:         []int{1, 1, 1},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 1, "zone-b": 1, "zone-c": 1},
 		},
 		"multiple zones, shard size divisible by num zones": {
 			ringInstances: map[string]InstanceDesc{
@@ -1230,10 +1238,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
-			shardSize:            3,
-			zoneAwarenessEnabled: true,
-			expectedSize:         3,
-			expectedDistribution: []int{1, 1, 1},
+			shardSize:                    3,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 3,
+			expectedDistribution:         []int{1, 1, 1},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 1, "zone-b": 1, "zone-c": 1},
 		},
 		"multiple zones, shard size NOT divisible by num zones": {
 			ringInstances: map[string]InstanceDesc{
@@ -1244,10 +1254,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
-			shardSize:            4,
-			zoneAwarenessEnabled: true,
-			expectedSize:         6,
-			expectedDistribution: []int{2, 2, 2},
+			shardSize:                    4,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 6,
+			expectedDistribution:         []int{2, 2, 2},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 2, "zone-b": 2, "zone-c": 2},
 		},
 		"multiple zones, shard size NOT divisible by num zones, but zone awareness is disabled": {
 			ringInstances: map[string]InstanceDesc{
@@ -1279,12 +1291,13 @@ func TestRing_ShuffleShard(t *testing.T) {
 					HeartbeatTimeout:     time.Hour,
 					ZoneAwarenessEnabled: testData.zoneAwarenessEnabled,
 				},
-				ringDesc:            ringDesc,
-				ringTokens:          ringDesc.GetTokens(),
-				ringTokensByZone:    ringDesc.getTokensByZone(),
-				ringInstanceByToken: ringDesc.getTokensInfo(),
-				ringZones:           getZones(ringDesc.getTokensByZone()),
-				strategy:            NewDefaultReplicationStrategy(),
+				ringDesc:              ringDesc,
+				ringTokens:            ringDesc.GetTokens(),
+				ringTokensByZone:      ringDesc.getTokensByZone(),
+				ringInstanceByToken:   ringDesc.getTokensInfo(),
+				ringZones:             getZones(ringDesc.getTokensByZone()),
+				instancesCountPerZone: ringDesc.instancesCountPerZone(),
+				strategy:              NewDefaultReplicationStrategy(),
 			}
 
 			shardRing := ring.ShuffleShard("tenant-id", testData.shardSize)
@@ -1292,6 +1305,11 @@ func TestRing_ShuffleShard(t *testing.T) {
 
 			// Compute the actual distribution of instances across zones.
 			if testData.zoneAwarenessEnabled {
+				assert.Equal(t, testData.expectedZoneCount, shardRing.ZonesCount())
+				for z, instances := range testData.expectedInstancesInZoneCount {
+					assert.Equal(t, instances, shardRing.InstancesInZoneCount(z))
+				}
+
 				var actualDistribution []int
 
 				if shardRing.InstancesCount() > 0 {
@@ -2167,6 +2185,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				rs, err := first.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, rs.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"identical request after cleaning subring cache": {
@@ -2191,6 +2218,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				secondReplicationSet, err := second.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"different subring sizes": {
@@ -2214,6 +2250,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				secondReplicationSet, err := second.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-4", "instance-5", "instance-6"}, secondReplicationSet.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 2, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 2, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 2, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"different identifiers": {
@@ -2237,6 +2282,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				secondReplicationSet, err := second.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-2", "instance-3", "instance-6"}, secondReplicationSet.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"all changes before beginning of either lookback window": {
@@ -2256,6 +2310,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				rs, err := first.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, rs.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"change within both lookback windows": {
@@ -2275,6 +2338,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				rs, err := first.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, rs.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 2, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 2, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"change on threshold of second lookback window": {
@@ -2294,6 +2366,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				rs, err := first.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3", "instance-5"}, rs.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 2, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 2, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"change on threshold of first lookback window": {
@@ -2317,6 +2398,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				secondReplicationSet, err := second.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 2, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"change between thresholds of first and second lookback windows": {
@@ -2340,6 +2430,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				secondReplicationSet, err := second.GetAllHealthy(Read)
 				require.NoError(t, err)
 				require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
+
+				require.Equal(t, 3, first.ZonesCount())
+				require.Equal(t, 2, first.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, second.ZonesCount())
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 			},
 		},
 		"change between thresholds of first and second lookback windows with out-of-order subring calls": {
@@ -2356,6 +2455,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				firstLaterThreshold := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
 				require.NotSame(t, firstEarlyThreshold, firstLaterThreshold)
 
+				require.Equal(t, 3, firstEarlyThreshold.ZonesCount())
+				require.Equal(t, 2, firstEarlyThreshold.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, firstEarlyThreshold.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, firstEarlyThreshold.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, firstLaterThreshold.ZonesCount())
+				require.Equal(t, 1, firstLaterThreshold.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, firstLaterThreshold.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, firstLaterThreshold.InstancesInZoneCount("zone-c"))
+
 				secondEarlyThreshold := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now.Add(-3*time.Minute))
 				// The subring for the later lookback window should evict the cache entry for the earlier window.
 				require.NotSame(t, firstEarlyThreshold, secondEarlyThreshold)
@@ -2363,6 +2471,15 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				secondLaterThreshold := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
 				// The subring for the later lookback window should still be cached.
 				require.Same(t, firstLaterThreshold, secondLaterThreshold)
+
+				require.Equal(t, 3, secondEarlyThreshold.ZonesCount())
+				require.Equal(t, 2, secondEarlyThreshold.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, secondEarlyThreshold.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, secondEarlyThreshold.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, secondLaterThreshold.ZonesCount())
+				require.Equal(t, 1, secondLaterThreshold.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, secondLaterThreshold.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, secondLaterThreshold.InstancesInZoneCount("zone-c"))
 
 				firstEarlyReplicationSet, err := firstEarlyThreshold.GetAllHealthy(Read)
 				require.NoError(t, err)
@@ -2391,11 +2508,29 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 				firstHalfHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, 30*time.Minute, now)
 				require.NotSame(t, firstHourWindow, firstHalfHourWindow, "should not reuse subring for different lookback windows when results are not equivalent")
 
+				require.Equal(t, 3, firstHourWindow.ZonesCount())
+				require.Equal(t, 2, firstHourWindow.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, firstHourWindow.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, firstHourWindow.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, firstHalfHourWindow.ZonesCount())
+				require.Equal(t, 1, firstHalfHourWindow.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, firstHalfHourWindow.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, firstHalfHourWindow.InstancesInZoneCount("zone-c"))
+
 				secondHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, time.Hour, now)
 				require.Same(t, firstHourWindow, secondHourWindow, "should reuse subring for identical request")
 
 				secondHalfHourWindow := ring.ShuffleShardWithLookback(userID, subringSize, 30*time.Minute, now)
 				require.Same(t, firstHalfHourWindow, secondHalfHourWindow, "should separately cache rings for different lookback windows")
+
+				require.Equal(t, 3, secondHourWindow.ZonesCount())
+				require.Equal(t, 2, secondHourWindow.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, secondHourWindow.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, secondHourWindow.InstancesInZoneCount("zone-c"))
+				require.Equal(t, 3, secondHalfHourWindow.ZonesCount())
+				require.Equal(t, 1, secondHalfHourWindow.InstancesInZoneCount("zone-a"))
+				require.Equal(t, 1, secondHalfHourWindow.InstancesInZoneCount("zone-b"))
+				require.Equal(t, 1, secondHalfHourWindow.InstancesInZoneCount("zone-c"))
 
 				hourReplicationSet, err := firstHourWindow.GetAllHealthy(Read)
 				require.NoError(t, err)
@@ -2407,6 +2542,7 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 
 				twentyMinuteWindow := ring.ShuffleShardWithLookback(userID, subringSize, 20*time.Minute, now)
 				require.NotSame(t, firstHalfHourWindow, twentyMinuteWindow, "should not reuse subring for different lookback windows even if results are currently equivalent")
+
 			},
 		},
 	}
@@ -2459,6 +2595,11 @@ func TestRing_ShuffleShardWithLookback_CachingAfterTopologyChange(t *testing.T) 
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
 
+	require.Equal(t, 3, first.ZonesCount())
+	require.Equal(t, 1, first.InstancesInZoneCount("zone-a"))
+	require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+	require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
+
 	updatedInstances := map[string]InstanceDesc{
 		// instance-1 has unregistered
 		"instance-2": generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*time.Hour)),
@@ -2476,6 +2617,11 @@ func TestRing_ShuffleShardWithLookback_CachingAfterTopologyChange(t *testing.T) 
 	secondReplicationSet, err := second.GetAllHealthy(Read)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"instance-2", "instance-3", "instance-5"}, secondReplicationSet.GetAddresses())
+
+	require.Equal(t, 3, second.ZonesCount())
+	require.Equal(t, 1, second.InstancesInZoneCount("zone-a"))
+	require.Equal(t, 1, second.InstancesInZoneCount("zone-b"))
+	require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 }
 
 func TestRing_ShuffleShardWithLookback_CachingAfterHeartbeatOrStateChange(t *testing.T) {
@@ -2504,6 +2650,11 @@ func TestRing_ShuffleShardWithLookback_CachingAfterHeartbeatOrStateChange(t *tes
 	firstReplicationSet, err := first.GetAllHealthy(Read)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"instance-1", "instance-3", "instance-5"}, firstReplicationSet.GetAddresses())
+
+	require.Equal(t, 3, first.ZonesCount())
+	require.Equal(t, 1, first.InstancesInZoneCount("zone-a"))
+	require.Equal(t, 1, first.InstancesInZoneCount("zone-b"))
+	require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
 
 	// Simulate an instance reporting a heartbeat.
 	updatedInstance1 := generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*time.Hour))
@@ -2839,15 +2990,21 @@ func TestRingUpdates(t *testing.T) {
 	)
 
 	tests := map[string]struct {
-		excludedZones     []string
-		expectedInstances int
+		excludedZones                []string
+		expectedInstances            int
+		expectedZones                int
+		expectedInstacesCountPerZone map[string]int
 	}{
 		"without excluded zones": {
-			expectedInstances: 3,
+			expectedInstances:            3,
+			expectedZones:                3,
+			expectedInstacesCountPerZone: map[string]int{"zone-0": 1, "zone-1": 1, "zone-2": 1},
 		},
 		"with excluded zones": {
-			excludedZones:     []string{"zone-0"},
-			expectedInstances: 2,
+			excludedZones:                []string{"zone-0"},
+			expectedInstances:            2,
+			expectedZones:                2,
+			expectedInstacesCountPerZone: map[string]int{"zone-0": 0 /* excluded! */, "zone-1": 1, "zone-2": 1},
 		},
 	}
 
@@ -2887,6 +3044,17 @@ func TestRingUpdates(t *testing.T) {
 				return ring.InstancesCount()
 			})
 
+			for z, cnt := range testData.expectedInstacesCountPerZone {
+				require.Equal(t, cnt, ring.InstancesInZoneCount(z), z)
+			}
+
+			// Ensure there's no instance in an excluded zone.
+			for _, excluded := range testData.excludedZones {
+				require.Equal(t, 0, ring.InstancesInZoneCount(excluded))
+			}
+
+			require.Equal(t, testData.expectedZones, ring.ZonesCount())
+
 			// Sleep for a few seconds (ring timestamp resolution is 1 second, so to verify that ring is updated in the background,
 			// sleep for 2 seconds)
 			time.Sleep(2 * time.Second)
@@ -2898,7 +3066,6 @@ func TestRingUpdates(t *testing.T) {
 			for _, ing := range rs.Instances {
 				require.InDelta(t, now.UnixNano(), time.Unix(ing.Timestamp, 0).UnixNano(), float64(1500*time.Millisecond.Nanoseconds()))
 
-				// Ensure there's no instance in an excluded zone.
 				if len(testData.excludedZones) > 0 {
 					assert.False(t, slices.Contains(testData.excludedZones, ing.Zone))
 				}

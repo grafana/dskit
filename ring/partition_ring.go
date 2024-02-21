@@ -97,7 +97,6 @@ func (r *PartitionRing) ShuffleShardSize(size int) int {
 		return r.activePartitionsCount
 	}
 
-	// return min(size, r.activePartitionsCount)
 	if size < r.activePartitionsCount {
 		return size
 	}

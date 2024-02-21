@@ -191,6 +191,7 @@
 * [ENHANCEMENT] Ring: Add `HasReplicationSetChangedWithoutStateOrAddr` to detect replication state changes ignoring IP address changes due to e.g. member restarts. #464
 * [ENHANCEMENT] SpanLogger: Add `SetSpanAndLogTag` method. #467
 * [ENHANCEMENT] Add servicediscovery package. #469
+* [ENHANCEMENT] Expose `InstancesInZoneCount` and `ZonesCount` in `ring.ReadRing` interface. #494
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

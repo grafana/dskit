@@ -199,7 +199,8 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 
 		ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions, numPendingPartitions)
 
-		for shardSize := 0; shardSize <= ring.PartitionsCount()+5; shardSize++ {
+		// We test negative values of shardSize as well as sizes above current number of partition count.
+		for shardSize := -5; shardSize <= ring.PartitionsCount()+5; shardSize++ {
 			subring, err := ring.ShuffleShard("tenant-id", shardSize)
 			require.NoError(t, err)
 

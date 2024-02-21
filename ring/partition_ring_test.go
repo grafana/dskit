@@ -180,12 +180,14 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 			subring, err := ring.ShuffleShard("tenant-id", shardSize)
 			require.NoError(t, err)
 			assert.Equal(t, shardSize, subring.PartitionsCount())
+			assert.Equal(t, subring.PartitionsCount(), ring.ShuffleShardSize(shardSize))
 		}
 
 		// Request a shard size greater than the number of existing partitions.
 		subring, err := ring.ShuffleShard("tenant-id", numActivePartitions+1)
 		require.NoError(t, err)
 		assert.Equal(t, numActivePartitions, subring.PartitionsCount())
+		assert.Equal(t, subring.PartitionsCount(), ring.ShuffleShardSize(numActivePartitions+1))
 	})
 
 	t.Run("should never return INACTIVE or PENDING partitions", func(t *testing.T) {
@@ -197,13 +199,14 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 
 		ring := createPartitionRingWithPartitions(numActivePartitions, numInactivePartitions, numPendingPartitions)
 
-		for shardSize := 1; shardSize <= ring.PartitionsCount(); shardSize++ {
+		for shardSize := 0; shardSize <= ring.PartitionsCount()+5; shardSize++ {
 			subring, err := ring.ShuffleShard("tenant-id", shardSize)
 			require.NoError(t, err)
 
 			for _, partition := range subring.Partitions() {
 				assert.Equal(t, PartitionActive, partition.State)
 			}
+			assert.Equal(t, subring.PartitionsCount(), ring.ShuffleShardSize(shardSize))
 		}
 	})
 }
@@ -228,6 +231,8 @@ func TestPartitionRing_ShuffleShard_Stability(t *testing.T) {
 		for _, size := range shardSizes {
 			expectedSubring, err := ring.ShuffleShard(tenantID, size)
 			require.NoError(t, err)
+
+			assert.Equal(t, expectedSubring.PartitionsCount(), ring.ShuffleShardSize(size))
 
 			// Assert that multiple invocations generate the same exact shard.
 			for n := 0; n < numInvocations; n++ {

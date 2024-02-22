@@ -1601,8 +1601,46 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		// We expect the workers context to get canceled only after all callback functions canceled their own context.
 		for i := 0; i < len(contexts); i++ {
 			assert.Nil(t, workersCtx.Err())
-
 			assert.Nil(t, contexts[i].Err())
+
+			cancels[i](nil)
+		}
+
+		assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
+		assert.EqualError(t, context.Cause(workersCtx), "all requests completed")
+	})
+
+	t.Run("should run successfully if all callback functions return no error and they each cancel context twice", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			// Keep track of callback contexts and cancel functions.
+			mx       = sync.Mutex{}
+			contexts []context.Context
+			cancels  []context.CancelCauseFunc
+		)
+
+		f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+			mx.Lock()
+			contexts = append(contexts, ctx)
+			cancels = append(cancels, cancelCtx)
+			mx.Unlock()
+
+			return instance.Addr, nil
+		}
+
+		results, workersCtx, err := doMultiUntilQuorumWithoutSuccessfulContextCancellation[string](context.Background(), sets, cfg, f, func(string) {})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"instance-1", "instance-2", "instance-3"}, results)
+
+		// We expect the workers context to get canceled only after all callback functions canceled their own context.
+		for i := 0; i < len(contexts); i++ {
+			assert.Nil(t, workersCtx.Err())
+			assert.Nil(t, contexts[i].Err())
+
+			// There's no guarantee the cancel function is called exactly once.
+			// Our context cancellation wrapper should be idempotent like context.Context cancel function.
+			cancels[i](nil)
 			cancels[i](nil)
 		}
 

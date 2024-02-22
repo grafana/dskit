@@ -410,6 +410,9 @@ func DoMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.C
 	return results, err
 }
 
+// See DoMultiUntilQuorumWithoutSuccessfulContextCancellation().
+//
+// The returned context.Context is the internal context used by workers and it's used for testing purposes.
 func doMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, sets []ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, context.Context, error) {
 	var (
 		returnResultsMx = sync.Mutex{}

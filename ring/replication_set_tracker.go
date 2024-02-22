@@ -469,7 +469,7 @@ func (t *zoneAwareContextTracker) cancelAllContexts(cause error) {
 
 type inflightInstanceTracker struct {
 	mx       sync.Mutex
-	inflight []map[*InstanceDesc]struct{}
+	inflight [][]*InstanceDesc
 
 	// expectMoreInstances is true if more instances are expected to be added to the tracker.
 	expectMoreInstances bool
@@ -477,9 +477,9 @@ type inflightInstanceTracker struct {
 
 func newInflightInstanceTracker(sets []ReplicationSet) *inflightInstanceTracker {
 	// Init the inflight tracker.
-	inflight := make([]map[*InstanceDesc]struct{}, len(sets))
+	inflight := make([][]*InstanceDesc, len(sets))
 	for idx, set := range sets {
-		inflight[idx] = make(map[*InstanceDesc]struct{}, len(set.Instances))
+		inflight[idx] = make([]*InstanceDesc, 0, len(set.Instances))
 	}
 
 	return &inflightInstanceTracker{
@@ -495,7 +495,14 @@ func (t *inflightInstanceTracker) addInstance(replicationSetIdx int, instance *I
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
-	t.inflight[replicationSetIdx][instance] = struct{}{}
+	// Check if the instance has already been added.
+	for i, instances := 0, t.inflight[replicationSetIdx]; i < len(instances); i++ {
+		if instances[i] == instance {
+			return
+		}
+	}
+
+	t.inflight[replicationSetIdx] = append(t.inflight[replicationSetIdx], instance)
 }
 
 // removeInstance removes the instance for replicationSetIdx from the tracker.
@@ -505,7 +512,14 @@ func (t *inflightInstanceTracker) removeInstance(replicationSetIdx int, instance
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
-	delete(t.inflight[replicationSetIdx], instance)
+	for i, instances := 0, t.inflight[replicationSetIdx]; i < len(instances); i++ {
+		if instances[i] == instance {
+			t.inflight[replicationSetIdx] = append(instances[:i], instances[i+1:]...)
+
+			// We can safely break the loop because we don't expect multiple occurrences of the same instance.
+			return
+		}
+	}
 }
 
 // allInstancesAdded signals the tracker that all expected instances have been added.

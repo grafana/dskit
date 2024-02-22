@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -1536,6 +1537,134 @@ func TestZoneAwareContextTracker(t *testing.T) {
 	for _, ctx := range []context.Context{instance4Ctx, instance5Ctx, instance6Ctx} {
 		require.Equal(t, context.Canceled, ctx.Err(), "context for instance should be cancelled after cancelling all contexts")
 		require.Equal(t, remainingInstancesCause, context.Cause(ctx))
+	}
+}
+
+func TestInflightInstanceTracker(t *testing.T) {
+	sets := []ReplicationSet{
+		{Instances: []InstanceDesc{{Id: "instance-1"}, {Id: "instance-2"}}},
+		{Instances: []InstanceDesc{{Id: "instance-3"}}},
+	}
+
+	t.Run("addInstance() should be idempotent", func(t *testing.T) {
+		inflight := newInflightInstanceTracker(sets)
+		inflight.addInstance(0, &(sets[0].Instances[0]))
+		inflight.addInstance(0, &(sets[0].Instances[0]))
+
+		inflight.allInstancesAdded()
+		assert.False(t, inflight.allInstancesCompleted())
+
+		inflight.removeInstance(0, &(sets[0].Instances[0]))
+		assert.True(t, inflight.allInstancesCompleted())
+	})
+
+	t.Run("removeInstance() should be idempotent", func(t *testing.T) {
+		inflight := newInflightInstanceTracker(sets)
+		inflight.addInstance(0, &(sets[0].Instances[0]))
+
+		inflight.allInstancesAdded()
+		assert.False(t, inflight.allInstancesCompleted())
+
+		for i := 0; i < 2; i++ {
+			inflight.removeInstance(0, &(sets[0].Instances[0]))
+			assert.True(t, inflight.allInstancesCompleted())
+		}
+	})
+
+	t.Run("allInstancesCompleted() should return true after all instances have been removed and allInstancesAdded() has been called", func(t *testing.T) {
+		inflight := newInflightInstanceTracker(sets)
+		inflight.addInstance(0, &(sets[0].Instances[0]))
+		inflight.addInstance(0, &(sets[0].Instances[1]))
+		inflight.addInstance(0, &(sets[1].Instances[0]))
+
+		inflight.allInstancesAdded()
+		assert.False(t, inflight.allInstancesCompleted())
+
+		inflight.removeInstance(0, &(sets[0].Instances[0]))
+		assert.False(t, inflight.allInstancesCompleted())
+
+		inflight.removeInstance(0, &(sets[0].Instances[1]))
+		assert.False(t, inflight.allInstancesCompleted())
+
+		inflight.removeInstance(0, &(sets[1].Instances[0]))
+		assert.True(t, inflight.allInstancesCompleted())
+	})
+
+	t.Run("allInstancesCompleted() should return false if all instances have been removed but allInstancesAdded() has been not called yet", func(t *testing.T) {
+		inflight := newInflightInstanceTracker(sets)
+		inflight.addInstance(0, &(sets[0].Instances[0]))
+		inflight.addInstance(0, &(sets[0].Instances[1]))
+		inflight.addInstance(0, &(sets[1].Instances[0]))
+		assert.False(t, inflight.allInstancesCompleted())
+
+		inflight.removeInstance(0, &(sets[0].Instances[0]))
+		assert.False(t, inflight.allInstancesCompleted())
+
+		inflight.removeInstance(0, &(sets[0].Instances[1]))
+		assert.False(t, inflight.allInstancesCompleted())
+
+		inflight.removeInstance(0, &(sets[1].Instances[0]))
+		assert.False(t, inflight.allInstancesCompleted())
+
+		inflight.allInstancesAdded()
+		assert.True(t, inflight.allInstancesCompleted())
+	})
+}
+
+func BenchmarkInflightInstanceTracker(b *testing.B) {
+	tests := map[string]struct {
+		numReplicationSets            int
+		numInstancesPerReplicationSet int
+	}{
+		"few replication sets, many instances per replication set": {
+			numReplicationSets:            3,
+			numInstancesPerReplicationSet: 100,
+		},
+		"many replication sets, few instances per replication set": {
+			numReplicationSets:            100,
+			numInstancesPerReplicationSet: 3,
+		},
+	}
+
+	for testName, testData := range tests {
+		b.Run(testName, func(b *testing.B) {
+			// Create the sets used in the benchmark.
+			sets := make([]ReplicationSet, 0, testData.numReplicationSets)
+			for i := 0; i < testData.numReplicationSets; i++ {
+				instances := make([]InstanceDesc, 0, testData.numInstancesPerReplicationSet)
+				for j := 0; j < testData.numInstancesPerReplicationSet; j++ {
+					instances = append(instances, InstanceDesc{Id: strconv.Itoa(j)})
+				}
+
+				sets = append(sets, ReplicationSet{Instances: instances})
+			}
+
+			b.ResetTimer()
+
+			for n := 0; n < b.N; n++ {
+				inflight := newInflightInstanceTracker(sets)
+
+				// Signal that all instances have been added even if it's not true just to
+				// exercise more code in allInstancesCompleted() during the benchmark.
+				inflight.allInstancesAdded()
+
+				// First add all instances, and check if all instances completed.
+				for setIdx, set := range sets {
+					for instanceIdx := range set.Instances {
+						inflight.addInstance(setIdx, &(set.Instances[instanceIdx]))
+						inflight.allInstancesCompleted()
+					}
+				}
+
+				// Then remove all instances, and check if all instances completed.
+				for setIdx, set := range sets {
+					for instanceIdx := range set.Instances {
+						inflight.removeInstance(setIdx, &(set.Instances[instanceIdx]))
+						inflight.allInstancesCompleted()
+					}
+				}
+			}
+		})
 	}
 }
 

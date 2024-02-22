@@ -3,6 +3,7 @@ package concurrency
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -147,6 +148,41 @@ func TestForEachJob_ShouldReturnImmediatelyOnNoJobsProvided(t *testing.T) {
 		return nil
 	}))
 	require.Zero(t, processed.Load())
+}
+
+func TestForEachJob_ShouldCancelContextPassedToCallbackOnceDone(t *testing.T) {
+	for jobs := 1; jobs <= 3; jobs++ {
+		t.Run(fmt.Sprintf("jobs: %d", jobs), func(t *testing.T) {
+			for concurrency := 1; concurrency <= jobs; concurrency++ {
+				t.Run(fmt.Sprintf("concurrency: %d", concurrency), func(t *testing.T) {
+					var (
+						// Keep track of all contexts.
+						contextsMx = sync.Mutex{}
+						contexts   []context.Context
+					)
+
+					jobFunc := func(ctx context.Context, idx int) error {
+						// Context should not be cancelled.
+						assert.Nil(t, ctx.Err())
+
+						contextsMx.Lock()
+						contexts = append(contexts, ctx)
+						contextsMx.Unlock()
+
+						return nil
+					}
+
+					err := ForEachJob(context.Background(), jobs, concurrency, jobFunc)
+					require.NoError(t, err)
+
+					require.Len(t, contexts, jobs)
+					for _, ctx := range contexts {
+						require.ErrorIs(t, ctx.Err(), context.Canceled)
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestForEach(t *testing.T) {

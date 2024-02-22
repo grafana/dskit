@@ -1631,7 +1631,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 					// Successful callbacks wait a bit to ensure context is NOT cancelled in the meanwhile.
 					select {
 					case <-ctx.Done():
-						t.Fatal("expected the context to not get canceled but it was")
+						t.Error("expected the context to not get canceled but it was")
 						return "", ctx.Err()
 					case <-time.After(time.Second):
 						return instance.Addr, nil
@@ -1679,7 +1679,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 						assert.Contains(t, []string{errMock.Error(), "context canceled: quorum cannot be reached"}, context.Cause(ctx).Error())
 						return "", ctx.Err()
 					case <-time.After(time.Second):
-						t.Fatal("expected the context to get canceled but it wasn't")
+						t.Error("expected the context to get canceled but it wasn't")
 						return "", nil
 					}
 				}
@@ -1720,7 +1720,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 					assert.EqualError(t, context.Cause(ctx), expectedErr)
 					return "", ctx.Err()
 				case <-time.After(time.Second):
-					t.Fatal("expected the context to get canceled but it wasn't")
+					t.Error("expected the context to get canceled but it wasn't")
 					return "", nil
 				}
 			}
@@ -1753,7 +1753,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 				assert.ErrorIs(t, ctx.Err(), context.Canceled)
 				return "", ctx.Err()
 			case <-time.After(time.Second):
-				t.Fatal("expected the context to get canceled but it wasn't")
+				t.Error("expected the context to get canceled but it wasn't")
 				return "", nil
 			}
 		}

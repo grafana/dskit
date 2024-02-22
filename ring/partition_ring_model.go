@@ -13,8 +13,34 @@ import (
 	"github.com/grafana/dskit/kv/memberlist"
 )
 
+type partitionRingCodec struct {
+	codec.Codec
+}
+
+// Decode wraps Codec.Decode and ensure PartitionRingDesc maps are not nil.
+func (c *partitionRingCodec) Decode(in []byte) (interface{}, error) {
+	out, err := c.Codec.Decode(in)
+	if err != nil {
+		return out, err
+	}
+
+	// Ensure maps are initialised. This makes working with PartitionRingDesc more convenient.
+	if actual, ok := out.(*PartitionRingDesc); ok {
+		if actual.Partitions == nil {
+			actual.Partitions = map[int32]PartitionDesc{}
+		}
+		if actual.Owners == nil {
+			actual.Owners = map[string]OwnerDesc{}
+		}
+	}
+
+	return out, nil
+}
+
 func GetPartitionRingCodec() codec.Codec {
-	return codec.NewProtoCodec("partitionRingDesc", PartitionRingDescFactory)
+	return &partitionRingCodec{
+		Codec: codec.NewProtoCodec("partitionRingDesc", PartitionRingDescFactory),
+	}
 }
 
 // PartitionRingDescFactory makes new PartitionRingDesc.
@@ -198,12 +224,7 @@ func (m *PartitionRingDesc) AddOrUpdateOwner(id string, state OwnerState, ownedP
 	}
 
 	updated.UpdatedTimestamp = now.Unix()
-
-	if m.Owners == nil {
-		m.Owners = map[string]OwnerDesc{id: updated}
-	} else {
-		m.Owners[id] = updated
-	}
+	m.Owners[id] = updated
 
 	return true
 }

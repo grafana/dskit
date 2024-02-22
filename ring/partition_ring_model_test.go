@@ -975,15 +975,51 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 }
 
 func TestPartitionRingDesc_Merge_EdgeCases(t *testing.T) {
-	desc := NewPartitionRingDesc()
+	t.Run("should not panic if the mergerable is nil", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
 
-	actual, err := desc.Merge(nil, false)
-	require.NoError(t, err)
-	require.Nil(t, actual)
+		actual, err := desc.Merge(nil, false)
+		require.NoError(t, err)
+		require.Nil(t, actual)
 
-	actual, err = desc.Merge((*PartitionRingDesc)(nil), false)
-	require.NoError(t, err)
-	require.Nil(t, actual)
+		actual, err = desc.Merge((*PartitionRingDesc)(nil), false)
+		require.NoError(t, err)
+		require.Nil(t, actual)
+	})
+
+	t.Run("should not panic if local version has been decoded from an empty struct received via pull-push mechanism", func(t *testing.T) {
+		// Let's assume there's a remote endpoint with empty partitions and owners.
+		// These maps are non-nil but empty in the remote endpoint.
+		remote := NewPartitionRingDesc()
+		require.NotNil(t, remote.Partitions)
+		require.NotNil(t, remote.Owners)
+		require.Empty(t, remote.Partitions)
+		require.Empty(t, remote.Owners)
+
+		// The local process pull the state from the remote endpoint.
+		// The remote endpoint encodes the struct and then the local process decodes it.
+		codec := GetPartitionRingCodec()
+		encoded, err := codec.Encode(remote)
+		require.NoError(t, err)
+		decoded, err := codec.Decode(encoded)
+		require.NoError(t, err)
+
+		local := decoded.(*PartitionRingDesc)
+		require.NotNil(t, local.Partitions)
+		require.NotNil(t, local.Owners)
+		require.Empty(t, local.Partitions)
+		require.Empty(t, local.Owners)
+
+		// Then the local process receives an incoming update with some partitions and owners.
+		incoming := NewPartitionRingDesc()
+		incoming.AddPartition(1, PartitionActive, time.Unix(10, 0))
+		incoming.AddOrUpdateOwner("instance-1", OwnerActive, 1, time.Unix(10, 0))
+
+		change, err := local.Merge(incoming, false)
+		require.NoError(t, err)
+		assert.Equal(t, incoming, local)
+		assert.Equal(t, incoming, change)
+	})
 }
 
 func TestPartitionRingDesc_RemoveTombstones(t *testing.T) {

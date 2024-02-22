@@ -103,6 +103,21 @@ func TestMemcachedClient_Increment(t *testing.T) {
 	require.Equal(t, uint64(3), incrementedValue)
 }
 
+func TestMemcachedClient_Decrement(t *testing.T) {
+	client, _, err := setupDefaultMemcachedClient()
+	require.NoError(t, err)
+
+	key := "foo"
+	initialValue := []byte("2")
+
+	client.SetAsync(key, initialValue, 10*time.Second)
+	require.NoError(t, client.wait())
+
+	incrementedValue, err := client.Decrement(context.Background(), key, 1)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), incrementedValue)
+}
+
 func TestMemcachedClient_Touch(t *testing.T) {
 	client, backend, err := setupDefaultMemcachedClient()
 	require.NoError(t, err)
@@ -294,6 +309,13 @@ func (m *mockMemcachedClientBackend) Delete(key string) error {
 func (m *mockMemcachedClientBackend) Touch(key string, seconds int32) error {
 	m.values[key].Expiration = seconds
 	return nil
+}
+
+func (m *mockMemcachedClientBackend) Decrement(key string, delta uint64) (uint64, error) {
+	value, _ := strconv.ParseUint(string(m.values[key].Value), 10, 64)
+	value -= delta
+	m.values[key].Value = []byte(strconv.FormatUint(value, 10))
+	return value, nil
 }
 
 func (m *mockMemcachedClientBackend) Increment(key string, delta uint64) (uint64, error) {

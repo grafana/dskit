@@ -509,6 +509,8 @@ func (t *inflightInstanceTracker) removeInstance(replicationSetIdx int, instance
 }
 
 // allInstancesAdded signals the tracker that all expected instances have been added.
+//
+// allInstancesAdded is idempotent.
 func (t *inflightInstanceTracker) allInstancesAdded() {
 	t.mx.Lock()
 	defer t.mx.Unlock()

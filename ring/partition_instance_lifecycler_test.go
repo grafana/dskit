@@ -324,6 +324,14 @@ func getPartitionRingFromStore(t *testing.T, store kv.Client, key string) *Parti
 	return GetOrCreatePartitionRingDesc(in)
 }
 
+func getPartitionStateFromStore(t *testing.T, store kv.Client, key string, partitionID int32) PartitionState {
+	partition, ok := getPartitionRingFromStore(t, store, key).GetPartitions()[partitionID]
+	if !ok {
+		return PartitionUnknown
+	}
+	return partition.State
+}
+
 func createTestPartitionInstanceLifecyclerConfig(partitionID int32, instanceID string) PartitionInstanceLifecyclerConfig {
 	return PartitionInstanceLifecyclerConfig{
 		PartitionID:                          partitionID,

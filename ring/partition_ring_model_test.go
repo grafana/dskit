@@ -151,19 +151,19 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
@@ -175,7 +175,7 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -184,7 +184,7 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -193,7 +193,7 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -204,7 +204,7 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 		"a new partition is added without owners": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -213,8 +213,8 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -223,8 +223,8 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -233,7 +233,7 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
@@ -241,7 +241,7 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 		"a new partition is added with owners": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -250,8 +250,8 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -262,8 +262,8 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -274,7 +274,7 @@ func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-1": {OwnedPartition: 2, State: OwnerActive, UpdatedTimestamp: 20},
@@ -313,8 +313,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 		"partition state changed with newer timestamp": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -325,8 +325,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionInactive, StateTimestamp: 30}, // State changed with newer timestamp.
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionInactive, StateTimestamp: 30}, // State changed with newer timestamp.
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -337,8 +337,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionInactive, StateTimestamp: 30},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionInactive, StateTimestamp: 30},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -349,7 +349,7 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionInactive, StateTimestamp: 30},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionInactive, StateTimestamp: 30},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
@@ -357,8 +357,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 		"partition state changed with older timestamp": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -369,8 +369,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionInactive, StateTimestamp: 10}, // State changed with older timestamp.
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionInactive, StateTimestamp: 10}, // State changed with older timestamp.
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -381,8 +381,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -396,8 +396,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 		"partition state not changed but state timestamp updated with newer one": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -408,8 +408,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 30}, // State timestamp updated with newer one.
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 30}, // State timestamp updated with newer one.
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -420,8 +420,8 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 30},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 30},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -432,7 +432,7 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 30},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 30},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
@@ -472,8 +472,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			localCAS: true,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -482,7 +482,7 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 					// Partition 2 removed.
 				},
 				Owners: map[string]OwnerDesc{
@@ -492,8 +492,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: now.Unix()},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: now.Unix()},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -502,7 +502,7 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: now.Unix()},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: now.Unix()},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
@@ -511,8 +511,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			localCAS: true,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20}, // Local state is already deleted.
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20}, // Local state is already deleted.
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -521,7 +521,7 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 					// Partition 2 removed.
 				},
 				Owners: map[string]OwnerDesc{
@@ -531,8 +531,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -545,8 +545,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			localCAS: false,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -555,8 +555,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 30}, // Partition deleted with newer timestamp.
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 30}, // Partition deleted with newer timestamp.
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -565,8 +565,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 30},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 30},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -575,7 +575,7 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 30},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 30},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
@@ -584,8 +584,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			localCAS: false,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -594,8 +594,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20}, // Partition deleted with equal timestamp.
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20}, // Partition deleted with equal timestamp.
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -604,8 +604,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -614,7 +614,7 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			expectedChange: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
@@ -623,8 +623,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			localCAS: false,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -633,8 +633,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 10}, // Partition deleted with older timestamp.
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionDeleted, StateTimestamp: 10}, // Partition deleted with older timestamp.
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -643,8 +643,8 @@ func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -680,13 +680,13 @@ func TestPartitionRingDesc_Merge_AddOwner(t *testing.T) {
 		"add the first owner to a partition": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{},
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -694,7 +694,7 @@ func TestPartitionRingDesc_Merge_AddOwner(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -710,7 +710,7 @@ func TestPartitionRingDesc_Merge_AddOwner(t *testing.T) {
 		"add the second owner to a partition": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -718,7 +718,7 @@ func TestPartitionRingDesc_Merge_AddOwner(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -727,7 +727,7 @@ func TestPartitionRingDesc_Merge_AddOwner(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -776,8 +776,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			localCAS: true,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -786,8 +786,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -796,8 +796,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -815,8 +815,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			localCAS: true,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -825,8 +825,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -835,8 +835,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -849,8 +849,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			localCAS: false,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -859,8 +859,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -869,8 +869,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -888,8 +888,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			localCAS: false,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -898,8 +898,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -908,8 +908,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -927,8 +927,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			localCAS: false,
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -937,8 +937,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			incoming: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
@@ -947,8 +947,8 @@ func TestPartitionRingDesc_Merge_RemoveOwner(t *testing.T) {
 			},
 			expectedUpdatedLocal: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
-					1: {Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
-					2: {Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+					2: {Id: 2, Tokens: []uint32{4, 5, 6}, State: PartitionActive, StateTimestamp: 20},
 				},
 				Owners: map[string]OwnerDesc{
 					"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},

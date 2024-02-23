@@ -496,8 +496,8 @@ func (t *inflightInstanceTracker) addInstance(replicationSetIdx int, instance *I
 	defer t.mx.Unlock()
 
 	// Check if the instance has already been added.
-	for i, instances := 0, t.inflight[replicationSetIdx]; i < len(instances); i++ {
-		if instances[i] == instance {
+	for _, curr := range t.inflight[replicationSetIdx] {
+		if curr == instance {
 			return
 		}
 	}
@@ -512,8 +512,9 @@ func (t *inflightInstanceTracker) removeInstance(replicationSetIdx int, instance
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
-	for i, instances := 0, t.inflight[replicationSetIdx]; i < len(instances); i++ {
-		if instances[i] == instance {
+	for i, curr := range t.inflight[replicationSetIdx] {
+		if curr == instance {
+			instances := t.inflight[replicationSetIdx]
 			t.inflight[replicationSetIdx] = append(instances[:i], instances[i+1:]...)
 
 			// We can safely break the loop because we don't expect multiple occurrences of the same instance.

@@ -28,20 +28,7 @@ func NewPartitionRingEditor(ringKey string, store kv.Client) *PartitionRingEdito
 // and ErrPartitionStateChangeNotAllowed if the state change is not allowed.
 func (l *PartitionRingEditor) ChangePartitionState(ctx context.Context, partitionID int32, toState PartitionState) error {
 	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-		partition, exists := ring.Partitions[partitionID]
-		if !exists {
-			return false, ErrPartitionDoesNotExist
-		}
-
-		if partition.State == toState {
-			return false, nil
-		}
-
-		if !isPartitionStateChangeAllowed(partition.State, toState) {
-			return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "change partition state from %s to %s", partition.State.CleanName(), toState.CleanName())
-		}
-
-		return ring.UpdatePartitionState(partitionID, toState, time.Now()), nil
+		return changePartitionState(ring, partitionID, toState)
 	})
 }
 
@@ -57,4 +44,21 @@ func (l *PartitionRingEditor) updateRing(ctx context.Context, update func(ring *
 
 		return ringDesc, true, nil
 	})
+}
+
+func changePartitionState(ring *PartitionRingDesc, partitionID int32, toState PartitionState) (changed bool, _ error) {
+	partition, exists := ring.Partitions[partitionID]
+	if !exists {
+		return false, ErrPartitionDoesNotExist
+	}
+
+	if partition.State == toState {
+		return false, nil
+	}
+
+	if !isPartitionStateChangeAllowed(partition.State, toState) {
+		return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "change partition state from %s to %s", partition.State.CleanName(), toState.CleanName())
+	}
+
+	return ring.UpdatePartitionState(partitionID, toState, time.Now()), nil
 }

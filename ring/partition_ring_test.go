@@ -310,6 +310,22 @@ func TestPartitionRing_ShuffleShard_Shuffling(t *testing.T) {
 	}
 }
 
+func TestPartitionRing_Sorting(t *testing.T) {
+	desc := NewPartitionRingDesc()
+
+	// Add in reverse order.
+	for i := 9; i >= 0; i-- {
+		desc.AddPartition(int32(i), PartitionState(i)%3+PartitionPending, time.Now())
+	}
+
+	pr := NewPartitionRing(*desc)
+
+	require.Equal(t, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, pr.PartitionIDs())
+	require.Equal(t, []int32{0, 3, 6, 9}, pr.PendingPartitionIDs())
+	require.Equal(t, []int32{1, 4, 7}, pr.ActivePartitionIDs())
+	require.Equal(t, []int32{2, 5, 8}, pr.InactivePartitionIDs())
+}
+
 func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *testing.T) {
 	type change string
 

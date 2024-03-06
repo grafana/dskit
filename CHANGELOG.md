@@ -76,7 +76,7 @@
 * [FEATURE] Add `middleware.HTTPGRPCTracer` for more detailed server-side tracing spans and tags on `httpgrpc.HTTP/Handle` requests
 * [FEATURE] Server: Add support for `GrpcInflightMethodLimiter` -- limiting gRPC requests before reading full request into the memory. This can be used to implement global or method-specific inflight limits for gRPC methods. #377 #392
 * [FEATURE] Server: Add `-grpc.server.num-workers` flag that configures the `grpc.NumStreamWorkers()` option. This can be used to start a fixed base amount of workers to process gRPC requests and avoid stack allocation for each call. #400
-* [FEATURE] Add `PartitionRing`. The partitions ring is hash ring to shard data between partitions. #474 #476 #478 #479 #481 #483 #484 #485 #488 #489 #493 #496 #497 #498
+* [FEATURE] Add `PartitionRing`. The partitions ring is hash ring to shard data between partitions. #474 #476 #478 #479 #481 #483 #484 #485 #488 #489 #493 #496 #497 #498 #503
 * [FEATURE] Add methods `Increment`, `FlushAll`, `CompareAndSwap`, `Touch` to `cache.MemcachedClient` #477
 * [FEATURE] Add `concurrency.ForEachJobMergeResults()` utility function. #486
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
@@ -194,6 +194,7 @@
 * [ENHANCEMENT] Add servicediscovery package. #469
 * [ENHANCEMENT] Expose `InstancesInZoneCount` and `ZonesCount` in `ring.ReadRing` interface. #494
 * [ENHANCEMENT] Add optimization to run `concurrency.ForEachJob()` with no parallelism when there's only 1 job. #486 #495
+* [ENHANCEMENT] Reduced memory allocations by `user.ExtractFromGRPCRequest()`. #502
 * [ENHANCEMENT] Add native histogram version of some metrics: #501
   * `gate_duration_seconds`
   * `kv_request_duration_seconds`

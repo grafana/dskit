@@ -195,6 +195,10 @@
 * [ENHANCEMENT] Expose `InstancesInZoneCount` and `ZonesCount` in `ring.ReadRing` interface. #494
 * [ENHANCEMENT] Add optimization to run `concurrency.ForEachJob()` with no parallelism when there's only 1 job. #486 #495
 * [ENHANCEMENT] Reduced memory allocations by `user.ExtractFromGRPCRequest()`. #502
+* [ENHANCEMENT] Add native histogram version of some metrics: #501
+  * `gate_duration_seconds`
+  * `kv_request_duration_seconds`
+  * `operation_duration_seconds`
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

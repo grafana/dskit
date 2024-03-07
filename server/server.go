@@ -436,7 +436,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	routerHandler = router
 	writeTimeout := cfg.HTTPServerWriteTimeout
 	if cfg.HTTPServerUseTimeoutHandler && cfg.HTTPServerWriteTimeout > 0 {
-		writeTimeout += 20 * time.Second // add 20 seconds to the write timeout to allow for the timeout handler to write the response cleanly. this is a huge time buffer
+		writeTimeout = 0 // just disable the http.Server's WriteTimeout and rely on the timeout handler
 		routerHandler = http.TimeoutHandler(router, cfg.HTTPServerWriteTimeout, cfg.HTTPServerTimeoutHandlerMessage)
 	}
 

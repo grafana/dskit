@@ -104,10 +104,6 @@ type Config struct {
 	HTTPServerReadHeaderTimeout   time.Duration `yaml:"http_server_read_header_timeout"`
 	HTTPServerWriteTimeout        time.Duration `yaml:"http_server_write_timeout"`
 	HTTPServerIdleTimeout         time.Duration `yaml:"http_server_idle_timeout"`
-	// HTTPServerWriteTimeout has some misleading behavior. Consider using the below fields to
-	// enable a timeout handler that will write a response after the timeout. See tests for details.
-	HTTPServerUseTimeoutHandler     bool   `yaml:"-"`
-	HTTPServerTimeoutHandlerMessage string `yaml:"-"`
 
 	HTTPLogClosedConnectionsWithoutResponse bool `yaml:"http_log_closed_connections_without_response_enabled"`
 
@@ -431,17 +427,10 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		return nil, fmt.Errorf("error building http middleware: %w", err)
 	}
 
-	// install a timeout handler if configured
-	writeTimeout := cfg.HTTPServerWriteTimeout
-	if cfg.HTTPServerUseTimeoutHandler && cfg.HTTPServerWriteTimeout > 0 {
-		writeTimeout = 0 // just disable the http.Server's WriteTimeout and rely on the timeout handler
-		httpMiddleware = append(httpMiddleware, middleware.TimeoutMiddleware(cfg.HTTPServerWriteTimeout, cfg.HTTPServerTimeoutHandlerMessage))
-	}
-
 	httpServer := &http.Server{
 		ReadTimeout:       cfg.HTTPServerReadTimeout,
 		ReadHeaderTimeout: cfg.HTTPServerReadHeaderTimeout,
-		WriteTimeout:      writeTimeout,
+		WriteTimeout:      cfg.HTTPServerWriteTimeout,
 		IdleTimeout:       cfg.HTTPServerIdleTimeout,
 		Handler:           middleware.Merge(httpMiddleware...).Wrap(router),
 	}

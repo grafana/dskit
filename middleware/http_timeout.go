@@ -18,6 +18,7 @@ import (
 //     means that an http server with a write timeout of 10s may go for significantly longer
 //   - closes the tcp connection on the next write after the timeout has elapsed instead of sending a
 //     meaningful http response
+//   - allows streaming of http response back to caller
 //
 // http.TimeoutHandler
 //   - cancels context allowing downstream code to abandon the request

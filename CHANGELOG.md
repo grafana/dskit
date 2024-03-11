@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Add a new middleware to cancel http requests cleanly based on http.TimeoutHandler. #504
 * [CHANGE] Exemplar label changes from "traceID" to "trace_id". #487
 * [CHANGE] server: import godeltaprof/http/pprof adding /debug/pprof/delta_{heap,mutex,block} endpoints to DefaultServeMux #450
 * [CHANGE] Move httpgrpc request & response utils up from httpgrpc/server to httpgrpc package #434, #435

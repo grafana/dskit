@@ -43,7 +43,6 @@ func TestTimeoutMiddleware(t *testing.T) {
 	go func() {
 		require.NoError(t, httpServer.Serve(listener))
 	}()
-	defer httpServer.Close()
 
 	start := time.Now()
 	req, err := http.NewRequest("GET", "http://"+listener.Addr().String(), nil)

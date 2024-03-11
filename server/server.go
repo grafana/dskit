@@ -432,12 +432,10 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	}
 
 	// install a timeout handler if configured
-	var routerHandler http.Handler
-	routerHandler = router
 	writeTimeout := cfg.HTTPServerWriteTimeout
 	if cfg.HTTPServerUseTimeoutHandler && cfg.HTTPServerWriteTimeout > 0 {
 		writeTimeout = 0 // just disable the http.Server's WriteTimeout and rely on the timeout handler
-		routerHandler = http.TimeoutHandler(router, cfg.HTTPServerWriteTimeout, cfg.HTTPServerTimeoutHandlerMessage)
+		httpMiddleware = append(httpMiddleware, middleware.TimeoutMiddleware(cfg.HTTPServerWriteTimeout, cfg.HTTPServerTimeoutHandlerMessage))
 	}
 
 	httpServer := &http.Server{
@@ -445,7 +443,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		ReadHeaderTimeout: cfg.HTTPServerReadHeaderTimeout,
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       cfg.HTTPServerIdleTimeout,
-		Handler:           middleware.Merge(httpMiddleware...).Wrap(routerHandler),
+		Handler:           middleware.Merge(httpMiddleware...).Wrap(router),
 	}
 	if httpTLSConfig != nil {
 		httpServer.TLSConfig = httpTLSConfig

@@ -22,6 +22,7 @@ import (
 // http.TimeoutHandler
 //   - cancels context allowing downstream code to abandon the request
 //   - returns a 503 Service Unavailable with the provided message
+//   - buffers response in memory which may be undesirable for large responses
 func NewTimeoutMiddleware(dt time.Duration, msg string, log log.Logger) Func {
 	return func(next http.Handler) http.Handler {
 		return &timeoutHandler{

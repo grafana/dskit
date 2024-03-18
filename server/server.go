@@ -215,17 +215,17 @@ func (cfg *Config) registererOrDefault() prometheus.Registerer {
 //
 // Servers will be automatically instrumented for Prometheus metrics.
 type Server struct {
-	cfg          Config
-	handler      SignalHandler
-	grpcListener net.Listener
-	httpListener net.Listener
+	cfg     Config
+	handler SignalHandler
 
-	HTTP       *mux.Router
-	HTTPServer *http.Server
-	GRPC       *grpc.Server
-	Log        gokit_log.Logger
-	Registerer prometheus.Registerer
-	Gatherer   prometheus.Gatherer
+	HTTP         *mux.Router
+	HTTPListener net.Listener
+	HTTPServer   *http.Server
+	GRPCListener net.Listener
+	GRPC         *grpc.Server
+	Log          gokit_log.Logger
+	Registerer   prometheus.Registerer
+	Gatherer     prometheus.Gatherer
 }
 
 // New makes a new Server. It will panic if the metrics cannot be registered.
@@ -445,8 +445,8 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 
 	return &Server{
 		cfg:          cfg,
-		httpListener: httpListener,
-		grpcListener: grpcListener,
+		HTTPListener: httpListener,
+		GRPCListener: grpcListener,
 		handler:      handler,
 
 		HTTP:       router,
@@ -526,9 +526,9 @@ func (s *Server) Run() error {
 	go func() {
 		var err error
 		if s.HTTPServer.TLSConfig == nil {
-			err = s.HTTPServer.Serve(s.httpListener)
+			err = s.HTTPServer.Serve(s.HTTPListener)
 		} else {
-			err = s.HTTPServer.ServeTLS(s.httpListener, s.cfg.HTTPTLSConfig.TLSCertPath, s.cfg.HTTPTLSConfig.TLSKeyPath)
+			err = s.HTTPServer.ServeTLS(s.HTTPListener, s.cfg.HTTPTLSConfig.TLSCertPath, s.cfg.HTTPTLSConfig.TLSKeyPath)
 		}
 		if err == http.ErrServerClosed {
 			err = nil
@@ -548,7 +548,7 @@ func (s *Server) Run() error {
 	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP, serverOptions...))
 
 	go func() {
-		err := s.GRPC.Serve(s.grpcListener)
+		err := s.GRPC.Serve(s.GRPCListener)
 		handleGRPCError(err, errChan)
 	}()
 
@@ -570,13 +570,13 @@ func handleGRPCError(err error, errChan chan error) {
 
 // HTTPListenAddr exposes `net.Addr` that `Server` is listening to for HTTP connections.
 func (s *Server) HTTPListenAddr() net.Addr {
-	return s.httpListener.Addr()
+	return s.HTTPListener.Addr()
 
 }
 
 // GRPCListenAddr exposes `net.Addr` that `Server` is listening to for GRPC connections.
 func (s *Server) GRPCListenAddr() net.Addr {
-	return s.grpcListener.Addr()
+	return s.GRPCListener.Addr()
 }
 
 // Stop unblocks Run().

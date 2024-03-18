@@ -93,7 +93,7 @@ func TestTCPv4Network(t *testing.T) {
 			errChan <- srv.Run()
 		}()
 
-		require.NoError(t, srv.httpListener.Close())
+		require.NoError(t, srv.HTTPListener.Close())
 		require.NotNil(t, <-errChan)
 
 		// So that address is freed for further tests.
@@ -110,7 +110,7 @@ func TestTCPv4Network(t *testing.T) {
 			errChan <- srv.Run()
 		}()
 
-		require.NoError(t, srv.grpcListener.Close())
+		require.NoError(t, srv.GRPCListener.Close())
 		require.NotNil(t, <-errChan)
 	})
 }
@@ -466,7 +466,7 @@ func TestRunReturnsError(t *testing.T) {
 			errChan <- srv.Run()
 		}()
 
-		require.NoError(t, srv.httpListener.Close())
+		require.NoError(t, srv.HTTPListener.Close())
 		require.NotNil(t, <-errChan)
 
 		// So that address is freed for further tests.
@@ -483,7 +483,7 @@ func TestRunReturnsError(t *testing.T) {
 			errChan <- srv.Run()
 		}()
 
-		require.NoError(t, srv.grpcListener.Close())
+		require.NoError(t, srv.GRPCListener.Close())
 		require.NotNil(t, <-errChan)
 	})
 }

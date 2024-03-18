@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Expose `HTTPListener` and `GRPCListener` to users of `Server` to enable wrapping in other listeners (e.g. `go-proxyprotocol`'s `Listener`).
 * [CHANGE] Add a new middleware to cancel http requests cleanly based on http.TimeoutHandler. #504
 * [CHANGE] Exemplar label changes from "traceID" to "trace_id". #487
 * [CHANGE] server: import godeltaprof/http/pprof adding /debug/pprof/delta_{heap,mutex,block} endpoints to DefaultServeMux #450

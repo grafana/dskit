@@ -78,7 +78,7 @@ func cancelableSleep(ctx context.Context, sleep time.Duration) error {
 	return ctx.Err()
 }
 
-func (f FakeServer) ReturnProxyProtoCallerIP(ctx context.Context, empty *protobuf.Empty) (*ProxyProtoIPResponse, error) {
+func (f FakeServer) ReturnProxyProtoCallerIP(ctx context.Context, _ *protobuf.Empty) (*ProxyProtoIPResponse, error) {
 	p, _ := peer.FromContext(ctx)
 	ip, _, err := net.SplitHostPort(p.Addr.String())
 	if err != nil {

@@ -126,6 +126,7 @@ type Config struct {
 	GRPCServerMinTimeBetweenPings      time.Duration `yaml:"grpc_server_min_time_between_pings"`
 	GRPCServerPingWithoutStreamAllowed bool          `yaml:"grpc_server_ping_without_stream_allowed"`
 	GRPCServerNumWorkers               int           `yaml:"grpc_server_num_workers"`
+	GRPCServerStatsTrackingEnabled     bool          `yaml:"grpc_server_stats_tracking_enabled"`
 
 	LogFormat                    string           `yaml:"log_format"`
 	LogLevel                     log.Level        `yaml:"log_level"`
@@ -191,6 +192,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.GRPCServerTimeout, "server.grpc.keepalive.timeout", time.Second*20, "After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s")
 	f.DurationVar(&cfg.GRPCServerMinTimeBetweenPings, "server.grpc.keepalive.min-time-between-pings", 5*time.Minute, "Minimum amount of time a client should wait before sending a keepalive ping. If client sends keepalive ping more often, server will send GOAWAY and close the connection.")
 	f.BoolVar(&cfg.GRPCServerPingWithoutStreamAllowed, "server.grpc.keepalive.ping-without-stream-allowed", false, "If true, server allows keepalive pings even when there are no active streams(RPCs). If false, and client sends ping when there are no active streams, server will send GOAWAY and close the connection.")
+	f.BoolVar(&cfg.GRPCServerStatsTrackingEnabled, "server.grpc.stats-tracking-enabled", true, "If true, the request_message_bytes, response_message_bytes, and inflight_requests metrics will be tracked, however the memory used for parsing gRPC request bodies will not be reused.")
 	f.IntVar(&cfg.GRPCServerNumWorkers, "server.grpc.num-workers", 0, "If non-zero, configures the amount of GRPC server workers used to serve the requests.")
 	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Base path to serve all API routes from (e.g. /v1/)")
 	f.StringVar(&cfg.LogFormat, "log.format", log.LogfmtFormat, "Output log messages in the given format. Valid formats: [logfmt, json]")
@@ -414,13 +416,15 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		grpcOptions = append(grpcOptions, grpc.InTapHandle(grpcServerLimit.TapHandle), grpc.StatsHandler(grpcServerLimit))
 	}
 
-	grpcOptions = append(grpcOptions,
-		grpc.StatsHandler(middleware.NewStatsHandler(
-			metrics.ReceivedMessageSize,
-			metrics.SentMessageSize,
-			metrics.InflightRequests,
-		)),
-	)
+	if cfg.GRPCServerStatsTrackingEnabled {
+		grpcOptions = append(grpcOptions,
+			grpc.StatsHandler(middleware.NewStatsHandler(
+				metrics.ReceivedMessageSize,
+				metrics.SentMessageSize,
+				metrics.InflightRequests,
+			)),
+		)
+	}
 
 	grpcOptions = append(grpcOptions, cfg.GRPCOptions...)
 	if grpcTLSConfig != nil {

@@ -781,7 +781,7 @@ func TestLogSourceIPs(t *testing.T) {
 		logger.assertContains(t, "sourceIPs=127.0.0.1")
 	})
 
-	t.Run("without PROXY protocol", func(t *testing.T) {
+	t.Run("with PROXY protocol", func(t *testing.T) {
 		logger := newFakeLogger()
 		cfg.Log = logger
 		cfg.ProxyProtocolEnabled = true

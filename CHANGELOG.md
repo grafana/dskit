@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Add a new `grpc_server_recv_buffer_pools_enabled` option that enables recv buffer pools in the gRPC server (assuming `grpc_server_stats_tracking_enabled` is disabled). #510
 * [CHANGE] Add a new `grpc_server_stats_tracking_enabled` option that allows us to disable stats tracking and potentially improve server memory reuse. #507
 * [CHANGE] Add support for PROXY protocol to Server. #508
 * [CHANGE] Add a new middleware to cancel http requests cleanly based on http.TimeoutHandler. #504

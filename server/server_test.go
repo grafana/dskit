@@ -1019,3 +1019,15 @@ func httpTarget(srv *Server, path string) string {
 func httpsTarget(srv *Server, path string) string {
 	return fmt.Sprintf("https://%s%s", srv.HTTPListenAddr().String(), path)
 }
+
+func TestGrpcServerRecvBuffersConfigError(t *testing.T) {
+	var cfg Config
+	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+	cfg.GRPCServerStatsTrackingEnabled = true
+	cfg.GRPCServerRecvBufferPoolsEnabled = true
+	cfg.MetricsNamespace = "testing_grpc_config_conflicts"
+
+	_, err := New(cfg)
+	require.Error(t, err)
+}

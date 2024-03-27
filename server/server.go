@@ -31,6 +31,7 @@ import (
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/dskit/httpgrpc"
@@ -127,6 +128,7 @@ type Config struct {
 	GRPCServerPingWithoutStreamAllowed bool          `yaml:"grpc_server_ping_without_stream_allowed"`
 	GRPCServerNumWorkers               int           `yaml:"grpc_server_num_workers"`
 	GRPCServerStatsTrackingEnabled     bool          `yaml:"grpc_server_stats_tracking_enabled"`
+	GRPCServerRecvBufferPoolsEnabled   bool          `yaml:"grpc_server_recv_buffer_pools_enabled"`
 
 	LogFormat                    string           `yaml:"log_format"`
 	LogLevel                     log.Level        `yaml:"log_level"`
@@ -193,6 +195,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.GRPCServerMinTimeBetweenPings, "server.grpc.keepalive.min-time-between-pings", 5*time.Minute, "Minimum amount of time a client should wait before sending a keepalive ping. If client sends keepalive ping more often, server will send GOAWAY and close the connection.")
 	f.BoolVar(&cfg.GRPCServerPingWithoutStreamAllowed, "server.grpc.keepalive.ping-without-stream-allowed", false, "If true, server allows keepalive pings even when there are no active streams(RPCs). If false, and client sends ping when there are no active streams, server will send GOAWAY and close the connection.")
 	f.BoolVar(&cfg.GRPCServerStatsTrackingEnabled, "server.grpc.stats-tracking-enabled", true, "If true, the request_message_bytes, response_message_bytes, and inflight_requests metrics will be tracked. Enabling this option prevents the use of memory pools for parsing gRPC request bodies and may lead to more memory allocations.")
+	f.BoolVar(&cfg.GRPCServerRecvBufferPoolsEnabled, "server.grpc.recv-buffer-pools-enabled", false, "If true, gGPC's buffer pools will be used to handle incoming requests. This option is incompatible with `server.grpc.stats-tracking-enabled=true`!")
 	f.IntVar(&cfg.GRPCServerNumWorkers, "server.grpc.num-workers", 0, "If non-zero, configures the amount of GRPC server workers used to serve the requests.")
 	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Base path to serve all API routes from (e.g. /v1/)")
 	f.StringVar(&cfg.LogFormat, "log.format", log.LogfmtFormat, "Output log messages in the given format. Valid formats: [logfmt, json]")
@@ -424,6 +427,13 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 				metrics.InflightRequests,
 			)),
 		)
+	}
+
+	if cfg.GRPCServerRecvBufferPoolsEnabled {
+		if cfg.GRPCServerStatsTrackingEnabled {
+			return nil, fmt.Errorf("options grpc_server_stats_tracking_enabled and grpc_server_recv_buffer_pools_enabled cannot both be enabled")
+		}
+		grpcOptions = append(grpcOptions, experimental.RecvBufferPool(grpc.NewSharedBufferPool()))
 	}
 
 	grpcOptions = append(grpcOptions, cfg.GRPCOptions...)

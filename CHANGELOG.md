@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Add a new `grpc_server_stats_tracking_enabled` option that allows us to disable stats tracking and potentially improve server memory reuse. #507
 * [CHANGE] Add support for PROXY protocol to Server. #508
 * [CHANGE] Add a new middleware to cancel http requests cleanly based on http.TimeoutHandler. #504
 * [CHANGE] Exemplar label changes from "traceID" to "trace_id". #487

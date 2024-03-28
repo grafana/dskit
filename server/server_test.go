@@ -128,6 +128,53 @@ func TestTCPv4Network(t *testing.T) {
 	})
 }
 
+func TestUnixNetwork(t *testing.T) {
+	testSockDir, err := os.MkdirTemp("", "sock")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(testSockDir))
+	})
+
+	var cfg Config
+	setAutoAssignedPorts(NetworkUnix, &cfg)
+  cfg.HTTPListenAddress = filepath.Join(testSockDir, "http.sock")
+  cfg.GRPCListenAddress = filepath.Join(testSockDir, "grpc.sock")
+
+	t.Run("unix_http", func(t *testing.T) {
+		var level log.Level
+		require.NoError(t, level.Set("info"))
+		cfg.LogLevel = level
+		cfg.MetricsNamespace = "testing_http_unix"
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		require.NoError(t, srv.httpListener.Close())
+		require.NotNil(t, <-errChan)
+
+		// So that address is freed for further tests.
+		srv.GRPC.Stop()
+	})
+
+	t.Run("unix_http", func(t *testing.T) {
+		cfg.MetricsNamespace = "testing_grpc_unix"
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		require.NoError(t, srv.grpcListener.Close())
+		require.NotNil(t, <-errChan)
+	})
+}
+
 // Ensure that http and grpc servers work with no overrides to config
 // (except http port because an ordinary user can't bind to default port 80)
 func TestDefaultAddresses(t *testing.T) {

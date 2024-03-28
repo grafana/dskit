@@ -48,7 +48,7 @@ const (
 	DefaultNetwork = "tcp"
 	// NetworkTCPV4 for IPV4 only
 	NetworkTCPV4 = "tcp4"
-  // NetworkUnix for UNIX sockets
+	// NetworkUnix for UNIX sockets
 	NetworkUnix = "unix"
 )
 
@@ -266,12 +266,12 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		network = DefaultNetwork
 	}
 
-  // Generate a listen address depending on the configured network.
-  httpListenAddr := net.JoinHostPort(cfg.HTTPListenAddress, strconv.Itoa(cfg.HTTPListenPort))
-  if network == "unix" {
-    // If we're using unix sockets instead of a TCP socket, don't set a port.
-    httpListenAddr = cfg.HTTPListenAddress
-  }
+	// Generate a listen address depending on the configured network.
+	httpListenAddr := net.JoinHostPort(cfg.HTTPListenAddress, strconv.Itoa(cfg.HTTPListenPort))
+	if network == "unix" {
+		// If we're using unix sockets instead of a TCP socket, don't set a port.
+		httpListenAddr = cfg.HTTPListenAddress
+	}
 
 	// Setup listeners first, so we can fail early if the port is in use.
 	httpListener, err := net.Listen(network, httpListenAddr)
@@ -293,12 +293,12 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		network = DefaultNetwork
 	}
 
-  // Generate a listen address depending on the configured network.
-  grpcListenAddr := net.JoinHostPort(cfg.GRPCListenAddress, strconv.Itoa(cfg.GRPCListenPort))
-  if network == "unix" {
-    // If we're using unix sockets instead of a TCP socket, don't set a port.
-    grpcListenAddr = cfg.GRPCListenAddress
-  }
+	// Generate a listen address depending on the configured network.
+	grpcListenAddr := net.JoinHostPort(cfg.GRPCListenAddress, strconv.Itoa(cfg.GRPCListenPort))
+	if network == "unix" {
+		// If we're using unix sockets instead of a TCP socket, don't set a port.
+		grpcListenAddr = cfg.GRPCListenAddress
+	}
 
 	grpcListener, err := net.Listen(network, grpcListenAddr)
 	if err != nil {

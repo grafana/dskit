@@ -137,8 +137,8 @@ func TestUnixNetwork(t *testing.T) {
 
 	var cfg Config
 	setAutoAssignedPorts(NetworkUnix, &cfg)
-  cfg.HTTPListenAddress = filepath.Join(testSockDir, "http.sock")
-  cfg.GRPCListenAddress = filepath.Join(testSockDir, "grpc.sock")
+	cfg.HTTPListenAddress = filepath.Join(testSockDir, "http.sock")
+	cfg.GRPCListenAddress = filepath.Join(testSockDir, "grpc.sock")
 
 	t.Run("unix_http", func(t *testing.T) {
 		var level log.Level

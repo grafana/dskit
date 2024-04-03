@@ -10,10 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var (
-	ErrMaxConcurrent = errors.New("max concurrent requests inflight")
-	ErrTimeout       = errors.New("concurrency gate waiting timeout")
-)
+var ErrMaxConcurrent = errors.New("max concurrent requests inflight")
 
 // Gate controls the maximum number of concurrently running and waiting queries.
 //

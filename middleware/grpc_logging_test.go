@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -37,9 +36,9 @@ func BenchmarkGRPCServerLog_UnaryServerInterceptor_NoError(b *testing.B) {
 
 type doNotLogError struct{ Err error }
 
-func (i doNotLogError) Error() string                                     { return i.Err.Error() }
-func (i doNotLogError) Unwrap() error                                     { return i.Err }
-func (i doNotLogError) ShouldLog(_ context.Context, _ time.Duration) bool { return false }
+func (i doNotLogError) Error() string                    { return i.Err.Error() }
+func (i doNotLogError) Unwrap() error                    { return i.Err }
+func (i doNotLogError) ShouldLog(_ context.Context) bool { return false }
 
 func TestGrpcLogging(t *testing.T) {
 	ctx := context.Background()

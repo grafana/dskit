@@ -205,6 +205,7 @@
   * `gate_duration_seconds`
   * `kv_request_duration_seconds`
   * `operation_duration_seconds`
+* [ENHANCEMENT] Add `outcome` label to `gate_duration_seconds` metric. Possible values are `rejected_canceled`, `rejected_deadline_exceeded`, `rejected_other`, and `permitted`. #512
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

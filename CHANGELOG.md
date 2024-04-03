@@ -72,8 +72,8 @@
 * [CHANGE] Expose `BuildHTTPMiddleware` to enable dskit `Server` instrumentation addition on external `*mux.Router`s. #459
 * [CHANGE] Remove `RouteHTTPToGRPC` option and related functionality #460
 * [CHANGE] Cache: Remove `MemcachedCache` and `RedisCache` structs in favor of `RemoteCacheAdapter` or using the underlying clients directly. #471
-* [CHANGE] Removed unused `time.Duration` parameter from `ShouldLog()` function in `middle.OptionalLogging` interface. #513
-* [CHANGE] Changed `ShouldLog()` function signature in `middle.OptionalLogging` interface to `ShouldLog(context.Context) (bool, string)`: the returned `string` contains an optional reason. When reason is valued, `GRPCServerLog` adds `(<reason>)` suffix to the error. #514
+* [CHANGE] Removed unused `time.Duration` parameter from `ShouldLog()` function in `middleware.OptionalLogging` interface. #513
+* [CHANGE] Changed `ShouldLog()` function signature in `middleware.OptionalLogging` interface to `ShouldLog(context.Context) (bool, string)`: the returned `string` contains an optional reason. When reason is valued, `GRPCServerLog` adds `(<reason>)` suffix to the error. #514
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

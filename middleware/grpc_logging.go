@@ -24,16 +24,17 @@ const (
 	gRPC = "gRPC"
 )
 
-// An error can implement ShouldLog() to control whether GRPCServerLog will log.
+// OptionalLogging is the interface that needs be implemented by an error that wants to control whether the log
+// should be logged by GRPCServerLog.
 type OptionalLogging interface {
-	ShouldLog(ctx context.Context, duration time.Duration) bool
+	ShouldLog(ctx context.Context) bool
 }
 
 type DoNotLogError struct{ Err error }
 
-func (i DoNotLogError) Error() string                                     { return i.Err.Error() }
-func (i DoNotLogError) Unwrap() error                                     { return i.Err }
-func (i DoNotLogError) ShouldLog(_ context.Context, _ time.Duration) bool { return false }
+func (i DoNotLogError) Error() string                    { return i.Err.Error() }
+func (i DoNotLogError) Unwrap() error                    { return i.Err }
+func (i DoNotLogError) ShouldLog(_ context.Context) bool { return false }
 
 // GRPCServerLog logs grpc requests, errors, and latency.
 type GRPCServerLog struct {
@@ -51,7 +52,7 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		return resp, nil
 	}
 	var optional OptionalLogging
-	if errors.As(err, &optional) && !optional.ShouldLog(ctx, time.Since(begin)) {
+	if errors.As(err, &optional) && !optional.ShouldLog(ctx) {
 		return resp, err
 	}
 

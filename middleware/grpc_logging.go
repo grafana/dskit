@@ -28,17 +28,17 @@ const (
 // OptionalLogging is the interface that needs be implemented by an error that wants to control whether the log
 // should be logged by GRPCServerLog.
 type OptionalLogging interface {
-	// ShouldLog returns whether the error should be logged and, if yes, what's the sampling frequency
-	// (e.g. if returns `true, 10` it means that the error should be logged, and it was sampled with 1/10 frequency).
-	// If the error is sampled, the sampling frequency should be returned even if this function returns false (do not log).
-	ShouldLog(ctx context.Context) (bool, int)
+	// ShouldLog returns whether the error should be logged and the reason. For example, if the error should be sampled
+	// return returned reason could be something like "sampled 1/10". The reason, if any, is used to decorate the error
+	// both in case the error should be logged or skipped.
+	ShouldLog(ctx context.Context) (bool, string)
 }
 
 type DoNotLogError struct{ Err error }
 
-func (i DoNotLogError) Error() string                           { return i.Err.Error() }
-func (i DoNotLogError) Unwrap() error                           { return i.Err }
-func (i DoNotLogError) ShouldLog(_ context.Context) (bool, int) { return false, 0 }
+func (i DoNotLogError) Error() string                              { return i.Err.Error() }
+func (i DoNotLogError) Unwrap() error                              { return i.Err }
+func (i DoNotLogError) ShouldLog(_ context.Context) (bool, string) { return false, "" }
 
 // GRPCServerLog logs grpc requests, errors, and latency.
 type GRPCServerLog struct {
@@ -57,9 +57,9 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 	}
 
 	// Honor sampled error logging.
-	keep, frequency := shouldLog(ctx, err)
-	if frequency > 0 {
-		err = fmt.Errorf("%w (sampled 1/%d)", err, frequency)
+	keep, reason := shouldLog(ctx, err)
+	if reason != "" {
+		err = fmt.Errorf("%w (%s)", err, reason)
 	}
 	if !keep {
 		return resp, err
@@ -102,10 +102,10 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 	return err
 }
 
-func shouldLog(ctx context.Context, err error) (bool, int) {
+func shouldLog(ctx context.Context, err error) (bool, string) {
 	var optional OptionalLogging
 	if !errors.As(err, &optional) {
-		return true, 0
+		return true, ""
 	}
 
 	return optional.ShouldLog(ctx)

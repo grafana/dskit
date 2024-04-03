@@ -59,14 +59,14 @@ func TestGrpcLogging(t *testing.T) {
 		expectedErr: DoNotLogError{Err: errors.New("yolo")},
 		logContains: nil,
 	}, {
-		inputErr:    sampledError{err: errors.New("yolo"), shouldLog: true, frequency: 10},
-		expectedErr: fmt.Errorf("%w (sampled 1/10)", sampledError{err: errors.New("yolo"), shouldLog: true, frequency: 10}),
+		inputErr:    sampledError{err: errors.New("yolo"), shouldLog: true, reason: "sampled 1/10"},
+		expectedErr: fmt.Errorf("%w (sampled 1/10)", sampledError{err: errors.New("yolo"), shouldLog: true, reason: "sampled 1/10"}),
 		logContains: []string{`err="yolo (sampled 1/10)"`},
 	}, {
-		inputErr: sampledError{err: errors.New("yolo"), shouldLog: false, frequency: 10},
+		inputErr: sampledError{err: errors.New("yolo"), shouldLog: false, reason: "sampled 1/10"},
 
 		// The returned error should have the "sampled" suffix because it has been effectively sampled even if not logged.
-		expectedErr: fmt.Errorf("%w (sampled 1/10)", sampledError{err: errors.New("yolo"), shouldLog: false, frequency: 10}),
+		expectedErr: fmt.Errorf("%w (sampled 1/10)", sampledError{err: errors.New("yolo"), shouldLog: false, reason: "sampled 1/10"}),
 		logContains: nil,
 	}} {
 		t.Run("", func(t *testing.T) {
@@ -102,9 +102,9 @@ func TestGrpcLogging(t *testing.T) {
 type sampledError struct {
 	err       error
 	shouldLog bool
-	frequency int
+	reason    string
 }
 
-func (e sampledError) Error() string                           { return e.err.Error() }
-func (e sampledError) Unwrap() error                           { return e.err }
-func (e sampledError) ShouldLog(_ context.Context) (bool, int) { return e.shouldLog, e.frequency }
+func (e sampledError) Error() string                              { return e.err.Error() }
+func (e sampledError) Unwrap() error                              { return e.err }
+func (e sampledError) ShouldLog(_ context.Context) (bool, string) { return e.shouldLog, e.reason }

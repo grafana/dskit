@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -34,29 +35,38 @@ func BenchmarkGRPCServerLog_UnaryServerInterceptor_NoError(b *testing.B) {
 	}
 }
 
-type doNotLogError struct{ Err error }
-
-func (i doNotLogError) Error() string                    { return i.Err.Error() }
-func (i doNotLogError) Unwrap() error                    { return i.Err }
-func (i doNotLogError) ShouldLog(_ context.Context) bool { return false }
-
 func TestGrpcLogging(t *testing.T) {
 	ctx := context.Background()
 	info := &grpc.UnaryServerInfo{FullMethod: "Test"}
 	for _, tc := range []struct {
-		err         error
+		inputErr    error
+		expectedErr error
 		logContains []string
 	}{{
-		err:         context.Canceled,
+		inputErr:    context.Canceled,
+		expectedErr: context.Canceled,
 		logContains: []string{"level=debug", "context canceled"},
 	}, {
-		err:         errors.New("yolo"),
+		inputErr:    errors.New("yolo"),
+		expectedErr: errors.New("yolo"),
 		logContains: []string{"level=warn", "err=yolo"},
 	}, {
-		err:         nil,
+		inputErr:    nil,
+		expectedErr: nil,
 		logContains: []string{"level=debug", "method=Test"},
 	}, {
-		err:         doNotLogError{Err: errors.New("yolo")},
+		inputErr:    DoNotLogError{Err: errors.New("yolo")},
+		expectedErr: DoNotLogError{Err: errors.New("yolo")},
+		logContains: nil,
+	}, {
+		inputErr:    sampledError{err: errors.New("yolo"), shouldLog: true, reason: "sampled 1/10"},
+		expectedErr: fmt.Errorf("%w (sampled 1/10)", sampledError{err: errors.New("yolo"), shouldLog: true, reason: "sampled 1/10"}),
+		logContains: []string{`err="yolo (sampled 1/10)"`},
+	}, {
+		inputErr: sampledError{err: errors.New("yolo"), shouldLog: false, reason: "sampled 1/10"},
+
+		// The returned error should have the "sampled" suffix because it has been effectively sampled even if not logged.
+		expectedErr: fmt.Errorf("%w (sampled 1/10)", sampledError{err: errors.New("yolo"), shouldLog: false, reason: "sampled 1/10"}),
 		logContains: nil,
 	}} {
 		t.Run("", func(t *testing.T) {
@@ -65,11 +75,19 @@ func TestGrpcLogging(t *testing.T) {
 			l := GRPCServerLog{Log: logger, WithRequest: true, DisableRequestSuccessLog: false}
 
 			handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-				return nil, tc.err
+				return nil, tc.inputErr
 			}
 
 			_, err := l.UnaryServerInterceptor(ctx, nil, info, handler)
-			require.ErrorIs(t, tc.err, err)
+
+			if tc.expectedErr != nil {
+				require.EqualError(t, err, tc.expectedErr.Error())
+			} else {
+				require.NoError(t, err)
+			}
+
+			// The input error should be preserved in the chain.
+			require.ErrorIs(t, err, tc.inputErr)
 
 			if len(tc.logContains) == 0 {
 				require.Empty(t, buf)
@@ -80,3 +98,13 @@ func TestGrpcLogging(t *testing.T) {
 		})
 	}
 }
+
+type sampledError struct {
+	err       error
+	shouldLog bool
+	reason    string
+}
+
+func (e sampledError) Error() string                              { return e.err.Error() }
+func (e sampledError) Unwrap() error                              { return e.err }
+func (e sampledError) ShouldLog(_ context.Context) (bool, string) { return e.shouldLog, e.reason }

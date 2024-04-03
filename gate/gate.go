@@ -10,7 +10,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var ErrMaxConcurrent = errors.New("max concurrent requests inflight")
+var (
+	ErrMaxConcurrent = errors.New("max concurrent requests inflight")
+	ErrTimeout       = errors.New("concurrency gate waiting timeout")
+)
 
 // Gate controls the maximum number of concurrently running and waiting queries.
 //
@@ -92,7 +95,16 @@ func (g *instrumentedGate) Start(ctx context.Context) error {
 
 	err := g.gate.Start(ctx)
 	if err != nil {
-		g.duration.WithLabelValues("not_permitted").Observe(time.Since(start).Seconds())
+		var reason string
+		switch {
+		case errors.Is(err, context.Canceled):
+			reason = "rejected_canceled"
+		case errors.Is(err, context.DeadlineExceeded):
+			reason = "rejected_deadline_exceeded"
+		default:
+			reason = "rejected_other"
+		}
+		g.duration.WithLabelValues(reason).Observe(time.Since(start).Seconds())
 		return err
 	}
 
@@ -160,4 +172,38 @@ func (g *blockingGate) Done() {
 	default:
 		panic("gate.Done: more operations done than started")
 	}
+}
+
+// WithTimeout returns a Gate implementation that returns ErrTimeout if the
+// waiting time exceeds the given timeout.
+// If timeout is 0, the gate will not enforce any timeout.
+func WithTimeout(gate Gate, timeout time.Duration) Gate {
+	if timeout == 0 {
+		return gate
+	}
+	return timeoutGate{
+		delegate: gate,
+		timeout:  timeout,
+	}
+}
+
+type timeoutGate struct {
+	delegate Gate
+	timeout  time.Duration
+}
+
+func (t timeoutGate) Start(ctx context.Context) error {
+	if t.timeout == 0 {
+		return t.delegate.Start(ctx)
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	time.AfterFunc(t.timeout, func() {
+		cancel(ErrTimeout)
+	})
+
+	return t.delegate.Start(ctx)
+}
+
+func (t timeoutGate) Done() {
+	t.delegate.Done()
 }

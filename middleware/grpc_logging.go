@@ -6,11 +6,12 @@ package middleware
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 
 	dskit_log "github.com/grafana/dskit/log"
 
@@ -27,14 +28,17 @@ const (
 // OptionalLogging is the interface that needs be implemented by an error that wants to control whether the log
 // should be logged by GRPCServerLog.
 type OptionalLogging interface {
-	ShouldLog(ctx context.Context) bool
+	// ShouldLog returns whether the error should be logged and, if yes, what's the sampling frequency
+	// (e.g. if returns `true, 10` it means that the error should be logged, and it was sampled with 1/10 frequency).
+	// If the error is sampled, the sampling frequency should be returned even if this function returns false (do not log).
+	ShouldLog(ctx context.Context) (bool, int)
 }
 
 type DoNotLogError struct{ Err error }
 
-func (i DoNotLogError) Error() string                    { return i.Err.Error() }
-func (i DoNotLogError) Unwrap() error                    { return i.Err }
-func (i DoNotLogError) ShouldLog(_ context.Context) bool { return false }
+func (i DoNotLogError) Error() string                           { return i.Err.Error() }
+func (i DoNotLogError) Unwrap() error                           { return i.Err }
+func (i DoNotLogError) ShouldLog(_ context.Context) (bool, int) { return false, 0 }
 
 // GRPCServerLog logs grpc requests, errors, and latency.
 type GRPCServerLog struct {
@@ -51,8 +55,13 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 	if err == nil && s.DisableRequestSuccessLog {
 		return resp, nil
 	}
-	var optional OptionalLogging
-	if errors.As(err, &optional) && !optional.ShouldLog(ctx) {
+
+	// Honor sampled error logging.
+	keep, frequency := shouldLog(ctx, err)
+	if frequency > 0 {
+		err = fmt.Errorf("%w (sampled 1/%d)", err, frequency)
+	}
+	if !keep {
 		return resp, err
 	}
 
@@ -91,4 +100,13 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 		level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
 	}
 	return err
+}
+
+func shouldLog(ctx context.Context, err error) (bool, int) {
+	var optional OptionalLogging
+	if !errors.As(err, &optional) {
+		return true, 0
+	}
+
+	return optional.ShouldLog(ctx)
 }

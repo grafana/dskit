@@ -173,37 +173,3 @@ func (g *blockingGate) Done() {
 		panic("gate.Done: more operations done than started")
 	}
 }
-
-// WithTimeout returns a Gate implementation that returns ErrTimeout if the
-// waiting time exceeds the given timeout.
-// If timeout is 0, the gate will not enforce any timeout.
-func WithTimeout(gate Gate, timeout time.Duration) Gate {
-	if timeout == 0 {
-		return gate
-	}
-	return timeoutGate{
-		delegate: gate,
-		timeout:  timeout,
-	}
-}
-
-type timeoutGate struct {
-	delegate Gate
-	timeout  time.Duration
-}
-
-func (t timeoutGate) Start(ctx context.Context) error {
-	if t.timeout == 0 {
-		return t.delegate.Start(ctx)
-	}
-	ctx, cancel := context.WithCancelCause(ctx)
-	time.AfterFunc(t.timeout, func() {
-		cancel(ErrTimeout)
-	})
-
-	return t.delegate.Start(ctx)
-}
-
-func (t timeoutGate) Done() {
-	t.delegate.Done()
-}

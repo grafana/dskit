@@ -5,12 +5,11 @@
 package server
 
 import (
-	"time"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/dskit/instrument"
+	"github.com/grafana/dskit/instrument/nativehistogram"
 	"github.com/grafana/dskit/middleware"
 )
 
@@ -43,8 +42,8 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Help:                            "Time (in seconds) spent serving HTTP requests.",
 			Buckets:                         instrument.DefBuckets,
 			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: time.Hour,
+			NativeHistogramMaxBucketNumber:  nativehistogram.LatencyMaxBucketNumber,
+			NativeHistogramMinResetDuration: nativehistogram.LatencyMinResetDuration,
 		}, []string{"method", "route", "status_code", "ws"}),
 		ReceivedMessageSize: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: cfg.MetricsNamespace,

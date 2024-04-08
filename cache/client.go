@@ -12,6 +12,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/dskit/instrument/nativehistogram"
 )
 
 const (
@@ -104,9 +106,9 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Help:    "Duration of operations against cache.",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 3, 6, 10},
 		// Use defaults recommended by Prometheus for native histograms.
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: time.Hour,
+		NativeHistogramBucketFactor:     nativehistogram.LatencyBucketFactor,
+		NativeHistogramMaxBucketNumber:  nativehistogram.LatencyMaxBucketNumber,
+		NativeHistogramMinResetDuration: nativehistogram.LatencyMinResetDuration,
 	}, []string{"operation"})
 	cm.duration.WithLabelValues(opGetMulti)
 	cm.duration.WithLabelValues(opSet)

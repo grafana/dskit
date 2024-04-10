@@ -1091,6 +1091,14 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	newRingPageHandler(r, r.cfg.HeartbeatTimeout).handle(w, req)
 }
 
+// InstancesCount returns the number of instances in the ring.
+func (r *Ring) InstancesCount() int {
+	r.mtx.RLock()
+	c := len(r.ringDesc.Ingesters)
+	r.mtx.RUnlock()
+	return c
+}
+
 // InstancesInZoneCount returns the number of instances in the ring that are registered in given zone.
 func (r *Ring) InstancesInZoneCount(zone string) int {
 	r.mtx.RLock()

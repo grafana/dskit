@@ -46,6 +46,10 @@ func (r *RingMock) InstancesCount() int {
 	return 0
 }
 
+func (r *RingMock) InstancesWithTokensCount() int {
+	return 0
+}
+
 func (r *RingMock) ShuffleShard(identifier string, size int) ReadRing {
 	args := r.Called(identifier, size)
 	return args.Get(0).(ReadRing)
@@ -72,6 +76,10 @@ func (r *RingMock) GetTokenRangesForInstance(_ string) (TokenRanges, error) {
 }
 
 func (r *RingMock) InstancesInZoneCount(_ string) int {
+	return 0
+}
+
+func (r *RingMock) InstancesWithTokensInZoneCount(_ string) int {
 	return 0
 }
 

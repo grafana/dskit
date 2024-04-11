@@ -32,11 +32,11 @@ type RouteMatcher interface {
 // PerTenantCallback is a function that returns a tenant ID for a given request. When the returned tenant ID is not empty, it is used to label the duration histogram.
 type PerTenantCallback func(context.Context) string
 
-func (f PerTenantCallback) shouldInstrument(ctx context.Context) (tenantID string, ok bool) {
+func (f PerTenantCallback) shouldInstrument(ctx context.Context) (string, bool) {
 	if f == nil {
 		return "", false
 	}
-	tenantID = f(ctx)
+	tenantID := f(ctx)
 	if tenantID == "" {
 		return "", false
 	}

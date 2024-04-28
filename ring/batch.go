@@ -5,6 +5,7 @@ package ring
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -210,6 +211,18 @@ func (b *batchTracker) record(itemTrackers []*itemTracker, err error, isClientEr
 	// avoiding race condition
 	for _, it := range itemTrackers {
 		if err != nil {
+			if strings.Contains(err.Error(), "circuit breaker open") {
+				succeded := it.succeeded.Load()
+				if succeded > 0 {
+					prevErr := it.err.Load()
+					prevErrMessage := "nil"
+					if prevErr != nil {
+						prevErrMessage = prevErr.Error()
+					}
+					fmt.Println("msg", "at least one successful request has been executed before an open circuit breaker was detected", "prevErr", prevErrMessage)
+				}
+			}
+
 			// Track the number of errors by error family, and if it exceeds maxFailures
 			// shortcut the waiting rpc.
 			errCount := it.recordError(err, isClientError)

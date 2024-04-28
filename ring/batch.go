@@ -90,6 +90,10 @@ type DoBatchOptions struct {
 
 	// Go will be used to spawn the callback goroutines, and can be used to use a worker pool like concurrency.ReusableGoroutinesPool.
 	Go func(func())
+
+	// IsFrequentlyFailingInstance classifies objects of type InstanceDesc into the ones that are more likely to fail
+	// and the ones that are not. The former are served first.
+	IsFrequentlyFailingInstance func(instance InstanceDesc) bool
 }
 
 func (o *DoBatchOptions) replaceZeroValuesWithDefaults() {
@@ -101,6 +105,11 @@ func (o *DoBatchOptions) replaceZeroValuesWithDefaults() {
 	}
 	if o.Go == nil {
 		o.Go = func(f func()) { go f() }
+	}
+	if o.IsFrequentlyFailingInstance == nil {
+		o.IsFrequentlyFailingInstance = func(_ InstanceDesc) bool {
+			return false
+		}
 	}
 }
 
@@ -121,7 +130,8 @@ func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys [
 	}
 	expectedTrackersPerInstance := len(keys) * (r.ReplicationFactor() + 1) / r.InstancesCount()
 	itemTrackers := make([]itemTracker, len(keys))
-	instances := make(map[string]instance, r.InstancesCount())
+	frequentlyFailingInstances := make(map[string]instance, r.InstancesCount())
+	mostlySuccessfulInstances := make(map[string]instance, r.InstancesCount())
 
 	var (
 		bufDescs [GetBufferSize]InstanceDesc
@@ -148,15 +158,23 @@ func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys [
 		itemTrackers[i].remaining.Store(int32(len(replicationSet.Instances)))
 
 		for _, desc := range replicationSet.Instances {
-			curr, found := instances[desc.Addr]
+			curr, found := frequentlyFailingInstances[desc.Addr]
 			if !found {
-				curr.itemTrackers = make([]*itemTracker, 0, expectedTrackersPerInstance)
-				curr.indexes = make([]int, 0, expectedTrackersPerInstance)
+				curr, found = mostlySuccessfulInstances[desc.Addr]
+				if !found {
+					curr.itemTrackers = make([]*itemTracker, 0, expectedTrackersPerInstance)
+					curr.indexes = make([]int, 0, expectedTrackersPerInstance)
+				}
 			}
-			instances[desc.Addr] = instance{
+			ins := instance{
 				desc:         desc,
 				itemTrackers: append(curr.itemTrackers, &itemTrackers[i]),
 				indexes:      append(curr.indexes, i),
+			}
+			if o.IsFrequentlyFailingInstance(desc) {
+				frequentlyFailingInstances[desc.Addr] = ins
+			} else {
+				mostlySuccessfulInstances[desc.Addr] = ins
 			}
 		}
 	}
@@ -173,22 +191,57 @@ func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys [
 	}
 	tracker.rpcsPending.Store(int32(len(itemTrackers)))
 
-	var wg sync.WaitGroup
+	doneCh := make(chan bool)
+	cleanupCh := make(chan bool)
 
-	wg.Add(len(instances))
-	for _, i := range instances {
-		i := i
-		o.Go(func() {
-			err := callback(i.desc, i.indexes)
-			tracker.record(i.itemTrackers, err, o.IsClientError)
-			wg.Done()
-		})
-	}
+	var wg sync.WaitGroup
 
 	// Perform cleanup at the end.
 	o.Go(func() {
+		<-cleanupCh
 		wg.Wait()
 		o.Cleanup()
+	})
+
+	o.Go(func() {
+		wg.Add(len(frequentlyFailingInstances))
+		for _, i := range frequentlyFailingInstances {
+			i := i
+			o.Go(func() {
+				err := callback(i.desc, i.indexes)
+				tracker.record(i.itemTrackers, err, o.IsClientError)
+				wg.Done()
+			})
+		}
+		wg.Wait()
+		doneCh <- true
+	})
+
+	select {
+	case err := <-tracker.err:
+		cleanupCh <- true
+		return err
+	case <-tracker.done:
+		cleanupCh <- true
+		return nil
+	case <-ctx.Done():
+		cleanupCh <- true
+		return ctx.Err()
+	case <-doneCh:
+	}
+
+	o.Go(func() {
+		wg.Add(len(mostlySuccessfulInstances))
+		for _, i := range mostlySuccessfulInstances {
+			i := i
+			o.Go(func() {
+				err := callback(i.desc, i.indexes)
+				tracker.record(i.itemTrackers, err, o.IsClientError)
+				wg.Done()
+			})
+		}
+		wg.Wait()
+		cleanupCh <- true
 	})
 
 	select {

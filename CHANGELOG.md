@@ -237,3 +237,4 @@
 * [BUGFIX] Services: moduleService could drop stop signals to its underlying service. #409 #417
 * [BUGFIX] ring: don't mark trace spans as failed if `DoUntilQuorum` terminates due to cancellation. #449
 * [BUGFIX] middleware: fix issue where applications that used the httpgrpc tracing middleware would generate duplicate spans for incoming HTTP requests. #451
+* [BUGFIX] httpgrpc: store headers in canonical form when converting from gRPC to HTTP. #518

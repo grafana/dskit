@@ -181,6 +181,10 @@ func (m *mockKV) Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consu
 			if value != nil {
 				valueModifyIndex = value.ModifyIndex
 			}
+			if err := q.Context().Err(); err != nil {
+				level.Debug(m.logger).Log("msg", "Get - context error", "key", key)
+				return nil, &consul.QueryMeta{LastIndex: q.WaitIndex}, nil
+			}
 		}
 		if time.Now().After(deadline) {
 			level.Debug(m.logger).Log("msg", "Get - deadline exceeded", "key", key)

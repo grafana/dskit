@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  Build and test on Go ${{ matrix.go-version }}:
+  Test and build:
     runs-on: ubuntu-latest
     strategy:
       matrix:

@@ -41,7 +41,7 @@ func InjectOrgID(ctx context.Context, orgID string) context.Context {
 	return context.WithValue(ctx, interface{}(orgIDContextKey), orgID)
 }
 
-// ExtractUserID gets the user ID from the contextmi.
+// ExtractUserID gets the user ID from the context.
 func ExtractUserID(ctx context.Context) (string, error) {
 	userID, ok := ctx.Value(userIDContextKey).(string)
 	if !ok {

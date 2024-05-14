@@ -12,6 +12,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
@@ -19,7 +21,6 @@ import (
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -146,6 +147,9 @@ func runClient() {
 		for _, v := range replicas.Instances {
 			fmt.Println("Addr", v.Addr, "Token count", len(v.Tokens))
 		}
+		for _, x := range replicas.GetIDs() {
+			fmt.Println("ID", x)
+		}
 	}
 
 }
@@ -181,6 +185,7 @@ func SimpleMemberlistKV(bindaddr string, bindport int, joinmembers []string) *me
 
 	config.NodeName = bindaddr
 	config.StreamTimeout = 5 * time.Second
+	config.MessageHistoryBufferBytes = 1 * 1024 * 1024
 
 	return memberlist.NewKVInitService(
 		&config,

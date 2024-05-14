@@ -32,7 +32,7 @@ jobs:
 
   # same like above jobs, but use go1.20
   # todo: find a way to parameterise the go version
-  test-build-go-1.20:
+  test-build-go-1-20:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   test-build:
+    name: Build and test on Go ${{ matrix.go-version }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -27,14 +28,14 @@ jobs:
       - name: Display Go Version
         run: go version
       - name: mod-check
-        run: make mod-check
-      - name: lint
+        run: Run Go mod check
+      - name: Run lint
         run: make lint
-      - name: test
+      - name: Run test
         run: make test
-      - name: test-benchmarks
+      - name: Run test benchmarks
         run: make test-benchmarks
-      - name: check-protos
+      - name: Run check protos and generate Go code from the proto files
         run: |
           apt-get update && apt-get -y install unzip
           go mod vendor

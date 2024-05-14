@@ -25,17 +25,17 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-      - name: Display Go Version
+      - name: Display Go version
         run: go version
-      - name: Run Go mod check
+      - name: Go mod check
         run: make mod-check
-      - name: Run lint
+      - name: Lint
         run: make lint
-      - name: Run test
+      - name: Test
         run: make test
-      - name: Run test benchmarks
+      - name: Test benchmarks
         run: make test-benchmarks
-      - name: Run check protos and generate Go code from the proto files
+      - name: Regenerate and check protos
         run: |
           apt-get update && apt-get -y install unzip
           go mod vendor

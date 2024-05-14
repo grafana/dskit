@@ -30,7 +30,10 @@ jobs:
       - name: test-benchmarks
         run: make test-benchmarks
       - name: check-protos
-        run: make check-protos
+        run: |
+          apt-get update && apt-get -y install unzip
+          go mod vendor
+          make check-protos
 
   # same like above jobs, but use go1.20
   # todo: find a way to parameterise the go version
@@ -51,4 +54,7 @@ jobs:
       - name: test-benchmarks
         run: make test-benchmarks
       - name: check-protos
-        run: make check-protos
+        run: |
+          apt-get update && apt-get -y install unzip
+          go mod vendor
+          make check-protos

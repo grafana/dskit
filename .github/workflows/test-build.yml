@@ -15,36 +15,17 @@ concurrency:
 jobs:
   test-build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version ['1.20', '1.21.x']
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
-      - name: mod-check
-        run: make mod-check
-      - name: lint
-        run: make lint
-      - name: test
-        run: make test
-      - name: test-benchmarks
-        run: make test-benchmarks
-      - name: check-protos
-        run: |
-          apt-get update && apt-get -y install unzip
-          go mod vendor
-          make check-protos
-
-  # same like above jobs, but use go1.20
-  # todo: find a way to parameterise the go version
-  test-build-go-1-20:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.20'
+          go-version: ${{ matrix.go-version }}
+      - name: Display Go Version
+        run: go version
       - name: mod-check
         run: make mod-check
       - name: lint

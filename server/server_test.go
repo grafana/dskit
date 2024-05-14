@@ -949,6 +949,7 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
 	cfg.ProxyProtocolEnabled = true
+	cfg.HTTPListenPort = 8080
 
 	fakeSourceIP := "1.2.3.4"
 

@@ -35,7 +35,7 @@ jobs:
         run: make test
       - name: Test benchmarks
         run: make test-benchmarks
-      - name: Regenerate and check protos
+      - name: Check protos
         run: |
           apt-get update && apt-get -y install unzip
           go mod vendor

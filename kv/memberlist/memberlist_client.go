@@ -72,8 +72,14 @@ func (c *Client) Get(ctx context.Context, key string) (interface{}, error) {
 }
 
 // Delete is part of kv.Client interface.
-func (c *Client) Delete(_ context.Context, _ string) error {
-	return errors.New("memberlist does not support Delete")
+func (c *Client) Delete(ctx context.Context, key string) error {
+	// delete item from kv store
+
+	err := c.awaitKVRunningOrStopping(ctx)
+	if err != nil {
+		return err
+	}
+	return c.kv.Delete(ctx, c.codec, key)
 }
 
 // CAS is part of kv.Client interface
@@ -307,7 +313,7 @@ type Message struct {
 	Changes []string // List of changes in this message (as computed by *this* node).
 }
 
-// ValueDesc stores the value along with it's codec and local version.
+// ValueDesc stores the value along with its codec and local version.
 type ValueDesc struct {
 	// We store the decoded value here to prevent decoding the entire state for every
 	// update we receive. Whilst the updates are small and fast to decode,
@@ -1481,6 +1487,12 @@ func (m *KV) deleteSentReceivedMessages() {
 	m.sentMessagesSize = 0
 	m.receivedMessages = nil
 	m.receivedMessagesSize = 0
+}
+
+func (m *KV) Delete(ctx context.Context, codec codec.Codec, key string) error {
+	return m.CAS(ctx, key, codec, func(in interface{}) (out interface{}, retry bool, err error) {
+		return nil, true, nil
+	})
 }
 
 func addMessageToBuffer(msgs []Message, size int, limit int, msg Message) ([]Message, int) {

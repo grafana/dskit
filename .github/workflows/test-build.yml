@@ -1,0 +1,52 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+concurrency:
+  # Cancel any running workflow for the same branch when new commits are pushed.
+  # We group both by ref_name (available when CI is triggered by a push to a branch/tag)
+  # and head_ref (available when CI is triggered by a PR).
+  group: "${{ github.ref_name }}-${{ github.head_ref }}"
+  cancel-in-progress: true
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      - name: mod-check
+        run: make mod-check
+      - name: lint
+        run: make lint
+      - name: test
+        run: make test
+      - name: test-benchmarks
+        run: make test-benchmarks
+      - name: check-protos
+        run: make check-protos
+
+  # same like above jobs, but use go1.20
+  # todo: find a way to parameterise the go version
+  test-build-go-1.20:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+      - name: mod-check
+        run: make mod-check
+      - name: lint
+        run: make lint
+      - name: test
+        run: make test
+      - name: test-benchmarks
+        run: make test-benchmarks
+      - name: check-protos
+        run: make check-protos

@@ -14,19 +14,14 @@ concurrency:
 
 jobs:
   test-build:
-    name: Build and test on Go ${{ matrix.go-version }}
+    name: Build and test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.20.x', '1.21.x']
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go ${{ matrix.go-version }}
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
-      - name: Display Go version
-        run: go version
+          go-version: '1.21.x'
       - name: Go mod check
         run: make mod-check
       - name: Lint
@@ -40,3 +35,15 @@ jobs:
           apt-get update && apt-get -y install unzip
           go mod vendor
           make check-protos
+
+  test-build-go1-20:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.x'
+      - name: Test
+        run: make test

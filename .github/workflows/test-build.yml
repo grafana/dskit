@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-build:
-    name: Build and test
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,8 +26,6 @@ jobs:
         run: make mod-check
       - name: Lint
         run: make lint
-      - name: Test
-        run: make test
       - name: Test benchmarks
         run: make test-benchmarks
       - name: Check protos
@@ -36,14 +34,23 @@ jobs:
           go mod vendor
           make check-protos
 
-  test-build-go1-20:
-    name: Build and test
+  test:
+    name: Test on Go ${{ matrix.go-version }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.20.x', '1.21.x']
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go
+      - name: Set up Go ${{ matrix.go-version }}
         uses: actions/setup-go@v5
         with:
-          go-version: '1.20.x'
+          go-version: ${{ matrix.go-version }}
+      - name: Display Go version
+        run: go version
+      - name: Go mod check
+        run: make mod-check
+      - name: Lint
+        run: make lint
       - name: Test
         run: make test

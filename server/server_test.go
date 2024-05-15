@@ -949,6 +949,8 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
 	cfg.ProxyProtocolEnabled = true
+	// Set this to 0 to have it choose a random port
+	cfg.HTTPListenPort = 0
 
 	fakeSourceIP := "1.2.3.4"
 

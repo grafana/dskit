@@ -160,6 +160,157 @@ func TestLifecycler_HealthyInstancesCount(t *testing.T) {
 	})
 }
 
+func TestLifecycler_HealthyInstancesInZoneCount(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	ctx := context.Background()
+
+	// Add the first ingester to the ring
+	lifecyclerConfig1 := testLifecyclerConfig(ringConfig, "ing1")
+	lifecyclerConfig1.HeartbeatPeriod = 100 * time.Millisecond
+	lifecyclerConfig1.JoinAfter = 100 * time.Millisecond
+	lifecyclerConfig1.Zone = "zone-a"
+
+	lifecycler1, err := NewLifecycler(lifecyclerConfig1, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, lifecycler1.HealthyInstancesInZoneCount())
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler1))
+	defer services.StopAndAwaitTerminated(ctx, lifecycler1) // nolint:errcheck
+
+	// Assert the first ingester joined the ring
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler1.HealthyInstancesInZoneCount() == 1
+	})
+
+	// Add the second ingester to the ring in the same zone
+	lifecyclerConfig2 := testLifecyclerConfig(ringConfig, "ing2")
+	lifecyclerConfig2.HeartbeatPeriod = 100 * time.Millisecond
+	lifecyclerConfig2.JoinAfter = 100 * time.Millisecond
+	lifecyclerConfig2.Zone = "zone-a"
+
+	lifecycler2, err := NewLifecycler(lifecyclerConfig2, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, lifecycler2.HealthyInstancesInZoneCount())
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler2))
+	defer services.StopAndAwaitTerminated(ctx, lifecycler2) // nolint:errcheck
+
+	// Assert the second ingester joined the ring
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler2.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Assert the first ingester count is updated
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler1.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Add the third ingester to the ring in a different zone
+	lifecyclerConfig3 := testLifecyclerConfig(ringConfig, "ing3")
+	lifecyclerConfig3.HeartbeatPeriod = 100 * time.Millisecond
+	lifecyclerConfig3.JoinAfter = 100 * time.Millisecond
+	lifecyclerConfig3.Zone = "zone-b"
+
+	lifecycler3, err := NewLifecycler(lifecyclerConfig3, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, lifecycler3.HealthyInstancesInZoneCount())
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler3))
+	defer services.StopAndAwaitTerminated(ctx, lifecycler3) // nolint:errcheck
+
+	// Assert the third ingester joined the ring
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler3.HealthyInstancesInZoneCount() == 1
+	})
+
+	// Assert the first ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler1.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Assert the second ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler2.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Add the fourth ingester to the ring in the same zone as the third ingester
+	lifecyclerConfig4 := testLifecyclerConfig(ringConfig, "ing4")
+	lifecyclerConfig4.HeartbeatPeriod = 100 * time.Millisecond
+	lifecyclerConfig4.JoinAfter = 100 * time.Millisecond
+	lifecyclerConfig4.Zone = "zone-b"
+
+	lifecycler4, err := NewLifecycler(lifecyclerConfig4, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, lifecycler4.HealthyInstancesInZoneCount())
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler4))
+	defer services.StopAndAwaitTerminated(ctx, lifecycler4) // nolint:errcheck
+
+	// Assert the fourth ingester joined the ring
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler4.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Assert the first ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler1.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Assert the second ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler2.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Assert the third ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler3.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Create another lifecycler for zone-c
+	lifecyclerConfig5 := testLifecyclerConfig(ringConfig, "ing5")
+	lifecyclerConfig5.HeartbeatPeriod = 100 * time.Millisecond
+	lifecyclerConfig5.JoinAfter = 100 * time.Millisecond
+	lifecyclerConfig5.Zone = "zone-c"
+
+	lifecycler5, err := NewLifecycler(lifecyclerConfig5, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, lifecycler5.HealthyInstancesInZoneCount())
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler5))
+	defer services.StopAndAwaitTerminated(ctx, lifecycler5) // nolint:errcheck
+
+	// Assert the fifth ingester joined the ring
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler5.HealthyInstancesInZoneCount() == 1
+	})
+
+	// Assert the first ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler1.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Assert the second ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler2.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Assert the third ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler3.HealthyInstancesInZoneCount() == 2
+	})
+
+	// Assert the fourth ingester count is correct
+	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+		return lifecycler4.HealthyInstancesInZoneCount() == 2
+	})
+}
+
 func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -169,12 +320,13 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 	ringConfig.KVStore.Mock = ringStore
 
 	instances := []struct {
-		zone                          string
-		healthy                       bool
-		expectedInstancesInZoneCount  int
-		expectedInstancesCount        int
-		expectedHealthyInstancesCount int
-		expectedZonesCount            int
+		zone                                string
+		healthy                             bool
+		expectedInstancesInZoneCount        int
+		expectedInstancesCount              int
+		expectedHealthyInstancesCount       int
+		expectedZonesCount                  int
+		expectedHealthyInstancesInZoneCount int
 	}{
 		{
 			zone:    "zone-a",
@@ -187,6 +339,8 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			expectedHealthyInstancesCount: 1,
 			// after adding a healthy instance in zone-a, expectedZonesCount is 1
 			expectedZonesCount: 1,
+			// after adding a healthy instance in zone-a, expectedHealthyInstancesInZoneCount is 1
+			expectedHealthyInstancesInZoneCount: 1,
 		},
 		{
 			zone:    "zone-a",
@@ -199,6 +353,8 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			expectedHealthyInstancesCount: 1,
 			// zone-a was already added, so expectedZonesCount remains 1
 			expectedZonesCount: 1,
+			// after adding an unhealthy instance in zone-a, expectedHealthyInstancesInZoneCount remains 1
+			expectedHealthyInstancesInZoneCount: 1,
 		},
 		{
 			zone:    "zone-a",
@@ -211,6 +367,8 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			expectedHealthyInstancesCount: 2,
 			// zone-a was already added, so expectedZonesCount remains 1
 			expectedZonesCount: 1,
+			// after adding a healthy instance in zone-a, expectedHealthyInstancesInZoneCount becomes 2
+			expectedHealthyInstancesInZoneCount: 2,
 		},
 		{
 			zone:    "zone-b",
@@ -223,6 +381,8 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			expectedHealthyInstancesCount: 3,
 			// after adding a healthy instance in zone-b, expectedZonesCount becomes 2
 			expectedZonesCount: 2,
+			// after adding a healthy instance in zone-b, expectedHealthyInstancesInZoneCount becomes 1
+			expectedHealthyInstancesInZoneCount: 1,
 		},
 		{
 			zone:    "zone-c",
@@ -235,6 +395,8 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			expectedHealthyInstancesCount: 3,
 			// after adding an unhealthy instance in zone-c, expectedZonesCount becomes 3
 			expectedZonesCount: 3,
+			// after adding an unhealthy instance in zone-c, expectedHealthyInstancesInZoneCount is 0
+			expectedHealthyInstancesInZoneCount: 0,
 		},
 		{
 			zone:    "zone-c",
@@ -247,6 +409,8 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			expectedHealthyInstancesCount: 4,
 			// zone-c was already added, so expectedZonesCount remains 3
 			expectedZonesCount: 3,
+			// after adding a healthy instance in zone-c, expectedHealthyInstancesInZoneCount is 1
+			expectedHealthyInstancesInZoneCount: 1,
 		},
 		{
 			zone:    "zone-b",
@@ -259,6 +423,8 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			expectedHealthyInstancesCount: 5,
 			// zone-b was already added, so expectedZonesCount remains 3
 			expectedZonesCount: 3,
+			// after adding a healthy instance in zone-b, expectedHealthyInstancesInZoneCount becomes 2
+			expectedHealthyInstancesInZoneCount: 2,
 		},
 	}
 
@@ -292,10 +458,15 @@ func TestLifecycler_InstancesInZoneCount(t *testing.T) {
 			return lifecycler.HealthyInstancesCount()
 		})
 
+		test.Poll(t, time.Duration(joinWaitMs)*time.Millisecond, instance.expectedHealthyInstancesInZoneCount, func() interface{} {
+			return lifecycler.HealthyInstancesInZoneCount()
+		})
+
 		require.Equal(t, instance.expectedInstancesInZoneCount, lifecycler.InstancesInZoneCount())
 		require.Equal(t, instance.expectedInstancesCount, lifecycler.InstancesCount())
 		require.Equal(t, instance.expectedHealthyInstancesCount, lifecycler.HealthyInstancesCount())
 		require.Equal(t, instance.expectedZonesCount, lifecycler.ZonesCount())
+		require.Equal(t, instance.expectedHealthyInstancesInZoneCount, lifecycler.HealthyInstancesInZoneCount())
 	}
 }
 

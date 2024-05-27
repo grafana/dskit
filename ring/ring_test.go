@@ -1378,6 +1378,7 @@ func TestRing_ShuffleShard(t *testing.T) {
 				ringZones:             getZones(ringDesc.getTokensByZone()),
 				instancesCountPerZone: ringDesc.instancesCountPerZone(),
 				strategy:              NewDefaultReplicationStrategy(),
+				sharder:               randomShuffleSharder{},
 			}
 
 			shardRing := ring.ShuffleShard("tenant-id", testData.shardSize)

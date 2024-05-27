@@ -68,6 +68,46 @@ func TestSpreadMinimizingTokenGenerator_ParseInstanceID(t *testing.T) {
 	}
 }
 
+func TestSpreadMinimizingTokenGenerator_NextInstanceID(t *testing.T) {
+	numberOfInstancesPerZone := 5
+	tests := map[string]struct {
+		instanceID             string
+		expectedNextInstanceID string
+		expectedError          error
+	}{
+		"instance-zone-a-0 succeeds instance-zone-a-4": {
+			instanceID:             "instance-zone-a-4",
+			expectedNextInstanceID: "instance-zone-a-0",
+		},
+		"instance-zone-b-1 succeeds instance-zone-b-0": {
+			instanceID:             "instance-zone-b-0",
+			expectedNextInstanceID: "instance-zone-b-1",
+		},
+		"store-gateway-zone-c-3 succeeds store-gateway-zone-c-2": {
+			instanceID:             "store-gateway-zone-c-2",
+			expectedNextInstanceID: "store-gateway-zone-c-3",
+		},
+		"instance-zone-c is not valid": {
+			instanceID:    "instance-zone-c",
+			expectedError: errorBadInstanceIDFormat("instance-zone-c"),
+		},
+		"empty instance is not valid": {
+			instanceID:    "",
+			expectedError: errorBadInstanceIDFormat(""),
+		},
+	}
+	for _, testData := range tests {
+		instanceID, err := nextInstanceID(testData.instanceID, numberOfInstancesPerZone)
+		if testData.expectedError != nil {
+			require.Error(t, err)
+			require.Equal(t, testData.expectedError, err)
+		} else {
+			require.NoError(t, err)
+			require.Equal(t, testData.expectedNextInstanceID, instanceID)
+		}
+	}
+}
+
 func TestSpreadMinimizingTokenGenerator_FindZoneID(t *testing.T) {
 	tests := map[string]struct {
 		zone          string
@@ -304,7 +344,7 @@ func TestSpreadMinimizingTokenGenerator_GenerateAllTokensIdempotent(t *testing.T
 func TestSpreadMinimizingTokenGenerator_VerifyTokensByZone(t *testing.T) {
 	tokensPerInstance := 512
 	instancesPerZone := 128
-	_, tokensByZone := createTokensForAllInstancesAndZones(t, instancesPerZone, tokensPerInstance)
+	_, tokensByZone, _ := createTokensForAllInstancesAndZones(t, instancesPerZone, tokensPerInstance)
 	for i := 0; i < instancesPerZone*tokensPerInstance; i++ {
 		for z := 1; z < len(zones); z++ {
 			tokenPrevZone := tokensByZone[zones[z-1]][i]
@@ -319,7 +359,7 @@ func TestSpreadMinimizingTokenGenerator_VerifyInstanceOwnershipSpreadByZone(t *t
 
 	tokensPerInstance := 512
 	instancesPerZone := 10000
-	instanceByToken, tokensByZone := createTokensForAllInstancesAndZones(t, instancesPerZone, tokensPerInstance)
+	instanceByToken, tokensByZone, _ := createTokensForAllInstancesAndZones(t, instancesPerZone, tokensPerInstance)
 	ownershipByInstanceByZone := registeredOwnershipByZone(instancesPerZone, instanceByToken, tokensByZone)
 	for _, ownershipByInstance := range ownershipByInstanceByZone {
 		own := 0.0
@@ -347,8 +387,7 @@ func TestSpreadMinimizingTokenGenerator_CheckTokenUniqueness(t *testing.T) {
 		tokens, err := tokenGenerator.generateTokensByInstanceID()
 		require.NoError(t, err)
 
-		for i := 0; i <= instanceID; i++ {
-			tks := tokens[i]
+		for _, tks := range tokens {
 			for _, token := range tks {
 				if _, found := allTokens[token]; found {
 					err := fmt.Errorf("token %d been found more than once", token)
@@ -514,22 +553,25 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerInstance int) (map[uint32]*instanceInfo, map[string][]uint32) {
-	instanceByToken := make(map[uint32]*instanceInfo, (maxInstanceID+1)*tokensPerInstance*len(zones))
+func createTokensForAllInstancesAndZones(t *testing.T, instancesPerZone, tokensPerInstance int) (map[uint32]instanceInfo, map[string][]uint32, map[string]map[string]Tokens) {
+	instanceByToken := make(map[uint32]instanceInfo, (instancesPerZone)*tokensPerInstance*len(zones))
 	tokenSetsByZone := make(map[string][][]uint32, len(zones))
+	tokensByInstanceByZone := make(map[string]map[string]Tokens, len(zones))
 	for _, zone := range zones {
-		instance := fmt.Sprintf("instance-%s-%d", zone, maxInstanceID)
+		instance := fmt.Sprintf("instance-%s-%d", zone, instancesPerZone-1)
 		tokenGenerator := createSpreadMinimizingTokenGenerator(t, instance, zone, zones)
 		tokensByInstance, err := tokenGenerator.generateTokensByInstanceID()
+		tokensByInstanceByZone[zone] = make(map[string]Tokens, len(tokensByInstance))
 		require.NoError(t, err)
 		for id, tokens := range tokensByInstance {
 			if !slices.IsSorted(tokens) {
 				slices.Sort(tokens)
 			}
-			instInfo := &instanceInfo{
+			instInfo := instanceInfo{
 				InstanceID: fmt.Sprintf("instance-%s-%d", zone, id),
 				Zone:       zone,
 			}
+			tokensByInstanceByZone[zone][instInfo.InstanceID] = tokens
 			for _, token := range tokens {
 				if inst, ok := instanceByToken[token]; ok {
 					err := fmt.Errorf("token %d was already assigned to instance %s", token, inst.InstanceID)
@@ -539,7 +581,7 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 			}
 			allTokens, ok := tokenSetsByZone[zone]
 			if !ok {
-				allTokens = make([][]uint32, 0, maxInstanceID+1)
+				allTokens = make([][]uint32, 0, instancesPerZone)
 			}
 			allTokens = append(allTokens, tokens)
 			tokenSetsByZone[zone] = allTokens
@@ -547,7 +589,7 @@ func createTokensForAllInstancesAndZones(t *testing.T, maxInstanceID, tokensPerI
 	}
 
 	tokensByZone := MergeTokensByZone(tokenSetsByZone)
-	return instanceByToken, tokensByZone
+	return instanceByToken, tokensByZone, tokensByInstanceByZone
 }
 
 func createSpreadMinimizingTokenGenerator(t testing.TB, instance, zone string, zones []string) *SpreadMinimizingTokenGenerator {
@@ -558,7 +600,45 @@ func createSpreadMinimizingTokenGenerator(t testing.TB, instance, zone string, z
 }
 
 // registeredOwnershipByZone calculates ownership maps grouped by instance id and by zone
-func registeredOwnershipByZone(instancesPerZone int, instanceByToken map[uint32]*instanceInfo, tokensByZone map[string][]uint32) map[string]map[string]float64 {
+func registeredOwnershipByZone(instancesPerZone int, instanceByToken map[uint32]instanceInfo, tokensByZone map[string][]uint32) map[string]map[string]float64 {
+	ownershipByInstanceByZone := make(map[string]map[string]float64, len(zones))
+	for zone, tokens := range tokensByZone {
+		ownershipByInstanceByZone[zone] = make(map[string]float64, instancesPerZone)
+		if len(tokens) == 0 {
+			continue
+		}
+		prev := len(tokens) - 1
+		for tk, token := range tokens {
+			ownership := float64(tokenDistance(tokens[prev], token))
+			ownershipByInstanceByZone[zone][instanceByToken[token].InstanceID] += ownership
+			prev = tk
+		}
+	}
+	return ownershipByInstanceByZone
+}
+
+func getDescInfo(desc *Desc, instancesPerZone int) (map[uint32]instanceInfo, map[string][]uint32) {
+	instanceByToken := make(map[uint32]instanceInfo, instancesPerZone*tokensPerInstance*len(zones))
+	tokenSetsByZone := make(map[string][][]uint32, len(zones))
+	for _, inst := range desc.GetIngesters() {
+		tokenSets, ok := tokenSetsByZone[inst.Zone]
+		if !ok {
+			tokenSets = make([][]uint32, instancesPerZone)
+		}
+		tokenSets = append(tokenSets, inst.GetTokens())
+		tokenSetsByZone[inst.Zone] = tokenSets
+
+		for _, token := range inst.GetTokens() {
+			instanceByToken[token] = instanceInfo{InstanceID: inst.Id}
+		}
+	}
+	tokensByZone := MergeTokensByZone(tokenSetsByZone)
+	return instanceByToken, tokensByZone
+}
+
+// tokenOwnershipByZone calculates token ownership map grouped by instance id and by zone
+func tokenOwnershipByZone(desc *Desc, instancesPerZone int) map[string]map[string]float64 {
+	instanceByToken, tokensByZone := getDescInfo(desc, instancesPerZone)
 	ownershipByInstanceByZone := make(map[string]map[string]float64, len(zones))
 	for zone, tokens := range tokensByZone {
 		ownershipByInstanceByZone[zone] = make(map[string]float64, instancesPerZone)

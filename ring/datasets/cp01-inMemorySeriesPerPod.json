@@ -1,0 +1,3083 @@
+{
+  "description": "curl -s -H 'X-Scope-OrgId: 10428' -H \"Accept: application/json\" -G http://localhost:8080/prometheus/api/v1/query --data-urlencode query='sum by(pod) (cortex_ingester_memory_series{namespace=\"cortex-prod-01\"})'",
+  "results": [
+    {
+      "metric": {
+        "pod": "ingester-zone-a-0"
+      },
+      "value": [
+        1706005763.364,
+        "1497059"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-100"
+      },
+      "value": [
+        1706005763.364,
+        "931617"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-101"
+      },
+      "value": [
+        1706005763.364,
+        "1316380"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-102"
+      },
+      "value": [
+        1706005763.364,
+        "1358352"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-103"
+      },
+      "value": [
+        1706005763.364,
+        "1127907"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-104"
+      },
+      "value": [
+        1706005763.364,
+        "1260629"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-105"
+      },
+      "value": [
+        1706005763.364,
+        "1166272"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-106"
+      },
+      "value": [
+        1706005763.364,
+        "961782"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-107"
+      },
+      "value": [
+        1706005763.364,
+        "1518066"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-108"
+      },
+      "value": [
+        1706005763.364,
+        "1231051"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-109"
+      },
+      "value": [
+        1706005763.364,
+        "1205399"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-10"
+      },
+      "value": [
+        1706005763.364,
+        "1157413"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-110"
+      },
+      "value": [
+        1706005763.364,
+        "1080917"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-111"
+      },
+      "value": [
+        1706005763.364,
+        "1237132"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-112"
+      },
+      "value": [
+        1706005763.364,
+        "1206244"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-113"
+      },
+      "value": [
+        1706005763.364,
+        "1049495"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-11"
+      },
+      "value": [
+        1706005763.364,
+        "1142587"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-12"
+      },
+      "value": [
+        1706005763.364,
+        "1173301"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-13"
+      },
+      "value": [
+        1706005763.364,
+        "1379502"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-14"
+      },
+      "value": [
+        1706005763.364,
+        "950312"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-15"
+      },
+      "value": [
+        1706005763.364,
+        "1128353"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-16"
+      },
+      "value": [
+        1706005763.364,
+        "1208880"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-17"
+      },
+      "value": [
+        1706005763.364,
+        "1150870"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-18"
+      },
+      "value": [
+        1706005763.364,
+        "1308011"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-19"
+      },
+      "value": [
+        1706005763.364,
+        "1192556"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-1"
+      },
+      "value": [
+        1706005763.364,
+        "1153076"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-20"
+      },
+      "value": [
+        1706005763.364,
+        "1179479"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-21"
+      },
+      "value": [
+        1706005763.364,
+        "1418356"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-22"
+      },
+      "value": [
+        1706005763.364,
+        "1079000"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-23"
+      },
+      "value": [
+        1706005763.364,
+        "1263450"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-24"
+      },
+      "value": [
+        1706005763.364,
+        "1279170"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-25"
+      },
+      "value": [
+        1706005763.364,
+        "1448508"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-26"
+      },
+      "value": [
+        1706005763.364,
+        "1011754"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-27"
+      },
+      "value": [
+        1706005763.364,
+        "1277829"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-28"
+      },
+      "value": [
+        1706005763.364,
+        "1247541"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-29"
+      },
+      "value": [
+        1706005763.364,
+        "1350943"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-2"
+      },
+      "value": [
+        1706005763.364,
+        "1605843"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-30"
+      },
+      "value": [
+        1706005763.364,
+        "1093710"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-31"
+      },
+      "value": [
+        1706005763.364,
+        "1282699"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-32"
+      },
+      "value": [
+        1706005763.364,
+        "832321"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-33"
+      },
+      "value": [
+        1706005763.364,
+        "1047521"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-34"
+      },
+      "value": [
+        1706005763.364,
+        "1197659"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-35"
+      },
+      "value": [
+        1706005763.364,
+        "1367254"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-36"
+      },
+      "value": [
+        1706005763.364,
+        "1055659"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-37"
+      },
+      "value": [
+        1706005763.364,
+        "1304096"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-38"
+      },
+      "value": [
+        1706005763.364,
+        "1136292"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-39"
+      },
+      "value": [
+        1706005763.364,
+        "1285944"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-3"
+      },
+      "value": [
+        1706005763.364,
+        "1344143"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-40"
+      },
+      "value": [
+        1706005763.364,
+        "1268164"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-41"
+      },
+      "value": [
+        1706005763.364,
+        "1394236"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-42"
+      },
+      "value": [
+        1706005763.364,
+        "1099089"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-43"
+      },
+      "value": [
+        1706005763.364,
+        "1421310"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-44"
+      },
+      "value": [
+        1706005763.364,
+        "1209646"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-45"
+      },
+      "value": [
+        1706005763.364,
+        "1005491"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-46"
+      },
+      "value": [
+        1706005763.364,
+        "1358725"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-47"
+      },
+      "value": [
+        1706005763.364,
+        "1090562"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-48"
+      },
+      "value": [
+        1706005763.364,
+        "1123886"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-49"
+      },
+      "value": [
+        1706005763.364,
+        "1261976"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-4"
+      },
+      "value": [
+        1706005763.364,
+        "1093754"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-50"
+      },
+      "value": [
+        1706005763.364,
+        "1054609"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-51"
+      },
+      "value": [
+        1706005763.364,
+        "1231274"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-52"
+      },
+      "value": [
+        1706005763.364,
+        "1321074"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-53"
+      },
+      "value": [
+        1706005763.364,
+        "1168686"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-54"
+      },
+      "value": [
+        1706005763.364,
+        "1313467"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-55"
+      },
+      "value": [
+        1706005763.364,
+        "1093545"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-56"
+      },
+      "value": [
+        1706005763.364,
+        "1276448"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-57"
+      },
+      "value": [
+        1706005763.364,
+        "1542420"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-58"
+      },
+      "value": [
+        1706005763.364,
+        "1274107"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-59"
+      },
+      "value": [
+        1706005763.364,
+        "1226399"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-5"
+      },
+      "value": [
+        1706005763.364,
+        "1341318"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-60"
+      },
+      "value": [
+        1706005763.364,
+        "1338966"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-61"
+      },
+      "value": [
+        1706005763.364,
+        "1163431"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-62"
+      },
+      "value": [
+        1706005763.364,
+        "1037006"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-63"
+      },
+      "value": [
+        1706005763.364,
+        "1531164"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-64"
+      },
+      "value": [
+        1706005763.364,
+        "1297472"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-65"
+      },
+      "value": [
+        1706005763.364,
+        "1517927"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-66"
+      },
+      "value": [
+        1706005763.364,
+        "1194462"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-67"
+      },
+      "value": [
+        1706005763.364,
+        "1320803"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-68"
+      },
+      "value": [
+        1706005763.364,
+        "1251099"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-69"
+      },
+      "value": [
+        1706005763.364,
+        "1430479"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-6"
+      },
+      "value": [
+        1706005763.364,
+        "1345959"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-70"
+      },
+      "value": [
+        1706005763.364,
+        "1182704"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-71"
+      },
+      "value": [
+        1706005763.364,
+        "959542"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-72"
+      },
+      "value": [
+        1706005763.364,
+        "1321427"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-73"
+      },
+      "value": [
+        1706005763.364,
+        "1209609"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-74"
+      },
+      "value": [
+        1706005763.364,
+        "932363"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-75"
+      },
+      "value": [
+        1706005763.364,
+        "1217363"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-76"
+      },
+      "value": [
+        1706005763.364,
+        "1414208"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-77"
+      },
+      "value": [
+        1706005763.364,
+        "979719"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-78"
+      },
+      "value": [
+        1706005763.364,
+        "1564974"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-79"
+      },
+      "value": [
+        1706005763.364,
+        "1332292"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-7"
+      },
+      "value": [
+        1706005763.364,
+        "1345128"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-80"
+      },
+      "value": [
+        1706005763.364,
+        "1575041"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-81"
+      },
+      "value": [
+        1706005763.364,
+        "1294337"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-82"
+      },
+      "value": [
+        1706005763.364,
+        "1193049"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-83"
+      },
+      "value": [
+        1706005763.364,
+        "1421296"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-84"
+      },
+      "value": [
+        1706005763.364,
+        "1154181"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-85"
+      },
+      "value": [
+        1706005763.364,
+        "1089098"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-86"
+      },
+      "value": [
+        1706005763.364,
+        "1091246"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-87"
+      },
+      "value": [
+        1706005763.364,
+        "1283863"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-88"
+      },
+      "value": [
+        1706005763.364,
+        "1057076"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-89"
+      },
+      "value": [
+        1706005763.364,
+        "1184313"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-8"
+      },
+      "value": [
+        1706005763.364,
+        "1149468"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-90"
+      },
+      "value": [
+        1706005763.364,
+        "1211314"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-91"
+      },
+      "value": [
+        1706005763.364,
+        "1111070"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-92"
+      },
+      "value": [
+        1706005763.364,
+        "1446695"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-93"
+      },
+      "value": [
+        1706005763.364,
+        "1078168"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-94"
+      },
+      "value": [
+        1706005763.364,
+        "1050516"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-95"
+      },
+      "value": [
+        1706005763.364,
+        "1340210"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-96"
+      },
+      "value": [
+        1706005763.364,
+        "1274668"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-97"
+      },
+      "value": [
+        1706005763.364,
+        "1184545"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-98"
+      },
+      "value": [
+        1706005763.364,
+        "1270625"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-99"
+      },
+      "value": [
+        1706005763.364,
+        "1106492"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-a-9"
+      },
+      "value": [
+        1706005763.364,
+        "1228624"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-0"
+      },
+      "value": [
+        1706005763.364,
+        "878326"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-100"
+      },
+      "value": [
+        1706005763.364,
+        "1317484"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-101"
+      },
+      "value": [
+        1706005763.364,
+        "964391"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-102"
+      },
+      "value": [
+        1706005763.364,
+        "1167108"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-103"
+      },
+      "value": [
+        1706005763.364,
+        "1281429"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-104"
+      },
+      "value": [
+        1706005763.364,
+        "1328376"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-105"
+      },
+      "value": [
+        1706005763.364,
+        "1368450"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-106"
+      },
+      "value": [
+        1706005763.364,
+        "1374559"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-107"
+      },
+      "value": [
+        1706005763.364,
+        "1244373"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-108"
+      },
+      "value": [
+        1706005763.364,
+        "1083096"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-109"
+      },
+      "value": [
+        1706005763.364,
+        "988418"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-10"
+      },
+      "value": [
+        1706005763.364,
+        "1388656"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-110"
+      },
+      "value": [
+        1706005763.364,
+        "1280770"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-111"
+      },
+      "value": [
+        1706005763.364,
+        "1195892"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-112"
+      },
+      "value": [
+        1706005763.364,
+        "1597502"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-113"
+      },
+      "value": [
+        1706005763.364,
+        "1383803"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-11"
+      },
+      "value": [
+        1706005763.364,
+        "1318374"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-12"
+      },
+      "value": [
+        1706005763.364,
+        "1162556"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-13"
+      },
+      "value": [
+        1706005763.364,
+        "1113976"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-14"
+      },
+      "value": [
+        1706005763.364,
+        "1309351"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-15"
+      },
+      "value": [
+        1706005763.364,
+        "1187295"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-16"
+      },
+      "value": [
+        1706005763.364,
+        "1061187"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-17"
+      },
+      "value": [
+        1706005763.364,
+        "1420628"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-18"
+      },
+      "value": [
+        1706005763.364,
+        "938772"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-19"
+      },
+      "value": [
+        1706005763.364,
+        "1063230"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-1"
+      },
+      "value": [
+        1706005763.364,
+        "1373177"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-20"
+      },
+      "value": [
+        1706005763.364,
+        "1034110"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-21"
+      },
+      "value": [
+        1706005763.364,
+        "1019420"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-22"
+      },
+      "value": [
+        1706005763.364,
+        "1089750"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-23"
+      },
+      "value": [
+        1706005763.364,
+        "1250067"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-24"
+      },
+      "value": [
+        1706005763.364,
+        "1143247"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-25"
+      },
+      "value": [
+        1706005763.364,
+        "1257337"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-26"
+      },
+      "value": [
+        1706005763.364,
+        "1295749"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-27"
+      },
+      "value": [
+        1706005763.364,
+        "1130863"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-28"
+      },
+      "value": [
+        1706005763.364,
+        "1327793"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-29"
+      },
+      "value": [
+        1706005763.364,
+        "1044319"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-2"
+      },
+      "value": [
+        1706005763.364,
+        "1533441"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-30"
+      },
+      "value": [
+        1706005763.364,
+        "1522578"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-31"
+      },
+      "value": [
+        1706005763.364,
+        "1326365"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-32"
+      },
+      "value": [
+        1706005763.364,
+        "1518372"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-33"
+      },
+      "value": [
+        1706005763.364,
+        "1324931"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-34"
+      },
+      "value": [
+        1706005763.364,
+        "1247877"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-35"
+      },
+      "value": [
+        1706005763.364,
+        "1070249"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-36"
+      },
+      "value": [
+        1706005763.364,
+        "1362983"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-37"
+      },
+      "value": [
+        1706005763.364,
+        "1754221"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-38"
+      },
+      "value": [
+        1706005763.364,
+        "1173940"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-39"
+      },
+      "value": [
+        1706005763.364,
+        "1170486"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-3"
+      },
+      "value": [
+        1706005763.364,
+        "1306400"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-40"
+      },
+      "value": [
+        1706005763.364,
+        "1022917"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-41"
+      },
+      "value": [
+        1706005763.364,
+        "1472240"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-42"
+      },
+      "value": [
+        1706005763.364,
+        "1694676"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-43"
+      },
+      "value": [
+        1706005763.364,
+        "1495628"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-44"
+      },
+      "value": [
+        1706005763.364,
+        "1135965"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-45"
+      },
+      "value": [
+        1706005763.364,
+        "1501503"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-46"
+      },
+      "value": [
+        1706005763.364,
+        "1184752"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-47"
+      },
+      "value": [
+        1706005763.364,
+        "958318"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-48"
+      },
+      "value": [
+        1706005763.364,
+        "1042123"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-49"
+      },
+      "value": [
+        1706005763.364,
+        "889983"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-4"
+      },
+      "value": [
+        1706005763.364,
+        "1174408"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-50"
+      },
+      "value": [
+        1706005763.364,
+        "1040574"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-51"
+      },
+      "value": [
+        1706005763.364,
+        "1170877"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-52"
+      },
+      "value": [
+        1706005763.364,
+        "850451"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-53"
+      },
+      "value": [
+        1706005763.364,
+        "1436375"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-54"
+      },
+      "value": [
+        1706005763.364,
+        "1007007"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-55"
+      },
+      "value": [
+        1706005763.364,
+        "1198161"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-56"
+      },
+      "value": [
+        1706005763.364,
+        "1087226"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-57"
+      },
+      "value": [
+        1706005763.364,
+        "1204734"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-58"
+      },
+      "value": [
+        1706005763.364,
+        "794179"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-59"
+      },
+      "value": [
+        1706005763.364,
+        "1092911"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-5"
+      },
+      "value": [
+        1706005763.364,
+        "1145012"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-60"
+      },
+      "value": [
+        1706005763.364,
+        "1006287"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-61"
+      },
+      "value": [
+        1706005763.364,
+        "1313768"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-62"
+      },
+      "value": [
+        1706005763.364,
+        "1513221"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-63"
+      },
+      "value": [
+        1706005763.364,
+        "1087395"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-64"
+      },
+      "value": [
+        1706005763.364,
+        "1078301"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-65"
+      },
+      "value": [
+        1706005763.364,
+        "1445938"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-66"
+      },
+      "value": [
+        1706005763.364,
+        "1219153"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-67"
+      },
+      "value": [
+        1706005763.364,
+        "1235836"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-68"
+      },
+      "value": [
+        1706005763.364,
+        "1324585"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-69"
+      },
+      "value": [
+        1706005763.364,
+        "1085924"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-6"
+      },
+      "value": [
+        1706005763.364,
+        "1292613"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-70"
+      },
+      "value": [
+        1706005763.364,
+        "1268843"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-71"
+      },
+      "value": [
+        1706005763.364,
+        "1404875"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-72"
+      },
+      "value": [
+        1706005763.364,
+        "1295881"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-73"
+      },
+      "value": [
+        1706005763.364,
+        "1315799"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-74"
+      },
+      "value": [
+        1706005763.364,
+        "1331585"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-75"
+      },
+      "value": [
+        1706005763.364,
+        "1458412"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-76"
+      },
+      "value": [
+        1706005763.364,
+        "1258947"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-77"
+      },
+      "value": [
+        1706005763.364,
+        "910774"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-78"
+      },
+      "value": [
+        1706005763.364,
+        "1223641"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-79"
+      },
+      "value": [
+        1706005763.364,
+        "1101964"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-7"
+      },
+      "value": [
+        1706005763.364,
+        "1077224"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-80"
+      },
+      "value": [
+        1706005763.364,
+        "1532846"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-81"
+      },
+      "value": [
+        1706005763.364,
+        "1218134"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-82"
+      },
+      "value": [
+        1706005763.364,
+        "1524521"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-83"
+      },
+      "value": [
+        1706005763.364,
+        "1479349"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-84"
+      },
+      "value": [
+        1706005763.364,
+        "1473054"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-85"
+      },
+      "value": [
+        1706005763.364,
+        "1019149"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-86"
+      },
+      "value": [
+        1706005763.364,
+        "1110673"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-87"
+      },
+      "value": [
+        1706005763.364,
+        "1150326"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-88"
+      },
+      "value": [
+        1706005763.364,
+        "1303931"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-89"
+      },
+      "value": [
+        1706005763.364,
+        "1150684"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-8"
+      },
+      "value": [
+        1706005763.364,
+        "1258002"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-90"
+      },
+      "value": [
+        1706005763.364,
+        "1205542"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-91"
+      },
+      "value": [
+        1706005763.364,
+        "1148866"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-92"
+      },
+      "value": [
+        1706005763.364,
+        "1251049"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-93"
+      },
+      "value": [
+        1706005763.364,
+        "1155350"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-94"
+      },
+      "value": [
+        1706005763.364,
+        "1387712"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-95"
+      },
+      "value": [
+        1706005763.364,
+        "1103166"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-96"
+      },
+      "value": [
+        1706005763.364,
+        "1185697"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-97"
+      },
+      "value": [
+        1706005763.364,
+        "1283972"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-98"
+      },
+      "value": [
+        1706005763.364,
+        "1150523"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-99"
+      },
+      "value": [
+        1706005763.364,
+        "1103372"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-b-9"
+      },
+      "value": [
+        1706005763.364,
+        "1315744"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-0"
+      },
+      "value": [
+        1706005763.364,
+        "1311242"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-100"
+      },
+      "value": [
+        1706005763.364,
+        "1198280"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-101"
+      },
+      "value": [
+        1706005763.364,
+        "1280267"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-102"
+      },
+      "value": [
+        1706005763.364,
+        "1037631"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-103"
+      },
+      "value": [
+        1706005763.364,
+        "1080365"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-104"
+      },
+      "value": [
+        1706005763.364,
+        "1133972"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-105"
+      },
+      "value": [
+        1706005763.364,
+        "1662798"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-106"
+      },
+      "value": [
+        1706005763.364,
+        "1014081"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-107"
+      },
+      "value": [
+        1706005763.364,
+        "1143241"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-108"
+      },
+      "value": [
+        1706005763.364,
+        "1069223"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-109"
+      },
+      "value": [
+        1706005763.364,
+        "1273755"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-10"
+      },
+      "value": [
+        1706005763.364,
+        "922196"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-110"
+      },
+      "value": [
+        1706005763.364,
+        "1171947"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-111"
+      },
+      "value": [
+        1706005763.364,
+        "1135728"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-112"
+      },
+      "value": [
+        1706005763.364,
+        "1290710"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-113"
+      },
+      "value": [
+        1706005763.364,
+        "1315149"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-11"
+      },
+      "value": [
+        1706005763.364,
+        "1409867"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-12"
+      },
+      "value": [
+        1706005763.364,
+        "1262797"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-13"
+      },
+      "value": [
+        1706005763.364,
+        "1017618"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-14"
+      },
+      "value": [
+        1706005763.364,
+        "1267047"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-15"
+      },
+      "value": [
+        1706005763.364,
+        "1040174"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-16"
+      },
+      "value": [
+        1706005763.364,
+        "1134225"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-17"
+      },
+      "value": [
+        1706005763.364,
+        "1434592"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-18"
+      },
+      "value": [
+        1706005763.364,
+        "938389"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-19"
+      },
+      "value": [
+        1706005763.364,
+        "1340509"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-1"
+      },
+      "value": [
+        1706005763.364,
+        "1231711"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-20"
+      },
+      "value": [
+        1706005763.364,
+        "1378483"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-21"
+      },
+      "value": [
+        1706005763.364,
+        "1609890"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-22"
+      },
+      "value": [
+        1706005763.364,
+        "1388840"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-23"
+      },
+      "value": [
+        1706005763.364,
+        "1416028"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-24"
+      },
+      "value": [
+        1706005763.364,
+        "1275718"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-25"
+      },
+      "value": [
+        1706005763.364,
+        "1061296"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-26"
+      },
+      "value": [
+        1706005763.364,
+        "1034028"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-27"
+      },
+      "value": [
+        1706005763.364,
+        "1300986"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-28"
+      },
+      "value": [
+        1706005763.364,
+        "1170131"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-29"
+      },
+      "value": [
+        1706005763.364,
+        "1427129"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-2"
+      },
+      "value": [
+        1706005763.364,
+        "1077324"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-30"
+      },
+      "value": [
+        1706005763.364,
+        "933981"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-31"
+      },
+      "value": [
+        1706005763.364,
+        "1217107"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-32"
+      },
+      "value": [
+        1706005763.364,
+        "1041763"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-33"
+      },
+      "value": [
+        1706005763.364,
+        "1461895"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-34"
+      },
+      "value": [
+        1706005763.364,
+        "1364460"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-35"
+      },
+      "value": [
+        1706005763.364,
+        "1204936"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-36"
+      },
+      "value": [
+        1706005763.364,
+        "1321597"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-37"
+      },
+      "value": [
+        1706005763.364,
+        "1383525"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-38"
+      },
+      "value": [
+        1706005763.364,
+        "915142"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-39"
+      },
+      "value": [
+        1706005763.364,
+        "1329689"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-3"
+      },
+      "value": [
+        1706005763.364,
+        "795671"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-40"
+      },
+      "value": [
+        1706005763.364,
+        "1142911"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-41"
+      },
+      "value": [
+        1706005763.364,
+        "1167528"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-42"
+      },
+      "value": [
+        1706005763.364,
+        "1405996"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-43"
+      },
+      "value": [
+        1706005763.364,
+        "888011"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-44"
+      },
+      "value": [
+        1706005763.364,
+        "1189088"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-45"
+      },
+      "value": [
+        1706005763.364,
+        "1509722"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-46"
+      },
+      "value": [
+        1706005763.364,
+        "1234685"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-47"
+      },
+      "value": [
+        1706005763.364,
+        "966892"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-48"
+      },
+      "value": [
+        1706005763.364,
+        "1158519"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-49"
+      },
+      "value": [
+        1706005763.364,
+        "882716"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-4"
+      },
+      "value": [
+        1706005763.364,
+        "1310815"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-50"
+      },
+      "value": [
+        1706005763.364,
+        "1024630"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-51"
+      },
+      "value": [
+        1706005763.364,
+        "1119389"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-52"
+      },
+      "value": [
+        1706005763.364,
+        "1610895"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-53"
+      },
+      "value": [
+        1706005763.364,
+        "1374336"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-54"
+      },
+      "value": [
+        1706005763.364,
+        "1416022"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-55"
+      },
+      "value": [
+        1706005763.364,
+        "958491"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-56"
+      },
+      "value": [
+        1706005763.364,
+        "1130958"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-57"
+      },
+      "value": [
+        1706005763.364,
+        "1611793"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-58"
+      },
+      "value": [
+        1706005763.364,
+        "1454659"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-59"
+      },
+      "value": [
+        1706005763.364,
+        "1293931"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-5"
+      },
+      "value": [
+        1706005763.364,
+        "1176777"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-60"
+      },
+      "value": [
+        1706005763.364,
+        "1108610"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-61"
+      },
+      "value": [
+        1706005763.364,
+        "1095976"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-62"
+      },
+      "value": [
+        1706005763.364,
+        "1207033"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-63"
+      },
+      "value": [
+        1706005763.364,
+        "1743519"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-64"
+      },
+      "value": [
+        1706005763.364,
+        "1235365"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-65"
+      },
+      "value": [
+        1706005763.364,
+        "1106534"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-66"
+      },
+      "value": [
+        1706005763.364,
+        "1381087"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-67"
+      },
+      "value": [
+        1706005763.364,
+        "856732"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-68"
+      },
+      "value": [
+        1706005763.364,
+        "1340863"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-69"
+      },
+      "value": [
+        1706005763.364,
+        "1178470"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-6"
+      },
+      "value": [
+        1706005763.364,
+        "1057355"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-70"
+      },
+      "value": [
+        1706005763.364,
+        "1404479"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-71"
+      },
+      "value": [
+        1706005763.364,
+        "1117767"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-72"
+      },
+      "value": [
+        1706005763.364,
+        "1210398"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-73"
+      },
+      "value": [
+        1706005763.364,
+        "1150369"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-74"
+      },
+      "value": [
+        1706005763.364,
+        "1269811"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-75"
+      },
+      "value": [
+        1706005763.364,
+        "1403322"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-76"
+      },
+      "value": [
+        1706005763.364,
+        "1124041"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-77"
+      },
+      "value": [
+        1706005763.364,
+        "1011618"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-78"
+      },
+      "value": [
+        1706005763.364,
+        "1228692"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-79"
+      },
+      "value": [
+        1706005763.364,
+        "1257641"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-7"
+      },
+      "value": [
+        1706005763.364,
+        "1514518"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-80"
+      },
+      "value": [
+        1706005763.364,
+        "1212418"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-81"
+      },
+      "value": [
+        1706005763.364,
+        "1324923"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-82"
+      },
+      "value": [
+        1706005763.364,
+        "1438623"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-83"
+      },
+      "value": [
+        1706005763.364,
+        "1319970"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-84"
+      },
+      "value": [
+        1706005763.364,
+        "1362050"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-85"
+      },
+      "value": [
+        1706005763.364,
+        "1055567"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-86"
+      },
+      "value": [
+        1706005763.364,
+        "1497997"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-87"
+      },
+      "value": [
+        1706005763.364,
+        "1320198"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-88"
+      },
+      "value": [
+        1706005763.364,
+        "1466656"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-89"
+      },
+      "value": [
+        1706005763.364,
+        "1096968"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-8"
+      },
+      "value": [
+        1706005763.364,
+        "1273122"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-90"
+      },
+      "value": [
+        1706005763.364,
+        "1212675"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-91"
+      },
+      "value": [
+        1706005763.364,
+        "1326147"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-92"
+      },
+      "value": [
+        1706005763.364,
+        "1222114"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-93"
+      },
+      "value": [
+        1706005763.364,
+        "1077459"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-94"
+      },
+      "value": [
+        1706005763.364,
+        "1332700"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-95"
+      },
+      "value": [
+        1706005763.364,
+        "1282285"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-96"
+      },
+      "value": [
+        1706005763.364,
+        "1115049"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-97"
+      },
+      "value": [
+        1706005763.364,
+        "1351883"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-98"
+      },
+      "value": [
+        1706005763.364,
+        "1152196"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-99"
+      },
+      "value": [
+        1706005763.364,
+        "1256311"
+      ]
+    },
+    {
+      "metric": {
+        "pod": "ingester-zone-c-9"
+      },
+      "value": [
+        1706005763.364,
+        "1094166"
+      ]
+    }
+  ]
+}

@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"math"
-	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -131,6 +130,10 @@ var (
 	// ErrInconsistentTokensInfo is the error returned if, due to an internal bug, the mapping between
 	// a token and its own instance is missing or unknown.
 	ErrInconsistentTokensInfo = errors.New("inconsistent ring tokens information")
+
+	// ErrInconsistentInstanceZoneInfo is the error returned if, due to an internal bug, the instance that is
+	// being added to the ring belongs to a wrong zone.
+	ErrInconsistentInstanceZoneInfo = errors.New("inconsistent ring instance zone information")
 )
 
 // Config for a Ring
@@ -209,6 +212,7 @@ type Ring struct {
 	// If set to nil, no caching is done (used by tests, and subrings).
 	shuffledSubringCache             map[subringCacheKey]*Ring
 	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback[*Ring]
+	sharder                          shuffleSharder
 
 	numMembersGaugeVec      *prometheus.GaugeVec
 	totalTokensGauge        prometheus.Gauge
@@ -259,6 +263,7 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		ringDesc:                         &Desc{},
 		shuffledSubringCache:             map[subringCacheKey]*Ring{},
 		shuffledSubringWithLookbackCache: map[subringCacheKey]cachedSubringWithLookback[*Ring]{},
+		sharder:                          randomShuffleSharder{},
 		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
@@ -739,87 +744,34 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		return r
 	}
 
-	var numInstancesPerZone int
-	var actualZones []string
+	var (
+		numInstancesPerZone int
+		actualZones         []string
+		ringTokensByZone    = make(map[string][]uint32, len(actualZones))
+	)
 
 	if r.cfg.ZoneAwarenessEnabled {
 		numInstancesPerZone = shardUtil.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
 		actualZones = r.ringZones
+		ringTokensByZone = r.ringTokensByZone
 	} else {
 		numInstancesPerZone = size
-		actualZones = []string{""}
+		actualZones = []string{defaultZone}
+		// When zone-awareness is disabled, we just iterate over 1 single fake zone
+		// and use all tokens in the ring.
+		ringTokensByZone[defaultZone] = r.ringTokens
 	}
 
-	shard := make(map[string]InstanceDesc, size)
-
-	// We need to iterate zones always in the same order to guarantee stability.
-	for _, zone := range actualZones {
-		var tokens []uint32
-
-		if r.cfg.ZoneAwarenessEnabled {
-			tokens = r.ringTokensByZone[zone]
-		} else {
-			// When zone-awareness is disabled, we just iterate over 1 single fake zone
-			// and use all tokens in the ring.
-			tokens = r.ringTokens
-		}
-
-		// Initialise the random generator used to select instances in the ring.
-		// Since we consider each zone like an independent ring, we have to use dedicated
-		// pseudo-random generator for each zone, in order to guarantee the "consistency"
-		// property when the shard size changes or a new zone is added.
-		random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(identifier, zone)))
-
-		// To select one more instance while guaranteeing the "consistency" property,
-		// we do pick a random value from the generator and resolve uniqueness collisions
-		// (if any) continuing walking the ring.
-		for i := 0; i < numInstancesPerZone; i++ {
-			start := searchToken(tokens, random.Uint32())
-			iterations := 0
-			found := false
-
-			for p := start; iterations < len(tokens); p++ {
-				iterations++
-
-				// Wrap p around in the ring.
-				p %= len(tokens)
-
-				info, ok := r.ringInstanceByToken[tokens[p]]
-				if !ok {
-					// This should never happen unless a bug in the ring code.
-					panic(ErrInconsistentTokensInfo)
-				}
-
-				// Ensure we select a unique instance.
-				if _, ok := shard[info.InstanceID]; ok {
-					continue
-				}
-
-				instanceID := info.InstanceID
-				instance := r.ringDesc.Ingesters[instanceID]
-				shard[instanceID] = instance
-
-				// If the lookback is enabled and this instance has been registered within the lookback period
-				// then we should include it in the subring but continuing selecting instances.
-				if lookbackPeriod > 0 && instance.RegisteredTimestamp >= lookbackUntil {
-					continue
-				}
-
-				found = true
-				break
-			}
-
-			// If one more instance has not been found, we can stop looking for
-			// more instances in this zone, because it means the zone has no more
-			// instances which haven't been already selected.
-			if !found {
-				break
-			}
-		}
+	// A timestamp is within the lookback period if the lookback is enabled and the timestamp is within its range.
+	isWithinLookbackPeriod := func(timestamp int64) bool {
+		return lookbackPeriod > 0 && timestamp >= lookbackUntil
 	}
 
 	// Build a read-only ring for the shard.
-	shardDesc := &Desc{Ingesters: shard}
+	if r.sharder == nil {
+		r.sharder = randomShuffleSharder{}
+	}
+	shardDesc := r.sharder.shuffleShardNew(identifier, actualZones, numInstancesPerZone, ringTokensByZone, r.ringInstanceByToken, r.ringDesc.GetIngesters(), isWithinLookbackPeriod)
 	shardTokensByZone := shardDesc.getTokensByZone()
 	shardTokens := mergeTokenGroups(shardTokensByZone)
 

@@ -130,7 +130,7 @@ func HTTPGRPCTracingInterceptor(router *mux.Router) grpc.UnaryServerInterceptor 
 }
 
 func httpOperationNameFunc(r *http.Request) string {
-	routeName := ExtractRouteName(r)
+	routeName := ExtractRouteName(r.Context())
 	return getOperationName(routeName, r)
 }
 

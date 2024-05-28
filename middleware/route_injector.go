@@ -35,11 +35,13 @@ func WithRouteName(r *http.Request, routeName string) *http.Request {
 	return r.WithContext(ctx)
 }
 
-// ExtractRouteName returns the route name associated with this request.
+// ExtractRouteName returns the route name associated with this request that was previously injected by the
+// RouteInjector middleware or WithRouteName.
+//
 // This is the same route name used for trace and metric names, and is already suitable for use as a Prometheus label
 // value.
-func ExtractRouteName(r *http.Request) string {
-	routeName, ok := r.Context().Value(contextKeyRouteName).(string)
+func ExtractRouteName(ctx context.Context) string {
+	routeName, ok := ctx.Value(contextKeyRouteName).(string)
 	if !ok {
 		return ""
 	}

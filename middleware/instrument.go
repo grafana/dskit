@@ -118,7 +118,7 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 // We do all this as we do not wish to emit high cardinality labels to
 // prometheus.
 func (i Instrument) getRouteName(r *http.Request) string {
-	route := ExtractRouteName(r)
+	route := ExtractRouteName(r.Context())
 	if route == "" {
 		route = "other"
 	}

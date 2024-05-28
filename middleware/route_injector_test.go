@@ -28,7 +28,7 @@ func TestRouteInjector(t *testing.T) {
 			actualRouteName := ""
 
 			handler := func(_ http.ResponseWriter, r *http.Request) {
-				actualRouteName = ExtractRouteName(r)
+				actualRouteName = ExtractRouteName(r.Context())
 			}
 
 			router := mux.NewRouter()

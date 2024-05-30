@@ -9,7 +9,7 @@ import (
 )
 
 func TestSpanProfiler_pprof_labels_propagation(t *testing.T) {
-	tt := initTestTracer(t)
+	tt := initTestTracer(t, 1)
 	defer func() { require.NoError(t, tt.Close()) }()
 
 	t.Run("pprof labels are not propagated to child spans", func(t *testing.T) {

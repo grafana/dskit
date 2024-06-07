@@ -59,6 +59,8 @@ func (l Log) logWithRequest(r *http.Request) log.Logger {
 	traceID, ok := tracing.ExtractSampledTraceID(r.Context())
 	if ok {
 		localLog = log.With(localLog, "trace_id", traceID)
+	} else if traceID != "" {
+		localLog = log.With(localLog, "trace_id_unsampled", traceID)
 	}
 
 	if l.SourceIPs != nil {

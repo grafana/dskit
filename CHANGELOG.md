@@ -211,6 +211,7 @@
 * [ENHANCEMENT] Expose `InstancesWithTokensCount` and `InstancesWithTokensInZoneCount` in `ring.ReadRing` interface. #516
 * [ENHANCEMENT] Middleware: determine route name in a single place, and add `middleware.ExtractRouteName()` method to allow consuming applications to retrieve the route name. #527
 * [ENHANCEMENT] SpanProfiler: do less work on unsampled traces. #528
+* [ENHANCEMENT] Log Middleware: if the trace is not sampled, log its ID as `trace_id_unsampled` instead of `trace_id`. #529
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

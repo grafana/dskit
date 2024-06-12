@@ -15,6 +15,7 @@ import (
 	spb "github.com/gogo/googleapis/google/rpc"
 	"github.com/gogo/protobuf/types"
 	"github.com/gogo/status"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/dskit/grpcutil"
@@ -106,8 +107,17 @@ func FromHeader(hs http.Header) []*Header {
 	return result
 }
 
-// Errorf returns a HTTP gRPC error than is correctly forwarded over
-// gRPC, and can eventually be converted back to a HTTP response with
+// InternalErrorf returns a gRPC error with code codes.Internal, that is correctly forwarded over
+// gRPC, and can eventually be converted back to an HTTP response with HTTPResponseFromError.
+func InternalErrorf(code int, tmpl string, args ...interface{}) error {
+	return InternalErrorFromHTTPResponse(&HTTPResponse{
+		Code: int32(code),
+		Body: []byte(fmt.Sprintf(tmpl, args...)),
+	})
+}
+
+// Errorf returns an HTTP gRPC error than is correctly forwarded over
+// gRPC, and can eventually be converted back to an HTTP response with
 // HTTPResponseFromError.
 func Errorf(code int, tmpl string, args ...interface{}) error {
 	return ErrorFromHTTPResponse(&HTTPResponse{
@@ -116,15 +126,24 @@ func Errorf(code int, tmpl string, args ...interface{}) error {
 	})
 }
 
-// ErrorFromHTTPResponse converts an HTTP response into a grpc error
+// InternalErrorFromHTTPResponse converts an HTTP response into an internal gRPC error.
+func InternalErrorFromHTTPResponse(resp *HTTPResponse) error {
+	return errorFromHTTPResponse(int32(codes.Internal), resp)
+}
+
+// ErrorFromHTTPResponse converts an HTTP response into a grpc error.
 func ErrorFromHTTPResponse(resp *HTTPResponse) error {
+	return errorFromHTTPResponse(resp.Code, resp)
+}
+
+func errorFromHTTPResponse(code int32, resp *HTTPResponse) error {
 	a, err := types.MarshalAny(resp)
 	if err != nil {
 		return err
 	}
 
 	return status.ErrorProto(&spb.Status{
-		Code:    resp.Code,
+		Code:    code,
 		Message: string(resp.Body),
 		Details: []*types.Any{a},
 	})

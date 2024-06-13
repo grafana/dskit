@@ -356,7 +356,7 @@ func TestGrpcErrorsHaveCorrectMessage(t *testing.T) {
 					w.Header().Set(ErrorMessageHeaderKey, testData.errorMessageInHeader)
 				}
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(testData.responseBody))
+				_, _ = w.Write([]byte(testData.responseBody))
 			})
 
 			s := NewServer(h)
@@ -403,7 +403,7 @@ func Test(t *testing.T) {
 					w.Header().Set(ErrorMessageHeaderKey, testData.errorMessageInHeader)
 				}
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(testData.responseBody))
+				_, _ = w.Write([]byte(testData.responseBody))
 			})
 
 			s := NewServer(h)

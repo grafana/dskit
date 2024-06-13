@@ -1163,7 +1163,7 @@ func benchmarkPartitionRingGetTokenRangesForInstance(b *testing.B, partitions in
 }
 
 func TestActivePartitionBatchRing(t *testing.T) {
-	t.Run("should implement DoBatchRing", func(t *testing.T) {
+	t.Run("should implement DoBatchRing", func(*testing.T) {
 		_ = DoBatchRing(&ActivePartitionBatchRing{})
 	})
 }

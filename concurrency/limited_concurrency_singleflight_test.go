@@ -34,7 +34,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ConcurrencyLimit(t *t
 		require.NoError(t, sf.ForEachNotInFlight(ctx, tokens, f))
 	}
 
-	busyWorker := func(ctx context.Context, s string) error {
+	busyWorker := func(context.Context, string) error {
 		workersToStart.Done()
 		<-workersWait
 		return nil
@@ -49,7 +49,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ConcurrencyLimit(t *t
 	workersToStart.Wait()
 
 	extraWorkerInvoked := make(chan struct{})
-	go forEachNotInFlight(func(ctx context.Context, s string) error {
+	go forEachNotInFlight(func(context.Context, string) error {
 		close(extraWorkerInvoked)
 		return nil
 	}, "10")
@@ -77,7 +77,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenAllTokensA
 
 	workersToStart.Add(1)
 	go func() {
-		require.NoError(t, sf.ForEachNotInFlight(ctx, []string{token}, func(ctx context.Context, s string) error {
+		require.NoError(t, sf.ForEachNotInFlight(ctx, []string{token}, func(context.Context, string) error {
 			workersToStart.Done()
 			<-workersWait
 			return nil
@@ -87,7 +87,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenAllTokensA
 	workersToStart.Wait()
 
 	duplicatedTokenInvoked := false
-	require.NoError(t, sf.ForEachNotInFlight(ctx, []string{token}, func(ctx context.Context, s string) error {
+	require.NoError(t, sf.ForEachNotInFlight(ctx, []string{token}, func(context.Context, string) error {
 		duplicatedTokenInvoked = true
 		return nil
 	}))
@@ -114,7 +114,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CallsOnlyNotInFlightT
 
 	workersToStart.Add(1)
 	go func() {
-		require.NoError(t, sf.ForEachNotInFlight(ctx, []string{tokenA}, func(ctx context.Context, s string) error {
+		require.NoError(t, sf.ForEachNotInFlight(ctx, []string{tokenA}, func(context.Context, string) error {
 			workersToStart.Done()
 			<-workersWait
 			return nil
@@ -123,7 +123,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_CallsOnlyNotInFlightT
 
 	workersToStart.Wait()
 	var invocations atomic.Int64
-	assert.NoError(t, sf.ForEachNotInFlight(ctx, []string{tokenA, tokenB}, func(ctx context.Context, s string) error {
+	assert.NoError(t, sf.ForEachNotInFlight(ctx, []string{tokenA, tokenB}, func(_ context.Context, s string) error {
 		assert.Equal(t, tokenB, s)
 		invocations.Inc()
 		return nil
@@ -136,7 +136,7 @@ func TestLimitedConcurrencySingleFlight_ForEachNotInFlight_ReturnsWhenTokensAreE
 	t.Parallel()
 
 	var invocations atomic.Int64
-	assert.NoError(t, NewLimitedConcurrencySingleFlight(10).ForEachNotInFlight(context.Background(), []string{}, func(ctx context.Context, s string) error {
+	assert.NoError(t, NewLimitedConcurrencySingleFlight(10).ForEachNotInFlight(context.Background(), []string{}, func(context.Context, string) error {
 		invocations.Inc()
 		return nil
 	}))

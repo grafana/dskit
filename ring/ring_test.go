@@ -3180,7 +3180,7 @@ func startLifecycler(t *testing.T, cfg Config, heartbeat time.Duration, lifecycl
 	lc, err := NewLifecycler(lcCfg, &noopFlushTransferer{}, "test", "test", false, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
-	lc.AddListener(services.NewListener(nil, nil, nil, nil, func(from services.State, failure error) {
+	lc.AddListener(services.NewListener(nil, nil, nil, nil, func(_ services.State, failure error) {
 		t.Log("lifecycler", lifecyclerID, "failed:", failure)
 		t.Fail()
 	}))

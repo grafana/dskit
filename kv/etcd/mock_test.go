@@ -340,7 +340,7 @@ func TestMockKV_Watch(t *testing.T) {
 		return kv, cancel, ch, &complete
 	}
 
-	t.Run("watch stopped by context", func(t *testing.T) {
+	t.Run("watch stopped by context", func(*testing.T) {
 		// Ensure we can use the cancel method of the context given to the watch
 		// to stop the watch
 		_, cancel, _, complete := setupWatchTest("/bar", false)
@@ -348,7 +348,7 @@ func TestMockKV_Watch(t *testing.T) {
 		complete.Wait()
 	})
 
-	t.Run("watch stopped by close", func(t *testing.T) {
+	t.Run("watch stopped by close", func(*testing.T) {
 		// Ensure we can use the Close method of the mockKV given to the watch
 		// to stop the watch
 		kv, _, _, complete := setupWatchTest("/bar", false)

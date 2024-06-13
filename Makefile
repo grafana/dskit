@@ -79,10 +79,10 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 	GOPATH=$(CURDIR)/.tools go install github.com/client9/misspell/cmd/misspell@v0.3.4
 
 .tools/bin/faillint: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.11.0
+	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.13.0
 
 .tools/bin/golangci-lint: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.53.2
+	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.1
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")

@@ -142,7 +142,7 @@ func TestDefaultAddresses(t *testing.T) {
 	fakeServer := FakeServer{}
 	RegisterFakeServerServer(server.GRPC, fakeServer)
 
-	server.HTTP.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/test", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(204)
 	})
 
@@ -181,15 +181,15 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	fakeServer := FakeServer{}
 	RegisterFakeServerServer(server.GRPC, fakeServer)
 
-	server.HTTP.HandleFunc("/succeed", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/succeed", func(http.ResponseWriter, *http.Request) {
 	})
-	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 	})
-	server.HTTP.HandleFunc("/sleep10", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/sleep10", func(_ http.ResponseWriter, r *http.Request) {
 		_ = cancelableSleep(r.Context(), time.Second*10)
 	})
-	server.HTTP.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
@@ -322,13 +322,13 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 	server, err := New(cfg)
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/succeed", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/succeed", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
 	})
-	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 	})
-	server.HTTP.HandleFunc("/sleep10", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/sleep10", func(_ http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body) // Consume body, otherwise it's not counted.
 		_ = cancelableSleep(r.Context(), time.Second*10)
 	})
@@ -521,7 +521,7 @@ func TestMiddlewareLogging(t *testing.T) {
 	server, err := New(cfg)
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 	})
 
@@ -566,7 +566,7 @@ func TestTLSServer(t *testing.T) {
 	server, err := New(cfg)
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World!"))
 		require.NoError(t, err)
 	})
@@ -661,7 +661,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World!"))
 		require.NoError(t, err)
 	})
@@ -753,7 +753,7 @@ func TestLogSourceIPs(t *testing.T) {
 		server, err := New(cfg)
 		require.NoError(t, err)
 
-		server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+		server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(500)
 		})
 
@@ -861,7 +861,7 @@ func (pc *proxyProtocolConn) Write(b []byte) (int, error) {
 }
 
 func proxyDialer(proxyHeader string) func(context.Context, string, string) (net.Conn, error) {
-	return func(ctx context.Context, network string, addr string) (net.Conn, error) {
+	return func(_ context.Context, network string, addr string) (net.Conn, error) {
 		conn, err := net.Dial(network, addr)
 		if err != nil {
 			return nil, err
@@ -955,7 +955,7 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 	fakeSourceIP := "1.2.3.4"
 
 	// Custom dialer that sends a PROXY header
-	customDialer := func(ctx context.Context, address string) (net.Conn, error) {
+	customDialer := func(_ context.Context, address string) (net.Conn, error) {
 		conn, err := net.Dial("tcp", address)
 		if err != nil {
 			return nil, err

@@ -108,7 +108,7 @@ func failingFunctionAfter(failAfter int32, delay time.Duration) func(context.Con
 }
 
 func failingFunctionOnZones(zones ...string) func(context.Context, *InstanceDesc) (interface{}, error) {
-	return func(ctx context.Context, ing *InstanceDesc) (interface{}, error) {
+	return func(_ context.Context, ing *InstanceDesc) (interface{}, error) {
 		for _, zone := range zones {
 			if ing.Zone == zone {
 				return nil, errZoneFailure
@@ -135,7 +135,7 @@ func TestReplicationSet_Do(t *testing.T) {
 			instances: []InstanceDesc{
 				{},
 			},
-			f: func(c context.Context, id *InstanceDesc) (interface{}, error) {
+			f: func(context.Context, *InstanceDesc) (interface{}, error) {
 				return 1, nil
 			},
 			want: []interface{}{1},
@@ -143,7 +143,7 @@ func TestReplicationSet_Do(t *testing.T) {
 		{
 			name:      "max errors = 0, should fail on 1 error out of 1 instance",
 			instances: []InstanceDesc{{}},
-			f: func(c context.Context, id *InstanceDesc) (interface{}, error) {
+			f: func(context.Context, *InstanceDesc) (interface{}, error) {
 				return nil, errFailure
 			},
 			want:          nil,
@@ -169,7 +169,7 @@ func TestReplicationSet_Do(t *testing.T) {
 			name:      "max errors = 1, should handle context canceled",
 			instances: []InstanceDesc{{}, {}, {}},
 			maxErrors: 1,
-			f: func(c context.Context, id *InstanceDesc) (interface{}, error) {
+			f: func(context.Context, *InstanceDesc) (interface{}, error) {
 				time.Sleep(300 * time.Millisecond)
 				return 1, nil
 			},
@@ -180,7 +180,7 @@ func TestReplicationSet_Do(t *testing.T) {
 		{
 			name:      "max errors = 0, should succeed on all successful instances",
 			instances: []InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}},
-			f: func(c context.Context, id *InstanceDesc) (interface{}, error) {
+			f: func(context.Context, *InstanceDesc) (interface{}, error) {
 				return 1, nil
 			},
 			want: []interface{}{1, 1, 1},
@@ -252,15 +252,15 @@ func TestReplicationSet_Do(t *testing.T) {
 }
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
-	successfulF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+	successfulF := func(_ context.Context, desc *InstanceDesc) (string, error) {
 		return desc.Addr, nil
 	}
 
-	failingF := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+	failingF := func(_ context.Context, desc *InstanceDesc) (string, error) {
 		return "", fmt.Errorf("this is the error for %v", desc.Addr)
 	}
 
-	failingZoneB := func(ctx context.Context, desc *InstanceDesc) (string, error) {
+	failingZoneB := func(_ context.Context, desc *InstanceDesc) (string, error) {
 		if desc.Zone == "zone-b" {
 			return "", fmt.Errorf("this is the error for %v", desc.Addr)
 		}
@@ -664,7 +664,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ZoneSorting(t *testin
 
 	cfg := DoUntilQuorumConfig{
 		MinimizeRequests: true,
-		ZoneSorter: func(zones []string) []string {
+		ZoneSorter: func([]string) []string {
 			return []string{"zone-b", "zone-d", "zone-a", "zone-c"}
 		},
 	}
@@ -770,7 +770,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_RunsCallsInParallel(t
 			wg := sync.WaitGroup{}
 			wg.Add(len(replicationSet.Instances))
 
-			f := func(ctx context.Context, desc *InstanceDesc, _ context.CancelCauseFunc) (string, error) {
+			f := func(_ context.Context, desc *InstanceDesc, _ context.CancelCauseFunc) (string, error) {
 				wg.Done()
 
 				// Wait for the other calls to f to start. If this test hangs here, then the calls are not running in parallel.
@@ -1255,7 +1255,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InvalidHedgingConfig(
 		HedgingDelay:     -1 * time.Second,
 	}
 
-	f := func(ctx context.Context, desc *InstanceDesc, cancelFunc context.CancelCauseFunc) (string, error) {
+	f := func(context.Context, *InstanceDesc, context.CancelCauseFunc) (string, error) {
 		require.FailNow(t, "should never call f")
 		return "", nil
 	}
@@ -1442,7 +1442,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_LoggingWithNoFailingI
 
 			logger := &testLogger{}
 			spanLogger, ctx := spanlogger.New(context.Background(), logger, "DoUntilQuorum test", dummyTenantResolver{})
-			f := func(ctx context.Context, desc *InstanceDesc, _ context.CancelCauseFunc) (string, error) {
+			f := func(_ context.Context, desc *InstanceDesc, _ context.CancelCauseFunc) (string, error) {
 				return desc.Addr, nil
 			}
 
@@ -1782,7 +1782,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		callbacksStarted.Add(3)
 		callbacksEnded.Add(3)
 
-		f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+		f := func(ctx context.Context, _ *InstanceDesc, _ context.CancelCauseFunc) (string, error) {
 			callbacksStarted.Done()
 			defer callbacksEnded.Done()
 
@@ -1844,7 +1844,7 @@ func (c *cleanupTracker) trackCall(ctx context.Context, instance *InstanceDesc, 
 func (c *cleanupTracker) calledInstances() []string {
 	instances := []string{}
 
-	c.instanceContexts.Range(func(key, value any) bool {
+	c.instanceContexts.Range(func(key, _ any) bool {
 		instances = append(instances, key.(string))
 
 		return true

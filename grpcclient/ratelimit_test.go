@@ -18,7 +18,7 @@ func TestRateLimiterFailureResultsInResourceExhaustedError(t *testing.T) {
 		RateLimit:      0,
 	}
 	conn := grpc.ClientConn{}
-	invoker := func(currentCtx context.Context, currentMethod string, currentReq, currentRepl interface{}, currentConn *grpc.ClientConn, currentOpts ...grpc.CallOption) error {
+	invoker := func(context.Context, string, interface{}, interface{}, *grpc.ClientConn, ...grpc.CallOption) error {
 		return nil
 	}
 

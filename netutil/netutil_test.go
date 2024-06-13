@@ -121,7 +121,7 @@ func TestPrivateInterface(t *testing.T) {
 func TestPrivateInterfaceError(t *testing.T) {
 	interfaces := generateTestInterfaces([]string{"eth9"})
 	ipaddr := "not_a_parseable_ip_string"
-	getInterfaceAddrs = func(i *net.Interface) ([]net.Addr, error) {
+	getInterfaceAddrs = func(*net.Interface) ([]net.Addr, error) {
 		return []net.Addr{mockAddr{netAddr: ipaddr}}, nil
 	}
 	logger := log.NewLogfmtLogger(os.Stdout)

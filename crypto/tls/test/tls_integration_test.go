@@ -102,7 +102,7 @@ func newIntegrationClientServer(
 	serv, err := server.New(cfg)
 	require.NoError(t, err)
 
-	serv.HTTP.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+	serv.HTTP.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "OK")
 	})
 

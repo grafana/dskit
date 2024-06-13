@@ -24,7 +24,7 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 			unexpectedLogs: "connection refused",
 		},
 		"should log 'connection refused' if debug log level is enabled": {
-			setup: func(t *testing.T, cfg *TCPTransportConfig) {
+			setup: func(_ *testing.T, cfg *TCPTransportConfig) {
 				cfg.TransportDebug = true
 			},
 			remoteAddr:   "127.0.0.1:12345",

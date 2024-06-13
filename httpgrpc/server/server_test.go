@@ -27,7 +27,7 @@ import (
 )
 
 func TestReturn4XXErrorsOption(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := fmt.Fprint(w, "test")
 		require.NoError(t, err)
 	})
@@ -69,7 +69,7 @@ func newTestServer(t *testing.T, handler http.Handler) (*testServer, error) {
 }
 
 func TestBasic(t *testing.T) {
-	server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := fmt.Fprint(w, "world")
 		require.NoError(t, err)
 	}))
@@ -97,7 +97,7 @@ func TestError(t *testing.T) {
 			stat = "not "
 		}
 		t.Run(fmt.Sprintf("test header when DoNotLogErrorHeaderKey is %spresent", stat), func(t *testing.T) {
-			server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if doNotLog {
 					w.Header().Set(DoNotLogErrorHeaderKey, "true")
 				}
@@ -152,7 +152,7 @@ func TestServerHandleDoNotLogError(t *testing.T) {
 	errMsg := "this is an error"
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if testData.doNotLogError {
 					w.Header().Set(DoNotLogErrorHeaderKey, "true")
 				}
@@ -227,7 +227,7 @@ func TestServerHandleReturn4XXErrors(t *testing.T) {
 	errMsg := "this is an error"
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				http.Error(w, errMsg, testData.errorCode)
 			})
 
@@ -351,7 +351,7 @@ func TestGrpcErrorsHaveCorrectMessage(t *testing.T) {
 	}
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if testData.errorMessageInHeader != "" {
 					w.Header().Set(ErrorMessageHeaderKey, testData.errorMessageInHeader)
 				}

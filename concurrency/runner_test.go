@@ -23,7 +23,7 @@ func TestForEachUser(t *testing.T) {
 
 	input := []string{"a", "b", "c"}
 
-	err := ForEachUser(context.Background(), input, 2, func(ctx context.Context, user string) error {
+	err := ForEachUser(context.Background(), input, 2, func(_ context.Context, user string) error {
 		processedMx.Lock()
 		defer processedMx.Unlock()
 		processed = append(processed, user)
@@ -40,7 +40,7 @@ func TestForEachUser_ShouldContinueOnErrorButReturnIt(t *testing.T) {
 
 	input := []string{"a", "b", "c"}
 
-	err := ForEachUser(context.Background(), input, 2, func(ctx context.Context, user string) error {
+	err := ForEachUser(context.Background(), input, 2, func(ctx context.Context, _ string) error {
 		if processed.CompareAndSwap(0, 1) {
 			return errors.New("the first request is failing")
 		}
@@ -63,7 +63,7 @@ func TestForEachUser_ShouldContinueOnErrorButReturnIt(t *testing.T) {
 }
 
 func TestForEachUser_ShouldReturnImmediatelyOnNoUsersProvided(t *testing.T) {
-	require.NoError(t, ForEachUser(context.Background(), nil, 2, func(ctx context.Context, user string) error {
+	require.NoError(t, ForEachUser(context.Background(), nil, 2, func(context.Context, string) error {
 		return nil
 	}))
 }
@@ -72,7 +72,7 @@ func TestForEachJob(t *testing.T) {
 	jobs := []string{"a", "b", "c"}
 	processed := make([]string, len(jobs))
 
-	err := ForEachJob(context.Background(), len(jobs), 2, func(ctx context.Context, idx int) error {
+	err := ForEachJob(context.Background(), len(jobs), 2, func(_ context.Context, idx int) error {
 		processed[idx] = jobs[idx]
 		return nil
 	})
@@ -85,7 +85,7 @@ func TestForEachJob_ShouldBreakOnFirstError_ContextCancellationHandled(t *testin
 	// Keep the processed jobs count.
 	var processed atomic.Int32
 
-	err := ForEachJob(context.Background(), 3, 2, func(ctx context.Context, idx int) error {
+	err := ForEachJob(context.Background(), 3, 2, func(ctx context.Context, _ int) error {
 		if processed.CompareAndSwap(0, 1) {
 			return errors.New("the first request is failing")
 		}
@@ -116,7 +116,7 @@ func TestForEachJob_ShouldBreakOnFirstError_ContextCancellationUnhandled(t *test
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	err := ForEachJob(context.Background(), 3, 2, func(ctx context.Context, idx int) error {
+	err := ForEachJob(context.Background(), 3, 2, func(ctx context.Context, _ int) error {
 		wg.Done()
 
 		if processed.CompareAndSwap(0, 1) {
@@ -143,7 +143,7 @@ func TestForEachJob_ShouldBreakOnFirstError_ContextCancellationUnhandled(t *test
 func TestForEachJob_ShouldReturnImmediatelyOnNoJobsProvided(t *testing.T) {
 	// Keep the processed jobs count.
 	var processed atomic.Int32
-	require.NoError(t, ForEachJob(context.Background(), 0, 2, func(ctx context.Context, idx int) error {
+	require.NoError(t, ForEachJob(context.Background(), 0, 2, func(context.Context, int) error {
 		processed.Inc()
 		return nil
 	}))
@@ -161,9 +161,9 @@ func TestForEachJob_ShouldCancelContextPassedToCallbackOnceDone(t *testing.T) {
 						contexts   []context.Context
 					)
 
-					jobFunc := func(ctx context.Context, idx int) error {
+					jobFunc := func(ctx context.Context, _ int) error {
 						// Context should not be cancelled.
-						assert.Nil(t, ctx.Err())
+						require.NoError(t, ctx.Err())
 
 						contextsMx.Lock()
 						contexts = append(contexts, ctx)
@@ -194,7 +194,7 @@ func TestForEach(t *testing.T) {
 
 	jobs := []string{"a", "b", "c"}
 
-	err := ForEach(context.Background(), CreateJobsFromStrings(jobs), 2, func(ctx context.Context, job interface{}) error {
+	err := ForEach(context.Background(), CreateJobsFromStrings(jobs), 2, func(_ context.Context, job interface{}) error {
 		processedMx.Lock()
 		defer processedMx.Unlock()
 		processed = append(processed, job.(string))
@@ -213,7 +213,7 @@ func TestForEach_ShouldBreakOnFirstError_ContextCancellationHandled(t *testing.T
 		processed atomic.Int32
 	)
 
-	err := ForEach(ctx, []interface{}{"a", "b", "c"}, 2, func(ctx context.Context, job interface{}) error {
+	err := ForEach(ctx, []interface{}{"a", "b", "c"}, 2, func(ctx context.Context, _ interface{}) error {
 		if processed.CompareAndSwap(0, 1) {
 			return errors.New("the first request is failing")
 		}
@@ -244,7 +244,7 @@ func TestForEach_ShouldBreakOnFirstError_ContextCancellationUnhandled(t *testing
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	err := ForEach(context.Background(), []interface{}{"a", "b", "c"}, 2, func(ctx context.Context, job interface{}) error {
+	err := ForEach(context.Background(), []interface{}{"a", "b", "c"}, 2, func(ctx context.Context, _ interface{}) error {
 		wg.Done()
 
 		if processed.CompareAndSwap(0, 1) {
@@ -269,7 +269,7 @@ func TestForEach_ShouldBreakOnFirstError_ContextCancellationUnhandled(t *testing
 }
 
 func TestForEach_ShouldReturnImmediatelyOnNoJobsProvided(t *testing.T) {
-	require.NoError(t, ForEach(context.Background(), nil, 2, func(ctx context.Context, job interface{}) error {
+	require.NoError(t, ForEach(context.Background(), nil, 2, func(context.Context, interface{}) error {
 		return nil
 	}))
 }
@@ -391,7 +391,7 @@ func TestForEachJobMergeResults(t *testing.T) {
 			close(waitBeforeReturningError)
 		}()
 
-		_, err := ForEachJobMergeResults[[]string, string](context.Background(), jobs, 0, func(ctx context.Context, job []string) ([]string, error) {
+		_, err := ForEachJobMergeResults[[]string, string](context.Background(), jobs, 0, func(context.Context, []string) ([]string, error) {
 			callbacksStarted.Done()
 			<-waitBeforeReturningError
 

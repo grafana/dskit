@@ -23,7 +23,7 @@ func BenchmarkGRPCServerLog_UnaryServerInterceptor_NoError(b *testing.B) {
 	ctx := context.Background()
 	info := &grpc.UnaryServerInfo{FullMethod: "Test"}
 
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(context.Context, interface{}) (interface{}, error) {
 		return nil, nil
 	}
 
@@ -74,7 +74,7 @@ func TestGrpcLogging(t *testing.T) {
 			logger := log.NewLogfmtLogger(buf)
 			l := GRPCServerLog{Log: logger, WithRequest: true, DisableRequestSuccessLog: false}
 
-			handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, tc.inputErr
 			}
 

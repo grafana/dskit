@@ -218,7 +218,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 
 			grpc_health_v1.RegisterHealthServer(server.GRPC, health.NewServer())
 
-			handlerFunc := func(w http.ResponseWriter, r *http.Request) {}
+			handlerFunc := func(http.ResponseWriter, *http.Request) {}
 			if test.routeName != "" {
 				// explicitly-named routes will be labeled using the provided route name
 				server.HTTP.NewRoute().Name(test.routeName).Path(test.routeTmpl).HandlerFunc(handlerFunc)

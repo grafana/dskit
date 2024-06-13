@@ -34,7 +34,7 @@ func TestRingServiceDiscovery_WithoutMaxUsedInstances(t *testing.T) {
 
 	// Create an empty ring.
 	ctx := context.Background()
-	require.NoError(t, inmem.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, inmem.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		return ring.NewDesc(), true, nil
 	}))
 
@@ -136,7 +136,7 @@ func TestRingServiceDiscovery_WithMaxUsedInstances(t *testing.T) {
 
 	// Create an empty ring.
 	ctx := context.Background()
-	require.NoError(t, inmem.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, inmem.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		return ring.NewDesc(), true, nil
 	}))
 

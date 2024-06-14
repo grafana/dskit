@@ -16,7 +16,7 @@ func TestIdleService(t *testing.T) {
 	started := false
 	stopped := false
 
-	s := NewIdleService(func(ctx context.Context) error {
+	s := NewIdleService(func(context.Context) error {
 		started = true
 		return nil
 	}, func(_ error) error {
@@ -43,7 +43,7 @@ func TestTimerService(t *testing.T) {
 
 	var iterations atomic.Uint64
 
-	s := NewTimerService(100*time.Millisecond, nil, func(ctx context.Context) error {
+	s := NewTimerService(100*time.Millisecond, nil, func(context.Context) error {
 		iterations.Inc()
 		return nil
 	}, nil)
@@ -77,7 +77,7 @@ func TestHelperFunctionsStartError(t *testing.T) {
 	t.Parallel()
 
 	e := errors.New("some error")
-	s := NewIdleService(func(serviceContext context.Context) error { return e }, nil)
+	s := NewIdleService(func(context.Context) error { return e }, nil)
 
 	require.Equal(t, e, StartAndAwaitRunning(context.Background(), s))
 	require.Equal(t, e, StopAndAwaitTerminated(context.Background(), s))
@@ -86,7 +86,7 @@ func TestHelperFunctionsStartError(t *testing.T) {
 func TestHelperFunctionsStartTooSlow(t *testing.T) {
 	t.Parallel()
 
-	s := NewIdleService(func(serviceContext context.Context) error {
+	s := NewIdleService(func(context.Context) error {
 		// ignores context
 		time.Sleep(1 * time.Second)
 		return nil

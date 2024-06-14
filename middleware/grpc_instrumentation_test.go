@@ -289,7 +289,7 @@ func setUpStreamClientInstrumentInterceptorTest(t *testing.T, serverStreams bool
 	t.Cleanup(cancelCtx)
 
 	mockStream := &mockGrpcStream{}
-	streamer := func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	streamer := func(context.Context, *grpc.StreamDesc, *grpc.ClientConn, string, ...grpc.CallOption) (grpc.ClientStream, error) {
 		return mockStream, nil
 	}
 	desc := &grpc.StreamDesc{ServerStreams: serverStreams}

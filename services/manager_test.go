@@ -274,7 +274,7 @@ func equalStatesMap(t *testing.T, m1, m2 map[State][]Service) {
 }
 
 func serviceThatFailsToStart() Service {
-	return NewBasicService(func(serviceContext context.Context) error {
+	return NewBasicService(func(context.Context) error {
 		return errors.New("failed to start")
 	}, nil, nil)
 }

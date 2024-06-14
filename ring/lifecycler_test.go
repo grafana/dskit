@@ -497,7 +497,7 @@ func TestLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 
 	// Now we delete it from the ring to simulate a ring storage reset and we expect the next heartbeat
 	// will restore it.
-	require.NoError(t, store.CAS(ctx, testRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, store.CAS(ctx, testRingKey, func(interface{}) (out interface{}, retry bool, err error) {
 		return NewDesc(), true, nil
 	}))
 
@@ -546,7 +546,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 
 	// Simulate ingester with 64 tokens left the ring in LEAVING state
 	origTokens := initTokenGenerator(t).GenerateTokens(64, nil)
-	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	err = r.KVClient.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
 		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
 		if err != nil {
@@ -622,7 +622,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 
 	// Simulate ingester with 128 tokens left the ring in LEAVING state
 	origTokens := initTokenGenerator(t).GenerateTokens(128, nil)
-	err = r.KVClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	err = r.KVClient.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
 		addr, err := GetInstanceAddr(lifecyclerConfig.Addr, lifecyclerConfig.InfNames, nil, lifecyclerConfig.EnableInet6)
 		if err != nil {
@@ -891,8 +891,8 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 
 			// Wait until both instances are registered in the ring. We expect them to be registered
 			// immediately and then switch to ACTIVE after the configured auto join delay.
-			waitRingInstance(t, 3*time.Second, l1, func(instance InstanceDesc) error { return nil })
-			waitRingInstance(t, 3*time.Second, l2, func(instance InstanceDesc) error { return nil })
+			waitRingInstance(t, 3*time.Second, l1, func(InstanceDesc) error { return nil })
+			waitRingInstance(t, 3*time.Second, l2, func(InstanceDesc) error { return nil })
 
 			// Poll the readiness check until ready and measure how much time it takes.
 			test.Poll(t, 5*time.Second, nil, func() interface{} {
@@ -1209,7 +1209,7 @@ func TestJoinInLeavingState(t *testing.T) {
 	cfg.MinReadyDuration = 1 * time.Nanosecond
 
 	// Set state as LEAVING
-	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (interface{}, bool, error) {
+	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				"ing1": {
@@ -1266,7 +1266,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	instance2RegisteredAt := time.Now().Add(-2 * time.Hour)
 
 	// Set state as JOINING
-	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (interface{}, bool, error) {
+	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				"ing1": {
@@ -1321,7 +1321,7 @@ func TestWaitBeforeJoining(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
-	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (interface{}, bool, error) {
+	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				instanceName(0, 1): {
@@ -1531,7 +1531,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	cfg := testLifecyclerConfig(ringConfig, "ing1")
 
 	// Set ing1 to not have a zone
-	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (interface{}, bool, error) {
+	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				"ing1": {

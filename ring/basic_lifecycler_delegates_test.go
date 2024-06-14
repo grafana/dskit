@@ -45,7 +45,7 @@ func TestTokensPersistencyDelegate_ShouldSkipTokensLoadingIfFileDoesNotExist(t *
 	require.NoError(t, os.Remove(tokensFile.Name()))
 
 	testDelegate := &mockDelegate{
-		onRegister: func(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+		onRegister: func(_ *BasicLifecycler, _ Desc, instanceExists bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
 			assert.False(t, instanceExists)
 			return JOINING, Tokens{1, 2, 3, 4, 5}
 		},
@@ -87,7 +87,7 @@ func TestTokensPersistencyDelegate_ShouldLoadTokensFromFileIfFileExist(t *testin
 	require.NoError(t, storedTokens.StoreToFile(tokensFile.Name()))
 
 	testDelegate := &mockDelegate{
-		onRegister: func(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+		onRegister: func(_ *BasicLifecycler, _ Desc, instanceExists bool, _ string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
 			assert.True(t, instanceExists)
 			assert.Equal(t, ACTIVE, instanceDesc.GetState())
 			assert.Equal(t, storedTokens, Tokens(instanceDesc.GetTokens()))
@@ -156,7 +156,7 @@ func TestTokensPersistencyDelegate_ShouldHandleTheCaseTheInstanceIsAlreadyInTheR
 			registeredAt := time.Now().Add(-time.Hour)
 
 			testDelegate := &mockDelegate{
-				onRegister: func(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+				onRegister: func(_ *BasicLifecycler, _ Desc, _ bool, _ string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
 					return instanceDesc.GetState(), instanceDesc.GetTokens()
 				},
 			}
@@ -170,7 +170,7 @@ func TestTokensPersistencyDelegate_ShouldHandleTheCaseTheInstanceIsAlreadyInTheR
 			defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
 			// Add the instance to the ring.
-			require.NoError(t, store.CAS(ctx, testRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			require.NoError(t, store.CAS(ctx, testRingKey, func(interface{}) (out interface{}, retry bool, err error) {
 				ringDesc := NewDesc()
 				ringDesc.AddIngester(cfg.ID, cfg.Addr, cfg.Zone, testData.initialTokens, testData.initialState, registeredAt)
 				return ringDesc, true, nil
@@ -197,7 +197,7 @@ func TestDelegatesChain(t *testing.T) {
 	// Chain delegates together.
 	var chain BasicLifecyclerDelegate
 	chain = &mockDelegate{
-		onRegister: func(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
+		onRegister: func(_ *BasicLifecycler, _ Desc, instanceExists bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
 			assert.False(t, instanceExists)
 			return JOINING, Tokens{1, 2, 3, 4, 5}
 		},
@@ -276,7 +276,7 @@ func TestAutoForgetDelegate(t *testing.T) {
 			require.NoError(t, err)
 
 			// Setup the initial state of the ring.
-			require.NoError(t, store.CAS(ctx, testRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			require.NoError(t, store.CAS(ctx, testRingKey, func(interface{}) (out interface{}, retry bool, err error) {
 				ringDesc := NewDesc()
 				testData.setup(ringDesc)
 				return ringDesc, true, nil

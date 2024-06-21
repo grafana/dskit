@@ -220,17 +220,21 @@ func (t *SpreadMinimizingTokenGenerator) generateAllTokens() (Tokens, error) {
 // Calls to this method will always return the same set of tokens.
 func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() (map[int]Tokens, error) {
 	firstInstanceTokens := t.generateFirstInstanceTokens()
-	tokensByInstanceID := make(map[int]Tokens, t.instanceID+1)
+	return t.generateTokensByInstanceIDFromTheFirstInstanceTokens(firstInstanceTokens, t.instanceID)
+}
+
+func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceIDFromTheFirstInstanceTokens(firstInstanceTokens Tokens, maxInstanceID int) (map[int]Tokens, error) {
+	tokensByInstanceID := make(map[int]Tokens, maxInstanceID+1)
 	tokensByInstanceID[0] = firstInstanceTokens
 
-	if t.instanceID == 0 {
+	if maxInstanceID == 0 {
 		return tokensByInstanceID, nil
 	}
 
 	// tokensQueues is a slice of priority queues. Slice indexes correspond
 	// to the ids of instances, while priority queues represent the tokens
 	// of the corresponding instance, ordered from highest to lowest ownership.
-	tokensQueues := make([]ownershipPriorityQueue[ringToken], t.instanceID)
+	tokensQueues := make([]ownershipPriorityQueue[ringToken], maxInstanceID)
 
 	// Create and initialize priority queue of tokens for the first instance
 	tokensQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
@@ -245,14 +249,14 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() (map[int]T
 	tokensQueues[0] = tokensQueue
 
 	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
-	instanceQueue := newPriorityQueue[ringInstance](t.instanceID)
+	instanceQueue := newPriorityQueue[ringInstance](maxInstanceID)
 	heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
 
 	// ignoredInstances is a slice of the current instances whose tokens
 	// don't have enough space to accommodate new tokens.
-	ignoredInstances := make([]ownershipInfo[ringInstance], 0, t.instanceID)
+	ignoredInstances := make([]ownershipInfo[ringInstance], 0, maxInstanceID)
 
-	for instanceID := 1; instanceID <= t.instanceID; instanceID++ {
+	for instanceID := 1; instanceID <= maxInstanceID; instanceID++ {
 		// optimalInstanceOwnership represents the optimal token ownership of instance instanceID.
 		optimalInstanceOwnership := float64(totalTokensCount) / float64(instanceID+1)
 
@@ -311,7 +315,116 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() (map[int]T
 		}
 		tokensByInstanceID[instanceID] = tokens
 		// if this is the last iteration we return, so we avoid to call additional heap.Pushs
-		if instanceID == t.instanceID {
+		if instanceID == maxInstanceID {
+			return tokensByInstanceID, nil
+		}
+
+		// If there were some ignored instances, we put them back on the queue.
+		for _, ignoredInstance := range ignoredInstances {
+			heap.Push(&instanceQueue, ignoredInstance)
+		}
+
+		tokensQueues[instanceID] = currInstanceTokenQueue
+
+		// add the current instance with the calculated ownership currInstanceOwnership to instanceQueue
+		heap.Push(&instanceQueue, currInstanceOwnership)
+	}
+
+	return tokensByInstanceID, nil
+}
+
+func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceIDFromFirstNInstanceTokens(tokensByInstanceID map[int]Tokens, maxInstanceID int) (map[int]Tokens, error) {
+	if maxInstanceID < len(tokensByInstanceID) {
+		return tokensByInstanceID, nil
+	}
+
+	// tokensQueues is a slice of priority queues. Slice indexes correspond
+	// to the ids of instances, while priority queues represent the tokens
+	// of the corresponding instance, ordered from highest to lowest ownership.
+	tokensQueues := make([]ownershipPriorityQueue[ringToken], maxInstanceID+1)
+
+	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
+	instanceQueue := newPriorityQueue[ringInstance](maxInstanceID + 1)
+
+	for instanceID, tokens := range tokensByInstanceID {
+		// Create and initialize priority queue of tokens for the instance instanceID
+		tokensQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
+		prev := len(tokens) - 1
+		instanceOwnership := 0.0
+		for tk, token := range tokens {
+			tokenOwnership := float64(tokenDistance(tokens[prev], token))
+			instanceOwnership += tokenOwnership
+			heap.Push(&tokensQueue, newRingTokenOwnershipInfo(token, tokens[prev]))
+			prev = tk
+		}
+		tokensQueues[instanceID] = tokensQueue
+		heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(0, instanceOwnership))
+	}
+
+	// ignoredInstances is a slice of the current instances whose tokens
+	// don't have enough space to accommodate new tokens.
+	ignoredInstances := make([]ownershipInfo[ringInstance], 0, maxInstanceID)
+
+	for instanceID := len(tokensByInstanceID); instanceID <= maxInstanceID; instanceID++ {
+		// optimalInstanceOwnership represents the optimal token ownership of instance instanceID.
+		optimalInstanceOwnership := float64(totalTokensCount) / float64(instanceID+1)
+
+		// currInstanceOwnership keeps track of the ownership of instance instanceID
+		currInstanceOwnership := newRingInstanceOwnershipInfo(instanceID, 0.0)
+
+		// currInstanceTokensQueue is the priority queue of tokens of instance instanceID.
+		currInstanceTokenQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
+
+		// tokens stores all the tokens of instance instanceID.
+		tokens := make(Tokens, 0, optimalTokensPerInstance)
+
+		addedTokens := 0
+		ignoredInstances = ignoredInstances[:0]
+
+		for addedTokens < optimalTokensPerInstance {
+			optimalTokenOwnership := t.optimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership.ownership, uint32(optimalTokensPerInstance-addedTokens))
+			highestOwnershipInstance := instanceQueue.Peek()
+			if highestOwnershipInstance == nil || highestOwnershipInstance.ownership <= float64(optimalTokenOwnership) {
+				// if this happens, it means that we cannot accommodate other tokens
+				return nil, fmt.Errorf("it was impossible to add %dth token for instance with id %d in zone id %d because the instance with the highest ownership cannot satisfy the requested ownership %d", addedTokens+1, instanceID, t.zoneID, optimalTokenOwnership)
+			}
+			tokensQueue := tokensQueues[highestOwnershipInstance.item.instanceID]
+			highestOwnershipToken := tokensQueue.Peek()
+			if highestOwnershipToken.ownership <= float64(optimalTokenOwnership) {
+				// The token with the highest ownership of the instance with the highest ownership could not
+				// accommodate a new token, hence we ignore this instance and pass to the next instance.
+				ignoredInstances = append(ignoredInstances, heap.Pop(&instanceQueue).(ownershipInfo[ringInstance]))
+				continue
+			}
+			token := highestOwnershipToken.item
+			newToken, err := t.calculateNewToken(token, optimalTokenOwnership)
+			if err != nil {
+				// if this happens, it means that we cannot accommodate additional tokens
+				return nil, fmt.Errorf("it was impossible to calculate the %dth token for instance with id %d in zone id %d", addedTokens+1, instanceID, t.zoneID)
+			}
+			tokens = append(tokens, newToken)
+			newTokenOwnership := float64(tokenDistance(token.prevToken, newToken))
+			// add the new token to currInstanceTokenQueue
+			heap.Push(&currInstanceTokenQueue, newRingTokenOwnershipInfo(newToken, token.prevToken))
+
+			currInstanceOwnership.ownership += newTokenOwnership
+
+			// The token with the highest newTokenOwnership of the instance with the highest newTokenOwnership has changed,
+			// so we propagate these changes in the corresponding tokens queue.
+			highestOwnershipToken.item.prevToken = newToken
+			highestOwnershipToken.ownership -= newTokenOwnership
+			heap.Fix(&tokensQueue, 0)
+
+			// The ownership of the instance with the highest ownership has changed,
+			// so we propagate these changes in the instances queue.
+			highestOwnershipInstance.ownership -= newTokenOwnership
+			heap.Fix(&instanceQueue, 0)
+
+			addedTokens++
+		}
+		tokensByInstanceID[instanceID] = tokens
+		// if this is the last iteration we return, so we avoid to call additional heap.Pushs
+		if instanceID == maxInstanceID {
 			return tokensByInstanceID, nil
 		}
 

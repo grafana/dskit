@@ -14,8 +14,13 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+const (
+	testingCell = "cp10-20240616"
+	testingDir  = ""
+)
+
 func createRealRing(t *testing.T, cell string) *Ring {
-	ringDesc, err := GetRealRingDesc("", cell)
+	ringDesc, err := GetRealRingDesc(testingDir, cell)
 	require.NoError(t, err)
 	return &Ring{
 		cfg: Config{
@@ -106,12 +111,12 @@ func (ii byInstanceInfo) Less(i, j int) bool {
 	return false
 }
 
-func TestInputData(t *testing.T) {
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp10")
+func TestInputDataByTenant(t *testing.T) {
+	shardSizeByTenantID, err := GetShardSizeByTenantID(testingDir, testingCell)
 	require.NoError(t, err)
-	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp10")
+	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID(testingDir, testingCell)
 	require.NoError(t, err)
-	maxGlobalSeriesPerTenant, err := GetMaxGlobalLimitByTenantID("", "cp10")
+	maxGlobalSeriesPerTenant, err := GetMaxGlobalLimitByTenantID(testingDir, testingCell)
 	require.NoError(t, err)
 	data := make(byTenantInfo, 0, len(shardSizeByTenantID))
 	for tenantID, shardSize := range shardSizeByTenantID {
@@ -126,7 +131,7 @@ func TestInputData(t *testing.T) {
 		data = append(data, tenantInfo{
 			tenantID:        tenantID,
 			shardSize:       shardSize,
-			timeseriesCount: currTimeseriesCount,
+			timeseriesCount: currTimeseriesCount / 3,
 			maxGlobalLimit:  maxGlobalLimit,
 		})
 	}
@@ -137,22 +142,20 @@ func TestInputData(t *testing.T) {
 	}
 }
 
-func TestInputData1(t *testing.T) {
+func TestInputDataSMTShardsByInstance(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 168
+	const ingestersPerZone = 157
 	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
 	require.NotNil(t, ring)
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp10")
+	shardSizeByTenantID, err := GetShardSizeByTenantID(testingDir, testingCell)
 	require.NoError(t, err)
-	//timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp10")
-	//timeSeriesCountByTenantID, err := GetMaxGlobalLimitByTenantID("", "cp10")
 
 	slices.Sort(zones)
 
 	stat := make(map[string]map[int]int, ingestersPerZone)
 
 	for tenantID, shardSize := range shardSizeByTenantID {
-		random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(tenantID, "")))
+		random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(tenantID, testingDir)))
 		tokens := ring.ringTokensByZone[zones[0]]
 		start := searchToken(tokens, random.Uint32())
 		// Wrap start around in the ring.
@@ -192,19 +195,15 @@ func TestInputData1(t *testing.T) {
 	}
 }
 
-func TestSpreadMinimizingRingNormalShard(t *testing.T) {
-	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 168
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	ring.sharder = newSpreadMinimizingShuffleSharder()
-	require.NotNil(t, ring)
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp10")
+func testTimeseriesDistribution(t *testing.T, dir string, cell string, zones []string, ingestersPerZone int, ring *Ring, shardUpdater func(int, int, int) int) {
+	shardSizeByTenantID, err := GetShardSizeByTenantID(dir, cell)
 	require.NoError(t, err)
-	//timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp10")
-	timeSeriesCountByTenantID, err := GetMaxGlobalLimitByTenantID("", "cp10")
+	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID(dir, cell)
+	//timeSeriesCountByTenantID, err := GetMaxGlobalLimitByTenantID(dir, cell)
 	require.NoError(t, err)
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	timeSeriesCountByInstanceByZone := make(map[string]map[string]int, len(ring.ringZones))
+	tenantCountByInstance := make(map[string]int, len(zones)*ingestersPerZone)
 	tenantCount := len(timeSeriesCountByTenantID)
 	currCount := 0
 	for tenantId, timeSeriesCount := range timeSeriesCountByTenantID {
@@ -214,7 +213,11 @@ func TestSpreadMinimizingRingNormalShard(t *testing.T) {
 		if !ok {
 			shardSize = 0
 		}
+		if shardUpdater != nil {
+			shardSize = shardUpdater(shardSize, len(zones), ingestersPerZone)
+		}
 		shard, ok := ring.ShuffleShard(tenantId, shardSize).(*Ring)
+		updateTenantCountByInstance(tenantCountByInstance, shard)
 		for _, zone := range ring.ringZones {
 			tokensFromZone := shard.ringTokensByZone[zone]
 			timeSeriesCountByInstance, ok := timeSeriesCountByInstanceByZone[zone]
@@ -239,641 +242,232 @@ func TestSpreadMinimizingRingNormalShard(t *testing.T) {
 		fmt.Printf("completed\n")
 	}
 
-	for zone, timeSeriesCountByInstance := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %s\n", zone)
-		fmt.Println(strings.Repeat("-", 30))
-		min := math.MaxFloat64
-		max := 0.0
-		for instance, timeSeriesCount := range timeSeriesCountByInstance {
-			fmt.Printf("instance: %30s, timeSeriesCount: %10d\n", instance, timeSeriesCount)
-			min = math.Min(min, float64(timeSeriesCount))
-			max = math.Max(max, float64(timeSeriesCount))
-		}
-		spread := 1 - min/max
-		fmt.Printf("SPREAD FOR ZONE %s is %f\n", zone, spread)
-	}
+	printSimulationResults(t, zones, ingestersPerZone, timeSeriesCountByInstanceByZone, tenantCountByInstance)
 }
 
-func TestSpreadMinimizingShuffleShardSpread(t *testing.T) {
+func Test_RealRing_RealShardSizes_RandomShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 168
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	ring.sharder = newSpreadMinimizingShuffleSharder()
+	const ingestersPerZone = 157
+	ring := createRealRing(t, testingCell)
 	require.NotNil(t, ring)
-	//shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp10")
-	//require.NoError(t, err)
-	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp10")
-	//timeSeriesCountByTenantID, err := GetMaxGlobalLimitByTenantID("", "cp10")
-	require.NoError(t, err)
-	//tenantCount := len(timeSeriesCountByTenantID)
-	//currCount := 0
-	for tenantId, _ := range timeSeriesCountByTenantID {
-		for shardSize := 0; shardSize < 3*ingestersPerZone; shardSize = shardSize + 3 {
-			fmt.Printf("handling tenant: %s with shard size %d... ", tenantId, shardSize)
-			_, ok := ring.ShuffleShard(tenantId, shardSize).(*Ring)
-			require.True(t, ok)
-			fmt.Printf("completed\n")
-		}
-	}
-	/*for tenantId, _ := range timeSeriesCountByTenantID {
-		currCount++
-		shardSize, ok := shardSizeByTenantID[tenantId]
-		if !ok {
-			shardSize = 0
-		}
-		fmt.Printf("handling tenant: %s with shard size %d (%d out of %d)... ", tenantId, shardSize, currCount, tenantCount)
-		_, ok = ring.ShuffleShard(tenantId, shardSize).(*Ring)
-		require.True(t, ok)
-		fmt.Printf("completed\n")
-	}*/
+	ring.sharder = randomShuffleSharder{}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
 }
 
-/*func TestSpreadMinimizingTokensRingHRWShard(t *testing.T) {
+func Test_SMTRing_RealShardSizes_RandomShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 168
+	const ingestersPerZone = 157
 	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
 	require.NotNil(t, ring)
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp10")
-	require.NoError(t, err)
-	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp10")
-	require.NoError(t, err)
-	r := rand.New(rand.NewSource(time.Now().Unix()))
-	timeSeriesCountByInstanceByZone := make(map[string]map[string]int, len(ring.ringZones))
-	for tenantId, timeSeriesCount := range timeSeriesCountByTenantID {
-		//fmt.Printf("handling tenant: %s... ", tenantId)
-		shardSize, ok := shardSizeByTenantID[tenantId]
-		if !ok {
-			shardSize = 0
-		}
-		shard := ring.HRWShuffleShard(tenantId, shardSize)
-		for _, zone := range ring.ringZones {
-			tokensFromZone := shard.ringTokensByZone[zone]
-			timeSeriesCountByInstance, ok := timeSeriesCountByInstanceByZone[zone]
-			if !ok {
-				timeSeriesCountByInstance = make(map[string]int, len(ring.ringDesc.Ingesters))
-			}
-			for i := 0; i < timeSeriesCount; i++ {
-				token := r.Uint32()
-				ringToken := tokensFromZone[searchToken(tokensFromZone, token)]
-				instance, ok := shard.ringInstanceByToken[ringToken]
-				require.True(t, ok)
-				count, ok := timeSeriesCountByInstance[instance.InstanceID]
-				if !ok {
-					count = 0
-				}
-				count++
-				timeSeriesCountByInstance[instance.InstanceID] = count
-			}
-			timeSeriesCountByInstanceByZone[zone] = timeSeriesCountByInstance
-		}
-		//fmt.Printf("completed\n")
-	}
-
-	minByZone := make(map[string]float64, len(ring.ringZones))
-	maxByZone := make(map[string]float64, len(ring.ringZones))
-	for zone, timeSeriesCountByInstance := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %s\n", zone)
-		fmt.Println(strings.Repeat("-", 30))
-		minByZone[zone] = math.MaxFloat64
-		maxByZone[zone] = 0.0
-		for instance, timeSeriesCount := range timeSeriesCountByInstance {
-			fmt.Printf("instance: %30s, timeSeriesCount: %10d\n", instance, timeSeriesCount)
-			minByZone[zone] = math.Min(minByZone[zone], float64(timeSeriesCount))
-			maxByZone[zone] = math.Max(maxByZone[zone], float64(timeSeriesCount))
-		}
-		spread := 1 - minByZone[zone]/maxByZone[zone]
-		fmt.Printf("SPREAD FOR ZONE %s is %f\n", zone, spread)
-	}
-
-	for zone := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %10s, MIN: %10.3f, MAX: %10.3f\n", zone, minByZone[zone], maxByZone[zone])
-	}
-}*/
-
-func TestRealRingNormalShard(t *testing.T) {
-	ring := createRealRing(t, "cp10")
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp10")
-	require.NoError(t, err)
-	//timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp10")
-	timeSeriesCountByTenantID, err := GetMaxGlobalLimitByTenantID("", "cp10")
-	require.NoError(t, err)
-	r := rand.New(rand.NewSource(time.Now().Unix()))
-	timeSeriesCountByInstanceByZone := make(map[string]map[string]int, len(ring.ringZones))
-	tenantCount := len(timeSeriesCountByTenantID)
-	currCount := 0
-	for tenantId, timeSeriesCount := range timeSeriesCountByTenantID {
-		currCount++
-		fmt.Printf("handling tenant: %s (%d out of %d)... ", tenantId, currCount, tenantCount)
-		shardSize, ok := shardSizeByTenantID[tenantId]
-		if !ok {
-			shardSize = 0
-		}
-		shard, ok := ring.ShuffleShard(tenantId, shardSize).(*Ring)
-		for _, zone := range ring.ringZones {
-			tokensFromZone := shard.ringTokensByZone[zone]
-			timeSeriesCountByInstance, ok := timeSeriesCountByInstanceByZone[zone]
-			if !ok {
-				timeSeriesCountByInstance = make(map[string]int, len(ring.ringDesc.Ingesters))
-			}
-			timeSeriesCountBeforeReplication := timeSeriesCount / len(zones)
-			for i := 0; i < timeSeriesCountBeforeReplication; i++ {
-				token := r.Uint32()
-				ringToken := tokensFromZone[searchToken(tokensFromZone, token)]
-				instance, ok := shard.ringInstanceByToken[ringToken]
-				require.True(t, ok)
-				count, ok := timeSeriesCountByInstance[instance.InstanceID]
-				if !ok {
-					count = 0
-				}
-				count++
-				timeSeriesCountByInstance[instance.InstanceID] = count
-			}
-			timeSeriesCountByInstanceByZone[zone] = timeSeriesCountByInstance
-		}
-		fmt.Printf("completed\n")
-	}
-
-	for zone, timeSeriesCountByInstance := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %s\n", zone)
-		fmt.Println(strings.Repeat("-", 30))
-		min := math.MaxFloat64
-		max := 0.0
-		for instance, timeSeriesCount := range timeSeriesCountByInstance {
-			fmt.Printf("instance: %30s, timeSeriesCount: %10d\n", instance, timeSeriesCount)
-			min = math.Min(min, float64(timeSeriesCount))
-			max = math.Max(max, float64(timeSeriesCount))
-		}
-		spread := 1 - min/max
-		fmt.Printf("SPREAD FOR ZONE %s is %f\n", zone, spread)
-	}
+	ring.sharder = randomShuffleSharder{}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
 }
 
-/*func TestSort(t *testing.T) {
-	hashes := make([]hashedInstanceID, 0, 3)
-	hashes = append(hashes, hashedInstanceID{
-		hash:       10,
-		instanceID: "C",
-	})
-	hashes = append(hashes, hashedInstanceID{
-		hash:       9,
-		instanceID: "B",
-	})
-	hashes = append(hashes, hashedInstanceID{
-		hash:       10,
-		instanceID: "A",
-	})
-	slices.SortFunc(hashes, func(a, b hashedInstanceID) bool {
-		return a.hash < b.hash || (a.hash == b.hash && a.instanceID < b.instanceID)
-	})
-	fmt.Println(hashes)
-	require.Len(t, hashes, 3)
-}*/
-
-/*func TestRealRingHRWShard(t *testing.T) {
-	ring := createRealRing(t, "cp10")
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp10")
-	require.NoError(t, err)
-	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp10")
-	require.NoError(t, err)
-	r := rand.New(rand.NewSource(time.Now().Unix()))
-	timeSeriesCountByInstanceByZone := make(map[string]map[string]int, len(ring.ringZones))
-	for tenantId, timeSeriesCount := range timeSeriesCountByTenantID {
-		//fmt.Printf("handling tenant: %s... ", tenantId)
-		shardSize, ok := shardSizeByTenantID[tenantId]
-		if !ok {
-			shardSize = 0
-		}
-		shard := ring.HRWShuffleShard(tenantId, shardSize)
-		for _, zone := range ring.ringZones {
-			tokensFromZone := shard.ringTokensByZone[zone]
-			timeSeriesCountByInstance, ok := timeSeriesCountByInstanceByZone[zone]
-			if !ok {
-				timeSeriesCountByInstance = make(map[string]int, len(ring.ringDesc.Ingesters))
-			}
-			for i := 0; i < timeSeriesCount; i++ {
-				token := r.Uint32()
-				ringToken := tokensFromZone[searchToken(tokensFromZone, token)]
-				instance, ok := shard.ringInstanceByToken[ringToken]
-				require.True(t, ok)
-				count, ok := timeSeriesCountByInstance[instance.InstanceID]
-				if !ok {
-					count = 0
-				}
-				count++
-				timeSeriesCountByInstance[instance.InstanceID] = count
-			}
-			timeSeriesCountByInstanceByZone[zone] = timeSeriesCountByInstance
-		}
-		//fmt.Printf("completed\n")
-	}
-
-	minByZone := make(map[string]float64, len(ring.ringZones))
-	maxByZone := make(map[string]float64, len(ring.ringZones))
-	for zone, timeSeriesCountByInstance := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %s\n", zone)
-		fmt.Println(strings.Repeat("-", 30))
-		minByZone[zone] = math.MaxFloat64
-		maxByZone[zone] = 0.0
-		for instance, timeSeriesCount := range timeSeriesCountByInstance {
-			fmt.Printf("instance: %30s, timeSeriesCount: %10d\n", instance, timeSeriesCount)
-			minByZone[zone] = math.Min(minByZone[zone], float64(timeSeriesCount))
-			maxByZone[zone] = math.Max(maxByZone[zone], float64(timeSeriesCount))
-		}
-		spread := 1 - minByZone[zone]/maxByZone[zone]
-		fmt.Printf("SPREAD FOR ZONE %s is %f\n", zone, spread)
-	}
-
-	for zone := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %10s, MIN: %10.3f, MAX: %10.3f\n", zone, minByZone[zone], maxByZone[zone])
-	}
-}*/
-
-func TestCP01RealRingNormalShard(t *testing.T) {
-	ring := createRealRing(t, "cp01")
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp01")
-	require.NoError(t, err)
-	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp01")
-	require.NoError(t, err)
-	r := rand.New(rand.NewSource(time.Now().Unix()))
-	timeSeriesCountByInstanceByZone := make(map[string]map[string]int, len(ring.ringZones))
-	for tenantId, timeSeriesCount := range timeSeriesCountByTenantID {
-		//fmt.Printf("handling tenant: %s... ", tenantId)
-		shardSize, ok := shardSizeByTenantID[tenantId]
-		if !ok {
-			shardSize = 0
-		}
-		shard, ok := ring.ShuffleShard(tenantId, shardSize).(*Ring)
-		for _, zone := range ring.ringZones {
-			tokensFromZone := shard.ringTokensByZone[zone]
-			timeSeriesCountByInstance, ok := timeSeriesCountByInstanceByZone[zone]
-			if !ok {
-				timeSeriesCountByInstance = make(map[string]int, len(ring.ringDesc.Ingesters))
-			}
-			for i := 0; i < timeSeriesCount; i++ {
-				token := r.Uint32()
-				ringToken := tokensFromZone[searchToken(tokensFromZone, token)]
-				instance, ok := shard.ringInstanceByToken[ringToken]
-				require.True(t, ok)
-				count, ok := timeSeriesCountByInstance[instance.InstanceID]
-				if !ok {
-					count = 0
-				}
-				count++
-				timeSeriesCountByInstance[instance.InstanceID] = count
-			}
-			timeSeriesCountByInstanceByZone[zone] = timeSeriesCountByInstance
-		}
-		//fmt.Printf("completed\n")
-	}
-
-	minByZone := make(map[string]float64, len(ring.ringZones))
-	maxByZone := make(map[string]float64, len(ring.ringZones))
-	for zone, timeSeriesCountByInstance := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %s\n", zone)
-		fmt.Println(strings.Repeat("-", 30))
-		minByZone[zone] = math.MaxFloat64
-		maxByZone[zone] = 0.0
-		for instance, timeSeriesCount := range timeSeriesCountByInstance {
-			fmt.Printf("instance: %30s, timeSeriesCount: %10d\n", instance, timeSeriesCount)
-			minByZone[zone] = math.Min(minByZone[zone], float64(timeSeriesCount))
-			maxByZone[zone] = math.Max(maxByZone[zone], float64(timeSeriesCount))
-		}
-		spread := 1 - minByZone[zone]/maxByZone[zone]
-		fmt.Printf("SPREAD FOR ZONE %s is %f\n", zone, spread)
-	}
-	for zone := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %10s, MIN: %10.3f, MAX: %10.3f\n", zone, minByZone[zone], maxByZone[zone])
-	}
+func Test_RealRing_Power2ShardSizes_RandomShuffleSharder(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRealRing(t, testingCell)
+	require.NotNil(t, ring)
+	ring.sharder = randomShuffleSharder{}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
 }
 
-func TestCP01ShardAnalysis(t *testing.T) {
-	ring := createRealRing(t, "cp01")
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp01")
-	require.NoError(t, err)
-	//timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp01")
-	//require.NoError(t, err)
-	maxGlobalSeriesByTenantID, err := GetMaxGlobalLimitByTenantID("", "cp01")
-	require.NoError(t, err)
-	tenantsByInstanceByZone := getTenantsByInstanceByZone(shardSizeByTenantID, ring)
-	for zone, tenantsByInstance := range tenantsByInstanceByZone {
-		fmt.Printf("ZONE: %s\n", zone)
-		fmt.Println(strings.Repeat("-", 30))
-		for instance, tenants := range tenantsByInstance {
-			maxSeries := 0.0
-			for _, tenant := range tenants {
-				maxGlobalSeries, ok := maxGlobalSeriesByTenantID[tenant]
-				if !ok {
-					maxGlobalSeries = 0
-				}
-				maxSeries += float64(maxGlobalSeries)
-			}
-			avg := maxSeries / float64(len(tenants))
-			fmt.Printf("instance: %30s, #tenants: (%5d), avgMaxSeriesPerTenant: (%10.3f), tenants: %v\n", instance, len(tenants), avg, tenants)
-		}
-		fmt.Println()
-	}
+func Test_SMTRing_Power2ShardSizes_RandomShuffleSharder(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = randomShuffleSharder{}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
 }
 
-func getTenantsByInstanceByZone(shardSizeByTenantID map[string]int, ring *Ring) map[string]map[string][]string {
-	tenantsByInstanceByZone := make(map[string]map[string][]string, len(ring.ringZones))
-	for tenantId := range shardSizeByTenantID {
-		//fmt.Printf("handling tenant: %s... ", tenantId)
-		shardSize, ok := shardSizeByTenantID[tenantId]
-		if !ok {
-			shardSize = 0
-		}
-		shard, ok := ring.ShuffleShard(tenantId, shardSize).(*Ring)
-		instances := shard.ringDesc.GetIngesters()
-		for _, instance := range instances {
-			zone := instance.GetZone()
-			tenantsByInstance, ok := tenantsByInstanceByZone[zone]
-			if !ok {
-				tenantsByInstance = make(map[string][]string, len(ring.ringDesc.Ingesters)/len(shard.ringZones))
-			}
-			tenants, ok := tenantsByInstance[instance.GetId()]
-			if !ok {
-				tenants = make([]string, 0, len(shardSizeByTenantID))
-			}
-			tenants = append(tenants, tenantId)
-			tenantsByInstance[instance.GetId()] = tenants
-			tenantsByInstanceByZone[zone] = tenantsByInstance
-		}
-	}
-	return tenantsByInstanceByZone
+func Test_RealRing_RealShardSizes_MonteCarlohuffleSharder(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRealRing(t, testingCell)
+	require.NotNil(t, ring)
+	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
 }
 
-func getTenantsByInstance(tenantsByInstanceByZone map[string]map[string][]string) map[string][]string {
-	result := make(map[string][]string)
-	for _, tenantsByInstance := range tenantsByInstanceByZone {
-		for instance, tenants := range tenantsByInstance {
-			result[instance] = tenants
-		}
-	}
-	return result
+func Test_SMTRing_RealShardSizes_MonteCarlohuffleSharder_SMTModeDisabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
 }
 
-func TestCP01IncreasingShardMaxSeriesAnalysis(t *testing.T) {
-	ring := createRealRing(t, "cp01")
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp01")
-	require.NoError(t, err)
-	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp01")
-	require.NoError(t, err)
-	tenantsByInstanceByZone := getTenantsByInstanceByZone(shardSizeByTenantID, ring)
-	tenantsByInstance := getTenantsByInstance(tenantsByInstanceByZone)
-	/*maxInstancesByZone := map[string][]string{
-		"zone-a": {
-			"ingester-zone-a-2",
-			"ingester-zone-a-57",
-			"ingester-zone-a-80",
-		},
-		"zone-b": {
-			"ingester-zone-b-37",
-			"ingester-zone-b-42",
-			"ingester-zone-b-112",
-		},
-		"zone-c": {
-			"ingester-zone-c-52",
-			"ingester-zone-c-57",
-			"ingester-zone-c-63",
-			"ingester-zone-c-105",
-		},
-	}*/
-	maxInstances := []string{
-		"ingester-zone-a-2",
-		"ingester-zone-a-57",
-		"ingester-zone-a-80",
-		"ingester-zone-b-37",
-		"ingester-zone-b-42",
-		"ingester-zone-b-112",
-		"ingester-zone-c-52",
-		"ingester-zone-c-57",
-		"ingester-zone-c-63",
-		"ingester-zone-c-105",
-	}
-
-	r := rand.New(rand.NewSource(time.Now().Unix()))
-	timeSeriesCountByInstanceByZone := make(map[string]map[string]int, len(ring.ringZones))
-	for tenantId, timeSeriesCount := range timeSeriesCountByTenantID {
-		shardSize, ok := shardSizeByTenantID[tenantId]
-		if !ok {
-			shardSize = 0
-		}
-		shard, ok := ring.ShuffleShard(tenantId, shardSize).(*Ring)
-		require.True(t, ok)
-
-		if shardSize >= 50 {
-			modifiedShardsByTenantID := make(map[string]bool, len(shardSizeByTenantID))
-
-			for _, instance := range maxInstances {
-				_, ok := modifiedShardsByTenantID[tenantId]
-				if !ok {
-					tenants := tenantsByInstance[instance]
-					newShardSize := int(float64(shardSize) * 1.2)
-					if newShardSize > shardSize && slices.Contains(tenants, tenantId) {
-						fmt.Printf("\t\tshard size of tenantID %s changed from %d to %d\n", tenantId, shardSize, newShardSize)
-						shard, ok = ring.ShuffleShard(tenantId, newShardSize).(*Ring)
-						require.True(t, ok)
-						modifiedShardsByTenantID[tenantId] = true
-					}
-				}
-			}
-		}
-
-		for _, zone := range ring.ringZones {
-			tokensFromZone := shard.ringTokensByZone[zone]
-			timeSeriesCountByInstance, ok := timeSeriesCountByInstanceByZone[zone]
-			if !ok {
-				timeSeriesCountByInstance = make(map[string]int, len(ring.ringDesc.Ingesters))
-			}
-			for i := 0; i < timeSeriesCount; i++ {
-				token := r.Uint32()
-				ringToken := tokensFromZone[searchToken(tokensFromZone, token)]
-				instance, ok := shard.ringInstanceByToken[ringToken]
-				require.True(t, ok)
-				count, ok := timeSeriesCountByInstance[instance.InstanceID]
-				if !ok {
-					count = 0
-				}
-				count++
-				timeSeriesCountByInstance[instance.InstanceID] = count
-			}
-			timeSeriesCountByInstanceByZone[zone] = timeSeriesCountByInstance
-		}
-	}
-
-	minByZone := make(map[string]float64, len(ring.ringZones))
-	maxByZone := make(map[string]float64, len(ring.ringZones))
-	for zone, timeSeriesCountByInstance := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %s\n", zone)
-		fmt.Println(strings.Repeat("-", 30))
-		minByZone[zone] = math.MaxFloat64
-		maxByZone[zone] = 0.0
-		for instance, timeSeriesCount := range timeSeriesCountByInstance {
-			fmt.Printf("instance: %30s, timeSeriesCount: %10d\n", instance, timeSeriesCount)
-			minByZone[zone] = math.Min(minByZone[zone], float64(timeSeriesCount))
-			maxByZone[zone] = math.Max(maxByZone[zone], float64(timeSeriesCount))
-		}
-		spread := 1 - minByZone[zone]/maxByZone[zone]
-		fmt.Printf("SPREAD FOR ZONE %s is %f\n", zone, spread)
-	}
-	for zone := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %10s, MIN: %10.3f, MAX: %10.3f\n", zone, minByZone[zone], maxByZone[zone])
-	}
+func Test_SMTRing_RealShardSizes_MonteCarlohuffleSharder_SMTModeEnabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: true}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
 }
 
-func TestCP01IncreasingShardAnalysis(t *testing.T) {
-	ring := createRealRing(t, "cp01")
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp01")
-	require.NoError(t, err)
-	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp01")
-	require.NoError(t, err)
-	require.NoError(t, err)
-	r := rand.New(rand.NewSource(time.Now().Unix()))
-	timeSeriesCountByInstanceByZone := make(map[string]map[string]int, len(ring.ringZones))
-	for tenantId, timeSeriesCount := range timeSeriesCountByTenantID {
-		//fmt.Printf("handling tenant: %s... ", tenantId)
-		shardSize, ok := shardSizeByTenantID[tenantId]
-		if !ok {
-			shardSize = 0
-		}
-		shard, ok := ring.ShuffleShard(tenantId, shardSize).(*Ring)
-		require.True(t, ok)
-		extendedShard, ok := ring.ShuffleShard(tenantId, (shardSize + 3)).(*Ring)
-		require.True(t, ok)
-		maxs := []string{
-			"ingester-zone-a-32",
-			"ingester-zone-a-71",
-			"ingester-zone-a-74",
-			"ingester-zone-a-100",
-			"ingester-zone-b-0",
-			"ingester-zone-b-18",
-			"ingester-zone-b-47",
-			"ingester-zone-b-49",
-			"ingester-zone-b-52",
-			"ingester-zone-b-58",
-			"ingester-zone-b-77",
-			"ingester-zone-c-3",
-			"ingester-zone-c-10",
-			"ingester-zone-c-18",
-			"ingester-zone-c-30",
-			"ingester-zone-c-38",
-			"ingester-zone-c-43",
-			"ingester-zone-c-49",
-			"ingester-zone-c-67",
-		}
-		if isShardOfInterest(shard, extendedShard, maxs) {
-			fmt.Printf("\t\tshard size of tenantID %s changed from %d to %d\n", tenantId, shardSize, len(extendedShard.ringDesc.Ingesters))
-			shard = extendedShard
-		}
-		for _, zone := range ring.ringZones {
-			tokensFromZone := shard.ringTokensByZone[zone]
-			timeSeriesCountByInstance, ok := timeSeriesCountByInstanceByZone[zone]
-			if !ok {
-				timeSeriesCountByInstance = make(map[string]int, len(ring.ringDesc.Ingesters))
-			}
-			for i := 0; i < timeSeriesCount; i++ {
-				token := r.Uint32()
-				ringToken := tokensFromZone[searchToken(tokensFromZone, token)]
-				instance, ok := shard.ringInstanceByToken[ringToken]
-				require.True(t, ok)
-				count, ok := timeSeriesCountByInstance[instance.InstanceID]
-				if !ok {
-					count = 0
-				}
-				count++
-				timeSeriesCountByInstance[instance.InstanceID] = count
-			}
-			timeSeriesCountByInstanceByZone[zone] = timeSeriesCountByInstance
-		}
-		//fmt.Printf("completed\n")
-	}
-
-	minByZone := make(map[string]float64, len(ring.ringZones))
-	maxByZone := make(map[string]float64, len(ring.ringZones))
-	for zone, timeSeriesCountByInstance := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %s\n", zone)
-		fmt.Println(strings.Repeat("-", 30))
-		minByZone[zone] = math.MaxFloat64
-		maxByZone[zone] = 0.0
-		for instance, timeSeriesCount := range timeSeriesCountByInstance {
-			fmt.Printf("instance: %30s, timeSeriesCount: %10d\n", instance, timeSeriesCount)
-			minByZone[zone] = math.Min(minByZone[zone], float64(timeSeriesCount))
-			maxByZone[zone] = math.Max(maxByZone[zone], float64(timeSeriesCount))
-		}
-		spread := 1 - minByZone[zone]/maxByZone[zone]
-		fmt.Printf("SPREAD FOR ZONE %s is %f\n", zone, spread)
-	}
-	for zone := range timeSeriesCountByInstanceByZone {
-		fmt.Printf("ZONE: %10s, MIN: %10.3f, MAX: %10.3f\n", zone, minByZone[zone], maxByZone[zone])
-	}
+func Test_RealRing_Power2ShardSizes_MonteCarlohuffleSharder(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRealRing(t, testingCell)
+	require.NotNil(t, ring)
+	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
 }
 
-func isShardOfInterest(shard, extendedShard *Ring, instancesOfInterest []string) bool {
+func Test_SMTRing_Power2ShardSizes_MonteCarlohuffleSharder_SMTModeDisabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+}
+
+func Test_SMTRing_Power2ShardSizes_MonteCarlohuffleSharder_SMTModeEnabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: true}
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+}
+
+func Test_RealRing_RealShardSizes_HRWShuffleSharder(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRealRing(t, testingCell)
+	require.NotNil(t, ring)
+	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+}
+
+func Test_SMTRing_RealShardSizes_HRWShuffleSharder_SMTModeDisabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+}
+
+func Test_SMTRing_RealShardSizes_HRWShuffleSharder_SMTModeEnabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, true)
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+}
+
+func Test_RealRing_Power2ShardSizes_HRWShuffleSharder(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRealRing(t, testingCell)
+	require.NotNil(t, ring)
+	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+}
+
+func Test_SMTRing_Power2ShardSizes_HRWShuffleSharder_SMTModeDisabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+}
+
+func Test_SMTRing_Power2ShardSizes_HRWShuffleSharder_SMTModeEnabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	const ingestersPerZone = 157
+	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+	require.NotNil(t, ring)
+	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, true)
+	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+}
+
+func getCustomizedShardSize(shardSize, numZones, ingestersPerZone int) int {
+	totalIngesters := numZones * ingestersPerZone
+	if shardSize == 0 || shardSize >= totalIngesters {
+		return totalIngesters
+	}
+	acceptedShardSizes := []int{3, 9, 18, 33, 66, 129, 258, 471}
+	var i int
+	for i = 0; i < len(acceptedShardSizes) && acceptedShardSizes[i] < shardSize; i++ {
+	}
+	if i == len(acceptedShardSizes) {
+		return totalIngesters
+	}
+	return shardUtil.ShuffleShardExpectedInstances(acceptedShardSizes[i], numZones)
+}
+
+func getPower2ShardSize(shardSize, numZones, ingestersPerZone int) int {
+	totalIngesters := numZones * ingestersPerZone
+	if shardSize == 0 {
+		return totalIngesters
+	}
+	if shardSize >= totalIngesters {
+		return totalIngesters
+	}
+	exp := int(math.Log2(float64(shardSize)))
+	max := int(math.Min(math.Pow(2, float64(exp+1)), float64(totalIngesters)))
+	return shardUtil.ShuffleShardExpectedInstances(max, numZones)
+}
+
+func updateTenantCountByInstance(tenantCountByInstance map[string]int, shard *Ring) {
 	instances := shard.ringDesc.GetIngesters()
-	extendedInstances := extendedShard.ringDesc.GetIngesters()
-	for instance := range extendedInstances {
-		if _, ok := instances[instance]; !ok {
-			if slices.Contains(instancesOfInterest, instance) {
-				return true
-			}
+	for instanceID := range instances {
+		tenantCount, ok := tenantCountByInstance[instanceID]
+		if !ok {
+			tenantCount = 0
 		}
+		tenantCountByInstance[instanceID] = tenantCount + 1
 	}
-	return false
 }
 
-func TestShard_Compare(t *testing.T) {
-	shardSizeByTenantID, err := GetShardSizeByTenantID("", "cp01")
-	require.NoError(t, err)
-	timeSeriesCountByTenantID, err := GetTimeseriesCountByTenantID("", "cp01")
-	require.NoError(t, err)
-	maxGlobalSeriesByTenantID, err := GetMaxGlobalLimitByTenantID("", "cp01")
-	require.NoError(t, err)
-	totalShard := 0
-	for tenantID := range shardSizeByTenantID {
-		_, ok := timeSeriesCountByTenantID[tenantID]
-		/*if !ok {
-			fmt.Printf("%s (%d) not present in timeseriesCount\n", tenantID, shardSizeByTenantID[tenantID])
-		}*/
-		require.True(t, ok)
-		shardSize := shardSizeByTenantID[tenantID]
-		totalShard += shardSize
-	}
-	total := 0
-	for tenantID := range timeSeriesCountByTenantID {
-		_, ok := shardSizeByTenantID[tenantID]
-		/*if !ok {
-			fmt.Printf("%s (%d) not present in shardSize\n", tenantID, timeSeriesCountByTenantID[tenantID])
-		}*/
-		require.True(t, ok)
-		total += timeSeriesCountByTenantID[tenantID]
-	}
-	fmt.Printf("Total number of series per zone: %d, number of series (all zones): %d, total ingesters in shards (all zones): %d\n", total, total*3, totalShard)
+func printSimulationResults(t *testing.T, zones []string, ingestersPerZone int, timeSeriesCountByInstanceByZone map[string]map[string]int, tenantsByInstance map[string]int) {
+	res := make(byCount, 0, len(zones)*ingestersPerZone)
 
-	type stat struct {
-		tenantID             string
-		shardSize            int
-		timeseriesCount      int
-		maxGlobalSeriesLimit int
-		ratio                float64
-	}
-
-	statistics := make([]stat, 0, len(shardSizeByTenantID))
-	for tenantID := range shardSizeByTenantID {
-		s := stat{
-			tenantID:             tenantID,
-			shardSize:            shardSizeByTenantID[tenantID],
-			timeseriesCount:      timeSeriesCountByTenantID[tenantID],
-			maxGlobalSeriesLimit: maxGlobalSeriesByTenantID[tenantID],
-			ratio:                float64(timeSeriesCountByTenantID[tenantID]) / float64(shardSizeByTenantID[tenantID]),
+	for zone, timeSeriesCountByInstance := range timeSeriesCountByInstanceByZone {
+		fmt.Printf("ZONE: %s\n", zone)
+		fmt.Println(strings.Repeat("-", 30))
+		min := math.MaxFloat64
+		max := 0.0
+		for instance, timeSeriesCount := range timeSeriesCountByInstance {
+			tenantCount, ok := tenantsByInstance[instance]
+			if !ok {
+				tenantCount = 0
+			}
+			min = math.Min(min, float64(timeSeriesCount))
+			max = math.Max(max, float64(timeSeriesCount))
+			res = append(res, instanceWithCount{
+				instanceID:      instance,
+				timeseriesCount: timeSeriesCount,
+				tenantCount:     tenantCount,
+			})
 		}
-		statistics = append(statistics, s)
+		spread := 1 - min/max
+		fmt.Printf("SPREAD FOR ZONE %s is %f\n", zone, spread)
 	}
 
-	slices.SortFunc(statistics, func(a, b stat) bool {
-		return a.ratio < b.ratio
+	slices.SortFunc(res, func(a, b instanceWithCount) bool {
+		prefixA, idA, errA := parseInstanceID(a.instanceID)
+		require.NoError(t, errA)
+		prefixB, idB, errB := parseInstanceID(b.instanceID)
+		require.NoError(t, errB)
+		if prefixA < prefixB {
+			return true
+		}
+		if prefixA == prefixB {
+			return idA < idB
+		}
+		return false
 	})
 
-	for _, st := range statistics {
-		fmt.Printf("tenantId: %10s, shardSize: %3d, timeseriesCount: %10d, maxGlobalSeriesPerUser: %10d, ration: %15.3f\n", st.tenantID, st.shardSize, st.timeseriesCount, st.maxGlobalSeriesLimit, st.ratio)
+	for _, ic := range res {
+		fmt.Printf("%30s, %10d, %5d\n", ic.instanceID, ic.timeseriesCount, ic.tenantCount)
 	}
 }

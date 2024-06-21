@@ -771,7 +771,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	if r.sharder == nil {
 		r.sharder = randomShuffleSharder{}
 	}
-	shardDesc := r.sharder.shuffleShardNew(identifier, actualZones, numInstancesPerZone, ringTokensByZone, r.ringInstanceByToken, r.ringDesc.GetIngesters(), isWithinLookbackPeriod)
+	shardDesc := r.sharder.shuffleShard(identifier, actualZones, numInstancesPerZone, ringTokensByZone, r.ringInstanceByToken, r.ringDesc.GetIngesters(), isWithinLookbackPeriod)
 	shardTokensByZone := shardDesc.getTokensByZone()
 	shardTokens := mergeTokenGroups(shardTokensByZone)
 

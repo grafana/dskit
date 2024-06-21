@@ -380,7 +380,7 @@ func (l *BasicLifecycler) verifyTokens(ctx context.Context) bool {
 		// uh, oh... our tokens are not our anymore. Let's try new ones.
 		needTokens := l.cfg.NumTokens - len(actualTokens)
 
-		level.Info(l.logger).Log("msg", "generating new tokens", "count", needTokens, "ring", l.ringName)
+		level.Info(l.logger).Log("msg", "generating new tokens", "timeseriesCount", needTokens, "ring", l.ringName)
 		newTokens := l.tokenGenerator.GenerateTokens(needTokens, takenTokens)
 
 		actualTokens = append(actualTokens, newTokens...)

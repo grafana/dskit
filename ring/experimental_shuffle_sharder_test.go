@@ -5,25 +5,11 @@ import (
 	"math"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/exp/slices"
 )
 
-func createSharderInputParameters(t *testing.T, tokensPerInstance int, instancesPerZone int) (map[uint32]instanceInfo, map[string][]uint32, map[string]InstanceDesc) {
-	instanceByToken, tokensByZone, tokensByInstanceByZone := createTokensForAllInstancesAndZones(t, instancesPerZone, tokensPerInstance)
-
-	ringDesc := &Desc{}
-	for zone, tokensByInstance := range tokensByInstanceByZone {
-		for instance, tokens := range tokensByInstance {
-			ringDesc.AddIngester(instance, instance, zone, tokens, ACTIVE, time.Now())
-		}
-	}
-
-	return instanceByToken, tokensByZone, ringDesc.GetIngesters()
-}
-
-func TestSpreadMinimizingShuffleShard(t *testing.T) {
+func TestExperimentalSpreadMinimizingShuffleShard(t *testing.T) {
 	instancesPerZone := 5
 	tenants := []string{"tenant-1", "tenant-2", "tenant-3", "tenant-4", "tenant-5"}
 	sharder := newSpreadMinimizingShuffleSharder()
@@ -58,7 +44,7 @@ func TestSpreadMinimizingShuffleShard(t *testing.T) {
 	}
 }
 
-func TestSpreadMinimizingShuffleSharderWithOptimizations(t *testing.T) {
+func TestExperimentalSpreadMinimizingShuffleSharderWithOptimizations(t *testing.T) {
 	instancesPerZone := 50
 	tenants := []string{"tenant-1", "tenant-2", "tenant-3", "tenant-4", "tenant-5"}
 	sharder := newSpreadMinimizingShuffleSharder()

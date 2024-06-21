@@ -39,7 +39,7 @@ type PartitionRing struct {
 	// shuffleShardCache is used to cache subrings generated with shuffle sharding.
 	shuffleShardCache *partitionRingShuffleShardCache
 
-	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
+	// activePartitionsCount is a saved timeseriesCount of active partitions to avoid recomputing it.
 	activePartitionsCount int
 }
 

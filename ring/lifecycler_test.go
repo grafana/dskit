@@ -154,7 +154,7 @@ func TestLifecycler_HealthyInstancesCount(t *testing.T) {
 		return lifecycler2.HealthyInstancesCount() == 2
 	})
 
-	// Assert the first ingester count is updated
+	// Assert the first ingester timeseriesCount is updated
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
 		return lifecycler1.HealthyInstancesCount() == 2
 	})

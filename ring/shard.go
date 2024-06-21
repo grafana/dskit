@@ -114,7 +114,7 @@ func GetTimeseriesCountByTenantID(dir string, prefix string) (map[string]int, er
 	}
 	buffer, err := loadFile(filePath)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to load tenant time series count json from "+timeSeriesCountByTenantJsonFile)
+		return nil, errors.Wrap(err, "unable to load tenant time series timeseriesCount json from "+timeSeriesCountByTenantJsonFile)
 	}
 	return processJson(buffer)
 }

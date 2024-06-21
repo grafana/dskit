@@ -39,7 +39,7 @@ type PartitionInstanceLifecyclerConfig struct {
 	WaitOwnersCountOnPending int
 
 	// WaitOwnersDurationOnPending is how long each owner should have been added to the
-	// partition before it's considered eligible for the WaitOwnersCountOnPending count.
+	// partition before it's considered eligible for the WaitOwnersCountOnPending timeseriesCount.
 	WaitOwnersDurationOnPending time.Duration
 
 	// DeleteInactivePartitionAfterDuration is how long the lifecycler should wait before

@@ -10,17 +10,17 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-type spreadMinimizingShuffleSharder struct {
+type experimentalSpreadMinimizingShuffleSharder struct {
 	cachedFirstZoneShards map[string]map[int]singleZoneShard
 }
 
-func newSpreadMinimizingShuffleSharder() *spreadMinimizingShuffleSharder {
-	return &spreadMinimizingShuffleSharder{
+func newExperimentalSpreadMinimizingShuffleSharder() *experimentalSpreadMinimizingShuffleSharder {
+	return &experimentalSpreadMinimizingShuffleSharder{
 		cachedFirstZoneShards: map[string]map[int]singleZoneShard{},
 	}
 }
 
-func (s *spreadMinimizingShuffleSharder) shuffleShard(
+func (s *experimentalSpreadMinimizingShuffleSharder) shuffleShard(
 	identifier string,
 	actualZones []string,
 	shardSizePerZone int,
@@ -124,7 +124,7 @@ func (s *spreadMinimizingShuffleSharder) shuffleShard(
 	return s.createRingDescFromTheFirstZoneShard(firstZoneShard, actualZones, ringInstanceByToken, ringInstancesById)
 }
 
-func (s *spreadMinimizingShuffleSharder) shuffleShardNew(
+func (s *experimentalSpreadMinimizingShuffleSharder) shuffleShardNew(
 	identifier string,
 	actualZones []string,
 	shardSizePerZone int,
@@ -164,7 +164,7 @@ func (s *spreadMinimizingShuffleSharder) shuffleShardNew(
 	return s.createRingDescFromTheFirstZoneShard(firstZoneShard, actualZones, ringInstanceByToken, ringInstancesById)
 }
 
-func (s *spreadMinimizingShuffleSharder) optimalSingleZoneShard(zone string, firstInstanceID string, shardSize int, numberOfInstances int, ringInstanceByToken map[uint32]instanceInfo, ringInstanceByID map[string]InstanceDesc, isWithinLookbackPeriod func(int64) bool) (singleZoneShard, error) {
+func (s *experimentalSpreadMinimizingShuffleSharder) optimalSingleZoneShard(zone string, firstInstanceID string, shardSize int, numberOfInstances int, ringInstanceByToken map[uint32]instanceInfo, ringInstanceByID map[string]InstanceDesc, isWithinLookbackPeriod func(int64) bool) (singleZoneShard, error) {
 	if _, ok := s.cachedFirstZoneShards[firstInstanceID]; !ok {
 		s.cachedFirstZoneShards[firstInstanceID] = make(map[int]singleZoneShard)
 	}
@@ -213,7 +213,7 @@ func (s *spreadMinimizingShuffleSharder) optimalSingleZoneShard(zone string, fir
 }
 
 // if we start from the instance with id 3, and there are in total 10 instances (with ids 0, 1, ..., 9), our ids slice should be [4, 5, 6, 7, 8, 9, 0, 1, 2]
-func (s *spreadMinimizingShuffleSharder) optimalSingleZoneShardRec(currentShard singleZoneShard, currentBestShard *singleZoneShard, remainingShardSize int, orderedInstanceDescs []InstanceDesc, currentInstanceDescID int, isWithinLookbackPeriod func(int64) bool) *singleZoneShard {
+func (s *experimentalSpreadMinimizingShuffleSharder) optimalSingleZoneShardRec(currentShard singleZoneShard, currentBestShard *singleZoneShard, remainingShardSize int, orderedInstanceDescs []InstanceDesc, currentInstanceDescID int, isWithinLookbackPeriod func(int64) bool) *singleZoneShard {
 	if remainingShardSize <= 0 {
 		if currentBestShard == nil || currentShard.getSpread() < currentBestShard.getSpread() {
 			currentBestShard = &currentShard
@@ -240,13 +240,13 @@ func (s *spreadMinimizingShuffleSharder) optimalSingleZoneShardRec(currentShard 
 	return currentBestShard
 }
 
-func (s *spreadMinimizingShuffleSharder) addTokensToTheList(tokenList *list.List, tokens []uint32) {
+func (s *experimentalSpreadMinimizingShuffleSharder) addTokensToTheList(tokenList *list.List, tokens []uint32) {
 	for _, token := range tokens {
 		tokenList.PushBack(token)
 	}
 }
 
-func (s *spreadMinimizingShuffleSharder) findOptimalSingleZoneShard(zone string, firstInstanceID string, shardSize int, numberOfInstances int, ringInstanceByToken map[uint32]instanceInfo, ringInstanceByID map[string]InstanceDesc, isWithinLookbackPeriod func(int64) bool) (singleZoneShard, error) {
+func (s *experimentalSpreadMinimizingShuffleSharder) findOptimalSingleZoneShard(zone string, firstInstanceID string, shardSize int, numberOfInstances int, ringInstanceByToken map[uint32]instanceInfo, ringInstanceByID map[string]InstanceDesc, isWithinLookbackPeriod func(int64) bool) (singleZoneShard, error) {
 	if _, ok := s.cachedFirstZoneShards[firstInstanceID]; !ok {
 		s.cachedFirstZoneShards[firstInstanceID] = make(map[int]singleZoneShard)
 	}
@@ -299,7 +299,7 @@ func (s *spreadMinimizingShuffleSharder) findOptimalSingleZoneShard(zone string,
 }
 
 // if we start from the instance with id 3, and there are in total 10 instances (with ids 0, 1, ..., 9), our ids slice should be [4, 5, 6, 7, 8, 9, 0, 1, 2]
-func (s *spreadMinimizingShuffleSharder) findOptimalSingleZoneShardRec(currentShard singleZoneShard, currentBestShard *singleZoneShard, remainingShardSize int, tOwnership *tokenOwnership, orderedInstanceDescs []InstanceDesc, currentInstanceDescID int, isWithinLookbackPeriod func(int64) bool) *singleZoneShard {
+func (s *experimentalSpreadMinimizingShuffleSharder) findOptimalSingleZoneShardRec(currentShard singleZoneShard, currentBestShard *singleZoneShard, remainingShardSize int, tOwnership *tokenOwnership, orderedInstanceDescs []InstanceDesc, currentInstanceDescID int, isWithinLookbackPeriod func(int64) bool) *singleZoneShard {
 	if remainingShardSize <= 0 {
 		if currentBestShard == nil || currentShard.getSpread() < currentBestShard.getSpread() {
 			bestShard := currentShard.copy()
@@ -340,7 +340,7 @@ func (s *spreadMinimizingShuffleSharder) findOptimalSingleZoneShardRec(currentSh
 	return currentBestShard
 }
 
-func (s *spreadMinimizingShuffleSharder) createRingDescFromTheFirstZoneShard(firstZoneShard singleZoneShard, sortedZones []string, ringInstanceByToken map[uint32]instanceInfo, ringInstancesById map[string]InstanceDesc) *Desc {
+func (s *experimentalSpreadMinimizingShuffleSharder) createRingDescFromTheFirstZoneShard(firstZoneShard singleZoneShard, sortedZones []string, ringInstanceByToken map[uint32]instanceInfo, ringInstancesById map[string]InstanceDesc) *Desc {
 	shard := make(map[string]InstanceDesc, len(sortedZones)*len(firstZoneShard.shard))
 	for _, instanceFromFirstZone := range firstZoneShard.shard {
 		shard[instanceFromFirstZone.Id] = instanceFromFirstZone

@@ -59,7 +59,7 @@ func TestPartitionRingDesc_countPartitionsByState(t *testing.T) {
 		assert.Equal(t, map[PartitionState]int{PartitionPending: 0, PartitionActive: 1, PartitionInactive: 0}, desc.countPartitionsByState())
 	})
 
-	t.Run("ring with some partitions in each state should correctly report the count", func(t *testing.T) {
+	t.Run("ring with some partitions in each state should correctly report the timeseriesCount", func(t *testing.T) {
 		desc := &PartitionRingDesc{
 			Partitions: map[int32]PartitionDesc{
 				1: {Tokens: []uint32{1}, State: PartitionActive, StateTimestamp: 10},

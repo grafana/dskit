@@ -19,6 +19,14 @@ const (
 	testingDir  = ""
 )
 
+var (
+	ingestersPerZoneByCell = map[string]int{
+		"cp10-20240621": 157,
+		"cp06-20240621": 269,
+		"cp01-20240621": 129,
+	}
+)
+
 func createRealRing(t *testing.T, cell string) *Ring {
 	ringDesc, err := GetRealRingDesc(testingDir, cell)
 	require.NoError(t, err)
@@ -206,9 +214,15 @@ func testTimeseriesDistribution(t *testing.T, dir string, cell string, zones []s
 	tenantCountByInstance := make(map[string]int, len(zones)*ingestersPerZone)
 	tenantCount := len(timeSeriesCountByTenantID)
 	currCount := 0
+	percentage := 10
 	for tenantId, timeSeriesCount := range timeSeriesCountByTenantID {
 		currCount++
-		fmt.Printf("handling tenant: %s (%d out of %d)... ", tenantId, currCount, tenantCount)
+		if currCount*100/tenantCount >= percentage {
+			status := fmt.Sprintf("%s - %d%%", cell, percentage)
+			fmt.Println(status)
+			percentage += 10
+		}
+		//fmt.Printf("handling tenant: %s (%d out of %d)... ", tenantId, currCount, tenantCount)
 		shardSize, ok := shardSizeByTenantID[tenantId]
 		if !ok {
 			shardSize = 0
@@ -239,154 +253,179 @@ func testTimeseriesDistribution(t *testing.T, dir string, cell string, zones []s
 			}
 			timeSeriesCountByInstanceByZone[zone] = timeSeriesCountByInstance
 		}
-		fmt.Printf("completed\n")
 	}
-
+	fmt.Printf("\n%s completed\n", cell)
 	printSimulationResults(t, zones, ingestersPerZone, timeSeriesCountByInstanceByZone, tenantCountByInstance)
 }
 
 func Test_RealRing_RealShardSizes_RandomShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRealRing(t, testingCell)
-	require.NotNil(t, ring)
-	ring.sharder = randomShuffleSharder{}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRealRing(t, cell)
+		require.NotNil(t, ring)
+		ring.sharder = randomShuffleSharder{}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, nil)
+	}
 }
 
 func Test_SMTRing_RealShardSizes_RandomShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = randomShuffleSharder{}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = randomShuffleSharder{}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, nil)
+	}
 }
 
 func Test_RealRing_Power2ShardSizes_RandomShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRealRing(t, testingCell)
-	require.NotNil(t, ring)
-	ring.sharder = randomShuffleSharder{}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRealRing(t, cell)
+		require.NotNil(t, ring)
+		ring.sharder = randomShuffleSharder{}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
 }
 
-func Test_SMTRing_Power2ShardSizes_RandomShuffleSharder(t *testing.T) {
+func Test_SMTRing_Power2ShardSizes_RandomShuffleSharder_SMTDisabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = randomShuffleSharder{}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = randomShuffleSharder{smtModeEnabled: true}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
 }
 
-func Test_RealRing_RealShardSizes_MonteCarlohuffleSharder(t *testing.T) {
+func Test_SMTRing_Power2ShardSizes_RandomShuffleSharder_SMTEnabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRealRing(t, testingCell)
-	require.NotNil(t, ring)
-	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = randomShuffleSharder{smtModeEnabled: true}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
 }
 
-func Test_SMTRing_RealShardSizes_MonteCarlohuffleSharder_SMTModeDisabled(t *testing.T) {
+func Test_RealRing_RealShardSizes_MonteCarloShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRealRing(t, cell)
+		require.NotNil(t, ring)
+		ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, nil)
+	}
 }
 
-func Test_SMTRing_RealShardSizes_MonteCarlohuffleSharder_SMTModeEnabled(t *testing.T) {
+func Test_SMTRing_RealShardSizes_MonteCarloShuffleSharder_SMTModeDisabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: true}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, nil)
+	}
 }
 
-func Test_RealRing_Power2ShardSizes_MonteCarlohuffleSharder(t *testing.T) {
+func Test_SMTRing_RealShardSizes_MonteCarloShuffleSharder_SMTModeEnabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRealRing(t, testingCell)
-	require.NotNil(t, ring)
-	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = monteCarloShuffleSharder{smtModeEnabled: true}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, nil)
+	}
 }
 
-func Test_SMTRing_Power2ShardSizes_MonteCarlohuffleSharder_SMTModeDisabled(t *testing.T) {
+func Test_RealRing_Power2ShardSizes_MonteCarloShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRealRing(t, cell)
+		require.NotNil(t, ring)
+		ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
 }
 
-func Test_SMTRing_Power2ShardSizes_MonteCarlohuffleSharder_SMTModeEnabled(t *testing.T) {
+func Test_SMTRing_Power2ShardSizes_MonteCarloShuffleSharder_SMTModeDisabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = monteCarloShuffleSharder{smtModeEnabled: true}
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = monteCarloShuffleSharder{smtModeEnabled: false}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
+}
+
+func Test_SMTRing_Power2ShardSizes_MonteCarloShuffleSharder_SMTModeEnabled(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = monteCarloShuffleSharder{smtModeEnabled: true}
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
 }
 
 func Test_RealRing_RealShardSizes_HRWShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRealRing(t, testingCell)
-	require.NotNil(t, ring)
-	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRealRing(t, cell)
+		require.NotNil(t, ring)
+		ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, nil)
+	}
 }
 
 func Test_SMTRing_RealShardSizes_HRWShuffleSharder_SMTModeDisabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, nil)
+	}
 }
 
 func Test_SMTRing_RealShardSizes_HRWShuffleSharder_SMTModeEnabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, true)
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, nil)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, true)
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, nil)
+	}
 }
 
 func Test_RealRing_Power2ShardSizes_HRWShuffleSharder(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRealRing(t, testingCell)
-	require.NotNil(t, ring)
-	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRealRing(t, cell)
+		require.NotNil(t, ring)
+		ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
 }
 
 func Test_SMTRing_Power2ShardSizes_HRWShuffleSharder_SMTModeDisabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, false)
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
 }
 
 func Test_SMTRing_Power2ShardSizes_HRWShuffleSharder_SMTModeEnabled(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	const ingestersPerZone = 157
-	ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
-	require.NotNil(t, ring)
-	ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, true)
-	testTimeseriesDistribution(t, testingDir, testingCell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	for cell, ingestersPerZone := range ingestersPerZoneByCell {
+		ring := createRingWithSpreadMinimizingTokens(t, zones, ingestersPerZone)
+		require.NotNil(t, ring)
+		ring.sharder = newHRWShuffleSharder(ring.ringDesc.GetIngesters(), ring.ringZones, true)
+		testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, getPower2ShardSize)
+	}
 }
 
 func getCustomizedShardSize(shardSize, numZones, ingestersPerZone int) int {

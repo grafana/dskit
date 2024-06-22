@@ -79,9 +79,25 @@ type shuffleSharder interface {
 		isWithinLookbackPeriod func(int64) bool) *Desc
 }
 
-type randomShuffleSharder struct{}
+type randomShuffleSharder struct {
+	smtModeEnabled bool
+}
 
 func (s randomShuffleSharder) shuffleShard(
+	identifier string,
+	actualZones []string,
+	numInstancesPerZone int,
+	ringTokensByZone map[string][]uint32,
+	ringInstanceByToken map[uint32]instanceInfo,
+	ringInstancesById map[string]InstanceDesc,
+	isWithinLookbackPeriod func(int64) bool) *Desc {
+	if s.smtModeEnabled {
+		return s.shuffleShardSMT(identifier, actualZones, numInstancesPerZone, ringTokensByZone, ringInstanceByToken, ringInstancesById, isWithinLookbackPeriod)
+	}
+	return s.shuffleShardRandom(identifier, actualZones, numInstancesPerZone, ringTokensByZone, ringInstanceByToken, ringInstancesById, isWithinLookbackPeriod)
+}
+
+func (s randomShuffleSharder) shuffleShardRandom(
 	identifier string,
 	actualZones []string,
 	numInstancesPerZone int,
@@ -154,7 +170,7 @@ func (s randomShuffleSharder) shuffleShard(
 	return &Desc{Ingesters: shard}
 }
 
-func (s randomShuffleSharder) shuffleShardNew(
+func (s randomShuffleSharder) shuffleShardSMT(
 	identifier string,
 	actualZones []string,
 	numInstancesPerZone int,
@@ -162,7 +178,78 @@ func (s randomShuffleSharder) shuffleShardNew(
 	ringInstanceByToken map[uint32]instanceInfo,
 	ringInstancesById map[string]InstanceDesc,
 	isWithinLookbackPeriod func(int64) bool) *Desc {
-	return s.shuffleShardWithSMTRandomness(identifier, actualZones, numInstancesPerZone, ringTokensByZone, ringInstanceByToken, ringInstancesById, isWithinLookbackPeriod)
+	size := numInstancesPerZone * len(actualZones)
+	shard := make(map[string]InstanceDesc, size)
+	slices.Sort(actualZones)
+
+	// Initialise the random generator used to select instances in the ring.
+	// Since we use spread-minimizing firstZoneTokens, instances with the same id from
+	// consecutive zones will have consecutive firstZoneTokens, we don't choose different
+	// random generators for different zones. These random generators guarantee
+	// the "consistency" property when the shard size changes or a new zone is added.
+	random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(identifier, actualZones[0])))
+
+	helpShardByZone := make(map[string]map[string]InstanceDesc, len(actualZones))
+	foundByZone := make(map[string]bool, len(actualZones))
+	for _, zone := range actualZones {
+		helpShardByZone[zone] = make(map[string]InstanceDesc, numInstancesPerZone)
+		foundByZone[zone] = true
+	}
+
+	for i := 0; i < numInstancesPerZone; i++ {
+		randomToken := random.Uint32()
+		for _, zone := range actualZones {
+			tokens := ringTokensByZone[zone]
+			start := searchToken(tokens, randomToken)
+			iterations := 0
+			if !foundByZone[zone] {
+				// If one more instance has not been found, we can stop looking for
+				// more instances in this zone, because it means the zone has no more
+				// instances which haven't been already selected.
+				continue
+			}
+			foundByZone[zone] = false
+
+			for p := start; iterations < len(tokens); p++ {
+				iterations++
+
+				// Wrap p around in the ring.
+				p %= len(tokens)
+
+				info, ok := ringInstanceByToken[tokens[p]]
+				if !ok {
+					// This should never happen unless a bug in the ring code.
+					panic(ErrInconsistentTokensInfo)
+				}
+
+				// Ensure we select a unique instance.
+				if _, ok := helpShardByZone[zone][info.InstanceID]; ok {
+					continue
+				}
+
+				instanceID := info.InstanceID
+				instance := ringInstancesById[instanceID]
+				helpShardByZone[zone][instanceID] = instance
+
+				// If the lookback is enabled and this instance has been registered within the lookback period
+				// then we should include it in the subring but continuing selecting instances.
+				if isWithinLookbackPeriod(instance.RegisteredTimestamp) {
+					continue
+				}
+
+				foundByZone[zone] = true
+				break
+			}
+		}
+	}
+	for _, instances := range helpShardByZone {
+		for instanceID, inst := range instances {
+			shard[instanceID] = inst
+		}
+	}
+
+	return &Desc{Ingesters: shard}
+
 }
 
 type monteCarloShuffleSharder struct {

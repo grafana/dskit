@@ -155,7 +155,7 @@ type Config struct {
 	// This limiter is called for every started and finished gRPC request.
 	GrpcMethodLimiter GrpcInflightMethodLimiter `yaml:"-"`
 
-	OpenTracingGRPCOptions []otgrpc.Option `yaml:"-"`
+	PerOperationSpanSamplingThreshold map[string]time.Duration `yaml:"per_operation_span_sampling_threshold"`
 }
 
 var infinty = time.Duration(math.MaxInt64)
@@ -388,7 +388,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
-		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer(), cfg.OpenTracingGRPCOptions...),
+		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer(), otgrpc.PerOperationSpanLatencyThreshold(cfg.PerOperationSpanSamplingThreshold)),
 		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
 		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}

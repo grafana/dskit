@@ -1363,7 +1363,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_ZoneSorting(t *testing.T) {
 	mtx := sync.Mutex{}
 	released := []bool{false, false, false, false}
 
-	zoneSorter := func(zones []string) []string {
+	zoneSorter := func([]string) []string {
 		return []string{"zone-c", "zone-a", "zone-d", "zone-b"}
 	}
 

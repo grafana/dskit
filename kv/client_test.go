@@ -195,12 +195,12 @@ func TestMultipleInMemoryClient(t *testing.T) {
 	}, stringCodec{value: "bar"}, prometheus.NewRegistry(), logger)
 	require.NoError(t, err)
 
-	require.NoError(t, foo.CAS(context.TODO(), "foo", func(in interface{}) (out interface{}, retry bool, err error) { return "foo", false, nil }))
+	require.NoError(t, foo.CAS(context.TODO(), "foo", func(interface{}) (out interface{}, retry bool, err error) { return "foo", false, nil }))
 	fooKey, err := foo.Get(ctx, "foo")
 	require.NoError(t, err)
 	require.Equal(t, "foo", fooKey.(string))
 
-	require.NoError(t, bar.CAS(context.TODO(), "bar", func(in interface{}) (out interface{}, retry bool, err error) { return "bar", false, nil }))
+	require.NoError(t, bar.CAS(context.TODO(), "bar", func(interface{}) (out interface{}, retry bool, err error) { return "bar", false, nil }))
 	barKey, err := bar.Get(ctx, "bar")
 	require.NoError(t, err)
 	require.Equal(t, "bar", barKey.(string))

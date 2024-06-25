@@ -61,11 +61,44 @@ func TestMemcachedClientConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestMemcachedClient_GetMulti(t *testing.T) {
-	setup := setupDefaultMemcachedClient
+func TestMemcachedClient_SetAsync(t *testing.T) {
+	t.Run("with non-zero TTL", func(t *testing.T) {
+		client, _, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		client.SetAsync("foo", []byte("bar"), 10*time.Second)
+		require.NoError(t, client.wait())
 
+		ctx := context.Background()
+		res := client.GetMulti(ctx, []string{"foo"})
+		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
+	})
+
+	t.Run("with truncated zero TTL", func(t *testing.T) {
+		client, _, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		client.SetAsync("foo", []byte("bar"), 100*time.Millisecond)
+		require.NoError(t, client.wait())
+
+		ctx := context.Background()
+		res := client.GetMulti(ctx, []string{"foo"})
+		require.Empty(t, res)
+	})
+
+	t.Run("with zero TTL", func(t *testing.T) {
+		client, _, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		client.SetAsync("foo", []byte("bar"), 0)
+		require.NoError(t, client.wait())
+
+		ctx := context.Background()
+		res := client.GetMulti(ctx, []string{"foo"})
+		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
+	})
+}
+
+func TestMemcachedClient_GetMulti(t *testing.T) {
 	t.Run("no allocator", func(t *testing.T) {
-		client, backend, err := setup()
+		client, backend, err := setupDefaultMemcachedClient()
 		require.NoError(t, err)
 		client.SetAsync("foo", []byte("bar"), 10*time.Second)
 		require.NoError(t, client.wait())
@@ -77,7 +110,7 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 	})
 
 	t.Run("with allocator", func(t *testing.T) {
-		client, backend, err := setup()
+		client, backend, err := setupDefaultMemcachedClient()
 		require.NoError(t, err)
 		client.SetAsync("foo", []byte("bar"), 10*time.Second)
 		require.NoError(t, client.wait())

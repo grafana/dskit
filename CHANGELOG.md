@@ -209,6 +209,10 @@
   * `operation_duration_seconds`
 * [ENHANCEMENT] Add `outcome` label to `gate_duration_seconds` metric. Possible values are `rejected_canceled`, `rejected_deadline_exceeded`, `rejected_other`, and `permitted`. #512
 * [ENHANCEMENT] Expose `InstancesWithTokensCount` and `InstancesWithTokensInZoneCount` in `ring.ReadRing` interface. #516
+* [ENHANCEMENT] Middleware: determine route name in a single place, and add `middleware.ExtractRouteName()` method to allow consuming applications to retrieve the route name. #527
+* [ENHANCEMENT] SpanProfiler: do less work on unsampled traces. #528
+* [ENHANCEMENT] Log Middleware: if the trace is not sampled, log its ID as `trace_id_unsampled` instead of `trace_id`. #529
+* [EHNANCEMENT] httpgrpc: httpgrpc Server can now use error message from special HTTP header when converting HTTP response to an error. This is useful when HTTP response body contains binary data that doesn't form valid utf-8 string, otherwise grpc would fail to marshal returned error. #531
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
@@ -240,3 +244,4 @@
 * [BUGFIX] ring: don't mark trace spans as failed if `DoUntilQuorum` terminates due to cancellation. #449
 * [BUGFIX] middleware: fix issue where applications that used the httpgrpc tracing middleware would generate duplicate spans for incoming HTTP requests. #451
 * [BUGFIX] httpgrpc: store headers in canonical form when converting from gRPC to HTTP. #518
+* [BUGFIX] Memcached: Don't truncate sub-second TTLs to 0 which results in them being cached forever. #530 

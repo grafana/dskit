@@ -35,7 +35,7 @@ func TestHedging(t *testing.T) {
 	}
 	count := atomic.NewInt32(0)
 	client, err := Client(cfg, &http.Client{
-		Transport: RoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		Transport: RoundTripperFunc(func(*http.Request) (*http.Response, error) {
 			count.Inc()
 			time.Sleep(200 * time.Millisecond)
 			return &http.Response{
@@ -70,7 +70,7 @@ func TestHedgingRateLimit(t *testing.T) {
 	}
 	count := atomic.NewInt32(0)
 	client, err := Client(cfg, &http.Client{
-		Transport: RoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		Transport: RoundTripperFunc(func(*http.Request) (*http.Response, error) {
 			count.Inc()
 			time.Sleep(200 * time.Millisecond)
 			return &http.Response{

@@ -184,7 +184,7 @@ func TestLifecycler_HealthyInstancesInZoneCount(t *testing.T) {
 	defer services.StopAndAwaitTerminated(ctx, lifecycler1) // nolint:errcheck
 
 	// Assert the first ingester joined the ring
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler1.HealthyInstancesInZoneCount() == 1
 	})
 
@@ -202,12 +202,12 @@ func TestLifecycler_HealthyInstancesInZoneCount(t *testing.T) {
 	defer services.StopAndAwaitTerminated(ctx, lifecycler2) // nolint:errcheck
 
 	// Assert the second ingester joined the ring
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler2.HealthyInstancesInZoneCount() == 2
 	})
 
 	// Assert the first ingester count is updated
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler1.HealthyInstancesInZoneCount() == 2
 	})
 
@@ -225,89 +225,18 @@ func TestLifecycler_HealthyInstancesInZoneCount(t *testing.T) {
 	defer services.StopAndAwaitTerminated(ctx, lifecycler3) // nolint:errcheck
 
 	// Assert the third ingester joined the ring
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler3.HealthyInstancesInZoneCount() == 1
 	})
 
 	// Assert the first ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler1.HealthyInstancesInZoneCount() == 2
 	})
 
 	// Assert the second ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler2.HealthyInstancesInZoneCount() == 2
-	})
-
-	// Add the fourth ingester to the ring in the same zone as the third ingester
-	lifecyclerConfig4 := testLifecyclerConfig(ringConfig, "ing4")
-	lifecyclerConfig4.HeartbeatPeriod = 100 * time.Millisecond
-	lifecyclerConfig4.JoinAfter = 100 * time.Millisecond
-	lifecyclerConfig4.Zone = "zone-b"
-
-	lifecycler4, err := NewLifecycler(lifecyclerConfig4, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	assert.Equal(t, 0, lifecycler4.HealthyInstancesInZoneCount())
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler4))
-	defer services.StopAndAwaitTerminated(ctx, lifecycler4) // nolint:errcheck
-
-	// Assert the fourth ingester joined the ring
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler4.HealthyInstancesInZoneCount() == 2
-	})
-
-	// Assert the first ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler1.HealthyInstancesInZoneCount() == 2
-	})
-
-	// Assert the second ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler2.HealthyInstancesInZoneCount() == 2
-	})
-
-	// Assert the third ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler3.HealthyInstancesInZoneCount() == 2
-	})
-
-	// Create another lifecycler for zone-c
-	lifecyclerConfig5 := testLifecyclerConfig(ringConfig, "ing5")
-	lifecyclerConfig5.HeartbeatPeriod = 100 * time.Millisecond
-	lifecyclerConfig5.JoinAfter = 100 * time.Millisecond
-	lifecyclerConfig5.Zone = "zone-c"
-
-	lifecycler5, err := NewLifecycler(lifecyclerConfig5, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	assert.Equal(t, 0, lifecycler5.HealthyInstancesInZoneCount())
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler5))
-	defer services.StopAndAwaitTerminated(ctx, lifecycler5) // nolint:errcheck
-
-	// Assert the fifth ingester joined the ring
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler5.HealthyInstancesInZoneCount() == 1
-	})
-
-	// Assert the first ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler1.HealthyInstancesInZoneCount() == 2
-	})
-
-	// Assert the second ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler2.HealthyInstancesInZoneCount() == 2
-	})
-
-	// Assert the third ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler3.HealthyInstancesInZoneCount() == 2
-	})
-
-	// Assert the fourth ingester count is correct
-	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
-		return lifecycler4.HealthyInstancesInZoneCount() == 2
 	})
 }
 

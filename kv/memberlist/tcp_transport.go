@@ -351,7 +351,7 @@ func (t *TCPTransport) GetAutoBindPort() int {
 // FinalAdvertiseAddr is given the user's configured values (which
 // might be empty) and returns the desired IP and port to advertise to
 // the rest of the cluster.
-// (Copied from memberlist' net_transport.go)
+// (Copied from memberlist's net_transport.go)
 func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, error) {
 	var advertiseAddr net.IP
 	var advertisePort int

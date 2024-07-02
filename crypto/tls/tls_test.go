@@ -109,7 +109,7 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, false, tlsConfig.InsecureSkipVerify, "make sure we default to not skip verification")
-	assert.Equal(t, 1, len(tlsConfig.Certificates), "ensure a certificate is returned")
+	assert.NotNil(t, tlsConfig.GetClientCertificate, "ensure a get certificate function is returned")
 
 	// expect error with key and cert swapped passed along
 	c = &ClientConfig{

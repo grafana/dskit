@@ -363,6 +363,8 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 	// bad certificate from the server side and just see connection
 	// closed/reset instead
 	badCertErr := errorContainsString(badCertificateErrorMessage)
+	mismatchCAAndCertsErr := errorContainsString(mismatchCAAndCerts)
+
 	newIntegrationClientServer(
 		t,
 		cfg,
@@ -411,7 +413,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 					CertPath: certs.client2CertFile,
 					KeyPath:  certs.client2KeyFile,
 				},
-				httpExpectError: badCertErr,
+				httpExpectError: mismatchCAAndCertsErr,
 				grpcExpectError: unavailableDescErr,
 			},
 		},

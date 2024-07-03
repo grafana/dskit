@@ -1647,3 +1647,52 @@ func (p *delayedDNSProviderMock) Resolve(_ context.Context, addrs []string) erro
 func (p delayedDNSProviderMock) Addresses() []string {
 	return p.resolved
 }
+
+func TestGetBroadcastsPrefersCASUpdates(t *testing.T) {
+	codec := dataCodec{}
+
+	cfg := KVConfig{
+		TCPTransport: TCPTransportConfig{
+			BindAddrs: getLocalhostAddrs(),
+		},
+	}
+
+	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
+	cfg.RetransmitMult = 1
+	cfg.Codecs = append(cfg.Codecs, codec)
+
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
+	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
+
+	now := time.Now()
+
+	smallUpdate := &data{Members: map[string]member{"a": {Timestamp: now.Unix(), State: JOINING}}}
+	bigUpdate := &data{Members: map[string]member{"b": {Timestamp: now.Unix(), State: JOINING}, "c": {Timestamp: now.Unix(), State: JOINING}, "d": {Timestamp: now.Unix(), State: JOINING}}}
+
+	// No broadcast messages from KV at the beginning.
+	require.Equal(t, 0, len(kv.GetBroadcasts(0, math.MaxInt32)))
+
+	// Check that CAS broadcast messages will be prioritized and sent out first, even if they are enqueued later or are smaller than other messages in the queue.
+	kv.broadcastNewValue("notcas", smallUpdate, 1, codec, false)
+	kv.broadcastNewValue("notcas", bigUpdate, 2, codec, false)
+	kv.broadcastNewValue("cas", smallUpdate, 1, codec, true)
+	kv.broadcastNewValue("cas", bigUpdate, 2, codec, true)
+
+	msgs := kv.GetBroadcasts(0, 10000)
+	require.Len(t, msgs, 4) // we get all 4 messages
+	require.Equal(t, "cas", getKey(t, msgs[0]))
+	require.Equal(t, "cas", getKey(t, msgs[1]))
+	require.Equal(t, "notcas", getKey(t, msgs[2]))
+	require.Equal(t, "notcas", getKey(t, msgs[3]))
+	// Check that TransmitLimitedQueue.GetBroadcasts preferred larger messages (it does that).
+	require.True(t, len(msgs[0]) > len(msgs[1])) // Bigger CAS message is returned before smaller one
+	require.True(t, len(msgs[2]) > len(msgs[3])) // Bigger non-CAS message is returned before smaller one
+}
+
+func getKey(t *testing.T, msg []byte) string {
+	kvPair := KeyValuePair{}
+	err := kvPair.Unmarshal(msg)
+	require.NoError(t, err)
+	return kvPair.Key
+}

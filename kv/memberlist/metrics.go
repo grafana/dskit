@@ -77,9 +77,9 @@ func (m *KV) createAndRegisterMetrics() {
 		Name:      "messages_in_broadcast_queue",
 		Help:      "Number of user messages in the broadcast queue",
 	}, func() float64 {
-		// m.broadcasts is not set before Starting state
+		// Queues are not set before Starting state
 		if m.State() == services.Running || m.State() == services.Stopping {
-			return float64(m.broadcasts.NumQueued())
+			return float64(m.gossipBroadcasts.NumQueued()) + float64(m.casBroadcasts.NumQueued())
 		}
 		return 0
 	})

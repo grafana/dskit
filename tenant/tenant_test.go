@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/user"
+
 	"github.com/stretchr/testify/assert"
 )
 

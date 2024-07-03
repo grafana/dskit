@@ -109,44 +109,49 @@ func TestBackoff_Err(t *testing.T) {
 	cause := errors.New("my cause")
 
 	tests := map[string]struct {
-		ctx         func(*testing.T) context.Context
-		expectedErr error
+		ctx              func(*testing.T) context.Context
+		expectedErr      error
+		expectedErrCause error
 	}{
-		"should return context.DeadlineExceeded when context deadline exceeded without cause": {
+		"context deadline exceeded without cause": {
 			ctx: func(t *testing.T) context.Context {
 				ctx, cancel := context.WithDeadline(context.Background(), time.Now())
 				t.Cleanup(cancel)
 
 				return ctx
 			},
-			expectedErr: context.DeadlineExceeded,
+			expectedErr:      context.DeadlineExceeded,
+			expectedErrCause: context.DeadlineExceeded,
 		},
-		"should return cause when context deadline exceeded with cause": {
+		"context deadline exceeded with cause": {
 			ctx: func(t *testing.T) context.Context {
 				ctx, cancel := context.WithDeadlineCause(context.Background(), time.Now(), cause)
 				t.Cleanup(cancel)
 
 				return ctx
 			},
-			expectedErr: cause,
+			expectedErr:      context.DeadlineExceeded,
+			expectedErrCause: cause,
 		},
-		"should return context.Canceled when context is canceled without cause": {
+		"context is canceled without cause": {
 			ctx: func(_ *testing.T) context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
 
 				return ctx
 			},
-			expectedErr: context.Canceled,
+			expectedErr:      context.Canceled,
+			expectedErrCause: context.Canceled,
 		},
-		"should return cause when context is canceled with cause": {
+		"context is canceled with cause": {
 			ctx: func(_ *testing.T) context.Context {
 				ctx, cancel := context.WithCancelCause(context.Background())
 				cancel(cause)
 
 				return ctx
 			},
-			expectedErr: cause,
+			expectedErr:      context.Canceled,
+			expectedErrCause: cause,
 		},
 	}
 
@@ -160,6 +165,7 @@ func TestBackoff_Err(t *testing.T) {
 			}, time.Second, 10*time.Millisecond)
 
 			require.Equal(t, testData.expectedErr, b.Err())
+			require.Equal(t, testData.expectedErrCause, b.ErrCause())
 		})
 	}
 }

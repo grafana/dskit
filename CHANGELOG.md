@@ -213,6 +213,8 @@
 * [ENHANCEMENT] SpanProfiler: do less work on unsampled traces. #528
 * [ENHANCEMENT] Log Middleware: if the trace is not sampled, log its ID as `trace_id_unsampled` instead of `trace_id`. #529
 * [EHNANCEMENT] httpgrpc: httpgrpc Server can now use error message from special HTTP header when converting HTTP response to an error. This is useful when HTTP response body contains binary data that doesn't form valid utf-8 string, otherwise grpc would fail to marshal returned error. #531
+* [ENHANCEMENT] memberlist: use separate queue for broadcast messages that are result of CAS updates, and prioritize CAS update messages when sending broadcasts. On stopping, only wait for CAS updates queue to be empty. #539
+* [ENHANCEMENT] memberlist: Added `-<prefix>memberlist.broadcast-timeout-for-cas-updates-on-shutdown` option to set timeout for sending CAS updates on shutdown, instead of previously hardcoded 10s (which is still the default). #539
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

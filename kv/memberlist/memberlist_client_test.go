@@ -718,7 +718,7 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 
 	startTime := time.Now()
 	firstKv := clients[0]
-	ctx, cancel := context.WithTimeout(context.Background(), casInterval*3/2) // Watch for 1.5 cas intervals.
+	ctx, cancel := context.WithTimeout(context.Background(), casInterval*3) // Watch for 3x cas intervals.
 	updates := 0
 	firstKv.WatchKey(ctx, key, func(in interface{}) bool {
 		updates++

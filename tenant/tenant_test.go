@@ -1,9 +1,11 @@
 package tenant
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,4 +49,24 @@ func TestValidTenantIDs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func BenchmarkTenantID(b *testing.B) {
+	singleCtx := context.Background()
+	singleCtx = user.InjectOrgID(singleCtx, "tenant-a")
+	multiCtx := context.Background()
+	multiCtx = user.InjectOrgID(multiCtx, "tenant-a|tenant-b|tenant-c")
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.Run("single", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, _ = TenantID(singleCtx)
+		}
+	})
+	b.Run("multi", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, _ = TenantID(multiCtx)
+		}
+	})
 }

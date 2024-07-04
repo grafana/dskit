@@ -105,7 +105,7 @@ func TestBackoff_NextDelay(t *testing.T) {
 	}
 }
 
-func TestBackoff_Err(t *testing.T) {
+func TestBackoff_ErrAndErrCause(t *testing.T) {
 	cause := errors.New("my cause")
 
 	tests := map[string]struct {

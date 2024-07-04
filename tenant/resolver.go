@@ -27,7 +27,7 @@ func TenantID(ctx context.Context) (string, error) {
 		}
 		return orgID, nil
 	}
-	orgIDs, err := TenantIDs(ctx)
+	orgIDs, err := tenantIDsFromString(orgID)
 	if err != nil {
 		return "", err
 	}
@@ -53,6 +53,10 @@ func TenantIDs(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
+	return tenantIDsFromString(orgID)
+}
+
+func tenantIDsFromString(orgID string) ([]string, error) {
 	orgIDs := strings.Split(orgID, tenantIDsSeparator)
 	for _, id := range orgIDs {
 		if err := ValidTenantID(id); err != nil {

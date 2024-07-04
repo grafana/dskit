@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBackoff_NextDelay(t *testing.T) {
@@ -98,6 +101,71 @@ func TestBackoff_NextDelay(t *testing.T) {
 					t.Errorf("%d expected to be within %d and %d", delay, expectedRange[0], expectedRange[1])
 				}
 			}
+		})
+	}
+}
+
+func TestBackoff_ErrAndErrCause(t *testing.T) {
+	cause := errors.New("my cause")
+
+	tests := map[string]struct {
+		ctx              func(*testing.T) context.Context
+		expectedErr      error
+		expectedErrCause error
+	}{
+		"context deadline exceeded without cause": {
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithDeadline(context.Background(), time.Now())
+				t.Cleanup(cancel)
+
+				return ctx
+			},
+			expectedErr:      context.DeadlineExceeded,
+			expectedErrCause: context.DeadlineExceeded,
+		},
+		"context deadline exceeded with cause": {
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithDeadlineCause(context.Background(), time.Now(), cause)
+				t.Cleanup(cancel)
+
+				return ctx
+			},
+			expectedErr:      context.DeadlineExceeded,
+			expectedErrCause: cause,
+		},
+		"context is canceled without cause": {
+			ctx: func(_ *testing.T) context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+
+				return ctx
+			},
+			expectedErr:      context.Canceled,
+			expectedErrCause: context.Canceled,
+		},
+		"context is canceled with cause": {
+			ctx: func(_ *testing.T) context.Context {
+				ctx, cancel := context.WithCancelCause(context.Background())
+				cancel(cause)
+
+				return ctx
+			},
+			expectedErr:      context.Canceled,
+			expectedErrCause: cause,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			b := New(testData.ctx(t), Config{})
+
+			// Wait until the backoff returns error.
+			require.Eventually(t, func() bool {
+				return b.Err() != nil
+			}, time.Second, 10*time.Millisecond)
+
+			require.Equal(t, testData.expectedErr, b.Err())
+			require.Equal(t, testData.expectedErrCause, b.ErrCause())
 		})
 	}
 }

@@ -52,7 +52,7 @@ var (
 func TestCAS(t *testing.T) {
 	withFixtures(t, func(t *testing.T, client Client) {
 		// Blindly set key to "0".
-		err := client.CAS(ctx, key, func(in interface{}) (interface{}, bool, error) {
+		err := client.CAS(ctx, key, func(interface{}) (interface{}, bool, error) {
 			return "0", true, nil
 		})
 		require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestCAS(t *testing.T) {
 func TestNilCAS(t *testing.T) {
 	withFixtures(t, func(t *testing.T, client Client) {
 		// Blindly set key to "0".
-		err := client.CAS(ctx, key, func(in interface{}) (interface{}, bool, error) {
+		err := client.CAS(ctx, key, func(interface{}) (interface{}, bool, error) {
 			return "0", true, nil
 		})
 		require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestWatchKey(t *testing.T) {
 				// Start with sleeping, so that watching client see empty KV store at the beginning.
 				time.Sleep(sleep)
 
-				err := client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+				err := client.CAS(ctx, key, func(interface{}) (out interface{}, retry bool, err error) {
 					return fmt.Sprintf("%d", i), true, nil
 				})
 
@@ -193,7 +193,7 @@ func TestWatchPrefix(t *testing.T) {
 			defer wg.Done()
 
 			// start watching before we even start generating values. values will be buffered
-			client.WatchPrefix(ctx, prefix, func(key string, val interface{}) bool {
+			client.WatchPrefix(ctx, prefix, func(key string, _ interface{}) bool {
 				observedKeysCh <- key
 				return true
 			})
@@ -208,7 +208,7 @@ func TestWatchPrefix(t *testing.T) {
 				time.Sleep(sleep)
 
 				key := fmt.Sprintf("%s%d", p, i)
-				err := client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+				err := client.CAS(ctx, key, func(interface{}) (out interface{}, retry bool, err error) {
 					return key, true, nil
 				})
 
@@ -268,7 +268,7 @@ func TestList(t *testing.T) {
 
 	withFixtures(t, func(t *testing.T, client Client) {
 		for _, key := range keysToCreate {
-			err := client.CAS(context.Background(), key, func(in interface{}) (out interface{}, retry bool, err error) {
+			err := client.CAS(context.Background(), key, func(interface{}) (out interface{}, retry bool, err error) {
 				return key, false, nil
 			})
 			require.NoError(t, err)

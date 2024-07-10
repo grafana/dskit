@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	opentracing "github.com/opentracing/opentracing-go"
@@ -26,7 +27,7 @@ import (
 )
 
 func TestReturn4XXErrorsOption(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := fmt.Fprint(w, "test")
 		require.NoError(t, err)
 	})
@@ -68,7 +69,7 @@ func newTestServer(t *testing.T, handler http.Handler) (*testServer, error) {
 }
 
 func TestBasic(t *testing.T) {
-	server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := fmt.Fprint(w, "world")
 		require.NoError(t, err)
 	}))
@@ -96,7 +97,7 @@ func TestError(t *testing.T) {
 			stat = "not "
 		}
 		t.Run(fmt.Sprintf("test header when DoNotLogErrorHeaderKey is %spresent", stat), func(t *testing.T) {
-			server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server, err := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if doNotLog {
 					w.Header().Set(DoNotLogErrorHeaderKey, "true")
 				}
@@ -151,7 +152,7 @@ func TestServerHandleDoNotLogError(t *testing.T) {
 	errMsg := "this is an error"
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if testData.doNotLogError {
 					w.Header().Set(DoNotLogErrorHeaderKey, "true")
 				}
@@ -170,7 +171,9 @@ func TestServerHandleDoNotLogError(t *testing.T) {
 				var optional middleware.OptionalLogging
 				if testData.doNotLogError {
 					require.ErrorAs(t, err, &optional)
-					require.False(t, optional.ShouldLog(context.Background(), 0))
+
+					actual, _ := optional.ShouldLog(context.Background())
+					require.False(t, actual)
 				} else {
 					require.False(t, errors.As(err, &optional))
 				}
@@ -224,7 +227,7 @@ func TestServerHandleReturn4XXErrors(t *testing.T) {
 	errMsg := "this is an error"
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				http.Error(w, errMsg, testData.errorCode)
 			})
 
@@ -323,4 +326,80 @@ func TestTracePropagation(t *testing.T) {
 
 	assert.Equal(t, "world", recorder.Body.String())
 	assert.Equal(t, 200, recorder.Code)
+}
+
+func TestGrpcErrorsHaveCorrectMessage(t *testing.T) {
+	testCases := map[string]struct {
+		responseBody         string
+		errorMessageInHeader string
+
+		expectedErrorMessage string
+	}{
+		"error response with string body": {
+			responseBody:         "hello world",
+			expectedErrorMessage: "rpc error: code = Code(500) desc = hello world",
+		},
+		"error response with binary body": {
+			responseBody:         "\x08\x08\x12\xc7\x03the request has been rejected",
+			expectedErrorMessage: "rpc error: code = Code(500) desc = \x08\x08\x12\xc7\x03the request has been rejected",
+		},
+		"error response with binary body and provided message via header": {
+			responseBody:         "\x08\x08\x12\xc7\x03the request has been rejected",
+			errorMessageInHeader: "hello world",
+			expectedErrorMessage: "rpc error: code = Code(500) desc = hello world",
+		},
+	}
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if testData.errorMessageInHeader != "" {
+					w.Header().Set(ErrorMessageHeaderKey, testData.errorMessageInHeader)
+				}
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(testData.responseBody))
+			})
+
+			s := NewServer(h)
+			req := &httpgrpc.HTTPRequest{Method: "GET", Url: "/test"}
+			resp, err := s.Handle(context.Background(), req)
+			require.Error(t, err)
+			require.Nil(t, resp)
+
+			require.Equal(t, testData.expectedErrorMessage, err.Error())
+
+			httpResp, ok := httpgrpc.HTTPResponseFromError(err)
+			require.True(t, ok)
+			// Verify that header was removed
+			require.Empty(t, httpResp.Headers)
+		})
+	}
+}
+
+func TestIsHandledByHttpgrpcServer(t *testing.T) {
+	t.Run("false by default", func(t *testing.T) {
+		require.False(t, IsHandledByHttpgrpcServer(context.Background()))
+	})
+
+	const testHeader = "X-HandledByHttpgrpcServer"
+
+	// Handler will return value returned by IsHandledByHttpgrpcServer in test header.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(testHeader, strconv.FormatBool(IsHandledByHttpgrpcServer(r.Context())))
+		w.WriteHeader(200)
+	})
+
+	t.Run("handler runs outside of httpgrpc.Server", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		handler(rec, &http.Request{})
+		require.Equal(t, "false", rec.Header().Get(testHeader))
+	})
+
+	t.Run("handler runs from httpgrpc.Server", func(t *testing.T) {
+		s := NewServer(handler)
+		resp, err := s.Handle(context.Background(), &httpgrpc.HTTPRequest{Method: "GET", Url: "/test"})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+
+		require.Equal(t, []*httpgrpc.Header{{Key: http.CanonicalHeaderKey(testHeader), Values: []string{"true"}}}, resp.Headers)
+	})
 }

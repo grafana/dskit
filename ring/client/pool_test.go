@@ -184,7 +184,7 @@ func TestRemoveClient(t *testing.T) {
 	}
 
 	clientHappy := true
-	factory := PoolAddrFunc(func(addr string) (PoolClient, error) {
+	factory := PoolAddrFunc(func(string) (PoolClient, error) {
 		return &mockClient{happy: clientHappy, status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
 	})
 

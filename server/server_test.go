@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	protobuf "github.com/golang/protobuf/ptypes/empty"
@@ -74,6 +76,17 @@ func cancelableSleep(ctx context.Context, sleep time.Duration) error {
 	case <-ctx.Done():
 	}
 	return ctx.Err()
+}
+
+func (f FakeServer) ReturnProxyProtoCallerIP(ctx context.Context, _ *protobuf.Empty) (*ProxyProtoIPResponse, error) {
+	p, _ := peer.FromContext(ctx)
+	ip, _, err := net.SplitHostPort(p.Addr.String())
+	if err != nil {
+		return nil, err
+	}
+	return &ProxyProtoIPResponse{
+		IP: ip,
+	}, nil
 }
 
 func TestTCPv4Network(t *testing.T) {
@@ -129,7 +142,7 @@ func TestDefaultAddresses(t *testing.T) {
 	fakeServer := FakeServer{}
 	RegisterFakeServerServer(server.GRPC, fakeServer)
 
-	server.HTTP.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/test", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(204)
 	})
 
@@ -154,6 +167,10 @@ func TestDefaultAddresses(t *testing.T) {
 }
 
 func TestErrorInstrumentationMiddleware(t *testing.T) {
+	newRegistry := prometheus.NewRegistry()
+	prometheus.DefaultRegisterer = newRegistry
+	prometheus.DefaultGatherer = newRegistry
+
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
@@ -164,15 +181,15 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	fakeServer := FakeServer{}
 	RegisterFakeServerServer(server.GRPC, fakeServer)
 
-	server.HTTP.HandleFunc("/succeed", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/succeed", func(http.ResponseWriter, *http.Request) {
 	})
-	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 	})
-	server.HTTP.HandleFunc("/sleep10", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/sleep10", func(_ http.ResponseWriter, r *http.Request) {
 		_ = cancelableSleep(r.Context(), time.Second*10)
 	})
-	server.HTTP.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
@@ -305,13 +322,13 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 	server, err := New(cfg)
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/succeed", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/succeed", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
 	})
-	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 	})
-	server.HTTP.HandleFunc("/sleep10", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/sleep10", func(_ http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body) // Consume body, otherwise it's not counted.
 		_ = cancelableSleep(r.Context(), time.Second*10)
 	})
@@ -504,7 +521,7 @@ func TestMiddlewareLogging(t *testing.T) {
 	server, err := New(cfg)
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 	})
 
@@ -549,7 +566,7 @@ func TestTLSServer(t *testing.T) {
 	server, err := New(cfg)
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World!"))
 		require.NoError(t, err)
 	})
@@ -644,7 +661,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 
 	require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, r *http.Request) {
+	server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World!"))
 		require.NoError(t, err)
 	})
@@ -723,36 +740,72 @@ func (f *FakeLogger) assertNotContains(t *testing.T, content string) {
 func TestLogSourceIPs(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
-	logger := newFakeLogger()
 	cfg := Config{
 		HTTPMiddleware:   []middleware.Interface{middleware.Log{Log: log.Global()}},
 		MetricsNamespace: "testing_mux",
 		LogLevel:         level,
-		Log:              logger,
 		LogSourceIPs:     true,
 	}
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
-	server, err := New(cfg)
-	require.NoError(t, err)
+	startServer := func(cfg Config) *Server {
+		prometheus.DefaultRegisterer = prometheus.NewRegistry()
+		server, err := New(cfg)
+		require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(500)
+		server.HTTP.HandleFunc("/error500", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(500)
+		})
+
+		go func() {
+			require.NoError(t, server.Run())
+		}()
+
+		return server
+	}
+
+	t.Run("without PROXY protocol", func(t *testing.T) {
+		logger := newFakeLogger()
+		cfg.Log = logger
+
+		server := startServer(cfg)
+		defer server.Shutdown()
+
+		logger.assertNotContains(t, "sourceIPs")
+
+		req, err := http.NewRequest("GET", httpTarget(server, "/error500"), nil)
+		require.NoError(t, err)
+		_, err = http.DefaultClient.Do(req)
+		require.NoError(t, err)
+
+		logger.assertContains(t, "sourceIPs=127.0.0.1")
 	})
 
-	go func() {
-		require.NoError(t, server.Run())
-	}()
-	defer server.Shutdown()
+	t.Run("with PROXY protocol", func(t *testing.T) {
+		logger := newFakeLogger()
+		cfg.Log = logger
+		cfg.ProxyProtocolEnabled = true
 
-	logger.assertNotContains(t, "sourceIPs")
+		server := startServer(cfg)
+		defer server.Shutdown()
 
-	req, err := http.NewRequest("GET", httpTarget(server, "/error500"), nil)
-	require.NoError(t, err)
-	_, err = http.DefaultClient.Do(req)
-	require.NoError(t, err)
+		logger.assertNotContains(t, "sourceIPs")
 
-	logger.assertContains(t, "sourceIPs=127.0.0.1")
+		fakeSourceIP := "1.2.3.4"
+		proxyHeader := fmt.Sprintf("PROXY TCP4 %s 192.168.0.1 51234 80\r\n", fakeSourceIP)
+		client := &http.Client{
+			Transport: &http.Transport{
+				DialContext: proxyDialer(proxyHeader),
+			},
+		}
+
+		req, err := http.NewRequest("GET", httpTarget(server, "/error500"), nil)
+		require.NoError(t, err)
+		_, err = client.Do(req)
+		require.NoError(t, err)
+
+		logger.assertContains(t, fmt.Sprintf("sourceIPs=%s", fakeSourceIP))
+	})
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {
@@ -790,6 +843,156 @@ func TestStopWithDisabledSignalHandling(t *testing.T) {
 	})
 }
 
+type proxyProtocolConn struct {
+	net.Conn
+	proxyHeaderWritten bool
+	proxyHeader        []byte
+}
+
+func (pc *proxyProtocolConn) Write(b []byte) (int, error) {
+	if !pc.proxyHeaderWritten {
+		_, err := pc.Conn.Write(pc.proxyHeader)
+		if err != nil {
+			return 0, err
+		}
+		pc.proxyHeaderWritten = true
+	}
+	return pc.Conn.Write(b)
+}
+
+func proxyDialer(proxyHeader string) func(context.Context, string, string) (net.Conn, error) {
+	return func(_ context.Context, network string, addr string) (net.Conn, error) {
+		conn, err := net.Dial(network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &proxyProtocolConn{
+			Conn:               conn,
+			proxyHeader:        []byte(proxyHeader),
+			proxyHeaderWritten: false,
+		}, nil
+	}
+}
+
+func TestHttpOverProxyProtocol(t *testing.T) {
+	prometheus.DefaultRegisterer = prometheus.NewRegistry()
+
+	var cfg Config
+	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+	cfg.ProxyProtocolEnabled = true
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
+	server, err := New(cfg)
+	require.NoError(t, err)
+	defer server.Shutdown()
+
+	server.HTTP.HandleFunc("/test-proxy-proto", func(w http.ResponseWriter, r *http.Request) {
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		require.NoError(t, err)
+		_, err = w.Write([]byte(ip))
+		require.NoError(t, err)
+	})
+
+	go func() {
+		require.NoError(t, server.Run())
+	}()
+
+	t.Run("good PROXY header", func(t *testing.T) {
+		fakeSourceIP := "1.2.3.4"
+		proxyHeader := fmt.Sprintf("PROXY TCP4 %s 192.168.0.1 51234 80\r\n", fakeSourceIP)
+		client := &http.Client{
+			Transport: &http.Transport{
+				DialContext: proxyDialer(proxyHeader),
+			},
+		}
+
+		res, err := client.Get(httpTarget(server, "/test-proxy-proto"))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		require.Equal(t, res.StatusCode, http.StatusOK)
+
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, []byte(fakeSourceIP), body)
+	})
+
+	t.Run("malformed PROXY header", func(t *testing.T) {
+		proxyHeader := "badPROXY TCP4 1.2.3.4 192.168.0.1 51234 80\r\n"
+		client := &http.Client{
+			Transport: &http.Transport{
+				DialContext: proxyDialer(proxyHeader),
+			},
+		}
+
+		res, err := client.Get(httpTarget(server, "/test-proxy-proto"))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		require.Equal(t, http.StatusBadRequest, res.StatusCode)
+	})
+
+	t.Run("no PROXY header", func(t *testing.T) {
+		client := &http.Client{}
+		res, err := client.Get(httpTarget(server, "/test-proxy-proto"))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		require.Equal(t, res.StatusCode, http.StatusOK)
+
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.NotEmpty(t, body)
+	})
+}
+
+func TestGrpcOverProxyProtocol(t *testing.T) {
+	prometheus.DefaultRegisterer = prometheus.NewRegistry()
+
+	var cfg Config
+	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+	cfg.ProxyProtocolEnabled = true
+	// Set this to 0 to have it choose a random port
+	cfg.HTTPListenPort = 0
+
+	fakeSourceIP := "1.2.3.4"
+
+	// Custom dialer that sends a PROXY header
+	customDialer := func(_ context.Context, address string) (net.Conn, error) {
+		conn, err := net.Dial("tcp", address)
+		if err != nil {
+			return nil, err
+		}
+
+		proxyHeader := fmt.Sprintf("PROXY TCP4 %s 192.168.0.1 51234 80\r\n", fakeSourceIP)
+		_, err = conn.Write([]byte(proxyHeader))
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+
+		return conn, nil
+	}
+
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	fakeServer := FakeServer{}
+	RegisterFakeServerServer(server.GRPC, fakeServer)
+
+	go func() {
+		require.NoError(t, server.Run())
+	}()
+	defer server.Shutdown()
+
+	conn, err := grpc.Dial("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(customDialer))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	client := NewFakeServerClient(conn)
+	res, err := client.ReturnProxyProtoCallerIP(context.Background(), &protobuf.Empty{})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.Equal(t, fakeSourceIP, res.IP)
+}
+
 type dummyHandler struct {
 	quit chan struct{}
 }
@@ -817,4 +1020,16 @@ func httpTarget(srv *Server, path string) string {
 
 func httpsTarget(srv *Server, path string) string {
 	return fmt.Sprintf("https://%s%s", srv.HTTPListenAddr().String(), path)
+}
+
+func TestGrpcServerRecvBuffersConfigError(t *testing.T) {
+	var cfg Config
+	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+	cfg.GRPCServerStatsTrackingEnabled = true
+	cfg.GRPCServerRecvBufferPoolsEnabled = true
+	cfg.MetricsNamespace = "testing_grpc_config_conflicts"
+
+	_, err := New(cfg)
+	require.Error(t, err)
 }

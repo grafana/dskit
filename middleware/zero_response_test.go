@@ -18,7 +18,7 @@ func TestZeroResponseLogger(t *testing.T) {
 	const body = "Hello"
 
 	s := http.Server{
-		Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		Handler: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			_, _ = writer.Write([]byte(body))
 		}),
 		ReadTimeout:       0,

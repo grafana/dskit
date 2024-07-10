@@ -17,22 +17,22 @@ func TestLRUCache_StoreFetchDelete(t *testing.T) {
 		ctx  = context.Background()
 	)
 	// This entry is only known by our underlying cache.
-	mock.StoreAsync(map[string][]byte{"buzz": []byte("buzz")}, time.Hour)
+	mock.SetMultiAsync(map[string][]byte{"buzz": []byte("buzz")}, time.Hour)
 
 	reg := prometheus.NewPedanticRegistry()
 	lru, err := WrapWithLRUCache(mock, "test", reg, 10000, 2*time.Hour)
 	require.NoError(t, err)
 
-	lru.StoreAsync(map[string][]byte{
+	lru.SetMultiAsync(map[string][]byte{
 		"foo": []byte("bar"),
 		"bar": []byte("baz"),
 	}, time.Minute)
 
-	lru.StoreAsync(map[string][]byte{
+	lru.SetMultiAsync(map[string][]byte{
 		"expired": []byte("expired"),
 	}, -time.Minute)
 
-	result := lru.Fetch(ctx, []string{"buzz", "foo", "bar", "expired"})
+	result := lru.GetMulti(ctx, []string{"buzz", "foo", "bar", "expired"})
 	require.Equal(t, map[string][]byte{
 		"buzz": []byte("buzz"),
 		"foo":  []byte("bar"),
@@ -59,7 +59,7 @@ func TestLRUCache_StoreFetchDelete(t *testing.T) {
 
 	err = lru.Delete(context.Background(), "buzz")
 	require.NoError(t, err)
-	value := lru.Fetch(context.Background(), []string{"buzz"})
+	value := lru.GetMulti(context.Background(), []string{"buzz"})
 	require.Equal(t, map[string][]uint8{}, value)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -82,7 +82,7 @@ func TestLRUCache_Evictions(t *testing.T) {
 	lru, err := WrapWithLRUCache(NewMockCache(), "test", reg, maxItems, 2*time.Hour)
 	require.NoError(t, err)
 
-	lru.StoreAsync(map[string][]byte{
+	lru.SetMultiAsync(map[string][]byte{
 		"key_1": []byte("value_1"),
 		"key_2": []byte("value_2"),
 		"key_3": []byte("value_3"),

@@ -111,9 +111,12 @@ func TestOnFlushCallback(t *testing.T) {
 	)
 
 	l := log.NewLogfmtLogger(bufLog)
+	//nolint: loggercheck
 	require.NoError(t, l.Log("line"))
+	//nolint: loggercheck
 	require.NoError(t, l.Log("line"))
 	// first flush
+	//nolint: loggercheck
 	require.NoError(t, l.Log("line"))
 
 	// pre-condition check: the last Log() call should have flushed previous entries.

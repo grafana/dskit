@@ -389,7 +389,7 @@ func TestBasicLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 
 	// Now we delete it from the ring to simulate a ring storage reset and we expect the next heartbeat
 	// will restore it.
-	require.NoError(t, store.CAS(ctx, testRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, store.CAS(ctx, testRingKey, func(interface{}) (out interface{}, retry bool, err error) {
 		return NewDesc(), true, nil
 	}))
 
@@ -495,13 +495,13 @@ func TestBasicLifecycler_updateInstance_ShouldAddInstanceToTheRingIfDoesNotExist
 	expectedRegisteredAt := lifecycler.GetRegisteredAt()
 
 	// Now we delete it from the ring to simulate a ring storage reset.
-	require.NoError(t, store.CAS(ctx, testRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, store.CAS(ctx, testRingKey, func(interface{}) (out interface{}, retry bool, err error) {
 		return NewDesc(), true, nil
 	}))
 
 	// Run a noop update instance, but since the instance is not in the ring we do expect
 	// it will added back anyway.
-	require.NoError(t, lifecycler.updateInstance(ctx, func(_ *Desc, desc *InstanceDesc) bool {
+	require.NoError(t, lifecycler.updateInstance(ctx, func(*Desc, *InstanceDesc) bool {
 		return false
 	}))
 

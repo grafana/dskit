@@ -315,6 +315,13 @@ func TestPartitionInstanceLifecycler_GetAndChangePartitionState(t *testing.T) {
 	// A request to switch to the same state should be a no-op.
 	require.NoError(t, lifecycler.ChangePartitionState(ctx, PartitionInactive))
 	assertPartitionState(PartitionInactive)
+
+	// Should NOT allow changing from inactive to pending. The reason is that due to async ring changes propagation
+	// (via memberlist) there's no guarantee that the partition was already switched from inactive to active in the
+	// meanwhile by another instance, and the switch from active to pending is not allowed in order to guarantee
+	// read consistency.
+	require.ErrorIs(t, lifecycler.ChangePartitionState(ctx, PartitionPending), ErrPartitionStateChangeNotAllowed)
+	assertPartitionState(PartitionInactive)
 }
 
 func getPartitionRingFromStore(t *testing.T, store kv.Client, key string) *PartitionRingDesc {

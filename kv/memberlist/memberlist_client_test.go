@@ -339,7 +339,7 @@ func TestCASNoOutput(t *testing.T) {
 	withFixtures(t, func(t *testing.T, kv *Client) {
 		// should succeed with single call
 		calls := 0
-		err := cas(kv, key, func(d *data) (*data, bool, error) {
+		err := cas(kv, key, func(*data) (*data, bool, error) {
 			calls++
 			return nil, true, nil
 		})
@@ -352,7 +352,7 @@ func TestCASNoOutput(t *testing.T) {
 func TestCASErrorNoRetry(t *testing.T) {
 	withFixtures(t, func(t *testing.T, kv *Client) {
 		calls := 0
-		err := casWithErr(context.Background(), kv, key, func(d *data) (*data, bool, error) {
+		err := casWithErr(context.Background(), kv, key, func(*data) (*data, bool, error) {
 			calls++
 			return nil, false, errors.New("don't worry, be happy")
 		})
@@ -364,7 +364,7 @@ func TestCASErrorNoRetry(t *testing.T) {
 func TestCASErrorWithRetries(t *testing.T) {
 	withFixtures(t, func(t *testing.T, kv *Client) {
 		calls := 0
-		err := casWithErr(context.Background(), kv, key, func(d *data) (*data, bool, error) {
+		err := casWithErr(context.Background(), kv, key, func(*data) (*data, bool, error) {
 			calls++
 			return nil, true, errors.New("don't worry, be happy")
 		})
@@ -437,7 +437,7 @@ func TestCASNoChangeShortTimeout(t *testing.T) {
 
 func TestCASFailedBecauseOfVersionChanges(t *testing.T) {
 	withFixtures(t, func(t *testing.T, kv *Client) {
-		err := cas(kv, key, func(in *data) (*data, bool, error) {
+		err := cas(kv, key, func(*data) (*data, bool, error) {
 			return &data{Members: map[string]member{"nonempty": {Timestamp: time.Now().Unix()}}}, true, nil
 		})
 		require.NoError(t, err)
@@ -1540,7 +1540,7 @@ func TestMetricsRegistration(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
-	err := kv.CAS(context.Background(), "test", c, func(in interface{}) (out interface{}, retry bool, err error) {
+	err := kv.CAS(context.Background(), "test", c, func(interface{}) (out interface{}, retry bool, err error) {
 		return &data{Members: map[string]member{
 			"member": {},
 		}}, true, nil

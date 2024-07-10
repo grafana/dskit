@@ -307,7 +307,7 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 	var serviceA services.Service
 
 	initA := func() (services.Service, error) {
-		serviceA = services.NewIdleService(func(serviceContext context.Context) error {
+		serviceA = services.NewIdleService(func(context.Context) error {
 			// Slow-starting service. Delay is here to verify that service for C is not started before this service
 			// has finished starting.
 			time.Sleep(1 * time.Second)
@@ -318,7 +318,7 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 	}
 
 	initC := func() (services.Service, error) {
-		return services.NewIdleService(func(serviceContext context.Context) error {
+		return services.NewIdleService(func(context.Context) error {
 			// At this point, serviceA should be Running, because "C" depends (indirectly) on "A".
 			if s := serviceA.State(); s != services.Running {
 				return fmt.Errorf("serviceA has invalid state: %v", s)
@@ -365,7 +365,7 @@ func TestModuleService_InterruptedFastStartup(t *testing.T) {
 	}, func(serviceContext context.Context) error {
 		<-serviceContext.Done()
 		return nil
-	}, func(failureCase error) error {
+	}, func(error) error {
 		subserviceStopped = true
 		return nil
 	})
@@ -401,10 +401,10 @@ func TestModuleService_InterruptedSlowStartup(t *testing.T) {
 		// Prolong the startup until we have to stop.
 		<-serviceContext.Done()
 		return nil
-	}, func(serviceContext context.Context) error {
+	}, func(context.Context) error {
 		require.Fail(t, "did not expect to enter running state; service should have been canceled while in starting Fn and go directly to stoppingFn")
 		return nil
-	}, func(failureCase error) error {
+	}, func(error) error {
 		subserviceStopped = true
 		return nil
 	})

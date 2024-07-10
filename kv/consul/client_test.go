@@ -170,7 +170,7 @@ func TestWatchKeyWithNoStartValue(t *testing.T) {
 	defer fn()
 
 	reported := 0
-	c.WatchKey(ctx, key, func(i interface{}) bool {
+	c.WatchKey(ctx, key, func(interface{}) bool {
 		reported++
 		return reported != 2
 	})

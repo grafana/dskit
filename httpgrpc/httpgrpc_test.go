@@ -3,6 +3,7 @@ package httpgrpc
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/gogo/status"
@@ -27,6 +28,21 @@ func TestAppendMessageSizeToOutgoingContext(t *testing.T) {
 
 	require.Equal(t, []string{"GET"}, md.Get(MetadataMethod))
 	require.Equal(t, []string{"/test"}, md.Get(MetadataURL))
+}
+
+func TestToHeader(t *testing.T) {
+	grpcHeaders := []*Header{
+		{Key: "X-Header", Values: []string{"a", "b", "c"}},
+		{Key: "traceparent", Values: []string{"01234"}},
+	}
+	httpHeaders := http.Header{}
+	ToHeader(grpcHeaders, httpHeaders)
+
+	require.Equal(t, http.Header{
+		"X-Header":    []string{"a", "b", "c"},
+		"Traceparent": []string{"01234"},
+	}, httpHeaders)
+	require.Equal(t, "01234", httpHeaders.Get("traceparent"))
 }
 
 func TestErrorf(t *testing.T) {

@@ -247,3 +247,4 @@
 * [BUGFIX] middleware: fix issue where applications that used the httpgrpc tracing middleware would generate duplicate spans for incoming HTTP requests. #451
 * [BUGFIX] httpgrpc: store headers in canonical form when converting from gRPC to HTTP. #518
 * [BUGFIX] Memcached: Don't truncate sub-second TTLs to 0 which results in them being cached forever. #530 
+* [BUGFIX] Cache: initialise the `operation_failures_total{reason="connect-timeout"}` metric to 0 for each cache operation type on startup. #545

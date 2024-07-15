@@ -7,7 +7,7 @@
          "commands": [
             "make mod-check"
          ],
-         "image": "golang:1.21.3",
+         "image": "golang:1.22.5",
          "name": "make-mod-check"
       },
       {
@@ -17,7 +17,7 @@
          "depends_on": [
             "make-mod-check"
          ],
-         "image": "golang:1.21.3",
+         "image": "golang:1.22.5",
          "name": "make-lint"
       },
       {
@@ -27,8 +27,8 @@
          "depends_on": [
             "make-lint"
          ],
-         "image": "golang:1.20.10",
-         "name": "make-test (go 1.20.10)"
+         "image": "golang:1.21.12",
+         "name": "make-test (go 1.21.12)"
       },
       {
          "commands": [
@@ -37,8 +37,8 @@
          "depends_on": [
             "make-lint"
          ],
-         "image": "golang:1.21.3",
-         "name": "make-test (go 1.21.3)"
+         "image": "golang:1.22.5",
+         "name": "make-test (go 1.22.5)"
       },
       {
          "commands": [
@@ -47,8 +47,8 @@
          "depends_on": [
             "make-lint"
          ],
-         "image": "golang:1.21.3",
-         "name": "make-test-benchmarks (go 1.21.3)"
+         "image": "golang:1.22.5",
+         "name": "make-test-benchmarks (go 1.22.5)"
       },
       {
          "commands": [
@@ -59,13 +59,13 @@
          "depends_on": [
             "make-mod-check"
          ],
-         "image": "golang:1.21.3",
+         "image": "golang:1.22.5",
          "name": "make-check-protos"
       }
    ]
 }
 ---
 kind: signature
-hmac: 2419eded398bf02c5da0040762394904d32600544b660d06378c1e75ec9432c4
+hmac: 4a0bc0860a88f942fc51521193425e8e3c09b4a6731d7b7458212919ce87a12c
 
 ...

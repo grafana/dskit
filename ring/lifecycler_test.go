@@ -1213,14 +1213,16 @@ func TestTokensOnDisk(t *testing.T) {
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), l1))
 
-	// Start new ingester at same token directory.
+	// Start new ingester at same token directory. We'll start this one in READONLY state.
 	lifecyclerConfig.ID = "ing2"
 	l2, err := NewLifecycler(lifecyclerConfig, &noopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	err = l2.SetJoinedState(READONLY)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l2))
 	defer services.StopAndAwaitTerminated(context.Background(), l2) //nolint:errcheck
 
-	// Check this ingester joined, is active, and has 512 tokens.
+	// Check this ingester joined, is READONLY, and has 512 tokens.
 	var actTokens []uint32
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
 		d, err := r.KVClient.Get(context.Background(), ringKey)
@@ -1231,7 +1233,7 @@ func TestTokensOnDisk(t *testing.T) {
 		}
 		return ok &&
 			len(desc.Ingesters) == 1 &&
-			desc.Ingesters["ing2"].State == ACTIVE &&
+			desc.Ingesters["ing2"].State == READONLY &&
 			len(desc.Ingesters["ing2"].Tokens) == 512
 	})
 

@@ -504,7 +504,7 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 		case <-autoJoinAfter:
 			level.Debug(i.logger).Log("msg", "JoinAfter expired", "ring", i.RingName)
 			// Will only fire once, after auto join timeout.  If we haven't entered "JOINING" state,
-			// then pick some tokens and enter ACTIVE state.
+			// then pick some tokens and enter joinedState.
 			if i.GetState() == PENDING {
 				level.Info(i.logger).Log("msg", "auto-joining cluster after timeout", "ring", i.RingName)
 
@@ -515,10 +515,10 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 						return errors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
 					}
 
-					level.Info(i.logger).Log("msg", "observing tokens before going ACTIVE", "ring", i.RingName)
+					level.Info(i.logger).Log("msg", fmt.Sprintf("observing tokens before going %s", i.joinedState), "ring", i.RingName)
 					observeChan = time.After(i.cfg.ObservePeriod)
 				} else {
-					if err := i.autoJoin(context.Background(), ACTIVE); err != nil {
+					if err := i.autoJoin(context.Background(), i.joinedState); err != nil {
 						return errors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
 					}
 				}
@@ -687,7 +687,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			len(tokens), "ring", i.RingName)
 
 		// If the ingester fails to clean its ring entry up or unregister_on_shutdown=false, it can leave behind its
-		// ring state as LEAVING. Make sure to switch to the ACTIVE state.
+		// ring state as LEAVING. Make sure to switch to the joinedState.
 		if instanceDesc.State == LEAVING {
 			delta := i.cfg.NumTokens - len(tokens)
 			if delta > 0 {
@@ -707,7 +707,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				sort.Sort(tokens)
 			}
 
-			instanceDesc.State = ACTIVE
+			instanceDesc.State = i.joinedState
 			instanceDesc.Tokens = tokens
 		}
 

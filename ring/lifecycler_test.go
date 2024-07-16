@@ -1702,3 +1702,21 @@ func TestDefaultFinalSleepValue(t *testing.T) {
 		assert.Equal(t, time.Minute, cfg.FinalSleep)
 	})
 }
+
+func TestSetJoinedState(t *testing.T) {
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	cfg := testLifecyclerConfig(ringConfig, "ing1")
+	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	for _, val := range InstanceState_value {
+		state := InstanceState(val)
+		switch state {
+		case ACTIVE, READONLY:
+			assert.NoError(t, l1.SetJoinedState(state), "joinedState %s", state.String())
+		default:
+			assert.Error(t, l1.SetJoinedState(state), "joinedState %s", state.String())
+		}
+	}
+}

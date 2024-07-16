@@ -172,6 +172,9 @@ type Lifecycler struct {
 
 	lifecyclerMetrics *LifecyclerMetrics
 	logger            log.Logger
+
+	// The state of the instance when it has joined the ring without error. Can be either ACTIVE or READONLY
+	joinedState InstanceState
 }
 
 // NewLifecycler creates new Lifecycler. It must be started via StartAsync.
@@ -228,6 +231,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		canJoinTimeout:        5 * time.Minute,
 		lifecyclerMetrics:     NewLifecyclerMetrics(ringName, reg),
 		logger:                logger,
+		joinedState:           ACTIVE,
 	}
 
 	l.BasicService = services.
@@ -347,6 +351,18 @@ func (i *Lifecycler) ChangeState(ctx context.Context, state InstanceState) error
 		return err
 	}
 	return <-errCh
+}
+
+// SetJoinedState changes the state the instance should be in after it joins the ring.
+// It does not modify the current state of the instance.
+func (i *Lifecycler) SetJoinedState(state InstanceState) error {
+	switch state {
+	case ACTIVE, READONLY:
+		i.joinedState = state
+		return nil
+	default:
+		return fmt.Errorf("invalid joined state %s; only valid options are: ACTIVE, READONLY", state)
+	}
 }
 
 func (i *Lifecycler) getTokens() Tokens {

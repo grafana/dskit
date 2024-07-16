@@ -929,8 +929,13 @@ func (i *Lifecycler) changeState(ctx context.Context, state InstanceState) error
 	if !((currState == PENDING && state == JOINING) || // triggered by TransferChunks at the beginning
 		(currState == JOINING && state == PENDING) || // triggered by TransferChunks on failure
 		(currState == JOINING && state == ACTIVE) || // triggered by TransferChunks on success
+		// TODO -- are these TransferChunks transitions still used? Do we need to allow JOINING -> READONLY?
+		(currState == ACTIVE && state == READONLY) || // triggered by ...?
+		(currState == READONLY && state == ACTIVE) || // triggered by ...?
 		(currState == PENDING && state == ACTIVE) || // triggered by autoJoin
-		(currState == ACTIVE && state == LEAVING)) { // triggered by shutdown
+		(currState == PENDING && state == READONLY) || // triggered by autoJoin
+		(currState == ACTIVE && state == LEAVING) || // triggered by shutdown
+		(currState == READONLY && state == LEAVING)) { // triggered by shutdown
 		return fmt.Errorf("Changing instance state from %v -> %v is disallowed", currState, state)
 	}
 

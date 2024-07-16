@@ -528,6 +528,8 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 			// if observeChan is nil, this case is ignored. We keep updating observeChan while observing the ring.
 			// When observing is done, observeChan is set to nil.
 
+			// TODO -- there are no tests for this
+
 			observeChan = nil
 			if s := i.GetState(); s != JOINING {
 				level.Error(i.logger).Log("msg", "unexpected state while observing tokens", "state", s, "ring", i.RingName)
@@ -710,6 +712,8 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			instanceDesc.State = i.joinedState
 			instanceDesc.Tokens = tokens
 		}
+
+		// TODO -- if the instance in the ring is ACTIVE but joinedState is READONLY (or vice versa), we should change the ring state to match joinedState
 
 		// Set the local state based on the updated instance.
 		i.setState(instanceDesc.State)

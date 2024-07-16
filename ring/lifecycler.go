@@ -536,9 +536,9 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 			if i.verifyTokens(context.Background()) {
 				level.Info(i.logger).Log("msg", "token verification successful", "ring", i.RingName)
 
-				err := i.changeState(context.Background(), ACTIVE)
+				err := i.changeState(context.Background(), i.joinedState)
 				if err != nil {
-					level.Error(i.logger).Log("msg", "failed to set state to ACTIVE", "ring", i.RingName, "err", err)
+					level.Error(i.logger).Log("msg", fmt.Sprintf("failed to set state to %s", i.joinedState), "ring", i.RingName, "err", err)
 				}
 			} else {
 				level.Info(i.logger).Log("msg", "token verification failed, observing", "ring", i.RingName)

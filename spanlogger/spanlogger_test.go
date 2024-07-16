@@ -1,18 +1,25 @@
 package spanlogger
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"runtime"
 	"strings"
 	"testing"
+
+	dskit_log "github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/user"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/dskit/user"
+	"github.com/uber/jaeger-client-go"
 )
 
 func TestSpanLogger_Log(t *testing.T) {
@@ -36,6 +43,10 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 		return nil
 	}
 	resolver := fakeResolver{}
+
+	_, thisFile, thisLineNumber, ok := runtime.Caller(0)
+	require.True(t, ok)
+
 	span, ctx := New(context.Background(), logger, "test", resolver)
 	_ = span.Log("msg", "original spanlogger")
 
@@ -46,9 +57,9 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 	_ = span.Log("msg", "fallback spanlogger")
 
 	expect := [][]interface{}{
-		{"method", "test", "msg", "original spanlogger"},
-		{"msg", "restored spanlogger"},
-		{"msg", "fallback spanlogger"},
+		{"method", "test", "caller", toCallerInfo(thisFile, thisLineNumber+4), "msg", "original spanlogger"},
+		{"caller", toCallerInfo(thisFile, thisLineNumber+7), "msg", "restored spanlogger"},
+		{"caller", toCallerInfo(thisFile, thisLineNumber+10), "msg", "fallback spanlogger"},
 	}
 	require.Equal(t, expect, logged)
 }
@@ -76,6 +87,9 @@ func TestSpanLogger_SetSpanAndLogTag(t *testing.T) {
 		return nil
 	}
 
+	_, thisFile, thisLineNumber, ok := runtime.Caller(0)
+	require.True(t, ok)
+
 	spanLogger, _ := New(context.Background(), logger, "the_method", fakeResolver{})
 	require.NoError(t, spanLogger.Log("msg", "this is the first message"))
 
@@ -95,15 +109,18 @@ func TestSpanLogger_SetSpanAndLogTag(t *testing.T) {
 	expectedLogMessages := [][]interface{}{
 		{
 			"method", "the_method",
+			"caller", toCallerInfo(thisFile, thisLineNumber+4),
 			"msg", "this is the first message",
 		},
 		{
 			"method", "the_method",
+			"caller", toCallerInfo(thisFile, thisLineNumber+7),
 			"id", "123",
 			"msg", "this is the second message",
 		},
 		{
 			"method", "the_method",
+			"caller", toCallerInfo(thisFile, thisLineNumber+10),
 			"id", "123",
 			"more context", "abc",
 			"msg", "this is the third message",
@@ -183,3 +200,103 @@ type noDebugNoopLogger struct{}
 
 func (noDebugNoopLogger) Log(...interface{}) error { return nil }
 func (noDebugNoopLogger) DebugEnabled() bool       { return false }
+
+func TestSpanLogger_CallerInfo(t *testing.T) {
+	testCases := map[string]func(w io.Writer) log.Logger{
+		// This is based on Mimir's default logging configuration: https://github.com/grafana/mimir/blob/50d1c27b4ad82b265ff5a865345bec2d726f64ef/pkg/util/log/log.go#L45-L46
+		"default logger": func(w io.Writer) log.Logger {
+			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
+			logger = level.NewFilter(logger, level.AllowAll())
+			return logger
+		},
+
+		// This is based on Mimir's logging configuration with rate-limiting enabled: https://github.com/grafana/mimir/blob/50d1c27b4ad82b265ff5a865345bec2d726f64ef/pkg/util/log/log.go#L42-L43
+		"rate-limited logger": func(w io.Writer) log.Logger {
+			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(6))
+			logger = dskit_log.NewRateLimitedLogger(logger, 1000, 1000, nil)
+			logger = level.NewFilter(logger, level.AllowAll())
+			return logger
+		},
+	}
+
+	resolver := fakeResolver{}
+
+	setupTest := func(t *testing.T, loggerFactory func(io.Writer) log.Logger) (*bytes.Buffer, *SpanLogger, *jaeger.Span) {
+		reporter := jaeger.NewInMemoryReporter()
+		tracer, closer := jaeger.NewTracer(
+			"test",
+			jaeger.NewConstSampler(true),
+			reporter,
+		)
+		t.Cleanup(func() { _ = closer.Close() })
+
+		span, ctx := opentracing.StartSpanFromContextWithTracer(context.Background(), tracer, "test")
+
+		buf := bytes.NewBuffer(nil)
+		logger := loggerFactory(buf)
+		spanLogger := FromContext(ctx, logger, resolver)
+
+		return buf, spanLogger, span.(*jaeger.Span)
+	}
+
+	requireSpanHasTwoLogLinesWithoutCaller := func(t *testing.T, span *jaeger.Span) {
+		logs := span.Logs()
+		require.Len(t, logs, 2)
+
+		require.Equal(t, []otlog.Field{otlog.String("msg", "this is a test")}, logs[0].Fields)
+		require.Equal(t, []otlog.Field{otlog.String("msg", "this is another test")}, logs[1].Fields)
+	}
+
+	for name, loggerFactory := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Run("logging with Log()", func(t *testing.T) {
+				logs, spanLogger, span := setupTest(t, loggerFactory)
+
+				_, thisFile, lineNumberTwoLinesBeforeFirstLogCall, ok := runtime.Caller(0)
+				require.True(t, ok)
+				_ = spanLogger.Log("msg", "this is a test")
+
+				logged := logs.String()
+				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeFirstLogCall+2))
+
+				logs.Reset()
+				_, _, lineNumberTwoLinesBeforeSecondLogCall, ok := runtime.Caller(0)
+				require.True(t, ok)
+				_ = spanLogger.Log("msg", "this is another test")
+
+				logged = logs.String()
+				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeSecondLogCall+2))
+
+				requireSpanHasTwoLogLinesWithoutCaller(t, span)
+			})
+
+			t.Run("logging with DebugLog()", func(t *testing.T) {
+				logs, spanLogger, span := setupTest(t, loggerFactory)
+				_, thisFile, lineNumberTwoLinesBeforeLogCall, ok := runtime.Caller(0)
+				require.True(t, ok)
+				spanLogger.DebugLog("msg", "this is a test")
+
+				logged := logs.String()
+				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeLogCall+2))
+
+				logs.Reset()
+				_, _, lineNumberTwoLinesBeforeSecondLogCall, ok := runtime.Caller(0)
+				require.True(t, ok)
+				spanLogger.DebugLog("msg", "this is another test")
+
+				logged = logs.String()
+				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeSecondLogCall+2))
+
+				requireSpanHasTwoLogLinesWithoutCaller(t, span)
+			})
+		})
+	}
+}
+
+func toCallerInfo(path string, lineNumber int) string {
+	fileName := path[strings.LastIndex(path, "/")+1:]
+
+	return fmt.Sprintf("%s:%v", fileName, lineNumber)
+}

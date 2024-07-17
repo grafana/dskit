@@ -42,6 +42,10 @@ func TestExtractTraceSpanID(t *testing.T) {
 			require.Equal(t, tc.expectedOk, ok)
 			require.Equal(t, tc.expectedTraceID, traceID)
 			require.Equal(t, tc.expectedSpanID, spanID)
+
+			traceID, ok = ExtractTraceID(tc.ctx)
+			require.Equal(t, tc.expectedOk, ok)
+			require.Equal(t, tc.expectedTraceID, traceID)
 		})
 	}
 }

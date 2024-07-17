@@ -1670,6 +1670,7 @@ func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 
 	smallUpdate := &data{Members: map[string]member{"a": {Timestamp: now.Unix(), State: JOINING}}}
 	bigUpdate := &data{Members: map[string]member{"b": {Timestamp: now.Unix(), State: JOINING}, "c": {Timestamp: now.Unix(), State: JOINING}, "d": {Timestamp: now.Unix(), State: JOINING}}}
+	mediumUpdate := &data{Members: map[string]member{"d": {Timestamp: now.Unix(), State: JOINING}, "e": {Timestamp: now.Unix(), State: JOINING}}}
 
 	// No broadcast messages from KV at the beginning.
 	require.Equal(t, 0, len(kv.GetBroadcasts(0, math.MaxInt32)))
@@ -1679,25 +1680,28 @@ func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false)
 	kv.broadcastNewValue("local", smallUpdate, 1, codec, true)
 	kv.broadcastNewValue("local", bigUpdate, 2, codec, true)
+	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true)
 
 	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP memberlist_client_messages_in_broadcast_queue Number of user messages in the broadcast queue
 		# TYPE memberlist_client_messages_in_broadcast_queue gauge
 		memberlist_client_messages_in_broadcast_queue{queue="gossip"} 2
-		memberlist_client_messages_in_broadcast_queue{queue="local"} 2
+		memberlist_client_messages_in_broadcast_queue{queue="local"} 3
 	`), "memberlist_client_messages_in_broadcast_queue")
 	require.NoError(t, err)
 
 	msgs := kv.GetBroadcasts(0, 10000)
-	require.Len(t, msgs, 4) // we get all 4 messages
+	require.Len(t, msgs, 5) // we get all 4 messages
 	require.Equal(t, "local", getKey(t, msgs[0]))
 	require.Equal(t, "local", getKey(t, msgs[1]))
-	require.Equal(t, "non-local", getKey(t, msgs[2]))
+	require.Equal(t, "local", getKey(t, msgs[2]))
 	require.Equal(t, "non-local", getKey(t, msgs[3]))
+	require.Equal(t, "non-local", getKey(t, msgs[4]))
 
 	// Check that TransmitLimitedQueue.GetBroadcasts preferred larger messages (it does that).
-	require.True(t, len(msgs[0]) > len(msgs[1])) // Bigger local message is returned before smaller one
-	require.True(t, len(msgs[2]) > len(msgs[3])) // Bigger non-local message is returned before smaller one
+	require.True(t, len(msgs[0]) > len(msgs[1])) // Bigger local message is returned before medium one.
+	require.True(t, len(msgs[1]) > len(msgs[2])) // Medium local message is returned before small one.
+	require.True(t, len(msgs[3]) > len(msgs[4])) // Bigger non-local message is returned before smaller one
 }
 
 func getKey(t *testing.T, msg []byte) string {

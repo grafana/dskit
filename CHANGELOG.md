@@ -248,3 +248,4 @@
 * [BUGFIX] httpgrpc: store headers in canonical form when converting from gRPC to HTTP. #518
 * [BUGFIX] Memcached: Don't truncate sub-second TTLs to 0 which results in them being cached forever. #530 
 * [BUGFIX] Cache: initialise the `operation_failures_total{reason="connect-timeout"}` metric to 0 for each cache operation type on startup. #545
+* [BUGFIX] spanlogger: include correct caller information in log messages logged through a `SpanLogger`. #547

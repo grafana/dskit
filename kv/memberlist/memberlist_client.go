@@ -157,8 +157,8 @@ type KVConfig struct {
 	LeftIngestersTimeout time.Duration `yaml:"left_ingesters_timeout" category:"advanced"`
 
 	// Timeout used when leaving the memberlist cluster.
-	LeaveTimeout                            time.Duration `yaml:"leave_timeout" category:"advanced"`
-	BroadcastTimeoutForCasUpdatesOnShutdown time.Duration `yaml:"broadcast_timeout__for_cas_updates_on_shutdown" category:"advanced"`
+	LeaveTimeout                              time.Duration `yaml:"leave_timeout" category:"advanced"`
+	BroadcastTimeoutForLocalUpdatesOnShutdown time.Duration `yaml:"broadcast_timeout_for_local_updates_on_shutdown" category:"advanced"`
 
 	// How much space to use to keep received and sent messages in memory (for troubleshooting).
 	MessageHistoryBufferBytes int `yaml:"message_history_buffer_bytes" category:"advanced"`
@@ -199,7 +199,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.IntVar(&cfg.AdvertisePort, prefix+"memberlist.advertise-port", mlDefaults.AdvertisePort, "Gossip port to advertise to other members in the cluster. Used for NAT traversal.")
 	f.StringVar(&cfg.ClusterLabel, prefix+"memberlist.cluster-label", mlDefaults.Label, "The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.")
 	f.BoolVar(&cfg.ClusterLabelVerificationDisabled, prefix+"memberlist.cluster-label-verification-disabled", mlDefaults.SkipInboundLabelCheck, "When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.")
-	f.DurationVar(&cfg.BroadcastTimeoutForCasUpdatesOnShutdown, prefix+"memberlist.broadcast-timeout-for-cas-updates-on-shutdown", 10*time.Second, "Timeout for broadcasting all remaining CAS updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to CAS updates, not other kind of broadcast messages. 0 = no timeout, wait until all CAS updates are sent.")
+	f.DurationVar(&cfg.BroadcastTimeoutForLocalUpdatesOnShutdown, prefix+"memberlist.broadcast-timeout-for-local-updates-on-shutdown", 10*time.Second, "Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent.")
 
 	cfg.TCPTransport.RegisterFlagsWithPrefix(f, prefix)
 }
@@ -233,10 +233,10 @@ type KV struct {
 	// dns discovery provider
 	provider DNSProvider
 
-	// Protects access to memberlist and gossipBroadcasts fields.
+	// Protects access to memberlist and broadcast queues.
 	delegateReady    atomic.Bool
 	memberlist       *memberlist.Memberlist
-	casBroadcasts    *memberlist.TransmitLimitedQueue // queue for messages generated locally
+	localBroadcasts  *memberlist.TransmitLimitedQueue // queue for messages generated locally
 	gossipBroadcasts *memberlist.TransmitLimitedQueue // queue for messages that we forward from other nodes
 
 	// KV Store.
@@ -276,7 +276,8 @@ type KV struct {
 	numberOfPushes                      prometheus.Counter
 	totalSizeOfPulls                    prometheus.Counter
 	totalSizeOfPushes                   prometheus.Counter
-	numberOfBroadcastMessagesInQueue    prometheus.GaugeFunc
+	numberOfGossipMessagesInQueue       prometheus.GaugeFunc
+	numberOfLocalMessagesInQueue        prometheus.GaugeFunc
 	totalSizeOfBroadcastMessagesInQueue prometheus.Gauge
 	numberOfBroadcastMessagesDropped    prometheus.Counter
 	casAttempts                         prometheus.Counter
@@ -459,7 +460,7 @@ func (m *KV) starting(ctx context.Context) error {
 	}
 	// Finish delegate initialization.
 	m.memberlist = list
-	m.casBroadcasts = &memberlist.TransmitLimitedQueue{
+	m.localBroadcasts = &memberlist.TransmitLimitedQueue{
 		NumNodes:       list.NumMembers,
 		RetransmitMult: mlCfg.RetransmitMult,
 	}
@@ -726,24 +727,24 @@ func (m *KV) discoverMembers(ctx context.Context, members []string) []string {
 func (m *KV) stopping(_ error) error {
 	level.Info(m.logger).Log("msg", "leaving memberlist cluster")
 
-	// Wait until CAS broadcast queue is empty, but don't wait for too long.
+	// Wait until queue with locally-generated messages is empty, but don't wait for too long.
 	// Also don't wait if there is just one node left.
-	// Once we enter Stopping state, we don't queue any more CAS messages.
+	// Note: Once we enter Stopping state, we don't queue more locally-generated messages.
 
-	deadline := time.Now().Add(m.cfg.BroadcastTimeoutForCasUpdatesOnShutdown)
+	deadline := time.Now().Add(m.cfg.BroadcastTimeoutForLocalUpdatesOnShutdown)
 
-	msgs := m.casBroadcasts.NumQueued()
+	msgs := m.localBroadcasts.NumQueued()
 	nodes := m.memberlist.NumMembers()
-	for msgs > 0 && nodes > 1 && (m.cfg.BroadcastTimeoutForCasUpdatesOnShutdown <= 0 || time.Now().Before(deadline)) {
-		level.Info(m.logger).Log("msg", "waiting for CAS broadcast messages to be sent out", "count", msgs, "nodes", nodes)
+	for msgs > 0 && nodes > 1 && (m.cfg.BroadcastTimeoutForLocalUpdatesOnShutdown <= 0 || time.Now().Before(deadline)) {
+		level.Info(m.logger).Log("msg", "waiting for locally-generated broadcast messages to be sent out", "count", msgs, "nodes", nodes)
 		time.Sleep(250 * time.Millisecond)
 
-		msgs = m.casBroadcasts.NumQueued()
+		msgs = m.localBroadcasts.NumQueued()
 		nodes = m.memberlist.NumMembers()
 	}
 
 	if msgs > 0 {
-		level.Warn(m.logger).Log("msg", "broadcast messages left in CAS queue", "count", msgs, "nodes", nodes)
+		level.Warn(m.logger).Log("msg", "locally-generated broadcast messages left the queue", "count", msgs, "nodes", nodes)
 	}
 
 	err := m.memberlist.Leave(m.cfg.LeaveTimeout)
@@ -1041,9 +1042,9 @@ func (m *KV) trySingleCas(key string, codec codec.Codec, f func(in interface{}) 
 	return change, newver, retry, nil
 }
 
-func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec codec.Codec, isCas bool) {
-	if isCas && m.State() != services.Running {
-		level.Warn(m.logger).Log("msg", "skipped broadcasting CAS update because memberlist KV is shutting down", "key", key)
+func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec codec.Codec, locallyGenerated bool) {
+	if locallyGenerated && m.State() != services.Running {
+		level.Warn(m.logger).Log("msg", "skipped broadcasting of locally-generated update because memberlist KV is shutting down", "key", key)
 		return
 	}
 
@@ -1084,8 +1085,8 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 
 	m.totalSizeOfBroadcastMessagesInQueue.Add(float64(l))
 
-	if isCas {
-		m.casBroadcasts.QueueBroadcast(b)
+	if locallyGenerated {
+		m.localBroadcasts.QueueBroadcast(b)
 	} else {
 		m.gossipBroadcasts.QueueBroadcast(b)
 	}
@@ -1200,10 +1201,10 @@ func (m *KV) GetBroadcasts(overhead, limit int) [][]byte {
 		return nil
 	}
 
-	// Prioritize CAS queue
-	msgs := m.casBroadcasts.GetBroadcasts(overhead, limit)
+	// Prioritize locally-generated messages
+	msgs := m.localBroadcasts.GetBroadcasts(overhead, limit)
 
-	// Decrease limit for each message we got from CAS broadcasts.
+	// Decrease limit for each message we got from locally-generated broadcasts.
 	for _, m := range msgs {
 		limit -= overhead + len(m)
 	}

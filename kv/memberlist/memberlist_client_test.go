@@ -1648,7 +1648,7 @@ func (p delayedDNSProviderMock) Addresses() []string {
 	return p.resolved
 }
 
-func TestGetBroadcastsPrefersCASUpdates(t *testing.T) {
+func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	codec := dataCodec{}
 
 	cfg := KVConfig{
@@ -1661,7 +1661,8 @@ func TestGetBroadcastsPrefersCASUpdates(t *testing.T) {
 	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
 
-	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	reg := prometheus.NewRegistry()
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
 	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
 
@@ -1673,21 +1674,30 @@ func TestGetBroadcastsPrefersCASUpdates(t *testing.T) {
 	// No broadcast messages from KV at the beginning.
 	require.Equal(t, 0, len(kv.GetBroadcasts(0, math.MaxInt32)))
 
-	// Check that CAS broadcast messages will be prioritized and sent out first, even if they are enqueued later or are smaller than other messages in the queue.
-	kv.broadcastNewValue("notcas", smallUpdate, 1, codec, false)
-	kv.broadcastNewValue("notcas", bigUpdate, 2, codec, false)
-	kv.broadcastNewValue("cas", smallUpdate, 1, codec, true)
-	kv.broadcastNewValue("cas", bigUpdate, 2, codec, true)
+	// Check that locally-generated broadcast messages will be prioritized and sent out first, even if they are enqueued later or are smaller than other messages in the queue.
+	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false)
+	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false)
+	kv.broadcastNewValue("local", smallUpdate, 1, codec, true)
+	kv.broadcastNewValue("local", bigUpdate, 2, codec, true)
+
+	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP memberlist_client_messages_in_broadcast_queue Number of user messages in the broadcast queue
+		# TYPE memberlist_client_messages_in_broadcast_queue gauge
+		memberlist_client_messages_in_broadcast_queue{queue="gossip"} 2
+		memberlist_client_messages_in_broadcast_queue{queue="local"} 2
+	`), "memberlist_client_messages_in_broadcast_queue")
+	require.NoError(t, err)
 
 	msgs := kv.GetBroadcasts(0, 10000)
 	require.Len(t, msgs, 4) // we get all 4 messages
-	require.Equal(t, "cas", getKey(t, msgs[0]))
-	require.Equal(t, "cas", getKey(t, msgs[1]))
-	require.Equal(t, "notcas", getKey(t, msgs[2]))
-	require.Equal(t, "notcas", getKey(t, msgs[3]))
+	require.Equal(t, "local", getKey(t, msgs[0]))
+	require.Equal(t, "local", getKey(t, msgs[1]))
+	require.Equal(t, "non-local", getKey(t, msgs[2]))
+	require.Equal(t, "non-local", getKey(t, msgs[3]))
+
 	// Check that TransmitLimitedQueue.GetBroadcasts preferred larger messages (it does that).
-	require.True(t, len(msgs[0]) > len(msgs[1])) // Bigger CAS message is returned before smaller one
-	require.True(t, len(msgs[2]) > len(msgs[3])) // Bigger non-CAS message is returned before smaller one
+	require.True(t, len(msgs[0]) > len(msgs[1])) // Bigger local message is returned before smaller one
+	require.True(t, len(msgs[2]) > len(msgs[3])) // Bigger non-local message is returned before smaller one
 }
 
 func getKey(t *testing.T, msg []byte) string {

@@ -2124,7 +2124,7 @@ func (l *testLogger) Log(keyvals ...interface{}) error {
 		key := keyvals[i]
 		value := keyvals[i+1]
 
-		if key == "user" || key == "method" {
+		if key == "user" || key == "method" || key == "caller" {
 			// These keys are added automatically by spanlogger, but they're not interesting for our tests.
 			continue
 		}

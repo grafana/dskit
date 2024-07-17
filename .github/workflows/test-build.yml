@@ -42,6 +42,7 @@ jobs:
         # We want to make sure dskit can support multiple golang versions
         # by ensuring the test would pass using all these supported versions.
         go-version: ['1.21.x', '1.22.x']
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
       - name: Set up Go ${{ matrix.go-version }}

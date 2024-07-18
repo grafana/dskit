@@ -361,6 +361,11 @@ func (i *Lifecycler) ChangeReadOnlySince(ctx context.Context, ts time.Time) erro
 	errCh := make(chan error)
 	fn := func() {
 		prev := i.GetReadOnlySince()
+		if prev.Equal(ts) {
+			errCh <- nil
+			return
+		}
+
 		level.Info(i.logger).Log("msg", "changing read-only state of instance in the ring", "prev", format(prev), "new", format(ts), "ring", i.RingName)
 		i.setReadOnlySince(ts)
 		errCh <- i.updateConsul(ctx)

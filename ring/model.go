@@ -47,24 +47,25 @@ func NewDesc() *Desc {
 
 // AddIngester adds the given ingester to the ring. Ingester will only use supplied tokens,
 // any other tokens are removed.
-func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state InstanceState, registeredAt time.Time) InstanceDesc {
+func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state InstanceState, registeredAt time.Time, readOnlySince time.Time) InstanceDesc {
+	inst := InstanceDesc{
+		Id:        id,
+		Addr:      addr,
+		Timestamp: time.Now().Unix(),
+		State:     state,
+		Tokens:    tokens,
+		Zone:      zone,
+	}
+	inst.SetRegisteredAt(registeredAt)
+	inst.SetReadOnlySince(readOnlySince)
+
+	d.AddInstance(id, inst)
+	return inst
+}
+
+func (d *Desc) AddInstance(id string, ingester InstanceDesc) InstanceDesc {
 	if d.Ingesters == nil {
 		d.Ingesters = map[string]InstanceDesc{}
-	}
-
-	registeredTimestamp := int64(0)
-	if !registeredAt.IsZero() {
-		registeredTimestamp = registeredAt.Unix()
-	}
-
-	ingester := InstanceDesc{
-		Id:                  id,
-		Addr:                addr,
-		Timestamp:           time.Now().Unix(),
-		RegisteredTimestamp: registeredTimestamp,
-		State:               state,
-		Tokens:              tokens,
-		Zone:                zone,
 	}
 
 	d.Ingesters[id] = ingester
@@ -140,6 +141,32 @@ func (i *InstanceDesc) GetRegisteredAt() time.Time {
 	}
 
 	return time.Unix(i.RegisteredTimestamp, 0)
+}
+
+func (i *InstanceDesc) SetRegisteredAt(t time.Time) {
+	if t.IsZero() {
+		i.RegisteredTimestamp = 0
+	} else {
+		i.RegisteredTimestamp = t.Unix()
+	}
+}
+
+// GetReadOnlySince returns the timestamp when the instance has been marked as read-only,
+// or zero if instance is not read-only or doesn't exist.
+func (i *InstanceDesc) GetReadOnlySince() time.Time {
+	if i == nil || i.ReadonlyTimestamp == 0 {
+		return time.Time{}
+	}
+
+	return time.Unix(i.ReadonlyTimestamp, 0)
+}
+
+func (i *InstanceDesc) SetReadOnlySince(t time.Time) {
+	if t.IsZero() {
+		i.ReadonlyTimestamp = 0
+	} else {
+		i.ReadonlyTimestamp = t.Unix()
+	}
 }
 
 func (i *InstanceDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, now time.Time) bool {

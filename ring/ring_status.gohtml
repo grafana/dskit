@@ -18,6 +18,7 @@
             <th>State</th>
             <th>Address</th>
             <th>Registered At</th>
+            <th>Read-Only Timestamp</th>
             <th>Last Heartbeat</th>
             <th>Tokens</th>
             <th>Ownership</th>
@@ -36,6 +37,7 @@
             <td>{{ .State }}</td>
             <td>{{ .Address }}</td>
             <td>{{ .RegisteredTimestamp | timeOrEmptyString }}</td>
+            <td>{{ .ReadOnlyTimestamp | timeOrEmptyString }}</td>
             <td>{{ .HeartbeatTimestamp | durationSince }} ago ({{ .HeartbeatTimestamp.Format "15:04:05.999" }})</td>
             <td>{{ .NumTokens }}</td>
             <td>{{ .Ownership | humanFloat }}%</td>

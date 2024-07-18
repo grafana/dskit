@@ -44,6 +44,12 @@ message InstanceDesc {
 
 	// ID of the instance. This value is the same as the key in the ingesters map in Desc.
 	string id = 9;
+
+	// Unix timestamp (with seconds precision) of when the instance was marked as "read-only".
+	// If instance is not read-only, this value is 0.
+	// Read-only instances go through standard state changes, and special handling is applied to them
+	// during shuffle shards.
+	int64 readonly_timestamp = 10;
 }
 
 enum InstanceState {

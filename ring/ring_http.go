@@ -24,9 +24,9 @@ var defaultPageTemplate = template.Must(template.New("webpage").Funcs(template.F
 		if t.IsZero() {
 			return ""
 		}
-		return t.Format(time.RFC3339Nano)
+		return t.Format(time.RFC3339)
 	},
-	"durationSince": func(t time.Time) string { return time.Since(t).Truncate(time.Millisecond).String() },
+	"durationSince": func(t time.Time) string { return time.Since(t).Truncate(time.Second).String() },
 }).Parse(defaultPageContent))
 
 type httpResponse struct {
@@ -41,6 +41,7 @@ type ingesterDesc struct {
 	Address             string    `json:"address"`
 	HeartbeatTimestamp  time.Time `json:"timestamp"`
 	RegisteredTimestamp time.Time `json:"registered_timestamp"`
+	ReadOnlyTimestamp   time.Time `json:"readonly_timestamp"`
 	Zone                string    `json:"zone"`
 	Tokens              []uint32  `json:"tokens"`
 	NumTokens           int       `json:"-"`
@@ -116,6 +117,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 			Address:             ing.Addr,
 			HeartbeatTimestamp:  time.Unix(ing.Timestamp, 0).UTC(),
 			RegisteredTimestamp: ing.GetRegisteredAt().UTC(),
+			ReadOnlyTimestamp:   ing.GetReadOnlySince().UTC(),
 			Tokens:              ing.Tokens,
 			Zone:                ing.Zone,
 			NumTokens:           len(ing.Tokens),

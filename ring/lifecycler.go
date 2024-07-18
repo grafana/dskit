@@ -147,10 +147,11 @@ type Lifecycler struct {
 
 	// We need to remember the ingester state, tokens and registered timestamp just in case the KV store
 	// goes away and comes back empty. The state changes during lifecycle of instance.
-	stateMtx     sync.RWMutex
-	state        InstanceState
-	tokens       Tokens
-	registeredAt time.Time
+	stateMtx      sync.RWMutex
+	state         InstanceState
+	tokens        Tokens
+	registeredAt  time.Time
+	readOnlySince time.Time
 
 	// Controls the ready-reporting
 	readyLock  sync.Mutex
@@ -349,6 +350,28 @@ func (i *Lifecycler) ChangeState(ctx context.Context, state InstanceState) error
 	return <-errCh
 }
 
+func (i *Lifecycler) ChangeReadOnlySince(ctx context.Context, ts time.Time) error {
+	format := func(t time.Time) string {
+		if t.IsZero() {
+			return "not set"
+		}
+		return t.Format(time.RFC3339)
+	}
+
+	errCh := make(chan error)
+	fn := func() {
+		prev := i.GetReadOnlySince()
+		level.Info(i.logger).Log("msg", "changing read-only state of instance in the ring", "prev", format(prev), "new", format(ts), "ring", i.RingName)
+		i.setReadOnlySince(ts)
+		errCh <- i.updateConsul(ctx)
+	}
+
+	if err := i.sendToLifecyclerLoop(fn); err != nil {
+		return err
+	}
+	return <-errCh
+}
+
 func (i *Lifecycler) getTokens() Tokens {
 	i.stateMtx.RLock()
 	defer i.stateMtx.RUnlock()
@@ -377,6 +400,19 @@ func (i *Lifecycler) setRegisteredAt(registeredAt time.Time) {
 	i.stateMtx.Lock()
 	defer i.stateMtx.Unlock()
 	i.registeredAt = registeredAt
+}
+
+// GetReadOnlySince returns timestamp when this instance was set to read-only mode, or zero time if instance is not in read-only mode.
+func (i *Lifecycler) GetReadOnlySince() time.Time {
+	i.stateMtx.RLock()
+	defer i.stateMtx.RUnlock()
+	return i.readOnlySince
+}
+
+func (i *Lifecycler) setReadOnlySince(readOnlySince time.Time) {
+	i.stateMtx.Lock()
+	defer i.stateMtx.Unlock()
+	i.readOnlySince = readOnlySince
 }
 
 // ClaimTokensFor takes all the tokens for the supplied ingester and assigns them to this ingester.
@@ -633,6 +669,9 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			// as of now.
 			registeredAt := time.Now()
 			i.setRegisteredAt(registeredAt)
+			// TODO: shall we clear read-only status, or keep using our value?
+			readOnlySince := time.Time{}
+			i.setReadOnlySince(readOnlySince)
 
 			// We use the tokens from the file only if it does not exist in the ring yet.
 			if len(tokensFromFile) > 0 {
@@ -640,20 +679,21 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				if len(tokensFromFile) >= i.cfg.NumTokens {
 					i.setState(ACTIVE)
 				}
-				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), registeredAt)
+				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), registeredAt, readOnlySince)
 				i.setTokens(tokensFromFile)
 				return ringDesc, true, nil
 			}
 
 			// Either we are a new ingester, or consul must have restarted
 			level.Info(i.logger).Log("msg", "instance not found in ring, adding with no tokens", "ring", i.RingName)
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState(), registeredAt)
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState(), registeredAt, readOnlySince)
 			return ringDesc, true, nil
 		}
 
 		// The instance already exists in the ring, so we can't change the registered timestamp (even if it's zero)
 		// but we need to update the local state accordingly.
 		i.setRegisteredAt(instanceDesc.GetRegisteredAt())
+		i.setReadOnlySince(instanceDesc.GetReadOnlySince())
 
 		// If the ingester is in the JOINING state this means it crashed due to
 		// a failed token transfer or some other reason during startup. We want
@@ -747,7 +787,7 @@ func (i *Lifecycler) verifyTokens(ctx context.Context) bool {
 			ringTokens = append(ringTokens, newTokens...)
 			sort.Sort(ringTokens)
 
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState(), i.getRegisteredAt())
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState(), i.getRegisteredAt(), i.GetReadOnlySince())
 
 			i.setTokens(ringTokens)
 
@@ -855,7 +895,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) er
 		sort.Sort(myTokens)
 		i.setTokens(myTokens)
 
-		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt())
+		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt(), i.GetReadOnlySince())
 		return ringDesc, true, nil
 	})
 
@@ -889,7 +929,7 @@ func (i *Lifecycler) updateConsul(ctx context.Context) error {
 			tokens = instanceDesc.Tokens
 		}
 
-		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokens, i.GetState(), i.getRegisteredAt())
+		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokens, i.GetState(), i.getRegisteredAt(), i.GetReadOnlySince())
 		return ringDesc, true, nil
 	})
 

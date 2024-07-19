@@ -83,17 +83,17 @@ func (cfg *ClientConfig) GetTLSCipherSuitesLongDescription() string {
 	return text
 }
 
-func (cfg *ClientConfig) validateCertificatePaths() (error, bool) {
+func (cfg *ClientConfig) validateCertificatePaths() (bool, error) {
 	if cfg.CertPath != "" || cfg.KeyPath != "" {
 		if cfg.CertPath == "" {
-			return errCertMissing, true
+			return true, errCertMissing
 		}
 		if cfg.KeyPath == "" {
-			return errKeyMissing, true
+			return true, errKeyMissing
 		}
-		return nil, true
+		return true, nil
 	}
-	return nil, false
+	return false, nil
 }
 
 // GetTLSConfig initialises tls.Config from config options
@@ -124,7 +124,7 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 
 	loadCert := func() (*tls.Certificate, error) {
 		// not used boolean, assumed if this is called is because we already configured TLS Client certificates.
-		err, _ := cfg.validateCertificatePaths()
+		_, err := cfg.validateCertificatePaths()
 		if err == nil {
 			cert, err := reader.ReadSecret(cfg.CertPath)
 			if err != nil {
@@ -144,7 +144,7 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 		return nil, err
 	}
 
-	err, useClientCerts := cfg.validateCertificatePaths()
+	useClientCerts, err := cfg.validateCertificatePaths()
 	if err != nil {
 		return nil, err
 	}

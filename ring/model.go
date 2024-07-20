@@ -627,6 +627,10 @@ func (d *Desc) RingCompare(o *Desc) CompareResult {
 			return Different
 		}
 
+		if ing.ReadonlyTimestamp != oing.ReadonlyTimestamp {
+			return Different
+		}
+
 		if len(ing.Tokens) != len(oing.Tokens) {
 			return Different
 		}

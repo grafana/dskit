@@ -705,11 +705,6 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 // This function supports caching, but the cache will only be effective if successive calls for the
 // same identifier are with the same lookbackPeriod and increasing values of now.
 func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
-	// Nothing to do if the shard size is not smaller then the actual ring.
-	if size <= 0 || r.InstancesCount() <= size {
-		return r
-	}
-
 	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
 		return cached
 	}
@@ -728,16 +723,6 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
-
-	// If all instances have RegisteredTimestamp within the lookback period,
-	// then all instances would be included in the resulting ring, so we can
-	// simply return this ring.
-	//
-	// If any instance had RegisteredTimestamp equal to 0 (it would not cause additional lookup of next instance),
-	// then r.oldestRegisteredTimestamp is zero too, and we skip this optimization.
-	if lookbackPeriod > 0 && r.oldestRegisteredTimestamp > 0 && r.oldestRegisteredTimestamp >= lookbackUntil {
-		return r
-	}
 
 	var numInstancesPerZone int
 	var actualZones []string
@@ -797,6 +782,12 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 
 				instanceID := info.InstanceID
 				instance := r.ringDesc.Ingesters[instanceID]
+
+				// If the instance is read only, do not include it in the shard.
+				if instance.ReadonlyTimestamp != 0 {
+					continue
+				}
+
 				shard[instanceID] = instance
 
 				// If the lookback is enabled and this instance has been registered within the lookback period

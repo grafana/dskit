@@ -218,9 +218,10 @@ type Ring struct {
 }
 
 type subringCacheKey struct {
-	identifier     string
-	shardSize      int
-	lookbackPeriod time.Duration
+	identifier      string
+	shardSize       int
+	includeReadOnly bool
+	lookbackPeriod  time.Duration
 }
 
 type cachedSubringWithLookback[R any] struct {
@@ -721,6 +722,11 @@ func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPer
 func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) *Ring {
 	lookbackUntil := now.Add(-lookbackPeriod).Unix()
 
+	includeReadOnly := false
+	if lookbackPeriod > 0 {
+		includeReadOnly = true
+	}
+
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
@@ -784,7 +790,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 				instance := r.ringDesc.Ingesters[instanceID]
 
 				// If the instance is read only, do not include it in the shard.
-				if instance.ReadonlyTimestamp != 0 {
+				if instance.ReadOnly && !includeReadOnly {
 					continue
 				}
 
@@ -793,6 +799,15 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 				// If the lookback is enabled and this instance has been registered within the lookback period
 				// then we should include it in the subring but continuing selecting instances.
 				if lookbackPeriod > 0 && instance.RegisteredTimestamp >= lookbackUntil {
+					continue
+				}
+
+				// If the lookback is enabled, and this instance has switched its read-only state within the lookback period,
+				// then we should include it in the subring, but continue selecting more instances.
+				//
+				// * If instance switched to read-only state within the lookback period, then next instance is currently receiving data that belonged to this instance before.
+				// * If instance switched to read-write state (read-only=false) within the lookback period, then there was another instance that received data that now belongs back to this instance.
+				if lookbackPeriod > 0 && instance.ReadOnlyUpdatedTimestamp >= lookbackUntil {
 					continue
 				}
 

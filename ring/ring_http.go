@@ -41,7 +41,8 @@ type ingesterDesc struct {
 	Address             string    `json:"address"`
 	HeartbeatTimestamp  time.Time `json:"timestamp"`
 	RegisteredTimestamp time.Time `json:"registered_timestamp"`
-	ReadOnlyTimestamp   time.Time `json:"readonly_timestamp"`
+	ReadOnly            bool      `json:"readonly"`
+	ReadOnlyUpdated     time.Time `json:"readonly_updated"`
 	Zone                string    `json:"zone"`
 	Tokens              []uint32  `json:"tokens"`
 	NumTokens           int       `json:"-"`
@@ -111,13 +112,16 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 			state = "UNHEALTHY"
 		}
 
+		ro, rots := ing.GetReadOnlyState()
+
 		ingesters = append(ingesters, ingesterDesc{
 			ID:                  id,
 			State:               state,
 			Address:             ing.Addr,
 			HeartbeatTimestamp:  time.Unix(ing.Timestamp, 0).UTC(),
 			RegisteredTimestamp: ing.GetRegisteredAt().UTC(),
-			ReadOnlyTimestamp:   ing.GetReadOnlySince().UTC(),
+			ReadOnly:            ro,
+			ReadOnlyUpdated:     rots.UTC(),
 			Tokens:              ing.Tokens,
 			Zone:                ing.Zone,
 			NumTokens:           len(ing.Tokens),

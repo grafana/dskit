@@ -45,19 +45,27 @@ func NewDesc() *Desc {
 	}
 }
 
+func timeToUnixSecons(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
+}
+
 // AddIngester adds the given ingester to the ring. Ingester will only use supplied tokens,
 // any other tokens are removed.
-func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state InstanceState, registeredAt time.Time, readOnlySince time.Time) InstanceDesc {
+func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state InstanceState, registeredAt time.Time, readOnly bool, readOnlyUpdated time.Time) InstanceDesc {
 	inst := InstanceDesc{
-		Id:        id,
-		Addr:      addr,
-		Timestamp: time.Now().Unix(),
-		State:     state,
-		Tokens:    tokens,
-		Zone:      zone,
+		Id:                       id,
+		Addr:                     addr,
+		Timestamp:                time.Now().Unix(),
+		State:                    state,
+		Tokens:                   tokens,
+		Zone:                     zone,
+		RegisteredTimestamp:      timeToUnixSecons(registeredAt),
+		ReadOnly:                 readOnly,
+		ReadOnlyUpdatedTimestamp: timeToUnixSecons(readOnlyUpdated),
 	}
-	inst.SetRegisteredAt(registeredAt)
-	inst.SetReadOnlySince(readOnlySince)
 
 	d.AddInstance(id, inst)
 	return inst
@@ -151,22 +159,18 @@ func (i *InstanceDesc) SetRegisteredAt(t time.Time) {
 	}
 }
 
-// GetReadOnlySince returns the timestamp when the instance has been marked as read-only,
-// or zero if instance is not read-only or doesn't exist.
-func (i *InstanceDesc) GetReadOnlySince() time.Time {
-	if i == nil || i.ReadonlyTimestamp == 0 {
-		return time.Time{}
+// GetReadOnlyState returns the read-only state and timestamp of last read-only state update.
+func (i *InstanceDesc) GetReadOnlyState() (bool, time.Time) {
+	if i == nil {
+		return false, time.Time{}
 	}
 
-	return time.Unix(i.ReadonlyTimestamp, 0)
-}
-
-func (i *InstanceDesc) SetReadOnlySince(t time.Time) {
-	if t.IsZero() {
-		i.ReadonlyTimestamp = 0
-	} else {
-		i.ReadonlyTimestamp = t.Unix()
+	ts := time.Time{}
+	if i.ReadOnlyUpdatedTimestamp > 0 {
+		ts = time.Unix(i.ReadOnlyUpdatedTimestamp, 0)
 	}
+
+	return i.ReadOnly, ts
 }
 
 func (i *InstanceDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, now time.Time) bool {
@@ -627,7 +631,11 @@ func (d *Desc) RingCompare(o *Desc) CompareResult {
 			return Different
 		}
 
-		if ing.ReadonlyTimestamp != oing.ReadonlyTimestamp {
+		if ing.ReadOnly != oing.ReadOnly {
+			return Different
+		}
+
+		if ing.ReadOnlyUpdatedTimestamp != oing.ReadOnlyUpdatedTimestamp {
 			return Different
 		}
 

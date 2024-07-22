@@ -39,7 +39,7 @@
             <td>{{ .Address }}</td>
             <td>{{ .RegisteredTimestamp | timeOrEmptyString }}</td>
             <td>{{ .ReadOnly }}</td>
-            <td>{{ .ReadOnlyTimestamp | timeOrEmptyString }}</td>
+            <td>{{ .ReadOnlyUpdatedTimestamp | timeOrEmptyString }}</td>
             <td>{{ .HeartbeatTimestamp | durationSince }} ago ({{ .HeartbeatTimestamp.Format "15:04:05.999" }})</td>
             <td>{{ .NumTokens }}</td>
             <td>{{ .Ownership | humanFloat }}%</td>

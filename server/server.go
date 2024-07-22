@@ -154,6 +154,21 @@ type Config struct {
 
 	// This limiter is called for every started and finished gRPC request.
 	GrpcMethodLimiter GrpcInflightMethodLimiter `yaml:"-"`
+
+	ThroughputConfig ThroughputConfig `yaml:"-"`
+}
+
+type ThroughputConfig struct {
+	// SlowRequestCutoff specifies the duration after which a request is considered slow.
+	// For requests taking longer than this duration to finish, the throughput will be calculated.
+	// If set to 0, the throughput will not be calculated.
+	SlowRequestCutoff time.Duration `yaml:"-"`
+	// Unit is the unit of the server throughput metric, for example "bytes" or "samples".
+	// If is appended to the server_throughput metric name if set.
+	Unit string `yaml:"-"`
+	// Method to get the amount of data processed by the server.
+	// If not set the amount is equal to the response size in bytes and ThroughputUnit is set accordingly.
+	//HTTPServerProcessedVolume func(*http.Request, *http.Response) (int64, bool) `yaml:"-"`
 }
 
 var infinty = time.Duration(math.MaxInt64)
@@ -531,6 +546,9 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 			RequestBodySize:   metrics.ReceivedMessageSize,
 			ResponseBodySize:  metrics.SentMessageSize,
 			InflightRequests:  metrics.InflightRequests,
+
+		  SlowRequestCutoff:           cfg.ThroughputConfig.SlowRequestCutoff,
+			SlowRequestServerThroughput: metrics.SlowRequestServerThroughput,
 		},
 	}
 	var httpMiddleware []middleware.Interface

@@ -679,9 +679,11 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 // - Shuffling: probabilistically, for a large enough cluster each identifier gets a different
 // set of instances, with a reduced number of overlapping instances between two identifiers.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
-	// Nothing to do if the shard size is not smaller then the actual ring.
-	if size <= 0 || r.InstancesCount() <= size {
-		return r
+	// Use all instances if shuffle sharding is disabled, or it covers all instances anyway.
+	// Reason is that we need to filter out read-only instances.
+	instances := r.InstancesCount()
+	if size <= 0 || instances <= size {
+		size = instances
 	}
 
 	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {

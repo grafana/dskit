@@ -123,25 +123,21 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 	}
 
 	loadCert := func() (*tls.Certificate, error) {
-		// not used boolean, assumed if this is called is because we already configured TLS Client certificates.
-		_, err := cfg.validateCertificatePaths()
-		if err == nil {
-			cert, err := reader.ReadSecret(cfg.CertPath)
-			if err != nil {
-				return nil, errors.Wrapf(err, "error loading client cert: %s", cfg.CertPath)
-			}
-			key, err := reader.ReadSecret(cfg.KeyPath)
-			if err != nil {
-				return nil, errors.Wrapf(err, "error loading client key: %s", cfg.KeyPath)
-			}
-
-			clientCert, err := tls.X509KeyPair(cert, key)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to load TLS certificate %s,%s", cfg.CertPath, cfg.KeyPath)
-			}
-			return &clientCert, nil
+		cert, err := reader.ReadSecret(cfg.CertPath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error loading client cert: %s", cfg.CertPath)
 		}
-		return nil, err
+		key, err := reader.ReadSecret(cfg.KeyPath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error loading client key: %s", cfg.KeyPath)
+		}
+
+		clientCert, err := tls.X509KeyPair(cert, key)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to load TLS certificate %s,%s", cfg.CertPath, cfg.KeyPath)
+		}
+		return &clientCert, nil
+
 	}
 
 	useClientCerts, err := cfg.validateCertificatePaths()

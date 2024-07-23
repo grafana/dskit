@@ -83,18 +83,6 @@ func (cfg *ClientConfig) GetTLSCipherSuitesLongDescription() string {
 	return text
 }
 
-func (cfg *ClientConfig) validateCertificatePaths() (bool, error) {
-	if cfg.CertPath != "" || cfg.KeyPath != "" {
-		if cfg.CertPath == "" {
-			return true, errCertMissing
-		}
-		if cfg.KeyPath == "" {
-			return true, errKeyMissing
-		}
-		return true, nil
-	}
-	return false, nil
-}
 
 // GetTLSConfig initialises tls.Config from config options
 func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {

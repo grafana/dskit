@@ -196,11 +196,76 @@ func BenchmarkSpanLogger(b *testing.B) {
 	})
 }
 
+func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
+	testCases := map[string]bool{
+		"all levels allowed":     true,
+		"info and above allowed": false,
+	}
+
+	for name, debugEnabled := range testCases {
+		b.Run(name, func(b *testing.B) {
+			buf := bytes.NewBuffer(nil)
+			logger := dskit_log.NewGoKitWithWriter("logfmt", buf)
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
+
+			if debugEnabled {
+				logger = level.NewFilter(logger, level.AllowAll())
+			} else {
+				logger = level.NewFilter(logger, level.AllowInfo())
+			}
+
+			logger = loggerWithDebugEnabled{
+				Logger:       logger,
+				debugEnabled: debugEnabled,
+			}
+
+			resolver := fakeResolver{}
+			sl, _ := New(context.Background(), logger, "test", resolver, "bar")
+
+			b.Run("log", func(b *testing.B) {
+				buf.Reset()
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					_ = sl.Log("msg", "foo", "more", "data")
+				}
+			})
+
+			b.Run("level.debug", func(b *testing.B) {
+				buf.Reset()
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					_ = level.Debug(sl).Log("msg", "foo", "more", "data")
+				}
+			})
+
+			b.Run("debuglog", func(b *testing.B) {
+				buf.Reset()
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					sl.DebugLog("msg", "foo", "more", "data")
+				}
+			})
+		})
+	}
+
+}
+
 // Logger which does nothing and implements the DebugEnabled interface used by SpanLogger.
 type noDebugNoopLogger struct{}
 
 func (noDebugNoopLogger) Log(...interface{}) error { return nil }
 func (noDebugNoopLogger) DebugEnabled() bool       { return false }
+
+// Logger which delegates to the inner log.Logger, and implements the DebugEnabled interface used by SpanLogger.
+type loggerWithDebugEnabled struct {
+	log.Logger
+	debugEnabled bool
+}
+
+func (l loggerWithDebugEnabled) DebugEnabled() bool { return l.debugEnabled }
 
 func TestSpanLogger_CallerInfo(t *testing.T) {
 	testCases := map[string]func(w io.Writer) log.Logger{

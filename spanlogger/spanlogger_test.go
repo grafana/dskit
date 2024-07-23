@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -296,7 +297,7 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 }
 
 func toCallerInfo(path string, lineNumber int) string {
-	fileName := path[strings.LastIndex(path, "/")+1:]
+	fileName := filepath.Base(path)
 
 	return fmt.Sprintf("%s:%v", fileName, lineNumber)
 }

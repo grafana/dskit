@@ -140,12 +140,14 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 
 	}
 
-	useClientCerts, err := cfg.validateCertificatePaths()
-	if err != nil {
-		return nil, err
-	}
-
-	if useClientCerts {
+	// Read Client Certificate
+	if cfg.CertPath != "" || cfg.KeyPath != "" {
+		if cfg.CertPath == "" {
+			return nil, errCertMissing
+		}
+		if cfg.KeyPath == "" {
+			return nil, errKeyMissing
+		}
 		// Confirm that certificate and key paths are valid.
 		if _, err := loadCert(); err != nil {
 			return nil, err

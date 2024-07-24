@@ -83,7 +83,6 @@ func (cfg *ClientConfig) GetTLSCipherSuitesLongDescription() string {
 	return text
 }
 
-
 // GetTLSConfig initialises tls.Config from config options
 func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 	config := &tls.Config{

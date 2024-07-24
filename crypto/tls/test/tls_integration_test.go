@@ -32,6 +32,8 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 )
 
+const mismatchCAAndCerts = "remote error: tls: unknown certificate authority"
+
 type tcIntegrationClientServer struct {
 	name            string
 	tlsGrpcEnabled  bool
@@ -363,6 +365,8 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 	// bad certificate from the server side and just see connection
 	// closed/reset instead
 	badCertErr := errorContainsString(badCertificateErrorMessage)
+	mismatchCAAndCertsErr := errorContainsString(mismatchCAAndCerts)
+
 	newIntegrationClientServer(
 		t,
 		cfg,
@@ -411,7 +415,7 @@ func TestTLSServerWithLocalhostCertWithClientCertificateEnforcementUsingClientCA
 					CertPath: certs.client2CertFile,
 					KeyPath:  certs.client2KeyFile,
 				},
-				httpExpectError: badCertErr,
+				httpExpectError: mismatchCAAndCertsErr,
 				grpcExpectError: unavailableDescErr,
 			},
 		},

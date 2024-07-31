@@ -653,7 +653,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 			return nil, false, err
 		}
 
-		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now())
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now(), false, time.Time{})
 		return ringDesc, false, nil
 	})
 	require.NoError(t, err)
@@ -729,7 +729,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 			return nil, false, err
 		}
 
-		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now())
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now(), false, time.Time{})
 		return ringDesc, false, nil
 	})
 	require.NoError(t, err)
@@ -1127,7 +1127,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	err := ringStore.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		// Create ring with LEAVING entry with some tokens
 		r := GetOrCreateRingDesc(in)
-		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, LEAVING, registeredAt)
+		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, LEAVING, registeredAt, false, time.Time{})
 		return r, true, err
 	})
 	require.NoError(t, err)

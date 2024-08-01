@@ -172,6 +172,9 @@ type Lifecycler struct {
 
 	lifecyclerMetrics *LifecyclerMetrics
 	logger            log.Logger
+
+	// The state of the instance when it has joined the ring without error. Can be either ACTIVE or READONLY
+	joinedState InstanceState
 }
 
 // NewLifecycler creates new Lifecycler. It must be started via StartAsync.
@@ -228,6 +231,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		canJoinTimeout:        5 * time.Minute,
 		lifecyclerMetrics:     NewLifecyclerMetrics(ringName, reg),
 		logger:                logger,
+		joinedState:           ACTIVE,
 	}
 
 	l.BasicService = services.
@@ -347,6 +351,18 @@ func (i *Lifecycler) ChangeState(ctx context.Context, state InstanceState) error
 		return err
 	}
 	return <-errCh
+}
+
+// SetJoinedState changes the state the instance should be in after it joins the ring.
+// It does not modify the current state of the instance.
+func (i *Lifecycler) SetJoinedState(state InstanceState) error {
+	switch state {
+	case ACTIVE, READONLY:
+		i.joinedState = state
+		return nil
+	default:
+		return fmt.Errorf("invalid joined state %s; only valid options are: ACTIVE, READONLY", state)
+	}
 }
 
 func (i *Lifecycler) getTokens() Tokens {
@@ -488,7 +504,7 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 		case <-autoJoinAfter:
 			level.Debug(i.logger).Log("msg", "JoinAfter expired", "ring", i.RingName)
 			// Will only fire once, after auto join timeout.  If we haven't entered "JOINING" state,
-			// then pick some tokens and enter ACTIVE state.
+			// then pick some tokens and enter joinedState.
 			if i.GetState() == PENDING {
 				level.Info(i.logger).Log("msg", "auto-joining cluster after timeout", "ring", i.RingName)
 
@@ -499,10 +515,10 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 						return errors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
 					}
 
-					level.Info(i.logger).Log("msg", "observing tokens before going ACTIVE", "ring", i.RingName)
+					level.Info(i.logger).Log("msg", fmt.Sprintf("observing tokens before going %s", i.joinedState), "ring", i.RingName)
 					observeChan = time.After(i.cfg.ObservePeriod)
 				} else {
-					if err := i.autoJoin(context.Background(), ACTIVE); err != nil {
+					if err := i.autoJoin(context.Background(), i.joinedState); err != nil {
 						return errors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
 					}
 				}
@@ -512,6 +528,8 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 			// if observeChan is nil, this case is ignored. We keep updating observeChan while observing the ring.
 			// When observing is done, observeChan is set to nil.
 
+			// TODO -- there are no tests for this
+
 			observeChan = nil
 			if s := i.GetState(); s != JOINING {
 				level.Error(i.logger).Log("msg", "unexpected state while observing tokens", "state", s, "ring", i.RingName)
@@ -520,9 +538,9 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 			if i.verifyTokens(context.Background()) {
 				level.Info(i.logger).Log("msg", "token verification successful", "ring", i.RingName)
 
-				err := i.changeState(context.Background(), ACTIVE)
+				err := i.changeState(context.Background(), i.joinedState)
 				if err != nil {
-					level.Error(i.logger).Log("msg", "failed to set state to ACTIVE", "ring", i.RingName, "err", err)
+					level.Error(i.logger).Log("msg", fmt.Sprintf("failed to set state to %s", i.joinedState), "ring", i.RingName, "err", err)
 				}
 			} else {
 				level.Info(i.logger).Log("msg", "token verification failed, observing", "ring", i.RingName)
@@ -638,7 +656,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			if len(tokensFromFile) > 0 {
 				level.Info(i.logger).Log("msg", "adding tokens from file", "num_tokens", len(tokensFromFile))
 				if len(tokensFromFile) >= i.cfg.NumTokens {
-					i.setState(ACTIVE)
+					i.setState(i.joinedState)
 				}
 				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), registeredAt)
 				i.setTokens(tokensFromFile)
@@ -671,7 +689,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			len(tokens), "ring", i.RingName)
 
 		// If the ingester fails to clean its ring entry up or unregister_on_shutdown=false, it can leave behind its
-		// ring state as LEAVING. Make sure to switch to the ACTIVE state.
+		// ring state as LEAVING. Make sure to switch to the joinedState.
 		if instanceDesc.State == LEAVING {
 			delta := i.cfg.NumTokens - len(tokens)
 			if delta > 0 {
@@ -691,9 +709,11 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				sort.Sort(tokens)
 			}
 
-			instanceDesc.State = ACTIVE
+			instanceDesc.State = i.joinedState
 			instanceDesc.Tokens = tokens
 		}
+
+		// TODO -- if the instance in the ring is ACTIVE but joinedState is READONLY (or vice versa), we should change the ring state to match joinedState
 
 		// Set the local state based on the updated instance.
 		i.setState(instanceDesc.State)
@@ -909,8 +929,13 @@ func (i *Lifecycler) changeState(ctx context.Context, state InstanceState) error
 	if !((currState == PENDING && state == JOINING) || // triggered by TransferChunks at the beginning
 		(currState == JOINING && state == PENDING) || // triggered by TransferChunks on failure
 		(currState == JOINING && state == ACTIVE) || // triggered by TransferChunks on success
+		// TODO -- are these TransferChunks transitions still used? Do we need to allow JOINING -> READONLY?
+		(currState == ACTIVE && state == READONLY) || // triggered by ...?
+		(currState == READONLY && state == ACTIVE) || // triggered by ...?
 		(currState == PENDING && state == ACTIVE) || // triggered by autoJoin
-		(currState == ACTIVE && state == LEAVING)) { // triggered by shutdown
+		(currState == PENDING && state == READONLY) || // triggered by autoJoin
+		(currState == ACTIVE && state == LEAVING) || // triggered by shutdown
+		(currState == READONLY && state == LEAVING)) { // triggered by shutdown
 		return fmt.Errorf("Changing instance state from %v -> %v is disallowed", currState, state)
 	}
 

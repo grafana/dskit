@@ -3350,6 +3350,7 @@ func TestUpdateMetrics(t *testing.T) {
 		ring_members{name="test",state="JOINING"} 0
 		ring_members{name="test",state="LEAVING"} 0
 		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="READONLY"} 0
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
@@ -3357,6 +3358,7 @@ func TestUpdateMetrics(t *testing.T) {
 		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="READONLY"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
@@ -3394,6 +3396,7 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_members{name="test",state="JOINING"} 0
 		ring_members{name="test",state="LEAVING"} 0
 		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="READONLY"} 0
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
@@ -3401,6 +3404,7 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="READONLY"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
@@ -3422,6 +3426,7 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_members{name="test",state="JOINING"} 0
 		ring_members{name="test",state="LEAVING"} 0
 		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="READONLY"} 0
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
@@ -3429,6 +3434,7 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="READONLY"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge

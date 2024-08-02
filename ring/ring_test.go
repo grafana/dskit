@@ -58,7 +58,7 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 	for i := 0; i < numInstances; i++ {
 		tokens := gen.GenerateTokens(numTokens, takenTokens)
 		takenTokens = append(takenTokens, tokens...)
-		desc.AddIngester(fmt.Sprintf("%d", i), fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, time.Now())
+		desc.AddIngester(fmt.Sprintf("%d", i), fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, time.Now(), false, time.Time{})
 	}
 
 	cfg := Config{}
@@ -149,14 +149,15 @@ func benchmarkUpdateRingState(b *testing.B, numInstances, numTokens int, updateT
 		tokens := gen.GenerateTokens(numTokens, takenTokens)
 		takenTokens = append(takenTokens, tokens...)
 		now := time.Now()
+		zeroTime := time.Time{}
 		id := fmt.Sprintf("%d", i)
-		desc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, now)
+		desc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, now, false, zeroTime)
 		if updateTokens {
 			otherTokens := gen.GenerateTokens(numTokens, otherTakenTokens)
 			otherTakenTokens = append(otherTakenTokens, otherTokens...)
-			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), otherTokens, ACTIVE, now)
+			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), otherTokens, ACTIVE, now, false, zeroTime)
 		} else {
-			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, JOINING, now)
+			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, JOINING, now, false, zeroTime)
 		}
 	}
 
@@ -263,7 +264,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 	for address := 0; address < replicationFactor; address++ {
 		instTokens := gen.GenerateTokens(128, nil)
 		instanceID := fmt.Sprintf("%d", address)
-		desc.AddIngester(instanceID, instanceID, "", instTokens, ACTIVE, time.Now())
+		desc.AddIngester(instanceID, instanceID, "", instTokens, ACTIVE, time.Now(), false, time.Time{})
 	}
 	ringConfig := Config{
 		HeartbeatTimeout:  time.Hour,
@@ -423,12 +424,14 @@ func TestAddIngester(t *testing.T) {
 	now := time.Now()
 	ing1Tokens := initTokenGenerator(t).GenerateTokens(128, nil)
 
-	r.AddIngester(ingName, "addr", "1", ing1Tokens, ACTIVE, now)
+	r.AddIngester(ingName, "addr", "1", ing1Tokens, ACTIVE, now, false, time.Time{})
 
 	assert.Equal(t, "addr", r.Ingesters[ingName].Addr)
 	assert.Equal(t, ing1Tokens, Tokens(r.Ingesters[ingName].Tokens))
 	assert.InDelta(t, time.Now().Unix(), r.Ingesters[ingName].Timestamp, 2)
 	assert.Equal(t, now.Unix(), r.Ingesters[ingName].RegisteredTimestamp)
+	assert.False(t, r.Ingesters[ingName].ReadOnly)
+	assert.Equal(t, int64(0), r.Ingesters[ingName].ReadOnlyUpdatedTimestamp)
 }
 
 func TestAddIngesterReplacesExistingTokens(t *testing.T) {
@@ -443,7 +446,7 @@ func TestAddIngesterReplacesExistingTokens(t *testing.T) {
 
 	newTokens := initTokenGenerator(t).GenerateTokens(128, nil)
 
-	r.AddIngester(ing1Name, "addr", "1", newTokens, ACTIVE, time.Now())
+	r.AddIngester(ing1Name, "addr", "1", newTokens, ACTIVE, time.Now(), false, time.Time{})
 
 	require.Equal(t, newTokens, Tokens(r.Ingesters[ing1Name].Tokens))
 }
@@ -484,7 +487,7 @@ func TestRing_Get_ZoneAwarenessWithIngesterLeaving(t *testing.T) {
 			var prevTokens []uint32
 			for id, instance := range instances {
 				ingTokens := gen.GenerateTokens(128, prevTokens)
-				r.AddIngester(id, instance.Addr, instance.Zone, ingTokens, instance.State, time.Now())
+				r.AddIngester(id, instance.Addr, instance.Zone, ingTokens, instance.State, time.Now(), false, time.Time{})
 				prevTokens = append(prevTokens, ingTokens...)
 			}
 			instancesList := make([]InstanceDesc, 0, len(r.GetIngesters()))
@@ -580,7 +583,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 				name := fmt.Sprintf("ing%v", i)
 				ingTokens := gen.GenerateTokens(128, prevTokens)
 
-				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i%testData.numZones), ingTokens, ACTIVE, time.Now())
+				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i%testData.numZones), ingTokens, ACTIVE, time.Now(), false, time.Time{})
 
 				prevTokens = append(prevTokens, ingTokens...)
 			}
@@ -3226,7 +3229,6 @@ func TestRing_ShuffleShard_Caching(t *testing.T) {
 	lcs := []*Lifecycler(nil)
 	for i := 0; i < numLifecyclers; i++ {
 		lc := startLifecycler(t, cfg, 500*time.Millisecond, i, zones)
-
 		lcs = append(lcs, lc)
 	}
 

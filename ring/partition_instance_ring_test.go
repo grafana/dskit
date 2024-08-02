@@ -187,6 +187,7 @@ func BenchmarkPartitionInstanceRing_GetReplicationSetsForOperation(b *testing.B)
 		numActivePartitions = 100
 		zones               = []string{"a", "b", "c"}
 		now                 = time.Now()
+		readOnlyUpdated     = time.Time{}
 	)
 
 	// Create the instances and partitions ring.
@@ -198,7 +199,7 @@ func BenchmarkPartitionInstanceRing_GetReplicationSetsForOperation(b *testing.B)
 
 		for _, zone := range zones {
 			instanceID := fmt.Sprintf("instance-zone-%s-%d", zone, partitionID)
-			instancesRing.ringDesc.AddIngester(instanceID, instanceID, zone, nil, ACTIVE, now)
+			instancesRing.ringDesc.AddIngester(instanceID, instanceID, zone, nil, ACTIVE, now, false, readOnlyUpdated)
 			partitionsRing.AddOrUpdateOwner(instanceID, OwnerActive, int32(partitionID), now)
 		}
 	}

@@ -29,7 +29,7 @@ jobs:
       if: ${{ github.event_name == 'pull_request' }}
       with:
         script: |
-          return github.rest.issues.listComments({
+          return await github.rest.issues.listComments({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,

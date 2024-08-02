@@ -4,8 +4,6 @@ jobs:
   test:
     name: Bench
     runs-on: ubuntu-latest
-    outputs:
-      flame_graph_ids: ${{ steps.run_benchmarks.outputs.flame_graph_ids }}
 
     steps:
     - name: Set up Go 1.22
@@ -41,8 +39,6 @@ jobs:
 
     - name: Get result
       if: ${{ github.event_name == 'pull_request' }}
-      needs:
-        - run_benchmarks
       run: |
         echo '${{steps.create-comment.outputs.result}}'
-        echo '${{needs.run_benchmarks.outputs.flame_graph_ids}}'
+        echo '${{steps.run_benchmarks.outputs.flame_graph_ids}}'

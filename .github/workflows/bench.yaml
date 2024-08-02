@@ -21,4 +21,4 @@ jobs:
     # TODO: Remove git-base
     # TODO: Provide output
     - name: Run Benchmark
-      run: go run github.com/grafana/pyrobench@65a9bc2 -v compare --git-base main~1
+      run: go run github.com/grafana/pyrobench@65a9bc2 -v compare --git-base 5eca05b1e4cf63df5d007ec6b13ce7394a0fffe3

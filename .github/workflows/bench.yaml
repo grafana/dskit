@@ -17,11 +17,12 @@ jobs:
       with:
         fetch-depth: 1024
 
-    # TODO: Pin release
-    # TODO: Remove git-base
-    # TODO: Provide output
-    - name: Run Benchmark
-      run: go run github.com/grafana/pyrobench@65a9bc2 -v compare --git-base 5eca05b1e4cf63df5d007ec6b13ce7394a0fffe3
+    # Commenting out this step for now while we test the PR comment portion
+    # # TODO: Pin release
+    # # TODO: Remove git-base
+    # # TODO: Provide output
+    # - name: Run Benchmark
+    #   run: go run github.com/grafana/pyrobench@65a9bc2 -v compare --git-base 5eca05b1e4cf63df5d007ec6b13ce7394a0fffe3
 
     - uses: actions/github-script@v7
       id: create-comment

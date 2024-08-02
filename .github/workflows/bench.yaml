@@ -29,6 +29,8 @@ jobs:
       with:
         # TODO(bryan): Only run on pull_request, not push
         script: |
+          console.log(context);
+
           github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,

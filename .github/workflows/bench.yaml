@@ -31,7 +31,6 @@ jobs:
       id: create-comment
       if: ${{ github.event_name == 'pull_request' }}
       with:
-        github-token: ${{ secrets.PAT }}
         script: |
           const report = require('./report.js');
           report({ github, context });

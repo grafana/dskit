@@ -21,24 +21,17 @@ jobs:
     # TODO: Remove git-base
     # TODO: Provide output
     - name: Run Benchmark
-      id: run_benchmarks
       run: |
-        IDS=$(go run github.com/grafana/pyrobench@ce823ac -v compare --git-base 5eca05b1e4cf63df5d007ec6b13ce7394a0fffe3)
-        echo 'flame_graph_ids="${IDS}"' >> "$GITHUB_OUTPUT"
+        go run github.com/grafana/pyrobench@3fa67b1 -v compare --git-base 15dd5805938793bb952dd7772c8caab77ba8ff1a >> results.txt
+
+    - name: Download test report
+      run: curl -sL https://raw.githubusercontent.com/grafana/hackathon-2024-08-pyrobench/main/js/report.js -o report.js
 
     - uses: actions/github-script@v7
       id: create-comment
       if: ${{ github.event_name == 'pull_request' }}
       with:
+        github-token: ${{ secrets.PAT }}
         script: |
-          return await github.rest.issues.listComments({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-          });
-
-    - name: Get result
-      if: ${{ github.event_name == 'pull_request' }}
-      run: |
-        echo '${{steps.create-comment.outputs.result}}'
-        echo '${{steps.run_benchmarks.outputs.flame_graph_ids}}'
+          const report = require('./report.js');
+          report({ github, context });

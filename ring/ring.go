@@ -722,11 +722,6 @@ func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPer
 func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) *Ring {
 	lookbackUntil := now.Add(-lookbackPeriod).Unix()
 
-	includeReadOnly := false
-	if lookbackPeriod > 0 {
-		includeReadOnly = true
-	}
-
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
@@ -789,8 +784,8 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 				instanceID := info.InstanceID
 				instance := r.ringDesc.Ingesters[instanceID]
 
-				// If the instance is read only, do not include it in the shard.
-				if instance.ReadOnly && !includeReadOnly {
+				// If the instance is read only without a lookback, do not include it in the shard.
+				if lookbackPeriod == 0 && instance.ReadOnly {
 					continue
 				}
 

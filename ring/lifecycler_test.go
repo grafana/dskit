@@ -653,7 +653,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 			return nil, false, err
 		}
 
-		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now())
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now(), false, time.Time{})
 		return ringDesc, false, nil
 	})
 	require.NoError(t, err)
@@ -696,6 +696,88 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	}), "tokens should be sorted")
 }
 
+func TestLifecycler_ChangeReadOnlyState(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	ctx := context.Background()
+
+	createLifecyclerFn := func(id string) *Lifecycler {
+		// Add the first ingester to the ring
+		lifecyclerConfig1 := testLifecyclerConfig(ringConfig, id)
+		lifecyclerConfig1.HeartbeatPeriod = 100 * time.Millisecond
+		lifecyclerConfig1.JoinAfter = 100 * time.Millisecond
+
+		lifecycler, err := NewLifecycler(lifecyclerConfig1, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+		assert.Equal(t, 0, lifecycler.HealthyInstancesCount())
+		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+		t.Cleanup(func() {
+			assert.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
+		})
+		return lifecycler
+	}
+
+	lifecycler1 := createLifecyclerFn("ing1")
+	lifecycler2 := createLifecyclerFn("ing2")
+
+	// Assert the ingester has joined both rings
+	test.Poll(t, time.Second, true, func() interface{} {
+		return lifecycler1.HealthyInstancesCount() == 2 && lifecycler2.HealthyInstancesCount() == 2
+	})
+
+	require.NoError(t, lifecycler1.ChangeReadOnlyState(ctx, true))
+
+	// Assert the ingester has changed to read only
+	test.Poll(t, time.Second, true, func() interface{} {
+		return lifecycler1.ReadOnlyInstancesCount() == 1 && lifecycler2.ReadOnlyInstancesCount() == 1
+	})
+}
+
+func TestLifecycler_StartingWithReadOnlyInstanceInRing(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	ctx := context.Background()
+
+	createLifecyclerFn := func(id string) *Lifecycler {
+		// Add the first ingester to the ring
+		lifecyclerConfig1 := testLifecyclerConfig(ringConfig, id)
+		lifecyclerConfig1.HeartbeatPeriod = 100 * time.Millisecond
+		lifecyclerConfig1.JoinAfter = 100 * time.Millisecond
+
+		lifecycler, err := NewLifecycler(lifecyclerConfig1, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+		assert.Equal(t, 0, lifecycler.HealthyInstancesCount())
+		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+		t.Cleanup(func() {
+			assert.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
+		})
+		return lifecycler
+	}
+
+	lifecycler1 := createLifecyclerFn("ing1")
+	require.NoError(t, lifecycler1.ChangeReadOnlyState(ctx, true))
+	// Assert the ingester has changed to read only
+	test.Poll(t, time.Second, true, func() interface{} {
+		return lifecycler1.HealthyInstancesCount() == 1 && lifecycler1.ReadOnlyInstancesCount() == 1
+	})
+
+	// Assert the second ingester joins the ring and sees the first ingester as read only
+	lifecycler2 := createLifecyclerFn("ing2")
+	test.Poll(t, time.Second, true, func() interface{} {
+		return lifecycler2.HealthyInstancesCount() == 2 && lifecycler2.ReadOnlyInstancesCount() == 1
+	})
+}
+
 // Test Lifecycler when decreasing tokens and instance is already in the ring in leaving state.
 func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	ctx := context.Background()
@@ -729,7 +811,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 			return nil, false, err
 		}
 
-		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now())
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now(), false, time.Time{})
 		return ringDesc, false, nil
 	})
 	require.NoError(t, err)
@@ -1127,7 +1209,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	err := ringStore.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		// Create ring with LEAVING entry with some tokens
 		r := GetOrCreateRingDesc(in)
-		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, LEAVING, registeredAt)
+		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, LEAVING, registeredAt, false, time.Time{})
 		return r, true, err
 	})
 	require.NoError(t, err)

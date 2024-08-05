@@ -128,9 +128,10 @@ type InstanceDesc struct {
 	RegisteredTimestamp int64 `protobuf:"varint,8,opt,name=registered_timestamp,json=registeredTimestamp,proto3" json:"registered_timestamp,omitempty"`
 	// ID of the instance. This value is the same as the key in the ingesters map in Desc.
 	Id string `protobuf:"bytes,9,opt,name=id,proto3" json:"id,omitempty"`
-	// Timestamp when the read_only flag was updated. This is used to find other instances that could have possibly
-	// owned a specific token in the past on the write path, due to *this* instance being read-only.
-	// This value should only increase.
+	// Unix timestamp (with seconds precision) of when the read_only flag was updated. This
+	// is used to find other instances that could have possibly owned a specific token in
+	// the past on the write path, due to *this* instance being read-only. This value should
+	// only increase.
 	ReadOnlyUpdatedTimestamp int64 `protobuf:"varint,10,opt,name=read_only_updated_timestamp,json=readOnlyUpdatedTimestamp,proto3" json:"read_only_updated_timestamp,omitempty"`
 	// Indicates whether this instance is read only.
 	// Read-only instances go through standard state changes, and special handling is applied to them

@@ -726,14 +726,14 @@ func TestLifecycler_ChangeReadOnlyState(t *testing.T) {
 	lifecycler2 := createLifecyclerFn("ing2")
 
 	// Assert the ingester has joined both rings
-	test.Eventually(t, time.Second, func() bool {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler1.HealthyInstancesCount() == 2 && lifecycler2.HealthyInstancesCount() == 2
 	})
 
 	require.NoError(t, lifecycler1.ChangeReadOnlyState(ctx, true))
 
 	// Assert the ingester has changed to read only
-	test.Eventually(t, time.Second, func() bool {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler1.ReadOnlyInstancesCount() == 1 && lifecycler2.ReadOnlyInstancesCount() == 1
 	})
 }
@@ -767,13 +767,13 @@ func TestLifecycler_StartingWithReadOnlyInstanceInRing(t *testing.T) {
 	lifecycler1 := createLifecyclerFn("ing1")
 	require.NoError(t, lifecycler1.ChangeReadOnlyState(ctx, true))
 	// Assert the ingester has changed to read only
-	test.Eventually(t, time.Second, func() bool {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler1.HealthyInstancesCount() == 1 && lifecycler1.ReadOnlyInstancesCount() == 1
 	})
 
 	// Assert the second ingester joins the ring and sees the first ingester as read only
 	lifecycler2 := createLifecyclerFn("ing2")
-	test.Eventually(t, time.Second, func() bool {
+	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler2.HealthyInstancesCount() == 2 && lifecycler2.ReadOnlyInstancesCount() == 1
 	})
 }

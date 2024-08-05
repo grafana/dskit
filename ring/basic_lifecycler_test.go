@@ -107,7 +107,7 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			initialInstanceDesc: &InstanceDesc{
 				Addr:                     "1.1.1.1",
 				State:                    ACTIVE,
-				Tokens:                   Tokens{6, 7, 8, 9, 10},
+				Tokens:                   Tokens{1, 2, 3, 4, 5},
 				RegisteredTimestamp:      time.Now().Add(-time.Hour).Unix(),
 				ReadOnly:                 true,
 				ReadOnlyUpdatedTimestamp: time.Now().Unix(),

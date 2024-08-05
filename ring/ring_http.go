@@ -41,8 +41,8 @@ type ingesterDesc struct {
 	Address                  string    `json:"address"`
 	HeartbeatTimestamp       time.Time `json:"timestamp"`
 	RegisteredTimestamp      time.Time `json:"registered_timestamp"`
-	ReadOnly                 bool      `json:"readonly"`
-	ReadOnlyUpdatedTimestamp time.Time `json:"readonly_updated_timestamp"`
+	ReadOnly                 bool      `json:"read_only"`
+	ReadOnlyUpdatedTimestamp time.Time `json:"read_only_updated_timestamp"`
 	Zone                     string    `json:"zone"`
 	Tokens                   []uint32  `json:"tokens"`
 	NumTokens                int       `json:"-"`

@@ -55,7 +55,11 @@ func timeToUnixSecons(t time.Time) int64 {
 // AddIngester adds the given ingester to the ring. Ingester will only use supplied tokens,
 // any other tokens are removed.
 func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state InstanceState, registeredAt time.Time, readOnly bool, readOnlyUpdated time.Time) InstanceDesc {
-	inst := InstanceDesc{
+	if d.Ingesters == nil {
+		d.Ingesters = map[string]InstanceDesc{}
+	}
+
+	ingester := InstanceDesc{
 		Id:                       id,
 		Addr:                     addr,
 		Timestamp:                time.Now().Unix(),
@@ -65,15 +69,6 @@ func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state Instanc
 		RegisteredTimestamp:      timeToUnixSecons(registeredAt),
 		ReadOnly:                 readOnly,
 		ReadOnlyUpdatedTimestamp: timeToUnixSecons(readOnlyUpdated),
-	}
-
-	d.AddInstance(id, inst)
-	return inst
-}
-
-func (d *Desc) AddInstance(id string, ingester InstanceDesc) InstanceDesc {
-	if d.Ingesters == nil {
-		d.Ingesters = map[string]InstanceDesc{}
 	}
 
 	d.Ingesters[id] = ingester
@@ -149,14 +144,6 @@ func (i *InstanceDesc) GetRegisteredAt() time.Time {
 	}
 
 	return time.Unix(i.RegisteredTimestamp, 0)
-}
-
-func (i *InstanceDesc) SetRegisteredAt(t time.Time) {
-	if t.IsZero() {
-		i.RegisteredTimestamp = 0
-	} else {
-		i.RegisteredTimestamp = t.Unix()
-	}
 }
 
 // GetReadOnlyState returns the read-only state and timestamp of last read-only state update.

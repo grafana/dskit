@@ -675,9 +675,8 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 
 		instanceDesc, ok := ringDesc.Ingesters[i.ID]
 		if !ok {
-			// The instance doesn't exist in the ring, so it's safe to set the registered timestamp
-			// as of now.
 			now := time.Now()
+			// The instance doesn't exist in the ring, so it's safe to set the registered timestamp as of now.
 			i.setRegisteredAt(now)
 			// Clear read-only state, and set last update time to "now".
 			i.setReadOnlyState(false, now)

@@ -706,6 +706,11 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 // This function supports caching, but the cache will only be effective if successive calls for the
 // same identifier are with the same lookbackPeriod and increasing values of now.
 func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
+	// Nothing to do if the shard size is not smaller than the actual ring.
+	if lookbackPeriod > 0 && (size <= 0 || r.InstancesCount() <= size) {
+		return r
+	}
+
 	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
 		return cached
 	}

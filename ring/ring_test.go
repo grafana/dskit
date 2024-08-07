@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
-	dsmath "github.com/grafana/dskit/internal/math"
 	"github.com/grafana/dskit/internal/slices"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -2953,9 +2952,9 @@ func BenchmarkRing_Get(b *testing.B) {
 		buf, bufHosts, bufZones := MakeBuffersForGet()
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-		expectedInstances := dsmath.Min(benchCase.numInstances, benchCase.replicationFactor)
+		expectedInstances := min(benchCase.numInstances, benchCase.replicationFactor)
 		if ring.cfg.ZoneAwarenessEnabled {
-			expectedInstances = dsmath.Min(benchCase.numZones, benchCase.replicationFactor)
+			expectedInstances = min(benchCase.numZones, benchCase.replicationFactor)
 		}
 
 		b.Run(benchName, func(b *testing.B) {

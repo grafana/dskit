@@ -677,9 +677,11 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 // - Shuffling: probabilistically, for a large enough cluster each identifier gets a different
 // set of instances, with a reduced number of overlapping instances between two identifiers.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
-	// Nothing to do if the shard size is not smaller then the actual ring.
-	if size <= 0 || r.InstancesCount() <= size {
-		return r
+	// Use all instances if shuffle sharding is disabled, or it covers all instances anyway.
+	// Reason is that we need to filter out read-only instances.
+	instances := r.InstancesCount()
+	if size <= 0 || instances <= size {
+		size = instances
 	}
 
 	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
@@ -704,8 +706,8 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 // This function supports caching, but the cache will only be effective if successive calls for the
 // same identifier are with the same lookbackPeriod and increasing values of now.
 func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
-	// Nothing to do if the shard size is not smaller then the actual ring.
-	if size <= 0 || r.InstancesCount() <= size {
+	// Nothing to do if the shard size is not smaller than the actual ring.
+	if lookbackPeriod > 0 && (size <= 0 || r.InstancesCount() <= size) {
 		return r
 	}
 
@@ -796,11 +798,26 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 
 				instanceID := info.InstanceID
 				instance := r.ringDesc.Ingesters[instanceID]
+
+				// If the instance is read only without a lookback, do not include it in the shard.
+				if lookbackPeriod == 0 && instance.ReadOnly {
+					continue
+				}
+
 				shard[instanceID] = instance
 
 				// If the lookback is enabled and this instance has been registered within the lookback period
 				// then we should include it in the subring but continuing selecting instances.
 				if lookbackPeriod > 0 && instance.RegisteredTimestamp >= lookbackUntil {
+					continue
+				}
+
+				// If the lookback is enabled, and this instance has switched its read-only state within the lookback period,
+				// then we should include it in the subring, but continue selecting more instances.
+				//
+				// * If instance switched to read-only state within the lookback period, then next instance is currently receiving data that previously belonged to this instance.
+				// * If instance switched to read-write state (read-only=false) within the lookback period, then there was another instance that received data that now belongs back to this instance.
+				if lookbackPeriod > 0 && instance.ReadOnlyUpdatedTimestamp >= lookbackUntil {
 					continue
 				}
 
@@ -1035,10 +1052,11 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 	validForLookbackWindowsStartingBefore := int64(math.MaxInt64)
 
 	for _, instance := range subring.ringDesc.Ingesters {
-		registeredDuringLookbackWindow := instance.RegisteredTimestamp >= lookbackWindowStart
-
-		if registeredDuringLookbackWindow && instance.RegisteredTimestamp < validForLookbackWindowsStartingBefore {
+		if instance.RegisteredTimestamp >= lookbackWindowStart && instance.RegisteredTimestamp < validForLookbackWindowsStartingBefore {
 			validForLookbackWindowsStartingBefore = instance.RegisteredTimestamp
+		}
+		if instance.ReadOnlyUpdatedTimestamp >= lookbackWindowStart && instance.ReadOnlyUpdatedTimestamp < validForLookbackWindowsStartingBefore {
+			validForLookbackWindowsStartingBefore = instance.ReadOnlyUpdatedTimestamp
 		}
 	}
 
@@ -1145,6 +1163,19 @@ func (r *Ring) ZonesCount() int {
 	defer r.mtx.RUnlock()
 
 	return len(r.ringZones)
+}
+
+// readOnlyInstanceCount returns the number of read only instances in the ring.
+func (r *Ring) readOnlyInstanceCount() int {
+	r.mtx.RLock()
+	c := 0
+	for _, i := range r.ringDesc.Ingesters {
+		if i.ReadOnly {
+			c++
+		}
+	}
+	r.mtx.RUnlock()
+	return c
 }
 
 // Operation describes which instances can be included in the replica set, based on their state.

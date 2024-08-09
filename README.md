@@ -10,12 +10,12 @@ This library is still in development. Continuously moving utilities from the all
 - [Mimir]
 - [Loki]
 - [Tempo]
-- [Phlare]
+- [Pyroscope]
 
 [Mimir]: https://github.com/grafana/mimir
 [Loki]: https://github.com/grafana/loki
 [Tempo]: https://github.com/grafana/tempo
-[Phlare]: https://github.com/grafana/phlare
+[Pyroscope]: https://github.com/grafana/pyroscope
 
 ## Go version compatibility
 

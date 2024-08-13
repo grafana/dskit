@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -2165,6 +2166,8 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 	}
 }
 
+// This test asserts that for some randomly generated history of shuffleShard (without lookback) results,
+// every subsequent ShuffleShardWithLookback will be a superset of all previously recorded shuffleShards.
 func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 	// The goal of this test is NOT to ensure that the minimum required number of instances
 	// are returned at any given time, BUT at least all required instances are returned.
@@ -2205,16 +2208,19 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							ZoneAwarenessEnabled: true,
 							ReplicationFactor:    3,
 						},
-						ringDesc:            ringDesc,
-						ringTokens:          ringDesc.GetTokens(),
-						ringTokensByZone:    ringDesc.getTokensByZone(),
-						ringInstanceByToken: ringDesc.getTokensInfo(),
-						ringZones:           getZones(ringDesc.getTokensByZone()),
-						strategy:            NewDefaultReplicationStrategy(),
+						ringDesc: ringDesc,
+						strategy: NewDefaultReplicationStrategy(),
 					}
-					if updateOldestRegisteredTimestamp {
-						ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
+					updateRing := func() {
+						ring.ringTokens = ringDesc.GetTokens()
+						ring.ringTokensByZone = ringDesc.getTokensByZone()
+						ring.ringInstanceByToken = ringDesc.getTokensInfo()
+						ring.ringZones = getZones(ringDesc.getTokensByZone())
+						if updateOldestRegisteredTimestamp {
+							ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
+						}
 					}
+					updateRing()
 
 					// The simulation starts with the minimum shard size. Random events can later increase it.
 					shardSize := numZones
@@ -2224,12 +2230,21 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 					currTime := time.Now().Add(lookbackPeriod).Add(time.Minute)
 
 					// Add the initial shard to the history.
-					rs, err := ring.shuffleShard(userID, shardSize, 0, time.Now()).GetReplicationSetForOperation(Read)
+					now := time.Now()
+					rs, err := ring.shuffleShard(userID, shardSize, 0, now).GetReplicationSetForOperation(Read)
 					require.NoError(t, err)
 
-					history := map[time.Time]ReplicationSet{
-						currTime: rs,
+					type historyEntry struct {
+						ReplicationSet
+						shardSize int
+						time.Time
 					}
+					history := map[time.Time]historyEntry{
+						currTime: {rs, shardSize, now},
+					}
+
+					// Track instances that have been marked as read-only
+					readOnlyInstances := make(map[string]InstanceDesc)
 
 					// Simulate a progression of random events over the time and, at each iteration of the simuation,
 					// make sure the subring includes all non-removed instances picked from previous versions of the
@@ -2240,54 +2255,66 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						currTime = currTime.Add(delayBetweenEvents)
 
 						switch r := rnd.Intn(100); {
-						case r < 80:
+						case r < 60:
 							// Scale up instances by 1.
 							instanceID := fmt.Sprintf("instance-%d", nextInstanceID)
 							zoneID := fmt.Sprintf("zone-%d", nextInstanceID%numZones)
 							nextInstanceID++
-
 							ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, nil), currTime)
+							updateRing()
 
-							ring.ringTokens = ringDesc.GetTokens()
-							ring.ringTokensByZone = ringDesc.getTokensByZone()
-							ring.ringInstanceByToken = ringDesc.getTokensInfo()
-							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							if updateOldestRegisteredTimestamp {
-								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-							}
-						case r < 90:
-							// Scale down instances by 1. To make tests reproducible we get the instance IDs, sort them
-							// and then get a random index (using the random generator initialized with a constant seed).
-							instanceIDs := make([]string, 0, len(ringDesc.Ingesters))
-							for id := range ringDesc.Ingesters {
-								instanceIDs = append(instanceIDs, id)
-							}
-
-							sort.Strings(instanceIDs)
-
-							idxToRemove := rnd.Intn(len(instanceIDs))
-							idToRemove := instanceIDs[idxToRemove]
+						case r < 70:
+							// Scale down instances by 1.
+							idToRemove := getRandomInstanceID(ringDesc.Ingesters, rnd)
 							delete(ringDesc.Ingesters, idToRemove)
-
-							ring.ringTokens = ringDesc.GetTokens()
-							ring.ringTokensByZone = ringDesc.getTokensByZone()
-							ring.ringInstanceByToken = ringDesc.getTokensInfo()
-							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							if updateOldestRegisteredTimestamp {
-								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-							}
+							updateRing()
 
 							// Remove the terminated instance from the history.
 							for ringTime, ringState := range history {
 								for idx, desc := range ringState.Instances {
 									// In this simulation instance ID == instance address.
-									if desc.Addr != idToRemove {
-										continue
+									if desc.Addr == idToRemove {
+										ringState.Instances = append(ringState.Instances[:idx], ringState.Instances[idx+1:]...)
+										history[ringTime] = ringState
+										break
 									}
+								}
+							}
 
-									ringState.Instances = append(ringState.Instances[:idx], ringState.Instances[idx+1:]...)
-									history[ringTime] = ringState
-									break
+						case r < 80:
+							// Set an instance to read only
+							instanceID := getRandomInstanceID(ringDesc.Ingesters, rnd)
+							fmt.Println("marking read only", instanceID)
+							instanceDesc := ringDesc.Ingesters[instanceID]
+							instanceDesc.ReadOnly = true
+							instanceDesc.ReadOnlyUpdatedTimestamp = time.Now().Unix()
+							ringDesc.Ingesters[instanceID] = instanceDesc
+							readOnlyInstances[instanceID] = instanceDesc
+
+						case r < 90:
+							// Set a read-only instance back to read-write
+							if len(readOnlyInstances) > 0 {
+								instanceID := getRandomInstanceID(readOnlyInstances, rnd)
+								fmt.Println("marking read write", instanceID)
+								instanceDesc := ringDesc.Ingesters[instanceID]
+								instanceDesc.ReadOnly = false
+								ringDesc.Ingesters[instanceID] = instanceDesc
+								delete(readOnlyInstances, instanceID)
+
+								// Since the new read-write instance will now show up in some shards where it didn't previously
+								// we'll rewrite history for entries that would now include the new read-write instance
+								for ringTime, entry := range history {
+									updatedInstances, err := ring.shuffleShard(userID, entry.shardSize, 0, entry.Time).GetReplicationSetForOperation(Read)
+									require.NoError(t, err)
+									originalIds := getInstanceIDs(entry.Instances)
+									updatedIds := getInstanceIDs(updatedInstances.Instances)
+
+									if !reflect.DeepEqual(originalIds, updatedIds) {
+										if _, exists := updatedIds[instanceID]; exists {
+											history[ringTime] = historyEntry{updatedInstances, entry.shardSize, entry.Time}
+											fmt.Println(fmt.Sprintf("rewrote history for event %v with %v", ringTime.Format("03:04"), rs.GetAddresses()))
+										}
+									}
 								}
 							}
 						default:
@@ -2296,13 +2323,16 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						}
 
 						// Add the current shard to the history.
-						rs, err = ring.shuffleShard(userID, shardSize, 0, time.Now()).GetReplicationSetForOperation(Read)
+						now := time.Now()
+						rs, err = ring.shuffleShard(userID, shardSize, 0, now).GetReplicationSetForOperation(Read)
 						require.NoError(t, err)
-						history[currTime] = rs
+						history[currTime] = historyEntry{rs, shardSize, now}
 
 						// Ensure the shard with lookback includes all instances from previous states of the ring.
 						rsWithLookback, err := ring.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, currTime).GetReplicationSetForOperation(Read)
 						require.NoError(t, err)
+						fmt.Println(fmt.Sprintf("history for event=%v, shardSize=%v, lookbackPeriod=%v, rs=%v, rsWithLookback=%v", currTime.Format("03:04"), shardSize, lookbackPeriod, rs.GetAddresses(), rsWithLookback.GetAddresses()))
+						fmt.Println("ring", getInstancesWithoutTokens(ring.ringDesc.Ingesters))
 
 						for ringTime, ringState := range history {
 							if ringTime.Before(currTime.Add(-lookbackPeriod)) {
@@ -2311,11 +2341,11 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 								continue
 							}
 
-							for _, expectedAddr := range ringState.GetAddresses() {
-								if !rsWithLookback.Includes(expectedAddr) {
+							for _, desc := range ringState.Instances {
+								if !rsWithLookback.Includes(desc.Addr) && !desc.ReadOnly {
 									t.Fatalf(
-										"subring generated after event %d is expected to include instance %s from ring state at time %s but it's missing (actual instances are: %s)",
-										i, expectedAddr, ringTime.String(), strings.Join(rsWithLookback.GetAddresses(), ", "))
+										"subring generated after event %v is expected to include instance %s from ring state but it's missing (actual instances are: %s)",
+										ringTime.Format("03:04"), desc.Addr, strings.Join(rsWithLookback.GetAddresses(), ", "))
 								}
 							}
 						}
@@ -3786,6 +3816,33 @@ func TestCountTokensMultiZones(t *testing.T) {
 			assert.Equal(t, testData.expected, testData.ring.CountTokens())
 		})
 	}
+}
+
+func getInstanceIDs(instances []InstanceDesc) map[string]any {
+	ids := make(map[string]any)
+	for _, inst := range instances {
+		ids[inst.Addr] = struct{}{}
+	}
+	return ids
+}
+
+// To make tests reproducible we sort the instance IDs in the map, and then get a random index via rnd.
+func getRandomInstanceID(instances map[string]InstanceDesc, rnd *rand.Rand) string {
+	instanceIDs := make([]string, 0, len(instances))
+	for id := range instances {
+		instanceIDs = append(instanceIDs, id)
+	}
+	sort.Strings(instanceIDs)
+	return instanceIDs[rnd.Intn(len(instanceIDs))]
+}
+
+func getInstancesWithoutTokens(instances map[string]InstanceDesc) map[string]InstanceDesc {
+	result := make(map[string]InstanceDesc, len(instances))
+	for k, v := range instances {
+		v.Tokens = nil
+		result[k] = v
+	}
+	return result
 }
 
 type mockError struct {

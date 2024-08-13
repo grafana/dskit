@@ -812,12 +812,12 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 					continue
 				}
 
-				// If the lookback is enabled, and this instance has switched its read-only state within the lookback period,
-				// then we should include it in the subring, but continue selecting more instances.
+				// If the lookback is enabled, and this instance is read only or has switched its read-only state
+				// within the lookback period, then we should include it in the subring, but continue selecting more instances.
 				//
 				// * If instance switched to read-only state within the lookback period, then next instance is currently receiving data that previously belonged to this instance.
 				// * If instance switched to read-write state (read-only=false) within the lookback period, then there was another instance that received data that now belongs back to this instance.
-				if lookbackPeriod > 0 && instance.ReadOnlyUpdatedTimestamp >= lookbackUntil {
+				if lookbackPeriod > 0 && (instance.ReadOnly || instance.ReadOnlyUpdatedTimestamp >= lookbackUntil) {
 					continue
 				}
 

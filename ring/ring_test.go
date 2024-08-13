@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -2201,7 +2200,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 					gen := NewRandomTokenGeneratorWithSeed(seed)
 
 					// Initialise the ring.
-					ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
+					ringDesc := &Desc{Ingesters: generateRingInstances(gen, numInstances, numZones, 128)}
 					ring := Ring{
 						cfg: Config{
 							HeartbeatTimeout:     time.Hour,
@@ -2216,8 +2215,13 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						ring.ringTokensByZone = ringDesc.getTokensByZone()
 						ring.ringInstanceByToken = ringDesc.getTokensInfo()
 						ring.ringZones = getZones(ringDesc.getTokensByZone())
+						ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
 						if updateOldestRegisteredTimestamp {
 							ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
+						}
+
+						if len(ring.ringZones) != numZones {
+							t.Fatalf("number of zones changed, original=%d, current zones=%v", numZones, ring.ringZones)
 						}
 					}
 					updateRing()
@@ -2230,8 +2234,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 					currTime := time.Now().Add(lookbackPeriod).Add(time.Minute)
 
 					// Add the initial shard to the history.
-					now := time.Now()
-					rs, err := ring.shuffleShard(userID, shardSize, 0, now).GetReplicationSetForOperation(Read)
+					rs, err := ring.shuffleShard(userID, shardSize, 0, currTime).GetReplicationSetForOperation(Read)
 					require.NoError(t, err)
 
 					type historyEntry struct {
@@ -2240,13 +2243,13 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						time.Time
 					}
 					history := map[time.Time]historyEntry{
-						currTime: {rs, shardSize, now},
+						currTime: {rs, shardSize, currTime},
 					}
 
 					// Track instances that have been marked as read-only
 					readOnlyInstances := make(map[string]InstanceDesc)
 
-					// Simulate a progression of random events over the time and, at each iteration of the simuation,
+					// Simulate a progression of random events over the time and, at each iteration of the simulation,
 					// make sure the subring includes all non-removed instances picked from previous versions of the
 					// ring up until the lookback period.
 					nextInstanceID := len(ringDesc.Ingesters) + 1
@@ -2266,6 +2269,13 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						case r < 70:
 							// Scale down instances by 1.
 							idToRemove := getRandomInstanceID(ringDesc.Ingesters, rnd)
+							zone := ringDesc.Ingesters[idToRemove].Zone
+							// Don't remove instance if it is the last instance in the zone,
+							// because sharding works differently for different number of zones.
+							if ring.instancesCountPerZone[zone] <= 1 {
+								break
+							}
+
 							delete(ringDesc.Ingesters, idToRemove)
 							updateRing()
 
@@ -2281,41 +2291,29 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 								}
 							}
 
+							// Removed instance can't be read-only.
+							delete(readOnlyInstances, idToRemove)
+
 						case r < 80:
 							// Set an instance to read only
 							instanceID := getRandomInstanceID(ringDesc.Ingesters, rnd)
-							fmt.Println("marking read only", instanceID)
 							instanceDesc := ringDesc.Ingesters[instanceID]
-							instanceDesc.ReadOnly = true
-							instanceDesc.ReadOnlyUpdatedTimestamp = time.Now().Unix()
-							ringDesc.Ingesters[instanceID] = instanceDesc
-							readOnlyInstances[instanceID] = instanceDesc
+							if !instanceDesc.ReadOnly {
+								instanceDesc.ReadOnly = true
+								instanceDesc.ReadOnlyUpdatedTimestamp = currTime.Unix()
+								ringDesc.Ingesters[instanceID] = instanceDesc
+								readOnlyInstances[instanceID] = instanceDesc
+							}
 
 						case r < 90:
 							// Set a read-only instance back to read-write
 							if len(readOnlyInstances) > 0 {
 								instanceID := getRandomInstanceID(readOnlyInstances, rnd)
-								fmt.Println("marking read write", instanceID)
 								instanceDesc := ringDesc.Ingesters[instanceID]
 								instanceDesc.ReadOnly = false
+								instanceDesc.ReadOnlyUpdatedTimestamp = currTime.Unix()
 								ringDesc.Ingesters[instanceID] = instanceDesc
 								delete(readOnlyInstances, instanceID)
-
-								// Since the new read-write instance will now show up in some shards where it didn't previously
-								// we'll rewrite history for entries that would now include the new read-write instance
-								for ringTime, entry := range history {
-									updatedInstances, err := ring.shuffleShard(userID, entry.shardSize, 0, entry.Time).GetReplicationSetForOperation(Read)
-									require.NoError(t, err)
-									originalIds := getInstanceIDs(entry.Instances)
-									updatedIds := getInstanceIDs(updatedInstances.Instances)
-
-									if !reflect.DeepEqual(originalIds, updatedIds) {
-										if _, exists := updatedIds[instanceID]; exists {
-											history[ringTime] = historyEntry{updatedInstances, entry.shardSize, entry.Time}
-											fmt.Println(fmt.Sprintf("rewrote history for event %v with %v", ringTime.Format("03:04"), rs.GetAddresses()))
-										}
-									}
-								}
 							}
 						default:
 							// Scale up shard size (keeping the per-zone balance).
@@ -2323,16 +2321,15 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						}
 
 						// Add the current shard to the history.
-						now := time.Now()
-						rs, err = ring.shuffleShard(userID, shardSize, 0, now).GetReplicationSetForOperation(Read)
+						rs, err = ring.shuffleShard(userID, shardSize, 0, currTime).GetReplicationSetForOperation(Read)
 						require.NoError(t, err)
-						history[currTime] = historyEntry{rs, shardSize, now}
+						history[currTime] = historyEntry{rs, shardSize, currTime}
 
 						// Ensure the shard with lookback includes all instances from previous states of the ring.
 						rsWithLookback, err := ring.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, currTime).GetReplicationSetForOperation(Read)
 						require.NoError(t, err)
-						fmt.Println(fmt.Sprintf("history for event=%v, shardSize=%v, lookbackPeriod=%v, rs=%v, rsWithLookback=%v", currTime.Format("03:04"), shardSize, lookbackPeriod, rs.GetAddresses(), rsWithLookback.GetAddresses()))
-						fmt.Println("ring", getInstancesWithoutTokens(ring.ringDesc.Ingesters))
+						t.Logf("%d: history for event=%v, shardSize=%v, lookbackPeriod=%v, rs=%v, rsWithLookback=%v", i, currTime.Format("03:04"), shardSize, lookbackPeriod, rs.GetAddresses(), rsWithLookback.GetAddresses())
+						t.Log("ring", getInstancesWithoutTokens(ring.ringDesc.Ingesters))
 
 						for ringTime, ringState := range history {
 							if ringTime.Before(currTime.Add(-lookbackPeriod)) {

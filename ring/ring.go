@@ -35,6 +35,7 @@ const (
 )
 
 // ReadRing represents the read interface to the ring.
+// Support for read-only instances requires use of ShuffleShard or ShuffleShardWithLookback prior to getting a ReplicationSet.
 type ReadRing interface {
 	// Get returns n (or more) instances which form the replicas for the given key.
 	// bufDescs, bufHosts and bufZones are slices to be overwritten for the return value
@@ -166,6 +167,7 @@ type instanceInfo struct {
 }
 
 // Ring is a Service that maintains an in-memory copy of a ring and watches for changes.
+// Support for read-only instances requires use of ShuffleShard or ShuffleShardWithLookback prior to getting a ReplicationSet.
 type Ring struct {
 	services.Service
 

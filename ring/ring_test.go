@@ -2264,7 +2264,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							instanceID := fmt.Sprintf("instance-%d", nextInstanceID)
 							zoneID := fmt.Sprintf("zone-%d", nextInstanceID%numZones)
 							nextInstanceID++
-							ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, nil), currTime)
+							ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, ringDesc.GetTokens()), currTime)
 							updateRing()
 							t.Logf("%d: added instance %s", i, instanceID)
 

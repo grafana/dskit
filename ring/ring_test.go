@@ -2275,6 +2275,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							// Don't remove instance if it is the last instance in the zone,
 							// because sharding works differently for different number of zones.
 							if ring.instancesCountPerZone[zone] <= 1 {
+								t.Logf("%d: not removing last instance %s from zone %s", i, idToRemove, zone)
 								break
 							}
 
@@ -2307,6 +2308,8 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 								ringDesc.Ingesters[instanceID] = instanceDesc
 								readOnlyInstances[instanceID] = instanceDesc
 								t.Logf("%d: switched instance %s to read-only", i, instanceID)
+							} else {
+								t.Logf("%d: instance %s is already read-only, not switching", i, instanceID)
 							}
 
 						case r < 90:
@@ -2319,6 +2322,8 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 								ringDesc.Ingesters[instanceID] = instanceDesc
 								delete(readOnlyInstances, instanceID)
 								t.Logf("%d: switched instance %s to read-write", i, instanceID)
+							} else {
+								t.Logf("%d: no instance to switch to read-only found", i)
 							}
 						default:
 							// Scale up shard size (keeping the per-zone balance).
@@ -2335,7 +2340,6 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						rsWithLookback, err := ring.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, currTime).GetReplicationSetForOperation(Read)
 						require.NoError(t, err)
 						t.Logf("%d: history for event=%v, shardSize=%v, lookbackPeriod=%v,\nrs=%v,\nrsWithLookback=%v", i, currTime.Format("03:04"), shardSize, lookbackPeriod, getSortedAddresses(rs), getSortedAddresses(rsWithLookback))
-						//t.Log("ring", getInstancesWithoutTokens(ring.ringDesc.Ingesters))
 
 						for ix, ringState := range history {
 							if ringState.Time.Before(currTime.Add(-lookbackPeriod)) {
@@ -2346,8 +2350,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 
 							for _, desc := range ringState.Instances {
 								if !rsWithLookback.Includes(desc.Addr) && !desc.ReadOnly {
-									t.Fatalf(
-										"subring generated after event %d %v is expected to include instance %s from ring state but it's missing (actual instances are: %s)",
+									t.Fatalf("subring generated after event %d %v is expected to include instance %s from ring state but it's missing (actual instances are: %s)",
 										ix, ringState.Time.Format("03:04"), desc.Addr, strings.Join(rsWithLookback.GetAddresses(), ", "))
 								}
 							}
@@ -3827,14 +3830,6 @@ func TestCountTokensMultiZones(t *testing.T) {
 	}
 }
 
-func getInstanceIDs(instances []InstanceDesc) map[string]any {
-	ids := make(map[string]any)
-	for _, inst := range instances {
-		ids[inst.Addr] = struct{}{}
-	}
-	return ids
-}
-
 // To make tests reproducible we sort the instance IDs in the map, and then get a random index via rnd.
 func getRandomInstanceID(instances map[string]InstanceDesc, rnd *rand.Rand) string {
 	instanceIDs := make([]string, 0, len(instances))
@@ -3843,15 +3838,6 @@ func getRandomInstanceID(instances map[string]InstanceDesc, rnd *rand.Rand) stri
 	}
 	sort.Strings(instanceIDs)
 	return instanceIDs[rnd.Intn(len(instanceIDs))]
-}
-
-func getInstancesWithoutTokens(instances map[string]InstanceDesc) map[string]InstanceDesc {
-	result := make(map[string]InstanceDesc, len(instances))
-	for k, v := range instances {
-		v.Tokens = nil
-		result[k] = v
-	}
-	return result
 }
 
 type mockError struct {

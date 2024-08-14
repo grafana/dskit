@@ -680,7 +680,7 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 // set of instances, with a reduced number of overlapping instances between two identifiers.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 	// Use all instances if shuffle sharding is disabled, or it covers all instances anyway.
-	// Reason is that we need to filter out read-only instances.
+	// Reason for not returning entire ring directly is that we need to filter out read-only instances.
 	instances := r.InstancesCount()
 	if size <= 0 || instances <= size {
 		size = instances

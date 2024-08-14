@@ -819,7 +819,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 				instanceID := info.InstanceID
 				instance := r.ringDesc.Ingesters[instanceID]
 
-				// On write path (lookbackPeriod == 0), read only instances are excluded.
+				// The lookbackPeriod is 0 when this function is called by ShuffleShard(). In this case, we want read only instances excluded.
 				if lookbackPeriod == 0 && instance.ReadOnly {
 					continue
 				}

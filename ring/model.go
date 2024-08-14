@@ -570,16 +570,16 @@ func (d *Desc) instancesWithTokensCountPerZone() map[string]int {
 	return instancesCountPerZone
 }
 
-func (d *Desc) writableInstancesCountPerZone() map[string]int {
-	instancesCountPerZone := map[string]int{}
+func (d *Desc) writableInstancesWithTokensCount() int {
+	writableInstancesWithTokensCount := 0
 	if d != nil {
 		for _, ingester := range d.Ingesters {
-			if !ingester.ReadOnly {
-				instancesCountPerZone[ingester.Zone]++
+			if len(ingester.Tokens) > 0 && !ingester.ReadOnly {
+				writableInstancesWithTokensCount++
 			}
 		}
 	}
-	return instancesCountPerZone
+	return writableInstancesWithTokensCount
 }
 
 func (d *Desc) writableInstancesWithTokensCountPerZone() map[string]int {

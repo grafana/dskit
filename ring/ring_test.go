@@ -1259,12 +1259,12 @@ func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
 
 	tests := map[string]struct {
 		ringInstances                                   map[string]InstanceDesc
-		expectedWritableInstancesCountPerZone           map[string]int
+		expectedWritableInstancesWithTokensCount        int
 		expectedWritableInstancesWithTokensCountPerZone map[string]int
 	}{
 		"empty ring": {
 			ringInstances:                                   nil,
-			expectedWritableInstancesCountPerZone:           map[string]int{},
+			expectedWritableInstancesWithTokensCount:        0,
 			expectedWritableInstancesWithTokensCountPerZone: map[string]int{},
 		},
 		"single zone, no tokens": {
@@ -1274,7 +1274,7 @@ func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
 				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: PENDING, Tokens: []uint32{}},
 				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: JOINING, Tokens: []uint32{}},
 			},
-			expectedWritableInstancesCountPerZone:           map[string]int{"zone-a": 3},
+			expectedWritableInstancesWithTokensCount:        0,
 			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 0},
 		},
 		"single zone, some tokens": {
@@ -1288,7 +1288,7 @@ func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
 				"instance-7": {Addr: "127.0.0.7", Zone: "zone-a", State: JOINING, Tokens: gen.GenerateTokens(128, nil), ReadOnly: true},
 				"instance-8": {Addr: "127.0.0.8", Zone: "zone-a", State: JOINING, Tokens: []uint32{}, ReadOnly: true},
 			},
-			expectedWritableInstancesCountPerZone:           map[string]int{"zone-a": 5},
+			expectedWritableInstancesWithTokensCount:        3,
 			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 3},
 		},
 		"multiple zones": {
@@ -1302,7 +1302,7 @@ func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
 				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", State: JOINING, Tokens: gen.GenerateTokens(128, nil)},
 				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", State: JOINING, Tokens: []uint32{}, ReadOnly: true},
 			},
-			expectedWritableInstancesCountPerZone:           map[string]int{"zone-a": 1, "zone-b": 1, "zone-c": 2, "zone-d": 1},
+			expectedWritableInstancesWithTokensCount:        3,
 			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 1, "zone-b": 0, "zone-c": 2, "zone-d": 0},
 		},
 	}
@@ -1322,13 +1322,11 @@ func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
 					ZoneAwarenessEnabled: true,
 				},
 				ringDesc:                                ringDesc,
-				writableInstancesCountPerZone:           ringDesc.writableInstancesCountPerZone(),
+				writableInstancesWithTokensCount:        ringDesc.writableInstancesWithTokensCount(),
 				writableInstancesWithTokensCountPerZone: ringDesc.writableInstancesWithTokensCountPerZone(),
 			}
 
-			for z, instances := range testData.expectedWritableInstancesCountPerZone {
-				assert.Equal(t, instances, ring.WritableInstancesInZoneCount(z))
-			}
+			assert.Equal(t, testData.expectedWritableInstancesWithTokensCount, ring.WritableInstancesWithTokensCount())
 			for z, instances := range testData.expectedWritableInstancesWithTokensCountPerZone {
 				assert.Equal(t, instances, ring.WritableInstancesWithTokensInZoneCount(z))
 			}

@@ -678,6 +678,8 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 //
 // - Shuffling: probabilistically, for a large enough cluster each identifier gets a different
 // set of instances, with a reduced number of overlapping instances between two identifiers.
+//
+// Subring returned by this method does not contain instances that have read-only field set.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 	// Use all instances if shuffle sharding is disabled, or it covers all instances anyway.
 	// Reason for not returning entire ring directly is that we need to filter out read-only instances.

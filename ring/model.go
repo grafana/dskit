@@ -570,6 +570,30 @@ func (d *Desc) instancesWithTokensCountPerZone() map[string]int {
 	return instancesCountPerZone
 }
 
+func (d *Desc) writableInstancesCountPerZone() map[string]int {
+	instancesCountPerZone := map[string]int{}
+	if d != nil {
+		for _, ingester := range d.Ingesters {
+			if !ingester.ReadOnly {
+				instancesCountPerZone[ingester.Zone]++
+			}
+		}
+	}
+	return instancesCountPerZone
+}
+
+func (d *Desc) writableInstancesWithTokensCountPerZone() map[string]int {
+	instancesCountPerZone := map[string]int{}
+	if d != nil {
+		for _, ingester := range d.Ingesters {
+			if len(ingester.Tokens) > 0 && !ingester.ReadOnly {
+				instancesCountPerZone[ingester.Zone]++
+			}
+		}
+	}
+	return instancesCountPerZone
+}
+
 type CompareResult int
 
 // CompareResult responses

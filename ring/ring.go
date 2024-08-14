@@ -88,6 +88,12 @@ type ReadRing interface {
 	// InstancesWithTokensInZoneCount returns the number of instances in the ring that are registered in given zone and have tokens.
 	InstancesWithTokensInZoneCount(zone string) int
 
+	// WritableInstancesInZoneCount returns the number of writable instances in the ring that are registered in given zone.
+	WritableInstancesInZoneCount(zone string) int
+
+	// WritableInstancesWithTokensInZoneCount returns the number of writable instances in the ring that are registered in given zone and have tokens.
+	WritableInstancesWithTokensInZoneCount(zone string) int
+
 	// ZonesCount returns the number of zones for which there's at least 1 instance registered in the ring.
 	ZonesCount() int
 }
@@ -205,6 +211,12 @@ type Ring struct {
 
 	// Nubmber of registered instances with tokens per zone.
 	instancesWithTokensCountPerZone map[string]int
+
+	// Number of registered instances per zone that are writable.
+	writableInstancesCountPerZone map[string]int
+
+	// Nubmber of registered instances with tokens per zone that are writable.
+	writableInstancesWithTokensCountPerZone map[string]int
 
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
 	// If set to nil, no caching is done (used by tests, and subrings).
@@ -358,6 +370,8 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	instancesWithTokensCount := ringDesc.instancesWithTokensCount()
 	instancesCountPerZone := ringDesc.instancesCountPerZone()
 	instancesWithTokensCountPerZone := ringDesc.instancesWithTokensCountPerZone()
+	writableInstancesCountPerZone := ringDesc.writableInstancesCountPerZone()
+	writableInstancesWithTokensCountPerZone := ringDesc.writableInstancesWithTokensCountPerZone()
 
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
@@ -369,6 +383,8 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.instancesWithTokensCount = instancesWithTokensCount
 	r.instancesCountPerZone = instancesCountPerZone
 	r.instancesWithTokensCountPerZone = instancesWithTokensCountPerZone
+	r.writableInstancesCountPerZone = writableInstancesCountPerZone
+	r.writableInstancesWithTokensCountPerZone = writableInstancesWithTokensCountPerZone
 	r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
 	r.lastTopologyChange = now
 
@@ -845,15 +861,17 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	shardTokens := mergeTokenGroups(shardTokensByZone)
 
 	return &Ring{
-		cfg:                             r.cfg,
-		strategy:                        r.strategy,
-		ringDesc:                        shardDesc,
-		ringTokens:                      shardTokens,
-		ringTokensByZone:                shardTokensByZone,
-		ringZones:                       getZones(shardTokensByZone),
-		instancesWithTokensCount:        shardDesc.instancesWithTokensCount(),
-		instancesCountPerZone:           shardDesc.instancesCountPerZone(),
-		instancesWithTokensCountPerZone: shardDesc.instancesWithTokensCountPerZone(),
+		cfg:                                     r.cfg,
+		strategy:                                r.strategy,
+		ringDesc:                                shardDesc,
+		ringTokens:                              shardTokens,
+		ringTokensByZone:                        shardTokensByZone,
+		ringZones:                               getZones(shardTokensByZone),
+		instancesWithTokensCount:                shardDesc.instancesWithTokensCount(),
+		instancesCountPerZone:                   shardDesc.instancesCountPerZone(),
+		instancesWithTokensCountPerZone:         shardDesc.instancesWithTokensCountPerZone(),
+		writableInstancesCountPerZone:           shardDesc.writableInstancesCountPerZone(),
+		writableInstancesWithTokensCountPerZone: shardDesc.writableInstancesWithTokensCountPerZone(),
 
 		oldestRegisteredTimestamp: shardDesc.getOldestRegisteredTimestamp(),
 
@@ -1161,6 +1179,22 @@ func (r *Ring) InstancesWithTokensInZoneCount(zone string) int {
 	defer r.mtx.RUnlock()
 
 	return r.instancesWithTokensCountPerZone[zone]
+}
+
+// WritableInstancesInZoneCount returns the number of writable instances in the ring that are registered in given zone.
+func (r *Ring) WritableInstancesInZoneCount(zone string) int {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	return r.writableInstancesCountPerZone[zone]
+}
+
+// WritableInstancesWithTokensInZoneCount returns the number of writable instances in the ring that are registered in given zone and have tokens.
+func (r *Ring) WritableInstancesWithTokensInZoneCount(zone string) int {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	return r.writableInstancesWithTokensCountPerZone[zone]
 }
 
 func (r *Ring) ZonesCount() int {

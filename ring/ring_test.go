@@ -1254,6 +1254,88 @@ func TestRing_GetInstancesWithTokensCounts(t *testing.T) {
 	}
 }
 
+func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
+	gen := initTokenGenerator(t)
+
+	tests := map[string]struct {
+		ringInstances                                   map[string]InstanceDesc
+		expectedWritableInstancesCountPerZone           map[string]int
+		expectedWritableInstancesWithTokensCountPerZone map[string]int
+	}{
+		"empty ring": {
+			ringInstances:                                   nil,
+			expectedWritableInstancesCountPerZone:           map[string]int{},
+			expectedWritableInstancesWithTokensCountPerZone: map[string]int{},
+		},
+		"single zone, no tokens": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: LEAVING, Tokens: []uint32{}, ReadOnly: true},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: PENDING, Tokens: []uint32{}},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: JOINING, Tokens: []uint32{}},
+			},
+			expectedWritableInstancesCountPerZone:           map[string]int{"zone-a": 3},
+			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 0},
+		},
+		"single zone, some tokens": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: LEAVING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: LEAVING, Tokens: []uint32{}},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-a", State: PENDING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-a", State: PENDING, Tokens: []uint32{}, ReadOnly: true},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-a", State: JOINING, Tokens: gen.GenerateTokens(128, nil), ReadOnly: true},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-a", State: JOINING, Tokens: []uint32{}, ReadOnly: true},
+			},
+			expectedWritableInstancesCountPerZone:           map[string]int{"zone-a": 5},
+			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 3},
+		},
+		"multiple zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}, ReadOnly: true},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: LEAVING, Tokens: gen.GenerateTokens(128, nil), ReadOnly: true},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: LEAVING, Tokens: []uint32{}},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", State: PENDING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-d", State: PENDING, Tokens: []uint32{}},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", State: JOINING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", State: JOINING, Tokens: []uint32{}, ReadOnly: true},
+			},
+			expectedWritableInstancesCountPerZone:           map[string]int{"zone-a": 1, "zone-b": 1, "zone-c": 2, "zone-d": 1},
+			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 1, "zone-b": 0, "zone-c": 2, "zone-d": 0},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// Init the ring.
+			ringDesc := &Desc{Ingesters: testData.ringInstances}
+			for id, instance := range ringDesc.Ingesters {
+				instance.Timestamp = time.Now().Unix()
+				ringDesc.Ingesters[id] = instance
+			}
+
+			ring := Ring{
+				cfg: Config{
+					HeartbeatTimeout:     time.Hour,
+					ZoneAwarenessEnabled: true,
+				},
+				ringDesc:                                ringDesc,
+				writableInstancesCountPerZone:           ringDesc.writableInstancesCountPerZone(),
+				writableInstancesWithTokensCountPerZone: ringDesc.writableInstancesWithTokensCountPerZone(),
+			}
+
+			for z, instances := range testData.expectedWritableInstancesCountPerZone {
+				assert.Equal(t, instances, ring.WritableInstancesInZoneCount(z))
+			}
+			for z, instances := range testData.expectedWritableInstancesWithTokensCountPerZone {
+				assert.Equal(t, instances, ring.WritableInstancesWithTokensInZoneCount(z))
+			}
+		})
+	}
+}
+
 func TestRing_ShuffleShard(t *testing.T) {
 	gen := initTokenGenerator(t)
 

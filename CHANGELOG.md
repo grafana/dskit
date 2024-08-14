@@ -219,7 +219,7 @@
 * [ENHANCEMENT] memberlist: Added `-<prefix>memberlist.broadcast-timeout-for-local-updates-on-shutdown` option to set timeout for sending locally-generated updates on shutdown, instead of previously hardcoded 10s (which is still the default). #539
 * [ENHANCEMENT] tracing: add ExtractTraceSpanID function.
 * [EHNANCEMENT] crypto/tls: Support reloading client certificates #537 #552
-* [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553
+* [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553 #554
 * [ENHANCEMENT] Added new ring methods to expose number of writable instances with tokens per zone, and overall. #560 #562
 * [CHANGE] Backoff: added `Backoff.ErrCause()` which is like `Backoff.Err()` but returns the context cause if backoff is terminated because the context has been canceled. #538
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59

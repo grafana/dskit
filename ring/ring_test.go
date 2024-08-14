@@ -1687,6 +1687,8 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 		disableReadOnly = change("disable-read-only")
 	)
 
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	// Generate all test scenarios.
 	var scenarios []scenario
 	for _, numInstances := range []int{20, 30, 40, 50} {
@@ -1708,6 +1710,16 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 			gen := initTokenGenerator(t)
 			// Initialise the ring.
 			ringDesc := &Desc{Ingesters: generateRingInstances(gen, s.numInstances, s.numZones, 128)}
+
+			// Mark some instances as read only
+			for i := 0; i < len(ringDesc.Ingesters); i += 8 {
+				instanceID := getRandomInstanceID(ringDesc.Ingesters, rnd)
+				inst := ringDesc.Ingesters[instanceID]
+				inst.ReadOnly = true
+				inst.ReadOnlyUpdatedTimestamp = time.Now().Unix()
+				ringDesc.Ingesters[instanceID] = inst
+			}
+
 			ring := Ring{
 				cfg: Config{
 					HeartbeatTimeout:     time.Hour,
@@ -1749,9 +1761,11 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 				}
 			case disableReadOnly:
 				for id, desc := range ringDesc.Ingesters {
-					desc.ReadOnly = false
-					desc.ReadOnlyUpdatedTimestamp = time.Now().Unix()
-					ringDesc.Ingesters[id] = desc
+					if desc.ReadOnly {
+						desc.ReadOnly = false
+						desc.ReadOnlyUpdatedTimestamp = time.Now().Unix()
+						ringDesc.Ingesters[id] = desc
+					}
 					break
 				}
 			}

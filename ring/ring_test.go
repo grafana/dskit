@@ -1670,6 +1670,7 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 			case disableReadOnly:
 				for id, desc := range ringDesc.Ingesters {
 					desc.ReadOnly = false
+					desc.ReadOnlyUpdatedTimestamp = time.Now().Unix()
 					ringDesc.Ingesters[id] = desc
 					break
 				}

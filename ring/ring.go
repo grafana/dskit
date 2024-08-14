@@ -807,11 +807,6 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 				if lookbackPeriod == 0 && instance.ReadOnly {
 					continue
 				}
-				// On read path (lookbackPeriod > 0), read only instances are only included if they have not changed read-only status in the lookback window.
-				// If ReadOnlyUpdatedTimestamp is not set, we include the instance, and extend the shard later.
-				if lookbackPeriod > 0 && instance.ReadOnly && (instance.ReadOnlyUpdatedTimestamp > 0 && instance.ReadOnlyUpdatedTimestamp < lookbackUntil) {
-					continue
-				}
 
 				// Include instance in the subring.
 				shard[instanceID] = instance

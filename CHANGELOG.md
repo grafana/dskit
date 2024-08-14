@@ -220,6 +220,7 @@
 * [ENHANCEMENT] tracing: add ExtractTraceSpanID function.
 * [EHNANCEMENT] crypto/tls: Support reloading client certificates #537 #552
 * [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553
+* [ENHANCEMENT] Added new ring methods to expose writable instances per zone counts. #560
 * [CHANGE] Backoff: added `Backoff.ErrCause()` which is like `Backoff.Err()` but returns the context cause if backoff is terminated because the context has been canceled. #538
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85

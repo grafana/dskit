@@ -191,6 +191,13 @@ type Ring struct {
 	// then this value will be 0.
 	oldestRegisteredTimestamp int64
 
+	readOnlyInstancesUpdated bool // True, if readOnlyInstances was actually updated. False if 0 is because of default value.
+	readOnlyInstances        int  // Number of instances with ReadOnly flag set. Only valid if readOnlyInstancesUpdated is set.
+
+	// Oldest value of ReadOnlyUpdatedTimestamp for read-only instances. If any read-only instance
+	// has ReadOnlyUpdatedTimestamp == 0 (which should not happen), then this value will be 0.
+	oldestReadOnlyUpdatedTimestamp int64
+
 	// Maps a token with the information of the instance holding it. This map is immutable and
 	// cannot be changed in place because it's shared "as is" between subrings (the only way to
 	// change it is to create a new one and replace it).
@@ -372,6 +379,7 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	instancesWithTokensCountPerZone := ringDesc.instancesWithTokensCountPerZone()
 	writableInstancesWithTokensCount := ringDesc.writableInstancesWithTokensCount()
 	writableInstancesWithTokensCountPerZone := ringDesc.writableInstancesWithTokensCountPerZone()
+	readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
 
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
@@ -387,6 +395,9 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.writableInstancesWithTokensCountPerZone = writableInstancesWithTokensCountPerZone
 	r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
 	r.lastTopologyChange = now
+	r.readOnlyInstancesUpdated = true
+	r.readOnlyInstances = readOnlyInstances
+	r.oldestReadOnlyUpdatedTimestamp = oldestReadOnlyUpdatedTimestamp
 
 	// Invalidate all cached subrings.
 	if r.shuffledSubringCache != nil {
@@ -697,13 +708,8 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 //
 // Subring returned by this method does not contain instances that have read-only field set.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
-	// Use all instances if shuffle sharding is disabled, or it covers all instances anyway.
-	// Reason for not returning entire ring directly is that we need to filter out read-only instances.
-	instances := r.InstancesCount()
-	if size <= 0 || instances <= size {
-		size = instances
-	}
-
+	// size == 0 or size > num(ingesters) is handled in shuffleShard method.
+	// It is safe to use such size in caching key, because caches are invalidated when number of instances in the ring changes.
 	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
 		return cached
 	}
@@ -725,12 +731,12 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 //
 // This function supports caching, but the cache will only be effective if successive calls for the
 // same identifier are with the same lookbackPeriod and increasing values of now.
+//
+// Subring returned by this method does not contain read-only instances that have changed their state
+// before the lookback period.
 func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
-	// Nothing to do if the shard size is not smaller than the actual ring.
-	if size <= 0 || r.InstancesCount() <= size {
-		return r
-	}
-
+	// size == 0 or size > num(ingesters) is handled in shuffleShard method.
+	// It is safe to use such size in caching key, because caches are invalidated when number of instances in the ring changes.
 	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
 		return cached
 	}
@@ -758,6 +764,23 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	// then r.oldestRegisteredTimestamp is zero too, and we skip this optimization.
 	if lookbackPeriod > 0 && r.oldestRegisteredTimestamp > 0 && r.oldestRegisteredTimestamp >= lookbackUntil {
 		return r
+	}
+
+	// If requested shard size covers entire ring, and we don't need to do any filtering of read-only instances,
+	// we can return entire ring directly.
+	if r.readOnlyInstancesUpdated && (size <= 0 || len(r.ringDesc.Ingesters) <= size) {
+		if r.readOnlyInstances == 0 {
+			// If there are no read-only instances, there's no need to filter anything.
+			return r
+		}
+
+		if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil {
+			return r
+		}
+	}
+
+	if size <= 0 || len(r.ringDesc.Ingesters) <= size {
+		size = len(r.ringDesc.Ingesters)
 	}
 
 	var numInstancesPerZone int
@@ -821,6 +844,11 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 
 				// The lookbackPeriod is 0 when this function is called by ShuffleShard(). In this case, we want read only instances excluded.
 				if lookbackPeriod == 0 && instance.ReadOnly {
+					continue
+				}
+				// With lookback period >0, read only instances are only included if they have not changed read-only status in the lookback window.
+				// If ReadOnlyUpdatedTimestamp is not set, we include the instance, and extend the shard later.
+				if lookbackPeriod > 0 && instance.ReadOnly && (instance.ReadOnlyUpdatedTimestamp > 0 && instance.ReadOnlyUpdatedTimestamp < lookbackUntil) {
 					continue
 				}
 

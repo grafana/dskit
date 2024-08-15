@@ -2968,6 +2968,12 @@ func TestRing_ShuffleShardWithLookback_CachingAfterTopologyChange(t *testing.T) 
 	require.Equal(t, 1, second.InstancesInZoneCount("zone-c"))
 }
 
+func makeReadOnly(desc InstanceDesc, ts time.Time) InstanceDesc {
+	desc.ReadOnly = true
+	desc.ReadOnlyUpdatedTimestamp = ts.Unix()
+	return desc
+}
+
 func TestRing_ShuffleShardWithLookback_CachingAfterReadOnlyChange(t *testing.T) {
 	cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 	registry := prometheus.NewRegistry()
@@ -2987,11 +2993,6 @@ func TestRing_ShuffleShardWithLookback_CachingAfterReadOnlyChange(t *testing.T) 
 			"instance-6": generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 1) + 1}, now.Add(-2*time.Hour)),
 		}
 	}
-	makeReadOnly := func(desc InstanceDesc) InstanceDesc {
-		desc.ReadOnly = true
-		desc.ReadOnlyUpdatedTimestamp = time.Now().Unix()
-		return desc
-	}
 
 	initialRingDesc := &Desc{Ingesters: makeInstances()}
 	ring.updateRingState(initialRingDesc)
@@ -3008,8 +3009,8 @@ func TestRing_ShuffleShardWithLookback_CachingAfterReadOnlyChange(t *testing.T) 
 	require.Equal(t, 1, first.InstancesInZoneCount("zone-c"))
 
 	updatedInstances := makeInstances()
-	updatedInstances["instance-1"] = makeReadOnly(updatedInstances["instance-1"])
-	updatedInstances["instance-5"] = makeReadOnly(updatedInstances["instance-5"])
+	updatedInstances["instance-1"] = makeReadOnly(updatedInstances["instance-1"], now)
+	updatedInstances["instance-5"] = makeReadOnly(updatedInstances["instance-5"], now)
 
 	updatedRingDesc := &Desc{Ingesters: updatedInstances}
 	ring.updateRingState(updatedRingDesc)
@@ -3115,40 +3116,44 @@ func TestRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
 	// Add some instances to the ring.
 	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{
 		"instance-1": generateRingInstanceWithInfo("instance-1", "zone-a", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-		"instance-2": generateRingInstanceWithInfo("instance-2", "zone-a", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-2": makeReadOnly(generateRingInstanceWithInfo("instance-2", "zone-a", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)), now),
 		"instance-3": generateRingInstanceWithInfo("instance-3", "zone-b", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
 		"instance-4": generateRingInstanceWithInfo("instance-4", "zone-b", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
 		"instance-5": generateRingInstanceWithInfo("instance-5", "zone-c", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
-		"instance-6": generateRingInstanceWithInfo("instance-6", "zone-c", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)),
+		"instance-6": makeReadOnly(generateRingInstanceWithInfo("instance-6", "zone-c", gen.GenerateTokens(128, nil), now.Add(-2*time.Hour)), now.Add(-2*time.Hour)),
 	}}
 
 	ring.updateRingState(ringDesc)
 
-	// Start the workers.
-	wg := sync.WaitGroup{}
-	wg.Add(numWorkers)
+	for _, shardSize := range []int{3, 0} {
+		t.Run(fmt.Sprintf("shardSize=%d", shardSize), func(t *testing.T) {
+			// Start the workers.
+			wg := sync.WaitGroup{}
+			wg.Add(numWorkers)
 
-	for w := 0; w < numWorkers; w++ {
-		go func(workerID int) {
-			defer wg.Done()
+			for w := 0; w < numWorkers; w++ {
+				go func(workerID int) {
+					defer wg.Done()
 
-			// Get the subring once. This is the one expected from subsequent requests.
-			userID := fmt.Sprintf("user-%d", workerID)
-			expected := ring.ShuffleShardWithLookback(userID, 3, time.Hour, now)
+					// Get the subring once. This is the one expected from subsequent requests.
+					userID := fmt.Sprintf("user-%d", workerID)
+					expected := ring.ShuffleShardWithLookback(userID, shardSize, time.Hour, now)
 
-			for r := 0; r < numRequestsPerWorker; r++ {
-				actual := ring.ShuffleShardWithLookback(userID, 3, time.Hour, now)
-				require.Equal(t, expected, actual)
+					for r := 0; r < numRequestsPerWorker; r++ {
+						actual := ring.ShuffleShardWithLookback(userID, shardSize, time.Hour, now)
+						require.Equal(t, expected, actual)
 
-				// Get the subring for a new user each time too, in order to stress the setter too
-				// (if we only read from the cache there's no read/write concurrent access).
-				ring.ShuffleShardWithLookback(fmt.Sprintf("stress-%d", r), 3, time.Hour, now)
+						// Get the subring for a new user each time too, in order to stress the setter too
+						// (if we only read from the cache there's no read/write concurrent access).
+						ring.ShuffleShardWithLookback(fmt.Sprintf("stress-%d", r), shardSize, time.Hour, now)
+					}
+				}(w)
 			}
-		}(w)
-	}
 
-	// Wait until all workers have done.
-	wg.Wait()
+			// Wait until all workers have done.
+			wg.Wait()
+		})
+	}
 }
 
 func BenchmarkRing_ShuffleShard(b *testing.B) {

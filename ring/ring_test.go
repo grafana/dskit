@@ -2437,6 +2437,8 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 									instanceDesc.ReadOnly = true
 									instanceDesc.ReadOnlyUpdatedTimestamp = currTime.Unix()
 									ringDesc.Ingesters[instanceID] = instanceDesc
+									updateRing()
+
 									readOnlyInstances[instanceID] = instanceDesc
 									t.Logf("%d: switched instance %s to read-only", i, instanceID)
 								} else {
@@ -2451,6 +2453,8 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 									instanceDesc.ReadOnly = false
 									instanceDesc.ReadOnlyUpdatedTimestamp = currTime.Unix()
 									ringDesc.Ingesters[instanceID] = instanceDesc
+									updateRing()
+
 									delete(readOnlyInstances, instanceID)
 									t.Logf("%d: switched instance %s to read-write", i, instanceID)
 								} else {

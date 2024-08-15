@@ -3218,6 +3218,8 @@ func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, s
 		strategy:             NewDefaultReplicationStrategy(),
 		lastTopologyChange:   time.Now(),
 	}
+	ring.readOnlyInstances, ring.oldestReadOnlyUpdatedTimestamp = ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+	ring.readOnlyInstancesUpdated = true
 
 	b.ResetTimer()
 

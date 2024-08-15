@@ -193,9 +193,9 @@ type Ring struct {
 
 	readOnlyInstancesUpdated bool // True, if readOnlyInstances was actually updated. False if 0 is because of default value.
 	readOnlyInstances        int  // Number of instances with ReadOnly flag set. Only valid if readOnlyInstancesUpdated is set.
-
 	// Oldest value of ReadOnlyUpdatedTimestamp for read-only instances. If any read-only instance
 	// has ReadOnlyUpdatedTimestamp == 0 (which should not happen), then this value will be 0.
+	// Only valid if readOnlyInstancesUpdated is set.
 	oldestReadOnlyUpdatedTimestamp int64
 
 	// Maps a token with the information of the instance holding it. This map is immutable and

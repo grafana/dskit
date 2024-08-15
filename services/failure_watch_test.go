@@ -107,6 +107,9 @@ func TestServiceFailureWatcherClose(t *testing.T) {
 	require.Panics(t, func() {
 		w.WatchManager(m)
 	})
+
+	// Repeated call to Close doesn't panic.
+	w.Close()
 }
 
 // Creates service which will return first error passed to the channel.

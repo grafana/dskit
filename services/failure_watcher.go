@@ -76,6 +76,7 @@ func (w *FailureWatcher) WatchManager(manager *Manager) {
 
 // Close stops this failure watcher and closes channel returned by Chan() method. After closing failure watcher,
 // it cannot be used to watch additional services or managers.
+// Repeated calls to Close() do nothing.
 func (w *FailureWatcher) Close() {
 	// Graceful handle the case FailureWatcher has not been initialized,
 	// to simplify the code in the components using it.

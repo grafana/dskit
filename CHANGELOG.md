@@ -78,7 +78,7 @@
 * [CHANGE] Cache: Remove superfluous `cache.RemoteCacheClient` interface and unify all caches using the `cache.Cache` interface. #520
 * [CHANGE] Updated the minimum required Go version to 1.21. #540
 * [CHANGE] memberlist: Metric `memberlist_client_messages_in_broadcast_queue` is now split into `queue="local"` and `queue="gossip"` values. #539
-* [CHANGE] `Service.AddListener` now returns function for stopping the listener. #564
+* [CHANGE] `Service.AddListener` and `Manager.AddListener` now return function for stopping the listener. #564
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
@@ -222,6 +222,7 @@
 * [EHNANCEMENT] crypto/tls: Support reloading client certificates #537 #552
 * [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553 #554
 * [ENHANCEMENT] Added new ring methods to expose number of writable instances with tokens per zone, and overall. #560 #562
+* [ENHANCEMENT] `services.FailureWatcher` can now be closed, which unregisters all service and manager listeners, and closes channel used to receive errors. #564 
 * [CHANGE] Backoff: added `Backoff.ErrCause()` which is like `Backoff.Err()` but returns the context cause if backoff is terminated because the context has been canceled. #538
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85

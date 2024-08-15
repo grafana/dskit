@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -338,8 +339,8 @@ func (b *BasicService) AddListener(listener Listener) func() {
 
 	// There are max 4 state transitions. We use buffer to avoid blocking the sender,
 	// which holds service lock.
-	ch := make(chan func(l Listener), 4)
-	b.listeners = append(b.listeners, ch)
+	listenerCh := make(chan func(l Listener), 4)
+	b.listeners = append(b.listeners, listenerCh)
 
 	stop := make(chan struct{})
 	stopClosed := atomic.NewBool(false)
@@ -353,7 +354,7 @@ func (b *BasicService) AddListener(listener Listener) func() {
 		for {
 			select {
 			// Process events from service.
-			case lfn, ok := <-ch:
+			case lfn, ok := <-listenerCh:
 				if !ok {
 					return
 				}
@@ -373,12 +374,9 @@ func (b *BasicService) AddListener(listener Listener) func() {
 
 		// Remove channel for notifications from service's list of listeners.
 		b.stateMu.Lock()
-		for ix, lch := range b.listeners {
-			if lch == ch {
-				b.listeners = append(b.listeners[:ix], b.listeners[ix+1:]...)
-				break
-			}
-		}
+		b.listeners = slices.DeleteFunc(b.listeners, func(c chan func(l Listener)) bool {
+			return listenerCh == c
+		})
 		b.stateMu.Unlock()
 
 		wg.Wait()

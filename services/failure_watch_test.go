@@ -23,6 +23,9 @@ func TestNilServiceFailureWatcher(t *testing.T) {
 	// Ensure WatchManager() panics.
 	m, err := NewManager(NewIdleService(nil, nil))
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, StopManagerAndAwaitStopped(context.Background(), m))
+	})
 
 	require.Panics(t, func() {
 		w.WatchManager(m)

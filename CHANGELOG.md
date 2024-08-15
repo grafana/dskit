@@ -78,6 +78,7 @@
 * [CHANGE] Cache: Remove superfluous `cache.RemoteCacheClient` interface and unify all caches using the `cache.Cache` interface. #520
 * [CHANGE] Updated the minimum required Go version to 1.21. #540
 * [CHANGE] memberlist: Metric `memberlist_client_messages_in_broadcast_queue` is now split into `queue="local"` and `queue="gossip"` values. #539
+* [CHANGE] `Service.AddListener` now returns function for stopping the listener. #564
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

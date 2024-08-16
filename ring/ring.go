@@ -698,7 +698,7 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 // Subring returned by this method does not contain instances that have read-only field set.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 	// Use all possible instances if shuffle sharding is disabled. We don't set size to r.InstancesCount(), because
-	// that could lead to wrong instances being returned when ring zones are unbalanced.
+	// that could lead to not all instances being returned when ring zones are unbalanced.
 	// Reason for not returning entire ring directly is that we need to filter out read-only instances.
 	if size <= 0 {
 		size = math.MaxInt

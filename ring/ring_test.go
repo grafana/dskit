@@ -1614,13 +1614,12 @@ func TestRing_ShuffleShard_Stability(t *testing.T) {
 			HeartbeatTimeout:     time.Hour,
 			ZoneAwarenessEnabled: true,
 		},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		strategy:              NewDefaultReplicationStrategy(),
+		ringDesc:            ringDesc,
+		ringTokens:          ringDesc.GetTokens(),
+		ringTokensByZone:    ringDesc.getTokensByZone(),
+		ringInstanceByToken: ringDesc.getTokensInfo(),
+		ringZones:           getZones(ringDesc.getTokensByZone()),
+		strategy:            NewDefaultReplicationStrategy(),
 	}
 
 	for i := 1; i <= numTenants; i++ {
@@ -1689,13 +1688,12 @@ func TestRing_ShuffleShard_Shuffling(t *testing.T) {
 			HeartbeatTimeout:     time.Hour,
 			ZoneAwarenessEnabled: true,
 		},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		strategy:              NewDefaultReplicationStrategy(),
+		ringDesc:            ringDesc,
+		ringTokens:          ringDesc.GetTokens(),
+		ringTokensByZone:    ringDesc.getTokensByZone(),
+		ringInstanceByToken: ringDesc.getTokensInfo(),
+		ringZones:           getZones(ringDesc.getTokensByZone()),
+		strategy:            NewDefaultReplicationStrategy(),
 	}
 
 	// Compute the shard for each tenant.
@@ -1804,13 +1802,12 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 					HeartbeatTimeout:     time.Hour,
 					ZoneAwarenessEnabled: true,
 				},
-				ringDesc:              ringDesc,
-				ringTokens:            ringDesc.GetTokens(),
-				ringTokensByZone:      ringDesc.getTokensByZone(),
-				ringInstanceByToken:   ringDesc.getTokensInfo(),
-				ringZones:             getZones(ringDesc.getTokensByZone()),
-				instancesCountPerZone: ringDesc.instancesCountPerZone(),
-				strategy:              NewDefaultReplicationStrategy(),
+				ringDesc:            ringDesc,
+				ringTokens:          ringDesc.GetTokens(),
+				ringTokensByZone:    ringDesc.getTokensByZone(),
+				ringInstanceByToken: ringDesc.getTokensInfo(),
+				ringZones:           getZones(ringDesc.getTokensByZone()),
+				strategy:            NewDefaultReplicationStrategy(),
 			}
 
 			// Compute the initial shard for each tenant.
@@ -1885,13 +1882,12 @@ func TestRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) {
 			HeartbeatTimeout:     time.Hour,
 			ZoneAwarenessEnabled: true,
 		},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		strategy:              NewDefaultReplicationStrategy(),
+		ringDesc:            ringDesc,
+		ringTokens:          ringDesc.GetTokens(),
+		ringTokensByZone:    ringDesc.getTokensByZone(),
+		ringInstanceByToken: ringDesc.getTokensInfo(),
+		ringZones:           getZones(ringDesc.getTokensByZone()),
+		strategy:            NewDefaultReplicationStrategy(),
 	}
 
 	// Get the replication set with shard size = 3.
@@ -1963,13 +1959,12 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 			HeartbeatTimeout:     time.Hour,
 			ZoneAwarenessEnabled: true,
 		},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		strategy:              NewDefaultReplicationStrategy(),
+		ringDesc:            ringDesc,
+		ringTokens:          ringDesc.GetTokens(),
+		ringTokensByZone:    ringDesc.getTokensByZone(),
+		ringInstanceByToken: ringDesc.getTokensInfo(),
+		ringZones:           getZones(ringDesc.getTokensByZone()),
+		strategy:            NewDefaultReplicationStrategy(),
 	}
 
 	// Get the replication set with shard size = 2.
@@ -2001,7 +1996,6 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 	ring.ringTokensByZone = ringDesc.getTokensByZone()
 	ring.ringInstanceByToken = ringDesc.getTokensInfo()
 	ring.ringZones = getZones(ringDesc.getTokensByZone())
-	ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
 
 	// Increase shard size to 6.
 	thirdShard := ring.ShuffleShard("tenant-id", 6)
@@ -2297,13 +2291,12 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 						HeartbeatTimeout:     time.Hour,
 						ZoneAwarenessEnabled: true,
 					},
-					ringDesc:              ringDesc,
-					ringTokens:            ringDesc.GetTokens(),
-					ringTokensByZone:      ringDesc.getTokensByZone(),
-					ringInstanceByToken:   ringDesc.getTokensInfo(),
-					ringZones:             getZones(ringDesc.getTokensByZone()),
-					instancesCountPerZone: ringDesc.instancesCountPerZone(),
-					strategy:              NewDefaultReplicationStrategy(),
+					ringDesc:            ringDesc,
+					ringTokens:          ringDesc.GetTokens(),
+					ringTokensByZone:    ringDesc.getTokensByZone(),
+					ringInstanceByToken: ringDesc.getTokensInfo(),
+					ringZones:           getZones(ringDesc.getTokensByZone()),
+					strategy:            NewDefaultReplicationStrategy(),
 				}
 
 				// Replay the events on the timeline.
@@ -2320,7 +2313,6 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 						ring.ringTokensByZone = ringDesc.getTokensByZone()
 						ring.ringInstanceByToken = ringDesc.getTokensInfo()
 						ring.ringZones = getZones(ringDesc.getTokensByZone())
-						ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
 						if updateRegisteredTimestampCache {
 							ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
 						}
@@ -2331,7 +2323,6 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 						ring.ringTokensByZone = ringDesc.getTokensByZone()
 						ring.ringInstanceByToken = ringDesc.getTokensInfo()
 						ring.ringZones = getZones(ringDesc.getTokensByZone())
-						ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
 						if updateRegisteredTimestampCache {
 							ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
 						}
@@ -3252,16 +3243,15 @@ func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, s
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), numInstances, numZones, numTokens)}
 	ring := Ring{
-		cfg:                   Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: !cache},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		shuffledSubringCache:  map[subringCacheKey]*Ring{},
-		strategy:              NewDefaultReplicationStrategy(),
-		lastTopologyChange:    time.Now(),
+		cfg:                  Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: !cache},
+		ringDesc:             ringDesc,
+		ringTokens:           ringDesc.GetTokens(),
+		ringTokensByZone:     ringDesc.getTokensByZone(),
+		ringInstanceByToken:  ringDesc.getTokensInfo(),
+		ringZones:            getZones(ringDesc.getTokensByZone()),
+		shuffledSubringCache: map[subringCacheKey]*Ring{},
+		strategy:             NewDefaultReplicationStrategy(),
+		lastTopologyChange:   time.Now(),
 	}
 
 	b.ResetTimer()

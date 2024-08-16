@@ -3194,7 +3194,7 @@ func TestRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
 func BenchmarkRing_ShuffleShard(b *testing.B) {
 	for _, numInstances := range []int{50, 100, 1000} {
 		for _, numZones := range []int{1, 3} {
-			for _, shardSize := range []int{3, 10, 30} {
+			for _, shardSize := range []int{0, 3, 10, 30} {
 				b.Run(fmt.Sprintf("num instances = %d, num zones = %d, shard size = %d", numInstances, numZones, shardSize), func(b *testing.B) {
 					benchmarkShuffleSharding(b, numInstances, numZones, 128, shardSize, false)
 				})
@@ -3206,7 +3206,7 @@ func BenchmarkRing_ShuffleShard(b *testing.B) {
 func BenchmarkRing_ShuffleShardCached(b *testing.B) {
 	for _, numInstances := range []int{50, 100, 1000} {
 		for _, numZones := range []int{1, 3} {
-			for _, shardSize := range []int{3, 10, 30} {
+			for _, shardSize := range []int{0, 3, 10, 30} {
 				b.Run(fmt.Sprintf("num instances = %d, num zones = %d, shard size = %d", numInstances, numZones, shardSize), func(b *testing.B) {
 					benchmarkShuffleSharding(b, numInstances, numZones, 128, shardSize, true)
 				})
@@ -3233,6 +3233,18 @@ func BenchmarkRing_ShuffleShard_LargeShardSize(b *testing.B) {
 		numZones     = 3
 		numTokens    = 512
 		shardSize    = 270 // = 90 per zone
+		cacheEnabled = false
+	)
+
+	benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
+}
+
+func BenchmarkRing_ShuffleShard_ShardSize_0(b *testing.B) {
+	const (
+		numInstances = 90
+		numZones     = 3
+		numTokens    = 512
+		shardSize    = 0
 		cacheEnabled = false
 	)
 

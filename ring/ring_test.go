@@ -1462,6 +1462,83 @@ func TestRing_ShuffleShard(t *testing.T) {
 			expectedZoneCount:            2,
 			expectedInstancesInZoneCount: map[string]int{"zone-a": 1, "zone-b": 1, "zone-c": 0},
 		},
+		"multiple zones, shard size == num instances, balanced zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			shardSize:                    6,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 6,
+			expectedDistribution:         []int{2, 2, 2},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 2, "zone-b": 2, "zone-c": 2},
+		},
+		"multiple zones, shard size == num instances, unbalanced zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			shardSize:                    6,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 5,
+			expectedDistribution:         []int{2, 2, 1},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 2, "zone-b": 2, "zone-c": 1},
+		},
+		"multiple zones, shard size > num instances, balanced zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			shardSize:                    3,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 3,
+			expectedDistribution:         []int{1, 1, 1},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 1, "zone-b": 1, "zone-c": 1},
+		},
+		"multiple zones, shard size > num instances, unbalanced zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			shardSize:                    9,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 6,
+			expectedDistribution:         []int{3, 2, 1},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 3, "zone-b": 2, "zone-c": 1},
+		},
+		"multiple zones, shard size = 0, unbalanced zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			shardSize:                    0,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 6,
+			expectedDistribution:         []int{3, 2, 1},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 3, "zone-b": 2, "zone-c": 1},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -3117,7 +3194,7 @@ func TestRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T) {
 func BenchmarkRing_ShuffleShard(b *testing.B) {
 	for _, numInstances := range []int{50, 100, 1000} {
 		for _, numZones := range []int{1, 3} {
-			for _, shardSize := range []int{3, 10, 30} {
+			for _, shardSize := range []int{0, 3, 10, 30} {
 				b.Run(fmt.Sprintf("num instances = %d, num zones = %d, shard size = %d", numInstances, numZones, shardSize), func(b *testing.B) {
 					benchmarkShuffleSharding(b, numInstances, numZones, 128, shardSize, false)
 				})
@@ -3129,7 +3206,7 @@ func BenchmarkRing_ShuffleShard(b *testing.B) {
 func BenchmarkRing_ShuffleShardCached(b *testing.B) {
 	for _, numInstances := range []int{50, 100, 1000} {
 		for _, numZones := range []int{1, 3} {
-			for _, shardSize := range []int{3, 10, 30} {
+			for _, shardSize := range []int{0, 3, 10, 30} {
 				b.Run(fmt.Sprintf("num instances = %d, num zones = %d, shard size = %d", numInstances, numZones, shardSize), func(b *testing.B) {
 					benchmarkShuffleSharding(b, numInstances, numZones, 128, shardSize, true)
 				})
@@ -3156,6 +3233,18 @@ func BenchmarkRing_ShuffleShard_LargeShardSize(b *testing.B) {
 		numZones     = 3
 		numTokens    = 512
 		shardSize    = 270 // = 90 per zone
+		cacheEnabled = false
+	)
+
+	benchmarkShuffleSharding(b, numInstances, numZones, numTokens, shardSize, cacheEnabled)
+}
+
+func BenchmarkRing_ShuffleShard_ShardSize_0(b *testing.B) {
+	const (
+		numInstances = 90
+		numZones     = 3
+		numTokens    = 512
+		shardSize    = 0
 		cacheEnabled = false
 	)
 

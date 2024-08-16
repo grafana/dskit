@@ -220,7 +220,7 @@
 * [ENHANCEMENT] memberlist: Added `-<prefix>memberlist.broadcast-timeout-for-local-updates-on-shutdown` option to set timeout for sending locally-generated updates on shutdown, instead of previously hardcoded 10s (which is still the default). #539
 * [ENHANCEMENT] tracing: add ExtractTraceSpanID function.
 * [EHNANCEMENT] crypto/tls: Support reloading client certificates #537 #552
-* [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553 #554
+* [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553 #554 #556
 * [ENHANCEMENT] Added new ring methods to expose number of writable instances with tokens per zone, and overall. #560 #562
 * [ENHANCEMENT] `services.FailureWatcher` can now be closed, which unregisters all service and manager listeners, and closes channel used to receive errors. #564 
 * [CHANGE] Backoff: added `Backoff.ErrCause()` which is like `Backoff.Err()` but returns the context cause if backoff is terminated because the context has been canceled. #538
@@ -258,3 +258,4 @@
 * [BUGFIX] Memcached: Don't truncate sub-second TTLs to 0 which results in them being cached forever. #530
 * [BUGFIX] Cache: initialise the `operation_failures_total{reason="connect-timeout"}` metric to 0 for each cache operation type on startup. #545
 * [BUGFIX] spanlogger: include correct caller information in log messages logged through a `SpanLogger`. #547
+* [BUGFIX] Ring: shuffle shard without lookback no longer returns entire ring when shard size >= number of instances. Instead proper subring is computed, with correct number of instances in each zone. Returning entire ring was a bug, and such ring can contain instances that were not supposed to be used, if zones are not balanced. #554 #556

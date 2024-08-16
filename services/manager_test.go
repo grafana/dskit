@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestNoServices(t *testing.T) {
@@ -68,6 +69,9 @@ func TestManagerRequiresServicesToBeInNewState(t *testing.T) {
 	s3 := serviceThatDoesntDoAnything()
 
 	require.NoError(t, s1.StartAsync(context.Background()))
+	t.Cleanup(func() {
+		require.NoError(t, StopAndAwaitTerminated(context.Background(), s1))
+	})
 
 	_, err := NewManager(s1, s2, s3)
 	require.Error(t, err) // s1 is not New anymore
@@ -312,11 +316,18 @@ func newGatheringManagerListener(t *testing.T) *gatheringManagerListener {
 	return gl
 }
 
-func (g *gatheringManagerListener) collect(_ context.Context) error {
-	for s := range g.ch {
-		g.log = append(g.log, s)
+func (g *gatheringManagerListener) collect(ctx context.Context) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case s, ok := <-g.ch:
+			if !ok {
+				return nil
+			}
+			g.log = append(g.log, s)
+		}
 	}
-	return nil
 }
 
 func (g *gatheringManagerListener) Healthy() {
@@ -330,4 +341,103 @@ func (g *gatheringManagerListener) Stopped() {
 
 func (g *gatheringManagerListener) Failure(_ Service) {
 	g.ch <- "failed"
+}
+
+func TestManagerListenerCancellationUnstartedManager(t *testing.T) {
+	s1 := serviceThatDoesntDoAnything()
+	s2 := serviceThatDoesntDoAnything()
+	s3 := serviceThatDoesntDoAnything()
+
+	m, err := NewManager(s1, s2, s3)
+	require.NoError(t, err)
+
+	// Ignore goroutine started by manager and services -- we're testing for goroutines created by listeners.
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent(), goleak.Cleanup(func(_ int) {
+		require.NoError(t, StopManagerAndAwaitStopped(context.Background(), m))
+
+		// After stopping the manager (which stops all the services, and their listeners), we can do another check.
+		goleak.VerifyNone(t)
+	}))
+
+	gl := NewManagerListener(nil, nil, nil)
+	for i := 0; i < 10; i++ {
+		stop := m.AddListener(gl)
+		stop()
+		// multiple stop() calls are ignored
+		stop()
+	}
+}
+
+func TestManagerListenerCancellationStoppedManager(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	s1 := serviceThatDoesntDoAnything()
+	s2 := serviceThatDoesntDoAnything()
+	s3 := serviceThatDoesntDoAnything()
+
+	m, err := NewManager(s1, s2, s3)
+	require.NoError(t, err)
+
+	// Start and stop manager (before adding listener to it).
+	require.NoError(t, StartManagerAndAwaitHealthy(context.Background(), m))
+	require.NoError(t, StopManagerAndAwaitStopped(context.Background(), m))
+
+	gl := NewManagerListener(nil, nil, nil)
+	for i := 0; i < 10; i++ {
+		stop := m.AddListener(gl)
+		stop()
+		// multiple stop() calls are ignored
+		stop()
+	}
+}
+
+func TestManagerListenerCancellationHealthyManager(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	s1 := serviceThatDoesntDoAnything()
+	s2 := serviceThatDoesntDoAnything()
+	s3 := serviceThatDoesntDoAnything()
+
+	m, err := NewManager(s1, s2, s3)
+	require.NoError(t, err)
+	require.NoError(t, StartManagerAndAwaitHealthy(context.Background(), m))
+
+	// Ignore goroutine started by manager and services -- we're testing for goroutines created by listeners.
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent(), goleak.Cleanup(func(_ int) {
+		require.NoError(t, StopManagerAndAwaitStopped(context.Background(), m))
+
+		// After stopping the manager (which stops all the services, and their listeners), we can do another check.
+		goleak.VerifyNone(t)
+	}))
+
+	const count = 10
+	gl := NewManagerListener(nil, nil, nil)
+
+	// Now that manager is running, we add single manager multiple times, and keep all functions to unregister it.
+	// This listener is unregistered before other state transitions of manager,
+	// so it won't receive any notifications.
+
+	var stopFns []func()
+	for i := 0; i < count; i++ {
+		stop := m.AddListener(gl)
+		stopFns = append(stopFns, stop)
+	}
+
+	// Check for number of listeners in the service.
+	m.mu.Lock()
+	listenersCount := len(m.listeners)
+	m.mu.Unlock()
+	require.Equal(t, listenersCount, count)
+
+	// Unregister all listeners. Calling same function second time has no effect.
+	for _, stop := range stopFns {
+		stop()
+		stop()
+	}
+
+	// Check for number of listeners again.
+	m.mu.Lock()
+	listenersCount = len(m.listeners)
+	m.mu.Unlock()
+	require.Equal(t, listenersCount, 0)
 }

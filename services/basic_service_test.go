@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 var _ Service = &BasicService{} // just make sure that BasicService implements Service
@@ -325,4 +326,77 @@ func TestServiceName(t *testing.T) {
 	// once service has started, BasicService will not allow changing the name
 	s.WithName("new")
 	require.Equal(t, "test name", DescribeService(s))
+}
+
+func TestListenerCancellationUnstartedService(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	s := NewIdleService(nil, nil)
+
+	sl := newServiceListener()
+	for i := 0; i < 10; i++ {
+		stop := s.AddListener(sl)
+		stop()
+		// multiple stop() calls are ignored
+		stop()
+	}
+}
+
+func TestListenerCancellationTerminatedService(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	s := NewIdleService(nil, nil)
+	require.NoError(t, StopAndAwaitTerminated(context.Background(), s))
+
+	sl := newServiceListener()
+	for i := 0; i < 10; i++ {
+		stop := s.AddListener(sl)
+		stop()
+		// multiple stop() calls are ignored
+		stop()
+	}
+}
+
+func TestListenerCancellationRunningService(t *testing.T) {
+	s := NewIdleService(nil, nil)
+	require.NoError(t, StartAndAwaitRunning(context.Background(), s))
+
+	// Ignore goroutine started by service -- we're testing for goroutines created by listeners.
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent(), goleak.Cleanup(func(_ int) {
+		require.NoError(t, StopAndAwaitTerminated(context.Background(), s))
+
+		// After stopping service, we can do another check.
+		goleak.VerifyNone(t)
+	}))
+
+	const count = 10
+	sl := newServiceListener()
+
+	// Now that service is running, we add single listener multiple times, and keep all functions to unregister it.
+	// This listener is unregistered before other state transitions of service "s",
+	// so it won't receive any notifications.
+
+	var stopFns []func()
+	for i := 0; i < count; i++ {
+		stop := s.AddListener(sl)
+		stopFns = append(stopFns, stop)
+	}
+
+	// Check for number of listeners in the service.
+	s.stateMu.Lock()
+	listenersCount := len(s.listeners)
+	s.stateMu.Unlock()
+	require.Equal(t, listenersCount, count)
+
+	// Unregister all listeners. Calling same function second time has no effect.
+	for _, stop := range stopFns {
+		stop()
+		stop()
+	}
+
+	// Check for number of listeners again.
+	s.stateMu.Lock()
+	listenersCount = len(s.listeners)
+	s.stateMu.Unlock()
+	require.Equal(t, listenersCount, 0)
 }

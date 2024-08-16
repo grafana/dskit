@@ -769,14 +769,14 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	// If requested shard size covers entire ring, and we don't need to do any filtering of read-only instances,
 	// we can return entire ring directly.
 	if r.readOnlyInstancesUpdated && (size <= 0 || len(r.ringDesc.Ingesters) <= size) {
-		if r.readOnlyInstances == 0 {
-			// If there are no read-only instances, there's no need to filter anything.
+		if lookbackPeriod > 0 && (r.readOnlyInstances == 0 || r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil) {
 			return r
 		}
 
-		if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil {
-			return r
-		}
+		// for lookbackPeriod == 0, we can only return full ring if there are no read-only instances (no filtering needs to be done),
+		// and all zones have number of instances <= numInstancesPerZone. If the second condition isn't true,
+		// zones are unbalanced and we return full ring, then after adding more instances to the ring, subsequent shuffleShard with lookback
+		// may not return all instances.
 	}
 
 	if size <= 0 || len(r.ringDesc.Ingesters) <= size {

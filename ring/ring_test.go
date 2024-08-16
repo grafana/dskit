@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -2386,7 +2385,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						// ring up until the lookback period.
 						nextInstanceID := len(ringDesc.Ingesters) + 1
 
-						for i := 1; i <= numEvents; i++ {
+						for eventID := 1; eventID <= numEvents; eventID++ {
 							currTime = currTime.Add(delayBetweenEvents)
 
 							switch r := rnd.Intn(100); {
@@ -2397,7 +2396,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 								nextInstanceID++
 								ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, ringDesc.GetTokens()), currTime)
 								updateRing()
-								t.Logf("%d: added instance %s", i, instanceID)
+								t.Logf("%d (%v): added instance %s", eventID, currTime.Format("03:04"), instanceID)
 
 							case r < 70:
 								// Scale down instances by 1.
@@ -2406,21 +2405,21 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 								// Don't remove instance if it is the last instance in the zone,
 								// because sharding works differently for different number of zones.
 								if ring.instancesCountPerZone[zone] <= 1 {
-									t.Logf("%d: not removing last instance %s from zone %s", i, idToRemove, zone)
+									t.Logf("%d (%v): not removing last instance %s from zone %s", eventID, currTime.Format("03:04"), idToRemove, zone)
 									break
 								}
 
 								delete(ringDesc.Ingesters, idToRemove)
 								updateRing()
-								t.Logf("%d: removed instance %s", i, idToRemove)
+								t.Logf("%d (%v): removed instance %s", eventID, currTime.Format("03:04"), idToRemove)
 
 								// Remove the terminated instance from the history.
-								for ringTime, ringState := range history {
+								for eid, ringState := range history {
 									for idx, desc := range ringState.Instances {
 										// In this simulation instance ID == instance address.
 										if desc.Addr == idToRemove {
 											ringState.Instances = append(ringState.Instances[:idx], ringState.Instances[idx+1:]...)
-											history[ringTime] = ringState
+											history[eid] = ringState
 											break
 										}
 									}
@@ -2440,9 +2439,9 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 									updateRing()
 
 									readOnlyInstances[instanceID] = instanceDesc
-									t.Logf("%d: switched instance %s to read-only", i, instanceID)
+									t.Logf("%d (%v): switched instance %s to read-only", eventID, currTime.Format("03:04"), instanceID)
 								} else {
-									t.Logf("%d: instance %s is already read-only, not switching", i, instanceID)
+									t.Logf("%d (%v): instance %s is already read-only, not switching", eventID, currTime.Format("03:04"), instanceID)
 								}
 
 							case r < 90:
@@ -2456,25 +2455,25 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 									updateRing()
 
 									delete(readOnlyInstances, instanceID)
-									t.Logf("%d: switched instance %s to read-write", i, instanceID)
+									t.Logf("%d (%v): switched instance %s to read-write", eventID, currTime.Format("03:04"), instanceID)
 								} else {
-									t.Logf("%d: no instance to switch to read-only found", i)
+									t.Logf("%d (%v): no instance to switch to read-only found", eventID, currTime.Format("03:04"))
 								}
 							default:
 								// Scale up shard size (keeping the per-zone balance).
 								shardSize += numZones
-								t.Logf("%d: increased shard size %d", i, shardSize)
+								t.Logf("%d (%v): increased shard size %d", eventID, currTime.Format("03:04"), shardSize)
 							}
 
 							// Add the current shard to the history.
 							rs, err = ring.shuffleShard(userID, shardSize, 0, currTime).GetReplicationSetForOperation(Read)
 							require.NoError(t, err)
-							history[i] = historyEntry{rs, shardSize, currTime}
+							history[eventID] = historyEntry{rs, shardSize, currTime}
 
 							// Ensure the shard with lookback includes all instances from previous states of the ring.
 							rsWithLookback, err := ring.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, currTime).GetReplicationSetForOperation(Read)
 							require.NoError(t, err)
-							t.Logf("%d: history for event=%v, shardSize=%v, lookbackPeriod=%v,\nrs=%v,\nrsWithLookback=%v", i, currTime.Format("03:04"), shardSize, lookbackPeriod, getSortedAddresses(rs), getSortedAddresses(rsWithLookback))
+							t.Logf("%d: subrings for event=%v, shardSize=%v, lookbackPeriod=%v,\nrs=%v,\nrsWithLookback=%v", eventID, currTime.Format("03:04"), shardSize, lookbackPeriod, getSortedAddresses(rs), getSortedAddresses(rsWithLookback))
 
 							for ix, ringState := range history {
 								if ringState.Time.Before(currTime.Add(-lookbackPeriod)) {
@@ -2485,8 +2484,8 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 
 								for _, desc := range ringState.Instances {
 									if !rsWithLookback.Includes(desc.Addr) && !desc.ReadOnly {
-										t.Fatalf("subring generated after event %d %v is expected to include instance %s from ring state but it's missing (actual instances are: %s)",
-											ix, ringState.Time.Format("03:04"), desc.Addr, strings.Join(rsWithLookback.GetAddresses(), ", "))
+										t.Fatalf("%d (%v) new shuffle shard with lookback is expected to include instance %s from ring state after event %d but it's missing (actual instances are: %v)",
+											eventID, currTime.Format("03:04"), desc.Addr, ix, getSortedAddresses(rsWithLookback))
 									}
 								}
 							}

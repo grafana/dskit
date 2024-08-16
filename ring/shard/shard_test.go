@@ -1,6 +1,7 @@
 package shard
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,6 +38,11 @@ func TestShuffleShardExpectedInstancesPerZone(t *testing.T) {
 			shardSize: 6,
 			numZones:  3,
 			expected:  2,
+		},
+		{
+			shardSize: math.MaxInt,
+			numZones:  3,
+			expected:  math.MaxInt,
 		},
 	}
 

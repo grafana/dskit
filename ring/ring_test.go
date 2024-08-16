@@ -2396,7 +2396,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 								nextInstanceID++
 								ringDesc.Ingesters[instanceID] = generateRingInstanceWithInfo(instanceID, zoneID, gen.GenerateTokens(128, ringDesc.GetTokens()), currTime)
 								updateRing()
-								t.Logf("%d (%v): added instance %s", eventID, currTime.Format("03:04"), instanceID)
+								t.Logf("%d (%v): added instance %s, total instances %d", eventID, currTime.Format("03:04"), instanceID, len(ringDesc.Ingesters))
 
 							case r < 70:
 								// Scale down instances by 1.
@@ -2411,7 +2411,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 
 								delete(ringDesc.Ingesters, idToRemove)
 								updateRing()
-								t.Logf("%d (%v): removed instance %s", eventID, currTime.Format("03:04"), idToRemove)
+								t.Logf("%d (%v): removed instance %s, total instances %d", eventID, currTime.Format("03:04"), idToRemove, len(ringDesc.Ingesters))
 
 								// Remove the terminated instance from the history.
 								for eid, ringState := range history {

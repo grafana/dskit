@@ -779,8 +779,9 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		// may not return all instances.
 	}
 
-	if size <= 0 || len(r.ringDesc.Ingesters) <= size {
-		size = len(r.ringDesc.Ingesters)
+	if size <= 0 {
+		// Use all available instances in each zone.
+		size = math.MaxInt
 	}
 
 	var numInstancesPerZone int
@@ -794,7 +795,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		actualZones = []string{""}
 	}
 
-	shard := make(map[string]InstanceDesc, size)
+	shard := make(map[string]InstanceDesc, min(r.InstancesCount(), size))
 
 	// We need to iterate zones always in the same order to guarantee stability.
 	for _, zone := range actualZones {

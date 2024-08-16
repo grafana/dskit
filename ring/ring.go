@@ -699,9 +699,8 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 	// Use all instances if shuffle sharding is disabled, or it covers all instances anyway.
 	// Reason for not returning entire ring directly is that we need to filter out read-only instances.
-	instances := r.InstancesCount()
-	if size <= 0 || instances <= size {
-		size = instances
+	if size <= 0 {
+		size = math.MaxInt
 	}
 
 	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
@@ -771,18 +770,21 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		actualZones = []string{""}
 	}
 
-	shard := make(map[string]InstanceDesc, size)
+	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
 
 	// We need to iterate zones always in the same order to guarantee stability.
 	for _, zone := range actualZones {
 		var tokens []uint32
+		var maxAddedInstances int
 
 		if r.cfg.ZoneAwarenessEnabled {
 			tokens = r.ringTokensByZone[zone]
+			maxAddedInstances = r.instancesCountPerZone[zone]
 		} else {
 			// When zone-awareness is disabled, we just iterate over 1 single fake zone
 			// and use all tokens in the ring.
 			tokens = r.ringTokens
+			maxAddedInstances = len(r.ringDesc.Ingesters)
 		}
 
 		// Initialise the random generator used to select instances in the ring.
@@ -791,10 +793,13 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		// property when the shard size changes or a new zone is added.
 		random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(identifier, zone)))
 
+		// If we add maxAddedInstances, we can stop searching for more instances, since there can't be any more of them.
+		addedInstances := 0
+
 		// To select one more instance while guaranteeing the "consistency" property,
 		// we do pick a random value from the generator and resolve uniqueness collisions
 		// (if any) continuing walking the ring.
-		for i := 0; i < numInstancesPerZone; i++ {
+		for i := 0; i < numInstancesPerZone && addedInstances < maxAddedInstances; i++ {
 			start := searchToken(tokens, random.Uint32())
 			iterations := 0
 			found := false
@@ -826,6 +831,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 
 				// Include instance in the subring.
 				shard[instanceID] = instance
+				addedInstances++
 
 				// If the lookback is enabled and this instance has been registered within the lookback period
 				// then we should include it in the subring but continuing selecting instances.

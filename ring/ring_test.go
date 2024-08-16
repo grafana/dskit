@@ -1462,6 +1462,38 @@ func TestRing_ShuffleShard(t *testing.T) {
 			expectedZoneCount:            2,
 			expectedInstancesInZoneCount: map[string]int{"zone-a": 1, "zone-b": 1, "zone-c": 0},
 		},
+		"multiple zones, shard size == num instances, balanced zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			shardSize:                    6,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 6,
+			expectedDistribution:         []int{2, 2, 2},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 2, "zone-b": 2, "zone-c": 2},
+		},
+		"multiple zones, shard size == num instances, unbalanced zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			shardSize:                    6,
+			zoneAwarenessEnabled:         true,
+			expectedSize:                 5,
+			expectedDistribution:         []int{2, 2, 1},
+			expectedZoneCount:            3,
+			expectedInstancesInZoneCount: map[string]int{"zone-a": 2, "zone-b": 2, "zone-c": 1},
+		},
 		"multiple zones, shard size > num instances, balanced zones": {
 			ringInstances: map[string]InstanceDesc{
 				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},

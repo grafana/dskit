@@ -708,8 +708,13 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 //
 // Subring returned by this method does not contain instances that have read-only field set.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
-	// size == 0 or size > num(ingesters) is handled in shuffleShard method.
-	// It is safe to use such size in caching key, because caches are invalidated when number of instances in the ring changes.
+	// Use all possible instances if shuffle sharding is disabled. We don't set size to r.InstancesCount(), because
+	// that could lead to not all instances being returned when ring zones are unbalanced.
+	// Reason for not returning entire ring directly is that we need to filter out read-only instances.
+	if size <= 0 {
+		size = math.MaxInt
+	}
+
 	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
 		return cached
 	}
@@ -795,7 +800,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		actualZones = []string{""}
 	}
 
-	shard := make(map[string]InstanceDesc, min(r.InstancesCount(), size))
+	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
 
 	// We need to iterate zones always in the same order to guarantee stability.
 	for _, zone := range actualZones {

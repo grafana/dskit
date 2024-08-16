@@ -3738,11 +3738,15 @@ func TestRing_ShuffleShard_Caching(t *testing.T) {
 
 	// If we ask for ALL instances, we get a ring with the same instances as the original ring
 	newRing := ring.ShuffleShard("user", numLifecyclers).(*Ring)
+	ring.mtx.RLock()
 	require.Equal(t, ring.ringDesc.Ingesters, newRing.ringDesc.Ingesters)
+	ring.mtx.RUnlock()
 
 	// If we ask for single instance, but use long lookback, we get a ring again with the same instances as the original
 	newRing = ring.ShuffleShardWithLookback("user", 1, 10*time.Minute, time.Now()).(*Ring)
+	ring.mtx.RLock()
 	require.Equal(t, ring.ringDesc.Ingesters, newRing.ringDesc.Ingesters)
+	ring.mtx.RUnlock()
 }
 
 // User shuffle shard token.

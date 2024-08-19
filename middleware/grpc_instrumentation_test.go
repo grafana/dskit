@@ -219,11 +219,11 @@ func TestInstrumentationLabel_ErrorToStatusCode(t *testing.T) {
 			expectedGRPCStatueCodes: codes.FailedPrecondition,
 		},
 		"a gRPC error with status codes.Canceled returns codes.Canceled": {
-			err:                     status.Errorf(codes.Canceled, context.Canceled.Error()),
+			err:                     status.Error(codes.Canceled, context.Canceled.Error()),
 			expectedGRPCStatueCodes: codes.Canceled,
 		},
 		"a wrapped gRPC error with status codes.Canceled returns codes.Canceled": {
-			err:                     fmt.Errorf("wrapped: %w", status.Errorf(codes.Canceled, context.Canceled.Error())),
+			err:                     fmt.Errorf("wrapped: %w", status.Error(codes.Canceled, context.Canceled.Error())),
 			expectedGRPCStatueCodes: codes.Canceled,
 		},
 		"context.Canceled returns codes.Canceled": {
@@ -239,7 +239,7 @@ func TestInstrumentationLabel_ErrorToStatusCode(t *testing.T) {
 			expectedGRPCStatueCodes: codes.Unknown,
 		},
 		"a non-gRPC error returns codes.Unknown": {
-			err:                     fmt.Errorf(errMsg),
+			err:                     errors.New(errMsg),
 			expectedGRPCStatueCodes: codes.Unknown,
 		},
 	}

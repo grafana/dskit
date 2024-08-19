@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -48,7 +47,7 @@ func (f FakeServer) FailWithError(_ context.Context, _ *protobuf.Empty) (*protob
 }
 
 func (f FakeServer) FailWithHTTPError(_ context.Context, req *FailWithHTTPErrorRequest) (*protobuf.Empty, error) {
-	return nil, httpgrpc.Errorf(int(req.Code), strconv.Itoa(int(req.Code)))
+	return nil, httpgrpc.Errorf(int(req.Code), "%d", req.Code)
 }
 
 func (f FakeServer) Succeed(_ context.Context, _ *protobuf.Empty) (*protobuf.Empty, error) {

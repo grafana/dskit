@@ -874,8 +874,9 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	return r.buildReadOnlyRingForTheShard(shard)
 }
 
-// filterOutReadOnlyInstances removes all read-only instances from the ring, and returns the result.
-// When lookback period > 0, only read-only instances that have changed state within the lookback period are returned, to be consistent with shuffleShard function.
+// filterOutReadOnlyInstances removes all read-only instances from the ring, and returns the resulting ring.
+// When lookback period > 0, only read-only instances that have changed state within outside of the lookback window are filtered,
+// to be consistent with shuffleShard function.
 func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time.Time) *Ring {
 	lookbackUntil := now.Add(-lookbackPeriod).Unix()
 

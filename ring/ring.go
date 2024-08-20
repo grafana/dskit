@@ -708,18 +708,16 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 //
 // Subring returned by this method does not contain instances that have read-only field set.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
-	// Use all possible instances if shuffle sharding is disabled. We don't set size to r.InstancesCount(), because
-	// that could lead to not all instances being returned when ring zones are unbalanced.
-	// Reason for not returning entire ring directly is that we need to filter out read-only instances.
-	if size <= 0 {
-		size = math.MaxInt
-	}
-
 	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
 		return cached
 	}
 
-	result := r.shuffleShard(identifier, size, 0, time.Now())
+	var result *Ring
+	if size <= 0 {
+		result = r.filterOutReadOnlyInstances(0, time.Now())
+	} else {
+		result = r.shuffleShard(identifier, size, 0, time.Now())
+	}
 	// Only cache subring if it is different from this ring, to avoid deadlocks in getCachedShuffledSubring,
 	// when we update the cached ring.
 	if result != r {
@@ -740,13 +738,16 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 // Subring returned by this method does not contain read-only instances that have changed their state
 // before the lookback period.
 func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
-	// size == 0 or size > num(ingesters) is handled in shuffleShard method.
-	// It is safe to use such size in caching key, because caches are invalidated when number of instances in the ring changes.
 	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
 		return cached
 	}
 
-	result := r.shuffleShard(identifier, size, lookbackPeriod, now)
+	var result *Ring
+	if size <= 0 {
+		result = r.filterOutReadOnlyInstances(lookbackPeriod, now)
+	} else {
+		result = r.shuffleShard(identifier, size, lookbackPeriod, now)
+	}
 
 	if result != r {
 		r.setCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now, result)
@@ -768,25 +769,9 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	// If any instance had RegisteredTimestamp equal to 0 (it would not cause additional lookup of next instance),
 	// then r.oldestRegisteredTimestamp is zero too, and we skip this optimization.
 	if lookbackPeriod > 0 && r.oldestRegisteredTimestamp > 0 && r.oldestRegisteredTimestamp >= lookbackUntil {
+		// Even if some ingesters are read only, they must have changed their read-only status within lookback window
+		// (because they were all registered within lookback window), so they would be included.
 		return r
-	}
-
-	// If requested shard size covers entire ring, and we don't need to do any filtering of read-only instances,
-	// we can return entire ring directly.
-	if r.readOnlyInstancesUpdated && (size <= 0 || len(r.ringDesc.Ingesters) <= size) {
-		if lookbackPeriod > 0 && (r.readOnlyInstances == 0 || r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil) {
-			return r
-		}
-
-		// for lookbackPeriod == 0, we can only return full ring if there are no read-only instances (no filtering needs to be done),
-		// and all zones have number of instances <= numInstancesPerZone. If the second condition isn't true,
-		// zones are unbalanced and we return full ring, then after adding more instances to the ring, subsequent shuffleShard with lookback
-		// may not return all instances.
-	}
-
-	if size <= 0 {
-		// Use all available instances in each zone.
-		size = math.MaxInt
 	}
 
 	var numInstancesPerZone int
@@ -854,10 +839,9 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 				}
 				// With lookback period >0, read only instances are only included if they have not changed read-only status in the lookback window.
 				// If ReadOnlyUpdatedTimestamp is not set, we include the instance, and extend the shard later.
-				if lookbackPeriod > 0 && instance.ReadOnly && (instance.ReadOnlyUpdatedTimestamp > 0 && instance.ReadOnlyUpdatedTimestamp < lookbackUntil) {
+				if lookbackPeriod > 0 && instance.ReadOnly && instance.ReadOnlyUpdatedTimestamp > 0 && instance.ReadOnlyUpdatedTimestamp < lookbackUntil {
 					continue
 				}
-
 				// Include instance in the subring.
 				shard[instanceID] = instance
 
@@ -889,7 +873,51 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		}
 	}
 
-	// Build a read-only ring for the shard.
+	return r.buildReadOnlyRingForTheShard(shard)
+}
+
+// filterOutReadOnlyInstances removes all read-only instances from the ring, and returns the result.
+// When lookback period > 0, only read-only instances that have changed state within the lookback period are returned, to be consistent with shuffleShard function.
+func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time.Time) *Ring {
+	lookbackUntil := now.Add(-lookbackPeriod).Unix()
+
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	if r.readOnlyInstancesUpdated {
+		// If there are no read-only instances, there's no need to do any filtering.
+		if r.readOnlyInstances == 0 {
+			return r
+		}
+
+		// If all readOnlyUpdatedTimestamp values are within lookback window, we can return the ring without any filtering.
+		if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil {
+			return r
+		}
+	}
+
+	shard := make(map[string]InstanceDesc, len(r.ringDesc.Ingesters))
+
+	for id, inst := range r.ringDesc.Ingesters {
+		include := true
+		if inst.ReadOnly {
+			if lookbackPeriod == 0 {
+				include = false
+			} else if lookbackPeriod > 0 && inst.ReadOnlyUpdatedTimestamp > 0 && inst.ReadOnlyUpdatedTimestamp < lookbackUntil {
+				include = false
+			}
+		}
+
+		if include {
+			shard[id] = inst
+		}
+	}
+
+	return r.buildReadOnlyRingForTheShard(shard)
+}
+
+// buildReadOnlyRingForTheShard builds read-only ring for the shard (this ring won't be updated in the future).
+func (r *Ring) buildReadOnlyRingForTheShard(shard map[string]InstanceDesc) *Ring {
 	shardDesc := &Desc{Ingesters: shard}
 	shardTokensByZone := shardDesc.getTokensByZone()
 	shardTokens := mergeTokenGroups(shardTokensByZone)

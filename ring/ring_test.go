@@ -2336,8 +2336,9 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
 							}
 							if updateReadOnlyInstances {
-								ring.readOnlyInstancesUpdated = true
-								ring.readOnlyInstances, ring.oldestReadOnlyUpdatedTimestamp = ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+								readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+								ring.readOnlyInstances = &readOnlyInstances
+								ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
 							}
 						case remove:
 							delete(ringDesc.Ingesters, event.instanceID)
@@ -2350,8 +2351,9 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
 							}
 							if updateReadOnlyInstances {
-								ring.readOnlyInstancesUpdated = true
-								ring.readOnlyInstances, ring.oldestReadOnlyUpdatedTimestamp = ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+								readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+								ring.readOnlyInstances = &readOnlyInstances
+								ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
 							}
 						case test:
 							rs, err := ring.ShuffleShardWithLookback(userID, event.shardSize, lookbackPeriod, now).GetAllHealthy(Read)
@@ -2423,8 +2425,9 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
 							}
 							if updateReadOnlyInstances {
-								ring.readOnlyInstancesUpdated = true
-								ring.readOnlyInstances, ring.oldestReadOnlyUpdatedTimestamp = ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+								readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+								ring.readOnlyInstances = &readOnlyInstances
+								ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
 							}
 
 							if len(ring.ringZones) != numZones {
@@ -3310,8 +3313,9 @@ func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, s
 		strategy:             NewDefaultReplicationStrategy(),
 		lastTopologyChange:   time.Now(),
 	}
-	ring.readOnlyInstances, ring.oldestReadOnlyUpdatedTimestamp = ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
-	ring.readOnlyInstancesUpdated = true
+	readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+	ring.readOnlyInstances = &readOnlyInstances
+	ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
 
 	b.ResetTimer()
 

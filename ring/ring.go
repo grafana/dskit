@@ -191,12 +191,11 @@ type Ring struct {
 	// then this value will be 0.
 	oldestRegisteredTimestamp int64
 
-	readOnlyInstancesUpdated bool // True, if readOnlyInstances was actually updated. False if 0 is because of default value.
-	readOnlyInstances        int  // Number of instances with ReadOnly flag set. Only valid if readOnlyInstancesUpdated is set.
-	// Oldest value of ReadOnlyUpdatedTimestamp for read-only instances. If any read-only instance
-	// has ReadOnlyUpdatedTimestamp == 0 (which should not happen), then this value will be 0.
-	// Only valid if readOnlyInstancesUpdated is set.
-	oldestReadOnlyUpdatedTimestamp int64
+	readOnlyInstances *int // Number of instances with ReadOnly flag set. Only valid if not nil.
+	// Oldest value of ReadOnlyUpdatedTimestamp for read-only instances. If there are no read-only instances,
+	// or if any read-only instance has ReadOnlyUpdatedTimestamp == 0 (which should not happen), then this value will be 0.
+	// Only valid if not nil.
+	oldestReadOnlyUpdatedTimestamp *int64
 
 	// Maps a token with the information of the instance holding it. This map is immutable and
 	// cannot be changed in place because it's shared "as is" between subrings (the only way to
@@ -395,9 +394,8 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.writableInstancesWithTokensCountPerZone = writableInstancesWithTokensCountPerZone
 	r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
 	r.lastTopologyChange = now
-	r.readOnlyInstancesUpdated = true
-	r.readOnlyInstances = readOnlyInstances
-	r.oldestReadOnlyUpdatedTimestamp = oldestReadOnlyUpdatedTimestamp
+	r.readOnlyInstances = &readOnlyInstances
+	r.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
 
 	// Invalidate all cached subrings.
 	if r.shuffledSubringCache != nil {
@@ -884,16 +882,14 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
-	if r.readOnlyInstancesUpdated {
-		// If there are no read-only instances, there's no need to do any filtering.
-		if r.readOnlyInstances == 0 {
-			return r
-		}
+	// If there are no read-only instances, there's no need to do any filtering.
+	if r.readOnlyInstances != nil && *r.readOnlyInstances == 0 {
+		return r
+	}
 
-		// If all readOnlyUpdatedTimestamp values are within lookback window, we can return the ring without any filtering.
-		if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil {
-			return r
-		}
+	// If all readOnlyUpdatedTimestamp values are within lookback window, we can return the ring without any filtering.
+	if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp != nil && *r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil {
+		return r
 	}
 
 	shard := make(map[string]InstanceDesc, len(r.ringDesc.Ingesters))

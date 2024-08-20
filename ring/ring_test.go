@@ -1499,7 +1499,7 @@ func TestRing_ShuffleShard(t *testing.T) {
 				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
 				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
 			},
-			shardSize:                    3,
+			shardSize:                    6,
 			zoneAwarenessEnabled:         true,
 			expectedSize:                 3,
 			expectedDistribution:         []int{1, 1, 1},
@@ -2031,7 +2031,7 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 		userID         = "user-1"
 	)
 
-	now := time.Now()
+	now := time.Now().Truncate(time.Second)
 
 	type event struct {
 		what         eventType
@@ -2159,6 +2159,15 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 				{what: test, shardSize: 2, expected: []string{"instance-1", "instance-3"}},
 			},
 		},
+		"single zone, with read only instance, at lookback boundary": {
+			timeline: []event{
+				// readOnlyTime is too old to matter
+				{what: add, instanceID: "instance-1", instanceDesc: generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*lookbackPeriod))},
+				{what: add, instanceID: "instance-2", instanceDesc: generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{userToken(userID, "zone-a", 1) + 1}, now.Add(-2*lookbackPeriod)), readOnly: true, readOnlyTime: now.Add(lookbackPeriod)},
+				{what: add, instanceID: "instance-3", instanceDesc: generateRingInstanceWithInfo("instance-3", "zone-a", []uint32{userToken(userID, "zone-a", 2) + 1}, now.Add(-2*lookbackPeriod))},
+				{what: test, shardSize: 2, expected: []string{"instance-1", "instance-2", "instance-3"}},
+			},
+		},
 		"single zone, with read only instance, with unknown ReadOnlyUpdatedTimestamp": {
 			timeline: []event{
 				{what: add, instanceID: "instance-1", instanceDesc: generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*lookbackPeriod))},
@@ -2273,6 +2282,18 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 				{what: add, instanceID: "instance-5", instanceDesc: generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 4) + 1}, now.Add(-2*lookbackPeriod))},
 				{what: add, instanceID: "instance-6", instanceDesc: generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 5) + 1}, now.Add(-2*lookbackPeriod)), readOnly: true, readOnlyTime: now.Add(lookbackPeriod / 2)},
 				{what: test, shardSize: 3, expected: []string{"instance-1", "instance-2", "instance-3", "instance-4", "instance-6"}},
+			},
+		},
+		"multi zone, with read only instance, at lookback boundary": {
+			timeline: []event{
+				// readOnlyTime is too old to matter
+				{what: add, instanceID: "instance-1", instanceDesc: generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{userToken(userID, "zone-a", 0) + 1}, now.Add(-2*lookbackPeriod))},
+				{what: add, instanceID: "instance-2", instanceDesc: generateRingInstanceWithInfo("instance-2", "zone-b", []uint32{userToken(userID, "zone-b", 1) + 1}, now.Add(-2*lookbackPeriod)), readOnly: true, readOnlyTime: now.Add(lookbackPeriod)},
+				{what: add, instanceID: "instance-3", instanceDesc: generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 2) + 1}, now.Add(-2*lookbackPeriod))},
+				{what: add, instanceID: "instance-4", instanceDesc: generateRingInstanceWithInfo("instance-4", "zone-c", []uint32{userToken(userID, "zone-c", 3) + 1}, now.Add(-2*lookbackPeriod))},
+				{what: add, instanceID: "instance-5", instanceDesc: generateRingInstanceWithInfo("instance-5", "zone-c", []uint32{userToken(userID, "zone-c", 4) + 1}, now.Add(-2*lookbackPeriod))},
+				{what: add, instanceID: "instance-6", instanceDesc: generateRingInstanceWithInfo("instance-6", "zone-c", []uint32{userToken(userID, "zone-c", 5) + 1}, now.Add(-2*lookbackPeriod))},
+				{what: test, shardSize: 3, expected: []string{"instance-1", "instance-2", "instance-3", "instance-6"}},
 			},
 		},
 		"multi zone, with read only instance, not within lookback": {
@@ -4066,6 +4087,117 @@ func TestCountTokensMultiZones(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expected, testData.ring.CountTokens())
 		})
+	}
+}
+
+func TestRing_filterOutReadOnlyInstances(t *testing.T) {
+	gen := initTokenGenerator(t)
+	now := time.Now().Truncate(time.Second)
+
+	tests := map[string]struct {
+		ringInstances     map[string]InstanceDesc
+		lookbackPeriod    time.Duration
+		expectedInstances []string
+	}{
+		"empty ring": {
+			ringInstances:     nil,
+			expectedInstances: nil,
+		},
+		"no readonly instances, no lookback": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			lookbackPeriod:    0,
+			expectedInstances: []string{"instance-1", "instance-2", "instance-3"},
+		},
+		"no readonly instances, with lookback": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			lookbackPeriod:    1 * time.Hour,
+			expectedInstances: []string{"instance-1", "instance-2", "instance-3"},
+		},
+		"one readonly instance, no lookback": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil), ReadOnly: true, ReadOnlyUpdatedTimestamp: now.Unix()},
+			},
+			lookbackPeriod:    0,
+			expectedInstances: []string{"instance-1", "instance-2"},
+		},
+		"one readonly instance, switched inside lookback window": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil), ReadOnly: true, ReadOnlyUpdatedTimestamp: now.Unix()},
+			},
+			lookbackPeriod:    1 * time.Hour,
+			expectedInstances: []string{"instance-1", "instance-2", "instance-3"},
+		},
+		"one readonly instance, switched exactly at the lookback window boundary": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil), ReadOnly: true, ReadOnlyUpdatedTimestamp: now.Add(-time.Hour).Unix()},
+			},
+			lookbackPeriod:    1 * time.Hour,
+			expectedInstances: []string{"instance-1", "instance-2", "instance-3"},
+		},
+		"one readonly instance, switched before the lookback window boundary": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil), ReadOnly: true, ReadOnlyUpdatedTimestamp: now.Add(-2 * time.Hour).Unix()},
+			},
+			lookbackPeriod:    1 * time.Hour,
+			expectedInstances: []string{"instance-1", "instance-2"},
+		},
+	}
+
+	for testName, testData := range tests {
+		for _, updateReadOnlyInstances := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, updateReadOnlyInstances=%v", testName, updateReadOnlyInstances), func(t *testing.T) {
+				// Init the ring.
+				ringDesc := &Desc{Ingesters: testData.ringInstances}
+				for id, instance := range ringDesc.Ingesters {
+					instance.Timestamp = time.Now().Unix()
+					instance.State = ACTIVE
+					ringDesc.Ingesters[id] = instance
+				}
+
+				ring := Ring{
+					cfg: Config{
+						HeartbeatTimeout: time.Hour,
+					},
+					ringDesc:              ringDesc,
+					ringTokens:            ringDesc.GetTokens(),
+					ringTokensByZone:      ringDesc.getTokensByZone(),
+					ringInstanceByToken:   ringDesc.getTokensInfo(),
+					ringZones:             getZones(ringDesc.getTokensByZone()),
+					instancesCountPerZone: ringDesc.instancesCountPerZone(),
+					strategy:              NewDefaultReplicationStrategy(),
+				}
+
+				if updateReadOnlyInstances {
+					readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
+					ring.readOnlyInstances = &readOnlyInstances
+					ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
+				}
+
+				shardRing := ring.filterOutReadOnlyInstances(testData.lookbackPeriod, now)
+				var instances []string
+				for id, _ := range shardRing.ringDesc.Ingesters {
+					instances = append(instances, id)
+				}
+
+				assert.ElementsMatch(t, testData.expectedInstances, instances)
+			})
+		}
 	}
 }
 

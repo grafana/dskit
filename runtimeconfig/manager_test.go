@@ -239,7 +239,7 @@ func TestManagerGzip(t *testing.T) {
 		require.NoError(t, err)
 		err = services.StartAndAwaitRunning(context.Background(), manager)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "file looks gzipped but gzip is disabled")
+		require.Contains(t, err.Error(), "file looks gzipped but doesn't have a .gz extension")
 	})
 }
 

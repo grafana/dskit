@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,7 +31,6 @@ type Loader func(r io.Reader) (interface{}, error)
 // It holds config related to loading per-tenant config.
 type Config struct {
 	ReloadPeriod time.Duration `yaml:"period" category:"advanced"`
-	AllowGzip    bool          `yaml:"allow_gzip" category:"advanced"`
 	// LoadPath contains the path to the runtime config files.
 	// Requires a non-empty value
 	LoadPath flagext.StringSliceCSV `yaml:"file"`
@@ -41,7 +41,6 @@ type Config struct {
 func (mc *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&mc.LoadPath, "runtime-config.file", "Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.")
 	f.DurationVar(&mc.ReloadPeriod, "runtime-config.reload-period", 10*time.Second, "How often to check runtime config files.")
-	f.BoolVar(&mc.AllowGzip, "runtime-config.allow-gzip", false, "Allow runtime config files to be gzipped.")
 }
 
 // Manager periodically reloads the configuration from specified files, and keeps this
@@ -187,7 +186,7 @@ func (om *Manager) loadConfig() error {
 	mergedConfig := map[string]interface{}{}
 	for _, f := range om.cfg.LoadPath {
 		data := rawData[f]
-		yamlFile, err := om.unmarshalMaybeGzipped(data)
+		yamlFile, err := om.unmarshalMaybeGzipped(f, data)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
 			return errors.Wrapf(err, "unmarshal file %q", f)
@@ -221,23 +220,22 @@ func (om *Manager) loadConfig() error {
 	return nil
 }
 
-func (om *Manager) unmarshalMaybeGzipped(data []byte) (map[string]any, error) {
+func (om *Manager) unmarshalMaybeGzipped(filename string, data []byte) (map[string]any, error) {
 	yamlFile := map[string]any{}
-	if om.cfg.AllowGzip && isGzip(data) {
+	if strings.HasSuffix(filename, ".gz") {
 		r, err := gzip.NewReader(bytes.NewReader(data))
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "read gzipped file")
 		}
 		defer r.Close()
-
 		err = yaml.NewDecoder(r).Decode(&yamlFile)
 		return yamlFile, errors.Wrap(err, "uncompress/unmarshal gzipped file")
 	}
 
 	if err := yaml.Unmarshal(data, &yamlFile); err != nil {
 		// Give a hint if we think that file is gzipped.
-		if !om.cfg.AllowGzip && isGzip(data) {
-			return nil, errors.Wrap(err, "file looks gzipped but gzip is disabled")
+		if isGzip(data) {
+			return nil, errors.Wrap(err, "file looks gzipped but doesn't have a .gz extension")
 		}
 		return nil, err
 	}

@@ -179,10 +179,10 @@ func TestNewOverridesManager(t *testing.T) {
 }
 
 func TestManagerGzip(t *testing.T) {
-	writeConfig := func(gzipped bool) string {
+	writeConfig := func(filename string, gzipped bool) string {
 		dir := t.TempDir()
-		filename := filepath.Join(dir, "overrides.yaml")
-		f, err := os.Create(filename)
+		filePath := filepath.Join(dir, filename)
+		f, err := os.Create(filePath)
 		require.NoError(t, err)
 		defer f.Close()
 		w := io.Writer(f)
@@ -198,43 +198,44 @@ func TestManagerGzip(t *testing.T) {
 				},
 			},
 		}))
-		return filename
+		return filePath
+	}
+
+	cfg := func(file string) Config {
+		return Config{
+			ReloadPeriod: time.Second,
+			LoadPath:     []string{file},
+			Loader:       testLoadOverrides,
+		}
 	}
 
 	defaultTestLimits = &TestLimits{Limit1: 100}
+	t.Run("gzipped with .gz extension should succeed", func(t *testing.T) {
+		file := writeConfig("overrides.yaml.gz", true)
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
 
-	t.Run("allowed", func(t *testing.T) {
-		for _, gzipped := range []bool{true, false} {
-			t.Run(fmt.Sprintf("gzipped=%t", gzipped), func(t *testing.T) {
-				cfg := Config{
-					ReloadPeriod: time.Second,
-					LoadPath:     []string{writeConfig(gzipped)},
-					Loader:       testLoadOverrides,
-					AllowGzip:    true,
-				}
-				manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
-				require.NoError(t, err)
-				require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
-				t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
-
-				// Make sure test limits were loaded.
-				require.NotNil(t, manager.GetConfig())
-				conf := manager.GetConfig().(*testOverrides)
-				require.NotNil(t, conf)
-				require.Equal(t, 150, conf.Overrides["user1"].Limit2)
-
-			})
-		}
+		// Make sure test limits were loaded.
+		require.NotNil(t, manager.GetConfig())
+		conf := manager.GetConfig().(*testOverrides)
+		require.NotNil(t, conf)
+		require.Equal(t, 150, conf.Overrides["user1"].Limit2)
 	})
 
-	t.Run("disallowed", func(t *testing.T) {
-		cfg := Config{
-			ReloadPeriod: time.Second,
-			LoadPath:     []string{writeConfig(true)},
-			Loader:       testLoadOverrides,
-			AllowGzip:    false,
-		}
-		manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+	t.Run("non-gzipped with .gz extension should fail", func(t *testing.T) {
+		file := writeConfig("overrides.yaml.gz", false)
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		err = services.StartAndAwaitRunning(context.Background(), manager)
+		require.Error(t, err)
+		require.ErrorIs(t, err, gzip.ErrHeader)
+	})
+
+	t.Run("gzipped without .gz extension should mention that in the error", func(t *testing.T) {
+		file := writeConfig("overrides.yaml", true)
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
 		require.NoError(t, err)
 		err = services.StartAndAwaitRunning(context.Background(), manager)
 		require.Error(t, err)

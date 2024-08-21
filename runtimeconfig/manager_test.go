@@ -1,11 +1,13 @@
 package runtimeconfig
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +176,70 @@ func TestNewOverridesManager(t *testing.T) {
 	conf := overridesManager.GetConfig().(*testOverrides)
 	require.NotNil(t, conf)
 	require.Equal(t, 150, conf.Overrides["user1"].Limit2)
+}
+
+func TestManagerGzip(t *testing.T) {
+	writeConfig := func(gzipped bool) string {
+		dir := t.TempDir()
+		filename := filepath.Join(dir, "overrides.yaml")
+		f, err := os.Create(filename)
+		require.NoError(t, err)
+		defer f.Close()
+		w := io.Writer(f)
+		if gzipped {
+			gw := gzip.NewWriter(f)
+			defer gw.Close()
+			w = gw
+		}
+		require.NoError(t, yaml.NewEncoder(w).Encode(map[string]any{
+			"overrides": map[string]any{
+				"user1": map[string]any{
+					"limit2": 150,
+				},
+			},
+		}))
+		return filename
+	}
+
+	defaultTestLimits = &TestLimits{Limit1: 100}
+
+	t.Run("allowed", func(t *testing.T) {
+		for _, gzipped := range []bool{true, false} {
+			t.Run(fmt.Sprintf("gzipped=%t", gzipped), func(t *testing.T) {
+				cfg := Config{
+					ReloadPeriod: time.Second,
+					LoadPath:     []string{writeConfig(gzipped)},
+					Loader:       testLoadOverrides,
+					AllowGzip:    true,
+				}
+				manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+				require.NoError(t, err)
+				require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+				t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+				// Make sure test limits were loaded.
+				require.NotNil(t, manager.GetConfig())
+				conf := manager.GetConfig().(*testOverrides)
+				require.NotNil(t, conf)
+				require.Equal(t, 150, conf.Overrides["user1"].Limit2)
+
+			})
+		}
+	})
+
+	t.Run("disallowed", func(t *testing.T) {
+		cfg := Config{
+			ReloadPeriod: time.Second,
+			LoadPath:     []string{writeConfig(true)},
+			Loader:       testLoadOverrides,
+			AllowGzip:    false,
+		}
+		manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		err = services.StartAndAwaitRunning(context.Background(), manager)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "file looks gzipped but gzip is disabled")
+	})
 }
 
 func TestOverridesManagerMultipleFilesAppend(t *testing.T) {

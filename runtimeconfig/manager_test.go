@@ -1,11 +1,13 @@
 package runtimeconfig
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +176,71 @@ func TestNewOverridesManager(t *testing.T) {
 	conf := overridesManager.GetConfig().(*testOverrides)
 	require.NotNil(t, conf)
 	require.Equal(t, 150, conf.Overrides["user1"].Limit2)
+}
+
+func TestManagerGzip(t *testing.T) {
+	writeConfig := func(filename string, gzipped bool) string {
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, filename)
+		f, err := os.Create(filePath)
+		require.NoError(t, err)
+		defer f.Close()
+		w := io.Writer(f)
+		if gzipped {
+			gw := gzip.NewWriter(f)
+			defer gw.Close()
+			w = gw
+		}
+		require.NoError(t, yaml.NewEncoder(w).Encode(map[string]any{
+			"overrides": map[string]any{
+				"user1": map[string]any{
+					"limit2": 150,
+				},
+			},
+		}))
+		return filePath
+	}
+
+	cfg := func(file string) Config {
+		return Config{
+			ReloadPeriod: time.Second,
+			LoadPath:     []string{file},
+			Loader:       testLoadOverrides,
+		}
+	}
+
+	defaultTestLimits = &TestLimits{Limit1: 100}
+	t.Run("gzipped with .gz extension should succeed", func(t *testing.T) {
+		file := writeConfig("overrides.yaml.gz", true)
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+		// Make sure test limits were loaded.
+		require.NotNil(t, manager.GetConfig())
+		conf := manager.GetConfig().(*testOverrides)
+		require.NotNil(t, conf)
+		require.Equal(t, 150, conf.Overrides["user1"].Limit2)
+	})
+
+	t.Run("non-gzipped with .gz extension should fail", func(t *testing.T) {
+		file := writeConfig("overrides.yaml.gz", false)
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		err = services.StartAndAwaitRunning(context.Background(), manager)
+		require.Error(t, err)
+		require.ErrorIs(t, err, gzip.ErrHeader)
+	})
+
+	t.Run("gzipped without .gz extension should mention that in the error", func(t *testing.T) {
+		file := writeConfig("overrides.yaml", true)
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		err = services.StartAndAwaitRunning(context.Background(), manager)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "file looks gzipped but doesn't have a .gz extension")
+	})
 }
 
 func TestOverridesManagerMultipleFilesAppend(t *testing.T) {

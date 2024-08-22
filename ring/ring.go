@@ -706,11 +706,11 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 //
 // Subring returned by this method does not contain instances that have read-only field set.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
-	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
-		return cached
-	}
 	if size <= 0 {
 		size = math.MaxInt
+	}
+	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
+		return cached
 	}
 	result := r.shuffleShard(identifier, size, 0, time.Now())
 
@@ -734,12 +734,11 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 // Subring returned by this method does not contain read-only instances that have changed their state
 // before the lookback period.
 func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
-	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
-		return cached
-	}
-
 	if size <= 0 {
 		size = math.MaxInt
+	}
+	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
+		return cached
 	}
 	result := r.shuffleShard(identifier, size, lookbackPeriod, now)
 	if result != r {

@@ -706,14 +706,16 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 //
 // Subring returned by this method does not contain instances that have read-only field set.
 func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
-	if size <= 0 {
-		size = math.MaxInt
-	}
 	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
 		return cached
 	}
-	result := r.shuffleShard(identifier, size, 0, time.Now())
 
+	var result *Ring
+	if size <= 0 {
+		result = r.filterOutReadOnlyInstances(0, time.Now())
+	} else {
+		result = r.shuffleShard(identifier, size, 0, time.Now())
+	}
 	// Only cache subring if it is different from this ring, to avoid deadlocks in getCachedShuffledSubring,
 	// when we update the cached ring.
 	if result != r {
@@ -734,13 +736,17 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 // Subring returned by this method does not contain read-only instances that have changed their state
 // before the lookback period.
 func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
-	if size <= 0 {
-		size = math.MaxInt
-	}
 	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
 		return cached
 	}
-	result := r.shuffleShard(identifier, size, lookbackPeriod, now)
+
+	var result *Ring
+	if size <= 0 {
+		result = r.filterOutReadOnlyInstances(lookbackPeriod, now)
+	} else {
+		result = r.shuffleShard(identifier, size, lookbackPeriod, now)
+	}
+
 	if result != r {
 		r.setCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now, result)
 	}
@@ -770,37 +776,15 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	var numInstancesPerZone int
 	var actualZones []string
 
-	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
-
 	if r.cfg.ZoneAwarenessEnabled {
 		numInstancesPerZone = shardUtil.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
 		actualZones = r.ringZones
 	} else {
 		numInstancesPerZone = size
 		actualZones = []string{""}
-
-		// If we're including all instances from the ring, we can simply filter out unwanted instances, and avoid
-		// iterating through tokens.
-		if numInstancesPerZone >= len(r.ringDesc.Ingesters) {
-			// If there are no read-only instances, there's no need to do any filtering.
-			if r.readOnlyInstances != nil && *r.readOnlyInstances == 0 {
-				return r
-			}
-
-			// If all readOnlyUpdatedTimestamp values are within lookback window, we can return the ring without any filtering.
-			if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp != nil && *r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil {
-				return r
-			}
-
-			for id, inst := range r.ringDesc.Ingesters {
-				if shouldIncludeReadonlyInstanceInTheShard(inst, lookbackPeriod, lookbackUntil) {
-					shard[id] = inst
-				}
-			}
-
-			return r.buildRingForTheShard(shard)
-		}
 	}
+
+	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
 
 	// We need to iterate zones always in the same order to guarantee stability.
 	for _, zone := range actualZones {
@@ -913,6 +897,34 @@ func shouldIncludeReadonlyInstanceInTheShard(instance InstanceDesc, lookbackPeri
 		return false
 	}
 	return true
+}
+
+// filterOutReadOnlyInstances removes all read-only instances from the ring, and returns the resulting ring.
+func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time.Time) *Ring {
+	lookbackUntil := now.Add(-lookbackPeriod).Unix()
+
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	// If there are no read-only instances, there's no need to do any filtering.
+	if r.readOnlyInstances != nil && *r.readOnlyInstances == 0 {
+		return r
+	}
+
+	// If all readOnlyUpdatedTimestamp values are within lookback window, we can return the ring without any filtering.
+	if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp != nil && *r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil {
+		return r
+	}
+
+	shard := make(map[string]InstanceDesc, len(r.ringDesc.Ingesters))
+
+	for id, inst := range r.ringDesc.Ingesters {
+		if shouldIncludeReadonlyInstanceInTheShard(inst, lookbackPeriod, lookbackUntil) {
+			shard[id] = inst
+		}
+	}
+
+	return r.buildRingForTheShard(shard)
 }
 
 // buildRingForTheShard builds read-only ring for the shard (this ring won't be updated in the future).

@@ -831,13 +831,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 				instanceID := info.InstanceID
 				instance := r.ringDesc.Ingesters[instanceID]
 
-				// The lookbackPeriod is 0 when this function is called by ShuffleShard(). In this case, we want read only instances excluded.
-				if lookbackPeriod == 0 && instance.ReadOnly {
-					continue
-				}
-				// With lookback period >0, read only instances are only included if they have not changed read-only status in the lookback window.
-				// If ReadOnlyUpdatedTimestamp is not set, we include the instance, and extend the shard later.
-				if lookbackPeriod > 0 && instance.ReadOnly && instance.ReadOnlyUpdatedTimestamp > 0 && instance.ReadOnlyUpdatedTimestamp < lookbackUntil {
+				if !shouldIncludeReadonlyInstanceInTheShard(instance, lookbackPeriod, lookbackUntil) {
 					continue
 				}
 				// Include instance in the subring.
@@ -874,6 +868,23 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	return r.buildReadOnlyRingForTheShard(shard)
 }
 
+// shouldIncludeReadonlyInstanceInTheShard returns true if instance is not read-only, or when it is read-only and should be included in the shuffle shard.
+func shouldIncludeReadonlyInstanceInTheShard(instance InstanceDesc, lookbackPeriod time.Duration, lookbackUntil int64) bool {
+	if !instance.ReadOnly {
+		return true
+	}
+	// The lookbackPeriod is 0 when this function is called by ShuffleShard(). In this case, we want read only instances excluded.
+	if lookbackPeriod == 0 {
+		return false
+	}
+	// With lookback period >0, read only instances are only included if they have not changed read-only status in the lookback window.
+	// If ReadOnlyUpdatedTimestamp is not set, we include the instance, and extend the shard later.
+	if lookbackPeriod > 0 && instance.ReadOnlyUpdatedTimestamp > 0 && instance.ReadOnlyUpdatedTimestamp < lookbackUntil {
+		return false
+	}
+	return true
+}
+
 // filterOutReadOnlyInstances removes all read-only instances from the ring, and returns the resulting ring.
 // When lookback period > 0, only read-only instances that have changed state within outside of the lookback window are filtered,
 // to be consistent with shuffleShard function.
@@ -896,16 +907,7 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 	shard := make(map[string]InstanceDesc, len(r.ringDesc.Ingesters))
 
 	for id, inst := range r.ringDesc.Ingesters {
-		include := true
-		if inst.ReadOnly {
-			if lookbackPeriod == 0 {
-				include = false
-			} else if lookbackPeriod > 0 && inst.ReadOnlyUpdatedTimestamp > 0 && inst.ReadOnlyUpdatedTimestamp < lookbackUntil {
-				include = false
-			}
-		}
-
-		if include {
+		if shouldIncludeReadonlyInstanceInTheShard(inst, lookbackPeriod, lookbackUntil) {
 			shard[id] = inst
 		}
 	}

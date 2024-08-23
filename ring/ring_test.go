@@ -202,7 +202,7 @@ func TestDoBatchZeroInstances(t *testing.T) {
 	}
 	desc := NewDesc()
 	r := newRingForTesting(Config{}, false)
-	r.setRingStateFromDesc(desc, false, false, true)
+	r.setRingStateFromDesc(desc, false, false, false)
 	require.Error(t, DoBatch(ctx, Write, r, keys, callback, cleanup))
 }
 
@@ -223,7 +223,7 @@ func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
 		SubringCacheDisabled: true,
 		ReplicationFactor:    numZones,
 	}, true)
-	r.setRingStateFromDesc(desc, false, false, true)
+	r.setRingStateFromDesc(desc, false, false, false)
 	// Measure how long does it take for a call to succeed.
 	t0 := time.Now()
 	err := DoBatchWithOptions(context.Background(), Write, r, keys, callback, DoBatchOptions{})
@@ -498,7 +498,7 @@ func TestRing_Get_ZoneAwarenessWithIngesterLeaving(t *testing.T) {
 				ReplicationFactor:    testData.replicationFactor,
 				ZoneAwarenessEnabled: true,
 			}, false)
-			ring.setRingStateFromDesc(r, false, false, true)
+			ring.setRingStateFromDesc(r, false, false, false)
 
 			_, bufHosts, bufZones := MakeBuffersForGet()
 
@@ -585,7 +585,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 				ReplicationFactor:    testData.replicationFactor,
 				ZoneAwarenessEnabled: testData.zoneAwarenessEnabled,
 			}, false)
-			ring.setRingStateFromDesc(r, false, false, true)
+			ring.setRingStateFromDesc(r, false, false, false)
 
 			instances := make([]InstanceDesc, 0, len(r.GetIngesters()))
 			for _, v := range r.GetIngesters() {
@@ -672,7 +672,7 @@ func TestRing_GetAllHealthy(t *testing.T) {
 			}
 
 			ring := newRingForTesting(Config{HeartbeatTimeout: heartbeatTimeout}, false)
-			ring.setRingStateFromDesc(ringDesc, false, false, true)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			set, err := ring.GetAllHealthy(Read)
 			require.Equal(t, testData.expectedErrForRead, err)
@@ -796,7 +796,7 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 				HeartbeatTimeout:  testData.ringHeartbeatTimeout,
 				ReplicationFactor: testData.ringReplicationFactor,
 			}, false)
-			ring.setRingStateFromDesc(ringDesc, false, false, true)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			set, err := ring.GetReplicationSetForOperation(Read)
 			require.Equal(t, testData.expectedErrForRead, err)
@@ -1111,7 +1111,7 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 				ZoneAwarenessEnabled: true,
 				ReplicationFactor:    testData.replicationFactor,
 			}, false)
-			ring.setRingStateFromDesc(ringDesc, false, false, true)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			// Check the replication set has the correct settings
 			replicationSet, err := ring.GetReplicationSetForOperation(Read)
@@ -1204,7 +1204,7 @@ func TestRing_GetInstancesWithTokensCounts(t *testing.T) {
 				HeartbeatTimeout:     time.Hour,
 				ZoneAwarenessEnabled: true,
 			}, false)
-			ring.setRingStateFromDesc(ringDesc, false, false, true)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			assert.Equal(t, testData.expectedInstancesWithTokensCount, ring.InstancesWithTokensCount())
 			for z, instances := range testData.expectedInstancesWithTokensInZoneCount {
@@ -1280,7 +1280,7 @@ func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
 				HeartbeatTimeout:     time.Hour,
 				ZoneAwarenessEnabled: true,
 			}, false)
-			ring.setRingStateFromDesc(ringDesc, false, false, true)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			assert.Equal(t, testData.expectedWritableInstancesWithTokensCount, ring.WritableInstancesWithTokensCount())
 			for z, instances := range testData.expectedWritableInstancesWithTokensCountPerZone {

@@ -369,7 +369,7 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 		return
 	}
 
-	r.setRingStateFromDesc(ringDesc, true, false, true)
+	r.setRingStateFromDesc(ringDesc, true, true, true)
 }
 
 func (r *Ring) setRingStateFromDesc(ringDesc *Desc, updateMetrics, updateRegisteredTimestampCache, updateReadOnlyInstances bool) {

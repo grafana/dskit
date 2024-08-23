@@ -7,11 +7,14 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
@@ -706,13 +709,13 @@ func TestLifecycler_ChangeReadOnlyState(t *testing.T) {
 
 	ctx := context.Background()
 
-	createLifecyclerFn := func(id string) *Lifecycler {
+	createLifecyclerFn := func(id string, reg prometheus.Registerer) *Lifecycler {
 		// Add the first ingester to the ring
 		lifecyclerConfig1 := testLifecyclerConfig(ringConfig, id)
 		lifecyclerConfig1.HeartbeatPeriod = 100 * time.Millisecond
 		lifecyclerConfig1.JoinAfter = 100 * time.Millisecond
 
-		lifecycler, err := NewLifecycler(lifecyclerConfig1, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		lifecycler, err := NewLifecycler(lifecyclerConfig1, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), reg)
 		require.NoError(t, err)
 		assert.Equal(t, 0, lifecycler.HealthyInstancesCount())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
@@ -722,15 +725,35 @@ func TestLifecycler_ChangeReadOnlyState(t *testing.T) {
 		return lifecycler
 	}
 
-	lifecycler1 := createLifecyclerFn("ing1")
-	lifecycler2 := createLifecyclerFn("ing2")
+	reg := prometheus.NewRegistry()
+	lifecycler1 := createLifecyclerFn("ing1", reg)
+	lifecycler2 := createLifecyclerFn("ing2", nil)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP lifecycler_read_only Set to 1 if this lifecycler's instance entry is in read-only state.
+		# TYPE lifecycler_read_only gauge
+		lifecycler_read_only{name="ingester"} 0
+	`), "lifecycler_read_only"))
 
 	// Assert the ingester has joined both rings
 	test.Poll(t, time.Second, true, func() interface{} {
 		return lifecycler1.HealthyInstancesCount() == 2 && lifecycler2.HealthyInstancesCount() == 2
 	})
 
+	ro, ts := lifecycler1.GetReadOnlyState()
+	require.False(t, ro)
+	require.Zero(t, ts)
 	require.NoError(t, lifecycler1.ChangeReadOnlyState(ctx, true))
+
+	ro, ts = lifecycler1.GetReadOnlyState()
+	require.True(t, ro)
+	require.NotZero(t, ts)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP lifecycler_read_only Set to 1 if this lifecycler's instance entry is in read-only state.
+		# TYPE lifecycler_read_only gauge
+		lifecycler_read_only{name="ingester"} 1
+	`), "lifecycler_read_only"))
 
 	// Assert the ingester has changed to read only
 	test.Poll(t, time.Second, true, func() interface{} {

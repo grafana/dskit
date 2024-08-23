@@ -33,6 +33,18 @@ const (
 	numTokens = 512
 )
 
+func newRingForTesting(cfg Config, createCacheMaps bool) *Ring {
+	ring := Ring{
+		cfg:      cfg,
+		strategy: NewDefaultReplicationStrategy(),
+	}
+	if createCacheMaps {
+		ring.shuffledSubringCache = map[subringCacheKey]*Ring{}
+		ring.shuffledSubringWithLookbackCache = map[subringCacheKey]cachedSubringWithLookback[*Ring]{}
+	}
+	return &ring
+}
+
 func BenchmarkBatch10x100(b *testing.B) {
 	benchmarkBatch(b, 10, 100)
 }
@@ -189,12 +201,9 @@ func TestDoBatchZeroInstances(t *testing.T) {
 	cleanup := func() {
 	}
 	desc := NewDesc()
-	r := Ring{
-		cfg:      Config{},
-		ringDesc: desc,
-		strategy: NewDefaultReplicationStrategy(),
-	}
-	require.Error(t, DoBatch(ctx, Write, &r, keys, callback, cleanup))
+	r := newRingForTesting(Config{}, false)
+	r.setRingStateFromDesc(desc, false, false, false)
+	require.Error(t, DoBatch(ctx, Write, r, keys, callback, cleanup))
 }
 
 func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
@@ -208,26 +217,16 @@ func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
 
 	callback := func(InstanceDesc, []int) error { return nil }
 	desc := &Desc{Ingesters: generateRingInstances(NewRandomTokenGeneratorWithSeed(0), numInstances, numZones, numTokens)}
-	r := Ring{
-		cfg: Config{
-			HeartbeatTimeout:     time.Hour,
-			ZoneAwarenessEnabled: true,
-			SubringCacheDisabled: true,
-			ReplicationFactor:    numZones,
-		},
-		ringDesc:              desc,
-		ringTokens:            desc.GetTokens(),
-		ringTokensByZone:      desc.getTokensByZone(),
-		ringInstanceByToken:   desc.getTokensInfo(),
-		ringZones:             getZones(desc.getTokensByZone()),
-		instancesCountPerZone: desc.instancesCountPerZone(),
-		shuffledSubringCache:  map[subringCacheKey]*Ring{},
-		strategy:              NewDefaultReplicationStrategy(),
-		lastTopologyChange:    time.Now(),
-	}
+	r := newRingForTesting(Config{
+		HeartbeatTimeout:     time.Hour,
+		ZoneAwarenessEnabled: true,
+		SubringCacheDisabled: true,
+		ReplicationFactor:    numZones,
+	}, true)
+	r.setRingStateFromDesc(desc, false, false, false)
 	// Measure how long does it take for a call to succeed.
 	t0 := time.Now()
-	err := DoBatchWithOptions(context.Background(), Write, &r, keys, callback, DoBatchOptions{})
+	err := DoBatchWithOptions(context.Background(), Write, r, keys, callback, DoBatchOptions{})
 	duration := time.Since(t0)
 	require.NoError(t, err)
 	t.Logf("Call took %s", duration)
@@ -239,7 +238,7 @@ func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	err = DoBatchWithOptions(ctx, Write, &r, keys, func(_ InstanceDesc, _ []int) error {
+	err = DoBatchWithOptions(ctx, Write, r, keys, func(_ InstanceDesc, _ []int) error {
 		t.Errorf("should not be called.")
 		return nil
 	}, DoBatchOptions{Cleanup: wg.Done})
@@ -494,19 +493,12 @@ func TestRing_Get_ZoneAwarenessWithIngesterLeaving(t *testing.T) {
 				instancesList = append(instancesList, v)
 			}
 
-			ring := Ring{
-				cfg: Config{
-					HeartbeatTimeout:     time.Hour,
-					ReplicationFactor:    testData.replicationFactor,
-					ZoneAwarenessEnabled: true,
-				},
-				ringDesc:            r,
-				ringTokens:          r.GetTokens(),
-				ringTokensByZone:    r.getTokensByZone(),
-				ringInstanceByToken: r.getTokensInfo(),
-				ringZones:           getZones(r.getTokensByZone()),
-				strategy:            NewDefaultReplicationStrategy(),
-			}
+			ring := newRingForTesting(Config{
+				HeartbeatTimeout:     time.Hour,
+				ReplicationFactor:    testData.replicationFactor,
+				ZoneAwarenessEnabled: true,
+			}, false)
+			ring.setRingStateFromDesc(r, false, false, false)
 
 			_, bufHosts, bufZones := MakeBuffersForGet()
 
@@ -588,19 +580,12 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 			}
 
 			// Create a ring with the instances
-			ring := Ring{
-				cfg: Config{
-					HeartbeatTimeout:     time.Hour,
-					ReplicationFactor:    testData.replicationFactor,
-					ZoneAwarenessEnabled: testData.zoneAwarenessEnabled,
-				},
-				ringDesc:            r,
-				ringTokens:          r.GetTokens(),
-				ringTokensByZone:    r.getTokensByZone(),
-				ringInstanceByToken: r.getTokensInfo(),
-				ringZones:           getZones(r.getTokensByZone()),
-				strategy:            NewDefaultReplicationStrategy(),
-			}
+			ring := newRingForTesting(Config{
+				HeartbeatTimeout:     time.Hour,
+				ReplicationFactor:    testData.replicationFactor,
+				ZoneAwarenessEnabled: testData.zoneAwarenessEnabled,
+			}, false)
+			ring.setRingStateFromDesc(r, false, false, false)
 
 			instances := make([]InstanceDesc, 0, len(r.GetIngesters()))
 			for _, v := range r.GetIngesters() {
@@ -686,15 +671,8 @@ func TestRing_GetAllHealthy(t *testing.T) {
 				ringDesc.Ingesters[id] = instance
 			}
 
-			ring := Ring{
-				cfg:                 Config{HeartbeatTimeout: heartbeatTimeout},
-				ringDesc:            ringDesc,
-				ringTokens:          ringDesc.GetTokens(),
-				ringTokensByZone:    ringDesc.getTokensByZone(),
-				ringInstanceByToken: ringDesc.getTokensInfo(),
-				ringZones:           getZones(ringDesc.getTokensByZone()),
-				strategy:            NewDefaultReplicationStrategy(),
-			}
+			ring := newRingForTesting(Config{HeartbeatTimeout: heartbeatTimeout}, false)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			set, err := ring.GetAllHealthy(Read)
 			require.Equal(t, testData.expectedErrForRead, err)
@@ -814,18 +792,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 				ringDesc.Ingesters[id] = instance
 			}
 
-			ring := Ring{
-				cfg: Config{
-					HeartbeatTimeout:  testData.ringHeartbeatTimeout,
-					ReplicationFactor: testData.ringReplicationFactor,
-				},
-				ringDesc:            ringDesc,
-				ringTokens:          ringDesc.GetTokens(),
-				ringTokensByZone:    ringDesc.getTokensByZone(),
-				ringInstanceByToken: ringDesc.getTokensInfo(),
-				ringZones:           getZones(ringDesc.getTokensByZone()),
-				strategy:            NewDefaultReplicationStrategy(),
-			}
+			ring := newRingForTesting(Config{
+				HeartbeatTimeout:  testData.ringHeartbeatTimeout,
+				ReplicationFactor: testData.ringReplicationFactor,
+			}, false)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			set, err := ring.GetReplicationSetForOperation(Read)
 			require.Equal(t, testData.expectedErrForRead, err)
@@ -1135,19 +1106,12 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 				ringDesc.Ingesters[id] = instance
 			}
 
-			ring := Ring{
-				cfg: Config{
-					HeartbeatTimeout:     time.Minute,
-					ZoneAwarenessEnabled: true,
-					ReplicationFactor:    testData.replicationFactor,
-				},
-				ringDesc:            ringDesc,
-				ringTokens:          ringDesc.GetTokens(),
-				ringTokensByZone:    ringDesc.getTokensByZone(),
-				ringInstanceByToken: ringDesc.getTokensInfo(),
-				ringZones:           getZones(ringDesc.getTokensByZone()),
-				strategy:            NewDefaultReplicationStrategy(),
-			}
+			ring := newRingForTesting(Config{
+				HeartbeatTimeout:     time.Minute,
+				ZoneAwarenessEnabled: true,
+				ReplicationFactor:    testData.replicationFactor,
+			}, false)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			// Check the replication set has the correct settings
 			replicationSet, err := ring.GetReplicationSetForOperation(Read)
@@ -1236,15 +1200,11 @@ func TestRing_GetInstancesWithTokensCounts(t *testing.T) {
 				ringDesc.Ingesters[id] = instance
 			}
 
-			ring := Ring{
-				cfg: Config{
-					HeartbeatTimeout:     time.Hour,
-					ZoneAwarenessEnabled: true,
-				},
-				ringDesc:                        ringDesc,
-				instancesWithTokensCount:        ringDesc.instancesWithTokensCount(),
-				instancesWithTokensCountPerZone: ringDesc.instancesWithTokensCountPerZone(),
-			}
+			ring := newRingForTesting(Config{
+				HeartbeatTimeout:     time.Hour,
+				ZoneAwarenessEnabled: true,
+			}, false)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			assert.Equal(t, testData.expectedInstancesWithTokensCount, ring.InstancesWithTokensCount())
 			for z, instances := range testData.expectedInstancesWithTokensInZoneCount {
@@ -1316,15 +1276,11 @@ func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
 				ringDesc.Ingesters[id] = instance
 			}
 
-			ring := Ring{
-				cfg: Config{
-					HeartbeatTimeout:     time.Hour,
-					ZoneAwarenessEnabled: true,
-				},
-				ringDesc:                                ringDesc,
-				writableInstancesWithTokensCount:        ringDesc.writableInstancesWithTokensCount(),
-				writableInstancesWithTokensCountPerZone: ringDesc.writableInstancesWithTokensCountPerZone(),
-			}
+			ring := newRingForTesting(Config{
+				HeartbeatTimeout:     time.Hour,
+				ZoneAwarenessEnabled: true,
+			}, false)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			assert.Equal(t, testData.expectedWritableInstancesWithTokensCount, ring.WritableInstancesWithTokensCount())
 			for z, instances := range testData.expectedWritableInstancesWithTokensCountPerZone {
@@ -1600,25 +1556,12 @@ func TestRing_ShuffleShard(t *testing.T) {
 					ringDesc.Ingesters[id] = instance
 				}
 
-				ring := Ring{
-					cfg: Config{
+				ring := newRingForTesting(
+					Config{
 						HeartbeatTimeout:     time.Hour,
 						ZoneAwarenessEnabled: testData.zoneAwarenessEnabled,
-					},
-					ringDesc:              ringDesc,
-					ringTokens:            ringDesc.GetTokens(),
-					ringTokensByZone:      ringDesc.getTokensByZone(),
-					ringInstanceByToken:   ringDesc.getTokensInfo(),
-					ringZones:             getZones(ringDesc.getTokensByZone()),
-					instancesCountPerZone: ringDesc.instancesCountPerZone(),
-					strategy:              NewDefaultReplicationStrategy(),
-				}
-
-				if updateReadOnlyInstances {
-					readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
-					ring.readOnlyInstances = &readOnlyInstances
-					ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
-				}
+					}, false)
+				ring.setRingStateFromDesc(ringDesc, false, false, updateReadOnlyInstances)
 
 				shardRing := ring.ShuffleShard("tenant-id", testData.shardSize)
 				assert.Equal(t, testData.expectedSize, shardRing.InstancesCount())
@@ -1665,18 +1608,11 @@ func TestRing_ShuffleShard_Stability(t *testing.T) {
 
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
-	ring := Ring{
-		cfg: Config{
-			HeartbeatTimeout:     time.Hour,
-			ZoneAwarenessEnabled: true,
-		},
-		ringDesc:            ringDesc,
-		ringTokens:          ringDesc.GetTokens(),
-		ringTokensByZone:    ringDesc.getTokensByZone(),
-		ringInstanceByToken: ringDesc.getTokensInfo(),
-		ringZones:           getZones(ringDesc.getTokensByZone()),
-		strategy:            NewDefaultReplicationStrategy(),
-	}
+	ring := newRingForTesting(Config{
+		HeartbeatTimeout:     time.Hour,
+		ZoneAwarenessEnabled: true,
+	}, false)
+	ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 	for i := 1; i <= numTenants; i++ {
 		tenantID := fmt.Sprintf("%d", i)
@@ -1739,19 +1675,11 @@ func TestRing_ShuffleShard_Shuffling(t *testing.T) {
 
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: instances}
-	ring := Ring{
-		cfg: Config{
-			HeartbeatTimeout:     time.Hour,
-			ZoneAwarenessEnabled: true,
-		},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		strategy:              NewDefaultReplicationStrategy(),
-	}
+	ring := newRingForTesting(Config{
+		HeartbeatTimeout:     time.Hour,
+		ZoneAwarenessEnabled: true,
+	}, false)
+	ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 	// Compute the shard for each tenant.
 	shards := map[string][]string{}
@@ -1854,19 +1782,11 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 				ringDesc.Ingesters[instanceID] = inst
 			}
 
-			ring := Ring{
-				cfg: Config{
-					HeartbeatTimeout:     time.Hour,
-					ZoneAwarenessEnabled: true,
-				},
-				ringDesc:              ringDesc,
-				ringTokens:            ringDesc.GetTokens(),
-				ringTokensByZone:      ringDesc.getTokensByZone(),
-				ringInstanceByToken:   ringDesc.getTokensInfo(),
-				ringZones:             getZones(ringDesc.getTokensByZone()),
-				instancesCountPerZone: ringDesc.instancesCountPerZone(),
-				strategy:              NewDefaultReplicationStrategy(),
-			}
+			ring := newRingForTesting(Config{
+				HeartbeatTimeout:     time.Hour,
+				ZoneAwarenessEnabled: true,
+			}, false)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			// Compute the initial shard for each tenant.
 			initial := map[int]ReplicationSet{}
@@ -1905,14 +1825,10 @@ func TestRing_ShuffleShard_Consistency(t *testing.T) {
 				}
 			}
 
-			ring.ringTokens = ringDesc.GetTokens()
-			ring.ringTokensByZone = ringDesc.getTokensByZone()
-			ring.ringInstanceByToken = ringDesc.getTokensInfo()
-			ring.ringZones = getZones(ringDesc.getTokensByZone())
-			ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			// Compute the update shard for each tenant and compare it with the initial one.
-			// If the "consistency" property is guaranteed, we expect no more then 1 different instance
+			// If the "consistency" property is guaranteed, we expect no more than 1 different instance
 			// in the updated shard.
 			for id := 0; id < numTenants; id++ {
 				updated, err := ring.ShuffleShard(fmt.Sprintf("%d", id), s.shardSize).GetAllHealthy(Read)
@@ -1936,19 +1852,11 @@ func TestRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) {
 
 	// Init the ring.
 	ringDesc := &Desc{Ingesters: ringInstances}
-	ring := Ring{
-		cfg: Config{
-			HeartbeatTimeout:     time.Hour,
-			ZoneAwarenessEnabled: true,
-		},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		strategy:              NewDefaultReplicationStrategy(),
-	}
+	ring := newRingForTesting(Config{
+		HeartbeatTimeout:     time.Hour,
+		ZoneAwarenessEnabled: true,
+	}, false)
+	ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 	// Get the replication set with shard size = 3.
 	firstShard := ring.ShuffleShard("tenant-id", 3)
@@ -2014,19 +1922,11 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 
 	// Init the ring.
 	ringDesc := &Desc{Ingesters: ringInstances}
-	ring := Ring{
-		cfg: Config{
-			HeartbeatTimeout:     time.Hour,
-			ZoneAwarenessEnabled: true,
-		},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		strategy:              NewDefaultReplicationStrategy(),
-	}
+	ring := newRingForTesting(Config{
+		HeartbeatTimeout:     time.Hour,
+		ZoneAwarenessEnabled: true,
+	}, false)
+	ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 	// Get the replication set with shard size = 2.
 	firstShard := ring.ShuffleShard("tenant-id", 2)
@@ -2052,12 +1952,8 @@ func TestRing_ShuffleShard_ConsistencyOnZonesChanged(t *testing.T) {
 		ringInstances[name] = desc
 	}
 
-	ring.ringDesc.Ingesters = ringInstances
-	ring.ringTokens = ringDesc.GetTokens()
-	ring.ringTokensByZone = ringDesc.getTokensByZone()
-	ring.ringInstanceByToken = ringDesc.getTokensInfo()
-	ring.ringZones = getZones(ringDesc.getTokensByZone())
-	ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
+	ringDesc.Ingesters = ringInstances
+	ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 	// Increase shard size to 6.
 	thirdShard := ring.ShuffleShard("tenant-id", 6)
@@ -2479,19 +2375,11 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/%v/%v", testName, updateRegisteredTimestampCache, updateReadOnlyInstances), func(t *testing.T) {
 					// Initialise the ring.
 					ringDesc := &Desc{Ingesters: map[string]InstanceDesc{}}
-					ring := Ring{
-						cfg: Config{
-							HeartbeatTimeout:     time.Hour,
-							ZoneAwarenessEnabled: true,
-						},
-						ringDesc:              ringDesc,
-						ringTokens:            ringDesc.GetTokens(),
-						ringTokensByZone:      ringDesc.getTokensByZone(),
-						ringInstanceByToken:   ringDesc.getTokensInfo(),
-						ringZones:             getZones(ringDesc.getTokensByZone()),
-						instancesCountPerZone: ringDesc.instancesCountPerZone(),
-						strategy:              NewDefaultReplicationStrategy(),
-					}
+					ring := newRingForTesting(Config{
+						HeartbeatTimeout:     time.Hour,
+						ZoneAwarenessEnabled: true,
+					}, false)
+					ring.setRingStateFromDesc(ringDesc, false, updateRegisteredTimestampCache, updateReadOnlyInstances)
 
 					// Replay the events on the timeline.
 					for ix, event := range testData.timeline {
@@ -2501,35 +2389,11 @@ func TestRing_ShuffleShardWithLookback(t *testing.T) {
 							event.instanceDesc.ReadOnlyUpdatedTimestamp = timeToUnixSecons(event.readOnlyTime)
 							ringDesc.Ingesters[event.instanceID] = event.instanceDesc
 
-							ring.ringTokens = ringDesc.GetTokens()
-							ring.ringTokensByZone = ringDesc.getTokensByZone()
-							ring.ringInstanceByToken = ringDesc.getTokensInfo()
-							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
-							if updateRegisteredTimestampCache {
-								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-							}
-							if updateReadOnlyInstances {
-								readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
-								ring.readOnlyInstances = &readOnlyInstances
-								ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
-							}
+							ring.setRingStateFromDesc(ringDesc, false, updateRegisteredTimestampCache, updateReadOnlyInstances)
 						case remove:
 							delete(ringDesc.Ingesters, event.instanceID)
 
-							ring.ringTokens = ringDesc.GetTokens()
-							ring.ringTokensByZone = ringDesc.getTokensByZone()
-							ring.ringInstanceByToken = ringDesc.getTokensInfo()
-							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
-							if updateRegisteredTimestampCache {
-								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-							}
-							if updateReadOnlyInstances {
-								readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
-								ring.readOnlyInstances = &readOnlyInstances
-								ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
-							}
+							ring.setRingStateFromDesc(ringDesc, false, updateRegisteredTimestampCache, updateReadOnlyInstances)
 						case test:
 							rs, err := ring.ShuffleShardWithLookback(userID, event.shardSize, lookbackPeriod, now).GetAllHealthy(Read)
 							require.NoError(t, err)
@@ -2581,29 +2445,14 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 
 						// Initialise the ring.
 						ringDesc := &Desc{Ingesters: generateRingInstances(gen, numInstances, numZones, 128)}
-						ring := Ring{
-							cfg: Config{
-								HeartbeatTimeout:     time.Hour,
-								ZoneAwarenessEnabled: true,
-								ReplicationFactor:    3,
-							},
-							ringDesc: ringDesc,
-							strategy: NewDefaultReplicationStrategy(),
-						}
+						ring := newRingForTesting(Config{
+							HeartbeatTimeout:     time.Hour,
+							ZoneAwarenessEnabled: true,
+							ReplicationFactor:    3,
+						}, false)
+
 						updateRing := func() {
-							ring.ringTokens = ringDesc.GetTokens()
-							ring.ringTokensByZone = ringDesc.getTokensByZone()
-							ring.ringInstanceByToken = ringDesc.getTokensInfo()
-							ring.ringZones = getZones(ringDesc.getTokensByZone())
-							ring.instancesCountPerZone = ringDesc.instancesCountPerZone()
-							if updateOldestRegisteredTimestamp {
-								ring.oldestRegisteredTimestamp = ringDesc.getOldestRegisteredTimestamp()
-							}
-							if updateReadOnlyInstances {
-								readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
-								ring.readOnlyInstances = &readOnlyInstances
-								ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
-							}
+							ring.setRingStateFromDesc(ringDesc, false, updateOldestRegisteredTimestamp, updateReadOnlyInstances)
 
 							if len(ring.ringZones) != numZones {
 								t.Fatalf("number of zones changed, original=%d, current zones=%v", numZones, ring.ringZones)
@@ -3477,21 +3326,8 @@ func BenchmarkRing_ShuffleShard_ShardSize_0(b *testing.B) {
 func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, shardSize int, cache bool) {
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), numInstances, numZones, numTokens)}
-	ring := Ring{
-		cfg:                   Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: !cache},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		shuffledSubringCache:  map[subringCacheKey]*Ring{},
-		strategy:              NewDefaultReplicationStrategy(),
-		lastTopologyChange:    time.Now(),
-	}
-	readOnlyInstances, oldestReadOnlyUpdatedTimestamp := ringDesc.readOnlyInstancesAndOldestReadOnlyUpdatedTimestamp()
-	ring.readOnlyInstances = &readOnlyInstances
-	ring.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
+	ring := newRingForTesting(Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: !cache}, true)
+	ring.setRingStateFromDesc(ringDesc, false, false, true)
 
 	b.ResetTimer()
 
@@ -3531,23 +3367,13 @@ func BenchmarkRing_Get(b *testing.B) {
 	for benchName, benchCase := range benchCases {
 		// Initialise the ring.
 		ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), benchCase.numInstances, benchCase.numZones, numTokens)}
-		ring := Ring{
-			cfg: Config{
-				HeartbeatTimeout:     time.Hour,
-				ZoneAwarenessEnabled: benchCase.numZones > 1,
-				SubringCacheDisabled: true,
-				ReplicationFactor:    benchCase.replicationFactor,
-			},
-			ringDesc:              ringDesc,
-			ringTokens:            ringDesc.GetTokens(),
-			ringTokensByZone:      ringDesc.getTokensByZone(),
-			ringInstanceByToken:   ringDesc.getTokensInfo(),
-			ringZones:             getZones(ringDesc.getTokensByZone()),
-			instancesCountPerZone: ringDesc.instancesCountPerZone(),
-			shuffledSubringCache:  map[subringCacheKey]*Ring{},
-			strategy:              NewDefaultReplicationStrategy(),
-			lastTopologyChange:    time.Now(),
-		}
+		ring := newRingForTesting(Config{
+			HeartbeatTimeout:     time.Hour,
+			ZoneAwarenessEnabled: benchCase.numZones > 1,
+			SubringCacheDisabled: true,
+			ReplicationFactor:    benchCase.replicationFactor,
+		}, true)
+		ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 		buf, bufHosts, bufZones := MakeBuffersForGet()
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -3570,18 +3396,8 @@ func BenchmarkRing_Get(b *testing.B) {
 func TestRing_Get_NoMemoryAllocations(t *testing.T) {
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), 3, 3, 128)}
-	ring := Ring{
-		cfg:                   Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: true, ReplicationFactor: 3},
-		ringDesc:              ringDesc,
-		ringTokens:            ringDesc.GetTokens(),
-		ringTokensByZone:      ringDesc.getTokensByZone(),
-		ringInstanceByToken:   ringDesc.getTokensInfo(),
-		ringZones:             getZones(ringDesc.getTokensByZone()),
-		instancesCountPerZone: ringDesc.instancesCountPerZone(),
-		shuffledSubringCache:  map[subringCacheKey]*Ring{},
-		strategy:              NewDefaultReplicationStrategy(),
-		lastTopologyChange:    time.Now(),
-	}
+	ring := newRingForTesting(Config{HeartbeatTimeout: time.Hour, ZoneAwarenessEnabled: true, SubringCacheDisabled: true, ReplicationFactor: 3}, true)
+	ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 	buf, bufHosts, bufZones := MakeBuffersForGet()
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))

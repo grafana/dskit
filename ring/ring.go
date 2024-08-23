@@ -369,6 +369,10 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 		return
 	}
 
+	r.setRingStateFromDesc(ringDesc, true, false, true)
+}
+
+func (r *Ring) setRingStateFromDesc(ringDesc *Desc, updateMetrics, updateRegisteredTimestampCache, updateReadOnlyInstances bool) {
 	now := time.Now()
 	ringTokens := ringDesc.GetTokens()
 	ringTokensByZone := ringDesc.getTokensByZone()
@@ -394,10 +398,14 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.instancesWithTokensCountPerZone = instancesWithTokensCountPerZone
 	r.writableInstancesWithTokensCount = writableInstancesWithTokensCount
 	r.writableInstancesWithTokensCountPerZone = writableInstancesWithTokensCountPerZone
-	r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
+	if updateRegisteredTimestampCache {
+		r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
+	}
 	r.lastTopologyChange = now
-	r.readOnlyInstances = &readOnlyInstances
-	r.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
+	if updateReadOnlyInstances {
+		r.readOnlyInstances = &readOnlyInstances
+		r.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
+	}
 
 	// Invalidate all cached subrings.
 	if r.shuffledSubringCache != nil {
@@ -407,7 +415,9 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 		r.shuffledSubringWithLookbackCache = make(map[subringCacheKey]cachedSubringWithLookback[*Ring])
 	}
 
-	r.updateRingMetrics()
+	if updateMetrics {
+		r.updateRingMetrics()
+	}
 }
 
 // Get returns n (or more) instances which form the replicas for the given key.

@@ -220,7 +220,7 @@
 * [ENHANCEMENT] memberlist: Added `-<prefix>memberlist.broadcast-timeout-for-local-updates-on-shutdown` option to set timeout for sending locally-generated updates on shutdown, instead of previously hardcoded 10s (which is still the default). #539
 * [ENHANCEMENT] tracing: add ExtractTraceSpanID function.
 * [EHNANCEMENT] crypto/tls: Support reloading client certificates #537 #552
-* [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553 #554 #556 #573
+* [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553 #554 #556 #573 #578
 * [ENHANCEMENT] Added new ring methods to expose number of writable instances with tokens per zone, and overall. #560 #562
 * [ENHANCEMENT] `services.FailureWatcher` can now be closed, which unregisters all service and manager listeners, and closes channel used to receive errors. #564
 * [ENHANCEMENT] Runtimeconfig: support gzip-compressed files with `.gz` extension. #571

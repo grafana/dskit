@@ -96,14 +96,3 @@ endif
 
 .tools/bin/protoc-gen-go: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/golang/protobuf/protoc-gen-go@v1.3.1
-
-.PHONY: drone
-drone: .drone/drone.yml
-
-.drone/drone.yml: .drone/drone.jsonnet
-	# Drone's jsonnet formatting causes issues where arrays disappear
-	drone jsonnet --source $< --target $@.tmp --stream --format=false
-	drone sign --save grafana/dskit $@.tmp
-	drone lint --trusted $@.tmp
-	# When all passes move to correct destination
-	mv $@.tmp $@

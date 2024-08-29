@@ -150,7 +150,7 @@ func TestDefaultAddresses(t *testing.T) {
 	}()
 	defer server.Shutdown()
 
-	conn, err := grpc.Dial("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -196,7 +196,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 		require.NoError(t, server.Run())
 	}()
 
-	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -608,7 +608,7 @@ func TestTLSServer(t *testing.T) {
 	expected := []byte("Hello World!")
 	require.Equal(t, expected, body)
 
-	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	conn, err := grpc.NewClient(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -699,7 +699,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	expected := []byte("Hello World!")
 	require.Equal(t, expected, body)
 
-	conn, err := grpc.Dial(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	conn, err := grpc.NewClient(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -981,7 +981,7 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 	}()
 	defer server.Shutdown()
 
-	conn, err := grpc.Dial("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(customDialer))
+	conn, err := grpc.NewClient("localhost:9095", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(customDialer))
 	require.NoError(t, err)
 	defer conn.Close()
 

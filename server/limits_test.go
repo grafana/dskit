@@ -247,7 +247,7 @@ func setupGrpcServerWithCheckAndClient(t *testing.T, ts *testServer, g *grpcInfl
 		_ = l.Close()
 	})
 
-	cc, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cc, err := grpc.NewClient(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

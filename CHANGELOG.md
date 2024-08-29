@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Update the gRPC dependency to v1.66.0 and deprecate the `grpc_server_recv_buffer_pools_enabled` option that is no longer supported by it. #580
 * [CHANGE] Multierror: Implement `Unwrap() []error`. This allows to use `multierror.MultiError` with both `errors.Is()` and `errors.As()`. Previously implemented `Is(error) bool` has been removed. #522
 * [CHANGE] Add a new `grpc_server_recv_buffer_pools_enabled` option that enables recv buffer pools in the gRPC server (assuming `grpc_server_stats_tracking_enabled` is disabled). #510
 * [CHANGE] Add a new `grpc_server_stats_tracking_enabled` option that allows us to disable stats tracking and potentially improve server memory reuse. #507

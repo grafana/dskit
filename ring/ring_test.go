@@ -3,6 +3,7 @@ package ring
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -212,41 +213,131 @@ func TestDoBatchWithOptionsContextCancellation(t *testing.T) {
 		numInstances = 100
 		numZones     = 3
 	)
-	keys := make([]uint32, numKeys)
-	generateKeys(rand.New(rand.NewSource(0)), numKeys, keys)
+	cancelCause := errors.New("cancel cause")
 
-	callback := func(InstanceDesc, []int) error { return nil }
-	desc := &Desc{Ingesters: generateRingInstances(NewRandomTokenGeneratorWithSeed(0), numInstances, numZones, numTokens)}
-	r := newRingForTesting(Config{
-		HeartbeatTimeout:     time.Hour,
-		ZoneAwarenessEnabled: true,
-		SubringCacheDisabled: true,
-		ReplicationFactor:    numZones,
-	}, true)
-	r.setRingStateFromDesc(desc, false, false, false)
-	// Measure how long does it take for a call to succeed.
-	t0 := time.Now()
-	err := DoBatchWithOptions(context.Background(), Write, r, keys, callback, DoBatchOptions{})
-	duration := time.Since(t0)
-	require.NoError(t, err)
-	t.Logf("Call took %s", duration)
+	measureDuration := func(r *Ring, keys []uint32) time.Duration {
+		callback := func(InstanceDesc, []int) error { return nil }
+		t0 := time.Now()
+		err := DoBatchWithOptions(context.Background(), Write, r, keys, callback, DoBatchOptions{})
+		duration := time.Since(t0)
+		require.NoError(t, err)
+		t.Logf("Call took %s", duration)
+		return duration
+	}
 
-	// Make a second call cancelling after a hundredth of duration of the first one.
-	// For a 4s first call, this is 40ms: should be enough for this test to not be flaky.
-	ctx, cancel := context.WithTimeout(context.Background(), duration/100)
-	defer cancel()
-
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	err = DoBatchWithOptions(ctx, Write, r, keys, func(_ InstanceDesc, _ []int) error {
+	type callbackFunc = func(InstanceDesc, []int) error
+	never := func(_ InstanceDesc, _ []int) error {
 		t.Errorf("should not be called.")
 		return nil
-	}, DoBatchOptions{Cleanup: wg.Done})
-	require.Error(t, err)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	}
+	tests := []struct {
+		name        string
+		setup       func(*Ring, []uint32) (context.Context, callbackFunc)
+		expectedErr error
+	}{
+		{
+			name: "context deadline exceeded",
+			setup: func(r *Ring, keys []uint32) (context.Context, callbackFunc) {
+				duration := measureDuration(r, keys)
 
-	// Wait until cleanup to make sure that callback was never called.
-	wg.Wait()
+				// Make a second call cancelling after a hundredth of duration of the first one.
+				// For a 4s first call, this is 40ms: should be enough for this test to not be flaky.
+				ctx, cancel := context.WithTimeout(context.Background(), duration/100)
+				go func() {
+					<-ctx.Done()
+					cancel()
+				}()
+				return ctx, never
+			},
+			expectedErr: context.DeadlineExceeded,
+		},
+		{
+			name: "context deadline exceeded with cause",
+			setup: func(r *Ring, keys []uint32) (context.Context, callbackFunc) {
+				duration := measureDuration(r, keys)
+
+				// Make a second call cancelling after a hundredth of duration of the first one.
+				// For a 4s first call, this is 40ms: should be enough for this test to not be flaky.
+				ctx, cancel := context.WithTimeoutCause(context.Background(), duration/100, cancelCause)
+				go func() {
+					<-ctx.Done()
+					cancel()
+				}()
+				return ctx, never
+			},
+			expectedErr: cancelCause,
+		},
+		{
+			name: "context initially cancelled without cause",
+			setup: func(_ *Ring, _ []uint32) (context.Context, callbackFunc) {
+				ctx, cancelFunc := context.WithCancel(context.Background())
+				// start batch with cancelled context
+				cancelFunc()
+				return ctx, never
+			},
+			expectedErr: context.Canceled,
+		},
+		{
+			name: "context initially cancelled with cause",
+			setup: func(_ *Ring, _ []uint32) (context.Context, callbackFunc) {
+				ctx, cancelFunc := context.WithCancelCause(context.Background())
+				// start batch with cancelled context
+				cancelFunc(cancelCause)
+				return ctx, never
+			},
+			expectedErr: cancelCause,
+		},
+		{
+			name: "context cancelled during batch processing",
+			setup: func(_ *Ring, _ []uint32) (context.Context, callbackFunc) {
+				ctx, cancel := context.WithCancelCause(context.Background())
+
+				wg := sync.WaitGroup{}
+				wg.Add(numInstances)
+
+				callback := func(_ InstanceDesc, _ []int) error {
+					wg.Done()
+					// let the call to the instance hang until context is cancelled
+					<-ctx.Done()
+					return nil
+				}
+				go func() {
+					// wait until all instances hang, then cancel the context
+					wg.Wait()
+					cancel(cancelCause)
+				}()
+				return ctx, callback
+			},
+			expectedErr: cancelCause,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keys := make([]uint32, numKeys)
+			generateKeys(rand.New(rand.NewSource(0)), numKeys, keys)
+
+			desc := &Desc{Ingesters: generateRingInstances(NewRandomTokenGeneratorWithSeed(0), numInstances, numZones, numTokens)}
+			r := newRingForTesting(Config{
+				HeartbeatTimeout:     time.Hour,
+				ZoneAwarenessEnabled: true,
+				SubringCacheDisabled: true,
+				ReplicationFactor:    numZones,
+			}, true)
+			r.setRingStateFromDesc(desc, false, false, false)
+
+			ctx, callback := tt.setup(r, keys)
+
+			wg := sync.WaitGroup{}
+			wg.Add(1)
+			err := DoBatchWithOptions(ctx, Write, r, keys, callback, DoBatchOptions{Cleanup: wg.Done})
+			require.Error(t, err)
+			require.ErrorIs(t, err, tt.expectedErr)
+
+			// Wait until cleanup to make sure that callback was never called.
+			wg.Wait()
+		})
+	}
 }
 
 func TestDoBatch_QuorumError(t *testing.T) {

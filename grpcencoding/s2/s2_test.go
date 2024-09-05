@@ -1,4 +1,4 @@
-package snappy
+package s2
 
 import (
 	"bytes"
@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSnappy(t *testing.T) {
+func TestS2(t *testing.T) {
 	c := newCompressor()
-	assert.Equal(t, "snappy", c.Name())
+	assert.Equal(t, "s2", c.Name())
 
 	tests := []struct {
 		test  string
@@ -44,7 +44,7 @@ func TestSnappy(t *testing.T) {
 	}
 }
 
-func BenchmarkSnappyCompress(b *testing.B) {
+func BenchmarkS2SCompress(b *testing.B) {
 	data := []byte(strings.Repeat("123456789", 1024))
 	c := newCompressor()
 	b.ResetTimer()
@@ -55,7 +55,7 @@ func BenchmarkSnappyCompress(b *testing.B) {
 	}
 }
 
-func BenchmarkSnappyDecompress(b *testing.B) {
+func BenchmarkS2Decompress(b *testing.B) {
 	data := []byte(strings.Repeat("123456789", 1024))
 	c := newCompressor()
 	var buf bytes.Buffer
@@ -70,7 +70,7 @@ func BenchmarkSnappyDecompress(b *testing.B) {
 	}
 }
 
-func BenchmarkSnappyGrpcCompressionPerf(b *testing.B) {
+func BenchmarkS2GrpcCompressionPerf(b *testing.B) {
 	data := []byte(strings.Repeat("123456789", 1024))
 	grpcc := encoding.GetCompressor(Name)
 

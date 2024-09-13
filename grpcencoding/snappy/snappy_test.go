@@ -2,10 +2,11 @@ package snappy
 
 import (
 	"bytes"
-	"google.golang.org/grpc/encoding"
 	"io"
 	"strings"
 	"testing"
+
+	"google.golang.org/grpc/encoding"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

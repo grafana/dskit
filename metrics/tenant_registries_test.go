@@ -184,9 +184,9 @@ func BenchmarkGetMetricsWithLabelNames(b *testing.B) {
 	}
 }
 
-// TestSendSumOfGaugesPerTenantWithLabels tests to ensure multiple metrics for the same tenant with a matching label are
+// TestSendSumOfGaugesPerTenant_WithLabels tests to ensure multiple metrics for the same tenant with a matching label are
 // summed correctly.
-func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {
+func TestSendSumOfGaugesPerTenant_WithLabels(t *testing.T) {
 	user1Reg := prometheus.NewRegistry()
 	user2Reg := prometheus.NewRegistry()
 	user1Metric := promauto.With(user1Reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
@@ -204,7 +204,7 @@ func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {
 	{
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfGaugesPerTenantWithLabels(out, desc, "test_metric", "label_one")
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_one"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(180)}},
@@ -216,7 +216,7 @@ func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {
 	{
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfGaugesPerTenantWithLabels(out, desc, "test_metric", "label_two")
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_two"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_two", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
@@ -230,7 +230,7 @@ func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {
 	{
 		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
 		actual := collectMetrics(t, func(out chan prometheus.Metric) {
-			mf.SendSumOfGaugesPerTenantWithLabels(out, desc, "test_metric", "label_one", "label_two")
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_one", "label_two"))
 		})
 		expected := []*dto.Metric{
 			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},

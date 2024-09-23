@@ -184,6 +184,126 @@ func BenchmarkGetMetricsWithLabelNames(b *testing.B) {
 	}
 }
 
+// TestSendSumOfGaugesPerTenant tests to ensure multiple metrics for the same tenant with a matching label are
+// summed correctly.
+func TestSendSumOfGaugesPerTenant(t *testing.T) {
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+	user3Reg := prometheus.NewRegistry()
+	user1Metric := promauto.With(user1Reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
+	user2Metric := promauto.With(user2Reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
+	user3Metric := promauto.With(user3Reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
+	user1Metric.WithLabelValues("a", "b").Set(100)
+	user1Metric.WithLabelValues("a", "c").Set(80)
+	user1Metric.WithLabelValues("b", "c").Set(0)
+	user2Metric.WithLabelValues("a", "b").Set(60)
+	user2Metric.WithLabelValues("a", "c").Set(40)
+	user2Metric.WithLabelValues("b", "c").Set(0)
+	user3Metric.WithLabelValues("a", "b").Set(0)
+	user3Metric.WithLabelValues("a", "c").Set(0)
+	user3Metric.WithLabelValues("b", "c").Set(20)
+
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	regs.AddTenantRegistry("user-3", user3Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
+
+	t.Run("group metrics by user and label_one", func(t *testing.T) {
+		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_one"))
+		})
+		expected := []*dto.Metric{
+			{Label: makeLabels("label_one", "a", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(180)}},
+			{Label: makeLabels("label_one", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+			{Label: makeLabels("label_one", "a", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
+			{Label: makeLabels("label_one", "b", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+			{Label: makeLabels("label_one", "a", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+			{Label: makeLabels("label_one", "b", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(20)}},
+		}
+		require.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("group metrics by user and label_one, and skip zero value metrics", func(t *testing.T) {
+		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one"}, nil)
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_one"), WithSkipZeroValueMetrics)
+		})
+		expected := []*dto.Metric{
+			{Label: makeLabels("label_one", "a", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(180)}},
+			{Label: makeLabels("label_one", "a", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
+			{Label: makeLabels("label_one", "b", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(20)}},
+		}
+		require.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("group metrics by user and label_two", func(t *testing.T) {
+		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_two"))
+		})
+		expected := []*dto.Metric{
+			{Label: makeLabels("label_two", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
+			{Label: makeLabels("label_two", "c", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(80)}},
+			{Label: makeLabels("label_two", "b", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(60)}},
+			{Label: makeLabels("label_two", "c", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(40)}},
+			{Label: makeLabels("label_two", "b", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+			{Label: makeLabels("label_two", "c", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(20)}},
+		}
+		require.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("group metrics by user and label_two, and skip zero value metrics", func(t *testing.T) {
+		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_two"}, nil)
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_two"), WithSkipZeroValueMetrics)
+		})
+		expected := []*dto.Metric{
+			{Label: makeLabels("label_two", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
+			{Label: makeLabels("label_two", "c", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(80)}},
+			{Label: makeLabels("label_two", "b", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(60)}},
+			{Label: makeLabels("label_two", "c", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(40)}},
+			{Label: makeLabels("label_two", "c", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(20)}},
+		}
+		require.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("group metrics by user, label_one and label_two", func(t *testing.T) {
+		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_one", "label_two"))
+		})
+		expected := []*dto.Metric{
+			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
+			{Label: makeLabels("label_one", "a", "label_two", "c", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(80)}},
+			{Label: makeLabels("label_one", "b", "label_two", "c", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(60)}},
+			{Label: makeLabels("label_one", "a", "label_two", "c", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(40)}},
+			{Label: makeLabels("label_one", "b", "label_two", "c", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+			{Label: makeLabels("label_one", "a", "label_two", "c", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(0)}},
+			{Label: makeLabels("label_one", "b", "label_two", "c", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(20)}},
+		}
+		require.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("group metrics by user, label_one and label_two, and skip zero value metrics", func(t *testing.T) {
+		desc := prometheus.NewDesc("test_metric", "", []string{"user", "label_one", "label_two"}, nil)
+		actual := collectMetrics(t, func(out chan prometheus.Metric) {
+			mf.SendSumOfGaugesPerTenant(out, desc, "test_metric", WithLabels("label_one", "label_two"), WithSkipZeroValueMetrics)
+		})
+		expected := []*dto.Metric{
+			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(100)}},
+			{Label: makeLabels("label_one", "a", "label_two", "c", "user", "user-1"), Gauge: &dto.Gauge{Value: proto.Float64(80)}},
+			{Label: makeLabels("label_one", "a", "label_two", "b", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(60)}},
+			{Label: makeLabels("label_one", "a", "label_two", "c", "user", "user-2"), Gauge: &dto.Gauge{Value: proto.Float64(40)}},
+			{Label: makeLabels("label_one", "b", "label_two", "c", "user", "user-3"), Gauge: &dto.Gauge{Value: proto.Float64(20)}},
+		}
+		require.ElementsMatch(t, expected, actual)
+	})
+}
+
 // TestSendSumOfGaugesPerTenantWithLabels tests to ensure multiple metrics for the same tenant with a matching label are
 // summed correctly.
 func TestSendSumOfGaugesPerTenantWithLabels(t *testing.T) {

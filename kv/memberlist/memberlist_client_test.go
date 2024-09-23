@@ -1730,7 +1730,9 @@ func TestRaceBetweenStoringNewValueForKeyAndUpdatingIt(t *testing.T) {
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
-	defer services.StopAndAwaitTerminated(context.Background(), kv)
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), kv))
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -1743,9 +1745,10 @@ func TestRaceBetweenStoringNewValueForKeyAndUpdatingIt(t *testing.T) {
 			d.Members[fmt.Sprintf("member_%d", i)] = member{Timestamp: time.Now().Unix(), State: i % 3}
 		}
 
-		kv.CAS(context.Background(), key, codec, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := kv.CAS(context.Background(), key, codec, func(in interface{}) (out interface{}, retry bool, err error) {
 			return d, true, nil
 		})
+		require.NoError(t, err)
 
 		// keep iterating over d.Members. If other goroutine modifies same ring descriptor, we will see a race error.
 		for ctx.Err() == nil {

@@ -1745,7 +1745,7 @@ func TestRaceBetweenStoringNewValueForKeyAndUpdatingIt(t *testing.T) {
 			d.Members[fmt.Sprintf("member_%d", i)] = member{Timestamp: time.Now().Unix(), State: i % 3}
 		}
 
-		err := kv.CAS(context.Background(), key, codec, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := kv.CAS(context.Background(), key, codec, func(_ interface{}) (out interface{}, retry bool, err error) {
 			return d, true, nil
 		})
 		require.NoError(t, err)

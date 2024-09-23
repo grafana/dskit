@@ -237,7 +237,7 @@ func (d MetricFamiliesPerTenant) SendSumOfGaugesPerTenant(out chan<- prometheus.
 // SendSumOfGaugesPerTenantWithLabels provides metrics with the provided label names on a per-tenant basis. This function assumes that `tenant` is the
 // first label on the provided metric Desc
 //
-// Deprecated: use SendSumOfGaugesPerTenant instead.
+// Deprecated: use SendSumOfGaugesPerTenant with WithLabels option instead.
 func (d MetricFamiliesPerTenant) SendSumOfGaugesPerTenantWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames ...string) {
 	d.SendSumOfGaugesPerTenant(out, desc, metric, WithLabels(labelNames...))
 }

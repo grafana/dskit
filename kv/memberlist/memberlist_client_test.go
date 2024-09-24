@@ -3,6 +3,7 @@ package memberlist
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -1567,12 +1568,18 @@ func decodeDataFromMarshalledKeyValuePair(t *testing.T, marshalledKVP []byte, ke
 	return d
 }
 
-func marshalKeyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) []byte {
+func keyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) *KeyValuePair {
 	data, err := codec.Encode(value)
 	require.NoError(t, err)
 
-	kvp := KeyValuePair{Key: key, Codec: codec.CodecID(), Value: data}
-	data, err = kvp.Marshal()
+	return &KeyValuePair{Key: key, Codec: codec.CodecID(), Value: data}
+
+}
+
+func marshalKeyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) []byte {
+	kvp := keyValuePair(t, key, codec, value)
+
+	data, err := kvp.Marshal()
 	require.NoError(t, err)
 	return data
 }
@@ -1709,4 +1716,87 @@ func getKey(t *testing.T, msg []byte) string {
 	err := kvPair.Unmarshal(msg)
 	require.NoError(t, err)
 	return kvPair.Key
+}
+
+func TestRaceBetweenStoringNewValueForKeyAndUpdatingIt(t *testing.T) {
+	codec := dataCodec{}
+
+	cfg := KVConfig{}
+	cfg.Codecs = append(cfg.Codecs, codec)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+	}
+
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), kv))
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	vals := make(chan int64, 10000)
+
+	go func() {
+		d := &data{Members: map[string]member{}}
+		for i := 0; i < 100; i++ {
+			d.Members[fmt.Sprintf("member_%d", i)] = member{Timestamp: time.Now().Unix(), State: i % 3}
+		}
+
+		err := kv.CAS(context.Background(), key, codec, func(_ interface{}) (out interface{}, retry bool, err error) {
+			return d, true, nil
+		})
+		require.NoError(t, err)
+
+		// keep iterating over d.Members. If other goroutine modifies same ring descriptor, we will see a race error.
+		for ctx.Err() == nil {
+			sum := int64(0)
+			for n, m := range d.Members {
+				sum += int64(len(n))
+				sum += m.Timestamp
+				sum += int64(len(m.Tokens))
+			}
+			vals <- sum
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	// Wait until CAS and iteration finishes before pushing remote state.
+	<-vals
+
+	s := 0
+	for ctx.Err() == nil {
+		s++
+		d := &data{Members: map[string]member{}}
+		for i := 0; i < 100; i++ {
+			d.Members[fmt.Sprintf("member_%d", i)] = member{Timestamp: time.Now().Unix(), State: (i + s) % 3}
+		}
+
+		kv.MergeRemoteState(marshalState(t, keyValuePair(t, key, codec, d)), false)
+		time.Sleep(10 * time.Millisecond)
+
+	drain:
+		select {
+		case <-vals:
+			goto drain
+		default:
+			// stop draining.
+		}
+	}
+}
+
+func marshalState(t *testing.T, kvps ...*KeyValuePair) []byte {
+	buf := bytes.Buffer{}
+
+	for _, kvp := range kvps {
+		d, err := kvp.Marshal()
+		require.NoError(t, err)
+		err = binary.Write(&buf, binary.BigEndian, uint32(len(d)))
+		require.NoError(t, err)
+		buf.Write(d)
+	}
+
+	return buf.Bytes()
 }

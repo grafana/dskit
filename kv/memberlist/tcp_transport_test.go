@@ -1,7 +1,10 @@
 package memberlist
 
 import (
+	"net"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -9,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 )
 
@@ -51,6 +55,8 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 			_, err = transport.WriteTo([]byte("test"), testData.remoteAddr)
 			require.NoError(t, err)
 
+			require.NoError(t, transport.Shutdown())
+
 			if testData.expectedLogs != "" {
 				assert.Contains(t, logs.String(), testData.expectedLogs)
 			}
@@ -59,6 +65,58 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 			}
 		})
 	}
+}
+
+type timeoutReader struct{}
+
+func (f *timeoutReader) ReadSecret(_ string) ([]byte, error) {
+	time.Sleep(1 * time.Second)
+	return nil, nil
+}
+
+func TestTCPTransportWriteToUnreachableAddr(t *testing.T) {
+	writeCt := 50
+
+	// Listen for TCP connections on a random port
+	freePorts, err := getFreePorts(1)
+	require.NoError(t, err)
+	addr := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: freePorts[0]}
+	listener, err := net.ListenTCP("tcp", addr)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	logs := &concurrency.SyncBuffer{}
+	logger := log.NewLogfmtLogger(logs)
+
+	cfg := TCPTransportConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.MaxConcurrentWrites = writeCt
+	cfg.PacketDialTimeout = 500 * time.Millisecond
+	transport, err := NewTCPTransport(cfg, logger, nil)
+	require.NoError(t, err)
+
+	// Configure TLS only for writes. The dialing should timeout (because of the timeoutReader)
+	transport.cfg.TLSEnabled = true
+	transport.cfg.TLS = tls.ClientConfig{
+		Reader:   &timeoutReader{},
+		CertPath: "fake",
+		KeyPath:  "fake",
+		CAPath:   "fake",
+	}
+
+	timeStart := time.Now()
+
+	for i := 0; i < writeCt; i++ {
+		_, err = transport.WriteTo([]byte("test"), addr.String())
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, transport.Shutdown())
+
+	gotErrorCt := strings.Count(logs.String(), "context deadline exceeded")
+	assert.Equal(t, writeCt, gotErrorCt, "expected %d errors, got %d", writeCt, gotErrorCt)
+	assert.GreaterOrEqual(t, time.Since(timeStart), 500*time.Millisecond, "expected to take at least 500ms (timeout duration)")
+	assert.LessOrEqual(t, time.Since(timeStart), 2*time.Second, "expected to take less than 2s (timeout + a good margin), writing to unreachable addresses should not block")
 }
 
 func TestFinalAdvertiseAddr(t *testing.T) {

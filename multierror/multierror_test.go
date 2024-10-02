@@ -11,6 +11,8 @@ import (
 )
 
 func TestMultiError_Is(t *testing.T) {
+	customErr := fmt.Errorf("my error")
+
 	testCases := map[string]struct {
 		sourceErrors []error
 		target       error
@@ -50,6 +52,50 @@ func TestMultiError_Is(t *testing.T) {
 			sourceErrors: nil,
 			target:       nil,
 			is:           true,
+		},
+		"nested multi-error contains assert.AnError": {
+			sourceErrors: []error{
+				assert.AnError,
+				New(
+					customErr,
+					fmt.Errorf("wrapped %w", context.Canceled),
+				).Err(),
+			},
+			target: assert.AnError,
+			is:     true,
+		},
+		"nested multi-error contains custom error": {
+			sourceErrors: []error{
+				assert.AnError,
+				New(
+					customErr,
+					fmt.Errorf("wrapped %w", context.Canceled),
+				).Err(),
+			},
+			target: customErr,
+			is:     true,
+		},
+		"nested multi-error contains wrapped context.Canceled": {
+			sourceErrors: []error{
+				assert.AnError,
+				New(
+					customErr,
+					fmt.Errorf("wrapped %w", context.Canceled),
+				).Err(),
+			},
+			target: context.Canceled,
+			is:     true,
+		},
+		"nested multi-error does not contain context.DeadlineExceeded": {
+			sourceErrors: []error{
+				assert.AnError,
+				New(
+					customErr,
+					fmt.Errorf("wrapped %w", context.Canceled),
+				).Err(),
+			},
+			target: context.DeadlineExceeded,
+			is:     false, // make sure we still return false in valid cases
 		},
 	}
 

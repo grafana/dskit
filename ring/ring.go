@@ -327,11 +327,27 @@ func (r *Ring) loop(ctx context.Context) error {
 	r.updateRingMetrics()
 	r.mtx.Unlock()
 
-	// Debounce WatchKey updates, as they can be frequent enough to cause lock contention.
 	var newVal atomic.Pointer[Desc]
-	go r.processKVUpdates(ctx, &newVal)
 
-	// (WatchKey blocks until our ctx is done.)
+	// Debounce WatchKey updates, as they can be frequent enough to cause lock
+	// contention. The most recent update is the one we'll use when we
+	// periodically update the ring.
+
+	go func() {
+		t := time.NewTicker(r.cfg.UpdateInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				if value := newVal.Swap(nil); value != nil {
+					r.updateRingState(value)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {
 		if value == nil {
 			level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
@@ -343,22 +359,6 @@ func (r *Ring) loop(ctx context.Context) error {
 	})
 
 	return nil
-}
-
-func (r *Ring) processKVUpdates(ctx context.Context, newVal *atomic.Pointer[Desc]) {
-	t := time.NewTicker(r.cfg.UpdateInterval)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-t.C:
-			if value := newVal.Swap(nil); value != nil {
-				r.updateRingState(value)
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
 }
 
 func (r *Ring) updateRingState(ringDesc *Desc) {

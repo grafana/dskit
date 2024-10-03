@@ -349,13 +349,15 @@ func (r *Ring) processKVUpdates(ctx context.Context, newVal *atomic.Pointer[Desc
 	t := time.NewTicker(r.cfg.UpdateInterval)
 	defer t.Stop()
 
-	select {
-	case <-t.C:
-		if value := newVal.Swap(nil); value != nil {
-			r.updateRingState(value)
+	for {
+		select {
+		case <-t.C:
+			if value := newVal.Swap(nil); value != nil {
+				r.updateRingState(value)
+			}
+		case <-ctx.Done():
+			return
 		}
-	case <-ctx.Done():
-		return
 	}
 }
 

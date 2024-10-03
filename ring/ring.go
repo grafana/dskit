@@ -357,7 +357,6 @@ func (r *Ring) loop(ctx context.Context) error {
 		newVal.Store(value.(*Desc))
 		return true
 	})
-
 	return nil
 }
 

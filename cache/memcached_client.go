@@ -374,7 +374,11 @@ func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Durat
 	})
 }
 
-// TODO: Docs
+// toSeconds converts a time.Duration to seconds as an int32 and returns a boolean
+// indicating if the value is valid to be used as a TTL. Durations might not be valid
+// to be used for a TTL if they are non-zero but less than a second long (Memcached
+// uses seconds for TTL units but "0" to mean infinite TTL) or if they are longer than
+// 30 days (Memcached treats TTLs more than 30 days as UNIX timestamps).
 func toSeconds(d time.Duration) (int32, bool) {
 	if d > maxTTL {
 		return 0, false

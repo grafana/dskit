@@ -77,6 +77,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Help: "Total number of operations against cache.",
 	}, []string{"operation"})
 	cm.operations.WithLabelValues(opGetMulti)
+	cm.operations.WithLabelValues(opAdd)
 	cm.operations.WithLabelValues(opSet)
 	cm.operations.WithLabelValues(opDelete)
 	cm.operations.WithLabelValues(opIncrement)

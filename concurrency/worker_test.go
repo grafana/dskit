@@ -24,40 +24,38 @@ func TestReusableGoroutinesPool(t *testing.T) {
 		return strings.Count(string(buf), " in goroutine "+string(testGoroutine))
 	}
 
-	baseGoroutines := countGoroutines()
-	const workers = 2
-	w := NewReusableGoroutinesPool(workers)
-
-	require.Equal(t, baseGoroutines+workers, countGoroutines())
+	const workerCount = 2
+	w := NewReusableGoroutinesPool(workerCount)
+	require.Equal(t, workerCount, countGoroutines())
 
 	// Wait a little bit so both goroutines would be waiting on the jobs chan.
 	time.Sleep(10 * time.Millisecond)
 
 	ch := make(chan struct{})
 	w.Go(func() { <-ch })
-	require.Equal(t, baseGoroutines+workers, countGoroutines())
+	require.Equal(t, workerCount, countGoroutines())
 	w.Go(func() { <-ch })
-	require.Equal(t, baseGoroutines+workers, countGoroutines())
+	require.Equal(t, workerCount, countGoroutines())
 	w.Go(func() { <-ch })
-	require.Equal(t, baseGoroutines+workers+1, countGoroutines())
+	require.Equal(t, workerCount+1, countGoroutines())
 
 	// end workloads, we should have only the workers again.
 	close(ch)
 	for i := 0; i < 1000; i++ {
-		if countGoroutines() == baseGoroutines+workers {
+		if countGoroutines() == workerCount {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	require.Equal(t, baseGoroutines+workers, countGoroutines())
+	require.Equal(t, workerCount, countGoroutines())
 
 	// close the workers, eventually they should be gone.
 	w.Close()
 	for i := 0; i < 1000; i++ {
-		if countGoroutines() == baseGoroutines {
+		if countGoroutines() == 0 {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("expected %d goroutines after closing, got %d", baseGoroutines, countGoroutines())
+	t.Fatalf("expected %d goroutines after closing, got %d", 0, countGoroutines())
 }

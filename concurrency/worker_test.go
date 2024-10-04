@@ -9,6 +9,8 @@ import (
 )
 
 func TestReusableGoroutinesPool(t *testing.T) {
+	runtime.GC()
+
 	baseGoroutines := runtime.NumGoroutine()
 	const workers = 2
 

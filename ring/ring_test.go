@@ -3571,6 +3571,46 @@ func compareReplicationSets(first, second ReplicationSet) (added, removed []stri
 	return
 }
 
+// Verify that WatchKey updates make it to the ring, and the latest update is observed.
+func TestRingWatchKeyUpdates(t *testing.T) {
+	cfg := Config{ReplicationFactor: 3}
+	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), prometheus.NewRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+
+	desc1 := NewDesc()
+	desc1.Ingesters = map[string]InstanceDesc{
+		"instance-1": generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{1}, time.Now()),
+	}
+	desc2 := NewDesc()
+	desc2.Ingesters = map[string]InstanceDesc{
+		"instance-1": generateRingInstanceWithInfo("instance-1", "zone-a", []uint32{1}, time.Now()),
+		"instance-2": generateRingInstanceWithInfo("instance-2", "zone-a", []uint32{2}, time.Now()),
+	}
+
+	// processUpdate is a stand-in for the ring's timer goroutine that normally calls observeKeyUpdate.
+	processUpdate := func() *Desc {
+		ring.observeKeyUpdate()
+		ring.mtx.RLock()
+		defer ring.mtx.RUnlock()
+		return ring.ringDesc
+	}
+
+	assert.Empty(t, processUpdate().Ingesters, "no desc initially")
+	assert.Empty(t, processUpdate().Ingesters, "can update multiple times without any key update stored")
+
+	ring.storeKeyUpdate(desc1)
+	assert.Same(t, desc1, processUpdate())
+	assert.Same(t, desc1, processUpdate(), "no change if no new update")
+
+	ring.storeKeyUpdate(desc2)
+	assert.Same(t, desc2, processUpdate())
+	assert.Same(t, desc2, processUpdate(), "no change if no new update")
+
+	ring.storeKeyUpdate(desc1)
+	ring.storeKeyUpdate(desc2)
+	assert.Same(t, desc2, processUpdate(), "should observe last update")
+}
+
 // This test verifies that ring is getting updates, even after extending check in the loop method.
 func TestRingUpdates(t *testing.T) {
 	const (

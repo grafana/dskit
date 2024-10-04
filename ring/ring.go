@@ -218,19 +218,22 @@ type Ring struct {
 	// Number of registered instances per zone.
 	instancesCountPerZone map[string]int
 
-	// Nubmber of registered instances with tokens per zone.
+	// Number of registered instances with tokens per zone.
 	instancesWithTokensCountPerZone map[string]int
 
 	// Number of registered instances are writable and have tokens.
 	writableInstancesWithTokensCount int
 
-	// Nubmber of registered instances with tokens per zone that are writable.
+	// Number of registered instances with tokens per zone that are writable.
 	writableInstancesWithTokensCountPerZone map[string]int
 
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
 	// If set to nil, no caching is done (used by tests, and subrings).
 	shuffledSubringCache             map[subringCacheKey]*Ring
 	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback[*Ring]
+
+	// The last observed update from the KV store.
+	watchKeyUpdate atomic.Pointer[Desc]
 
 	numMembersGaugeVec      *prometheus.GaugeVec
 	totalTokensGauge        prometheus.Gauge
@@ -327,8 +330,6 @@ func (r *Ring) loop(ctx context.Context) error {
 	r.updateRingMetrics()
 	r.mtx.Unlock()
 
-	var newVal atomic.Pointer[Desc]
-
 	// Debounce WatchKey updates, as they can be frequent enough to cause lock
 	// contention. The most recent update is the one we'll use when we
 	// periodically update the ring.
@@ -339,9 +340,7 @@ func (r *Ring) loop(ctx context.Context) error {
 		for {
 			select {
 			case <-t.C:
-				if value := newVal.Swap(nil); value != nil {
-					r.updateRingState(value)
-				}
+				r.observeKeyUpdate()
 			case <-ctx.Done():
 				return
 			}
@@ -353,11 +352,22 @@ func (r *Ring) loop(ctx context.Context) error {
 			level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 			return true
 		}
-
-		newVal.Store(value.(*Desc))
+		r.storeKeyUpdate(value.(*Desc))
 		return true
 	})
 	return nil
+}
+
+// storeKeyUpdate stores a new watch key update for later storage in the ring.
+func (r *Ring) storeKeyUpdate(value *Desc) {
+	r.watchKeyUpdate.Store(value)
+}
+
+// observeKeyUpdate is called periodically to update the ring state if a new watch key update is available.
+func (r *Ring) observeKeyUpdate() {
+	if value := r.watchKeyUpdate.Swap(nil); value != nil {
+		r.updateRingState(value)
+	}
 }
 
 func (r *Ring) updateRingState(ringDesc *Desc) {

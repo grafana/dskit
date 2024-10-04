@@ -275,6 +275,9 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 	if cfg.ReplicationFactor <= 0 {
 		return nil, fmt.Errorf("ReplicationFactor must be greater than zero: %d", cfg.ReplicationFactor)
 	}
+	if cfg.UpdateInterval <= 0 {
+		return nil, fmt.Errorf("UpdateInterval must be greater than zero: %d", cfg.UpdateInterval)
+	}
 
 	r := &Ring{
 		key:                              key,

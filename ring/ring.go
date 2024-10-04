@@ -33,6 +33,8 @@ const (
 	// GetBufferSize is the suggested size of buffers passed to Ring.Get(). It's based on
 	// a typical replication factor 3, plus extra room for a JOINING + LEAVING instance.
 	GetBufferSize = 5
+
+	defaultUpdateInterval = 250 * time.Millisecond
 )
 
 // ReadRing represents the read interface to the ring.
@@ -164,7 +166,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.KVStore.RegisterFlagsWithPrefix(prefix, "collectors/", f)
 
 	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled).")
-	f.DurationVar(&cfg.UpdateInterval, prefix+"ring.update-interval", 250*time.Millisecond, "How often to recompute ring state when a change is detected from the KVStore.")
+	f.DurationVar(&cfg.UpdateInterval, prefix+"ring.update-interval", defaultUpdateInterval, "How often to recompute ring state when a change is detected from the KVStore.")
 	f.IntVar(&cfg.ReplicationFactor, prefix+"distributor.replication-factor", 3, "The number of ingesters to write to and read from.")
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"distributor.zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones.")
 	f.Var(&cfg.ExcludedZones, prefix+"distributor.excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.")
@@ -275,9 +277,6 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 	if cfg.ReplicationFactor <= 0 {
 		return nil, fmt.Errorf("ReplicationFactor must be greater than zero: %d", cfg.ReplicationFactor)
 	}
-	if cfg.UpdateInterval <= 0 {
-		return nil, fmt.Errorf("UpdateInterval must be greater than zero: %d", cfg.UpdateInterval)
-	}
 
 	r := &Ring{
 		key:                              key,
@@ -338,7 +337,11 @@ func (r *Ring) loop(ctx context.Context) error {
 	// periodically update the ring.
 
 	go func() {
-		t := time.NewTicker(r.cfg.UpdateInterval)
+		interval := r.cfg.UpdateInterval
+		if interval <= 0 {
+			interval = defaultUpdateInterval
+		}
+		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
 			select {

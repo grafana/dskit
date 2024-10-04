@@ -4,6 +4,7 @@ on:
     branches:
       - main
   pull_request:
+  workflow_call:
 
 concurrency:
   # Cancel any running workflow for the same branch when new commits are pushed.

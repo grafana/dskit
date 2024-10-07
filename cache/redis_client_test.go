@@ -156,7 +156,7 @@ func TestRedisClient(t *testing.T) {
 	}
 }
 
-func TestRedisClientDelete(t *testing.T) {
+func TestRedisClient_Delete(t *testing.T) {
 	s, err := miniredis.Run()
 	require.NoError(t, err)
 	defer s.Close()

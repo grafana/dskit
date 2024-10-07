@@ -94,3 +94,24 @@ func TestLRUCache_Evictions(t *testing.T) {
 		cache_memory_items_count{name="test"} 2
 	`), "cache_memory_items_count"))
 }
+
+func TestLRUCache_SetAdd(t *testing.T) {
+	const maxItems = 10
+
+	ctx := context.Background()
+	reg := prometheus.NewPedanticRegistry()
+	lru, err := WrapWithLRUCache(NewMockCache(), "test", reg, maxItems, 2*time.Hour)
+	require.NoError(t, err)
+
+	// Trying to .Add() a key that already exists should result in an error
+	require.NoError(t, lru.Set(ctx, "key_1", []byte("value_1"), time.Minute))
+	require.NoError(t, lru.Set(ctx, "key_2", []byte("value_2"), time.Minute))
+	require.NoError(t, lru.Set(ctx, "key_3", []byte("value_3"), time.Minute))
+	require.ErrorIs(t, lru.Add(ctx, "key_1", []byte("value_1_2"), time.Minute), ErrNotStored)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cache_memory_items_count Total number of items currently in the in-memory cache.
+		# TYPE cache_memory_items_count gauge
+		cache_memory_items_count{name="test"} 3
+	`), "cache_memory_items_count"))
+}

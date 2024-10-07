@@ -114,4 +114,16 @@ func TestLRUCache_SetAdd(t *testing.T) {
 		# TYPE cache_memory_items_count gauge
 		cache_memory_items_count{name="test"} 3
 	`), "cache_memory_items_count"))
+
+	result := lru.GetMulti(ctx, []string{"key_1", "key_2", "key_3"})
+	require.Equal(t, map[string][]byte{
+		"key_1": []byte("value_1"),
+		"key_2": []byte("value_2"),
+		"key_3": []byte("value_3"),
+	}, result)
+
+	// Ensure we cache back entries from the underlying cache.
+	item, ok := lru.lru.Get("key_1")
+	require.True(t, ok, "expected to fetch %s from inner LRU cache, got %+v", "key_1", item)
+	require.Equal(t, []byte("value_1"), item.Data)
 }

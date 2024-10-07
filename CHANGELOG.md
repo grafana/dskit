@@ -84,6 +84,7 @@
 * [CHANGE] memberlist: Metric `memberlist_client_messages_in_broadcast_queue` is now split into `queue="local"` and `queue="gossip"` values. #539
 * [CHANGE] memberlist: Failure to fast-join a cluster via contacting a node is now logged at `info` instead of `debug`. #585
 * [CHANGE] `Service.AddListener` and `Manager.AddListener` now return function for stopping the listener. #564
+* [CHANGE] ring: Add `InstanceRingReader` interface to `ring` package. #597
 * [CHANGE] ring: ring updates now processed at most once per `-ring.update-interval`. #592
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
@@ -232,6 +233,7 @@
 * [ENHANCEMENT] Runtimeconfig: support gzip-compressed files with `.gz` extension. #571
 * [ENHANCEMENT] grpcclient: Support custom gRPC compressors. #583
 * [ENHANCEMENT] Adapt `metrics.SendSumOfGaugesPerTenant` to use `metrics.MetricOption`. #584
+* [ENHANCEMENT] Cache: Add `.Add()` and `.Set()` methods to cache clients. #591
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

@@ -96,6 +96,60 @@ func TestMemcachedClient_SetAsync(t *testing.T) {
 	})
 }
 
+func TestMemcachedClient_Set(t *testing.T) {
+	t.Run("with non-zero TTL", func(t *testing.T) {
+		ctx := context.Background()
+		client, _, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		require.NoError(t, client.Set(ctx, "foo", []byte("bar"), time.Minute))
+
+		res := client.GetMulti(ctx, []string{"foo"})
+		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
+	})
+
+	t.Run("with truncated TTL", func(t *testing.T) {
+		ctx := context.Background()
+		client, _, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		err = client.Set(ctx, "foo", []byte("bar"), 100*time.Millisecond)
+		require.ErrorIs(t, err, ErrInvalidTTL)
+	})
+
+	t.Run("with zero TTL", func(t *testing.T) {
+		ctx := context.Background()
+		client, _, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		require.NoError(t, client.Set(ctx, "foo", []byte("bar"), 0))
+
+		res := client.GetMulti(ctx, []string{"foo"})
+		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
+	})
+}
+
+func TestMemcachedClient_Add(t *testing.T) {
+	t.Run("item does not exist", func(t *testing.T) {
+		ctx := context.Background()
+		client, _, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		require.NoError(t, client.Add(ctx, "foo", []byte("bar"), time.Minute))
+	})
+
+	t.Run("item already exists", func(t *testing.T) {
+		ctx := context.Background()
+		client, mock, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+
+		require.NoError(t, mock.Set(&memcache.Item{
+			Key:        "foo",
+			Value:      []byte("baz"),
+			Expiration: 60,
+		}))
+
+		err = client.Add(ctx, "foo", []byte("bar"), time.Minute)
+		require.ErrorIs(t, err, ErrNotStored)
+	})
+}
+
 func TestMemcachedClient_GetMulti(t *testing.T) {
 	t.Run("no allocator", func(t *testing.T) {
 		client, backend, err := setupDefaultMemcachedClient()
@@ -330,6 +384,15 @@ func (m *mockMemcachedClientBackend) GetMulti(keys []string, opts ...memcache.Op
 }
 
 func (m *mockMemcachedClientBackend) Set(item *memcache.Item) error {
+	m.values[item.Key] = item
+	return nil
+}
+
+func (m *mockMemcachedClientBackend) Add(item *memcache.Item) error {
+	if _, ok := m.values[item.Key]; ok {
+		return memcache.ErrNotStored
+	}
+
 	m.values[item.Key] = item
 	return nil
 }

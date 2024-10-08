@@ -332,48 +332,28 @@ func (r *Ring) loop(ctx context.Context) error {
 	r.updateRingMetrics()
 	r.mtx.Unlock()
 
-	// Debounce WatchKey updates, as they can be frequent enough to cause lock
-	// contention. The most recent update is the one we'll use when we
-	// periodically update the ring.
+	var observer updateObserver[Desc]
 
-	go func() {
-		interval := r.cfg.UpdateInterval
-		if interval <= 0 {
-			interval = defaultUpdateInterval
-		}
-		t := time.NewTicker(interval)
-		defer t.Stop()
-		for {
-			select {
-			case <-t.C:
-				r.observeKeyUpdate()
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	if r.cfg.UpdateInterval > 0 {
+		// Debounce WatchKey updates, as they can be frequent enough to cause lock
+		// contention. The most recent update is the one we'll use when we
+		// periodically update the ring.
+		d := newDelayedObserver(r.cfg.UpdateInterval, r.updateRingState)
+		d.run(ctx)
+		observer = d
+	} else {
+		observer = newNoDelayObserver(r.updateRingState)
+	}
 
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {
 		if value == nil {
 			level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 			return true
 		}
-		r.storeKeyUpdate(value.(*Desc))
+		observer.observeUpdate(value.(*Desc))
 		return true
 	})
 	return nil
-}
-
-// storeKeyUpdate stores a new watch key update for later storage in the ring.
-func (r *Ring) storeKeyUpdate(value *Desc) {
-	r.watchKeyUpdate.Store(value)
-}
-
-// observeKeyUpdate is called periodically to update the ring state if a new watch key update is available.
-func (r *Ring) observeKeyUpdate() {
-	if value := r.watchKeyUpdate.Swap(nil); value != nil {
-		r.updateRingState(value)
-	}
 }
 
 func (r *Ring) updateRingState(ringDesc *Desc) {

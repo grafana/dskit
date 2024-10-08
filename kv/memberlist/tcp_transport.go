@@ -54,6 +54,9 @@ type TCPTransportConfig struct {
 	// Maximum number of concurrent writes to other nodes.
 	MaxConcurrentWrites int `yaml:"max_concurrent_writes" category:"advanced"`
 
+	// Timeout for acquiring one of the concurrent write slots.
+	AcquireWriterTimeout time.Duration `yaml:"acquire_writer_timeout" category:"advanced"`
+
 	// Transport logs lots of messages at debug level, so it deserves an extra flag for turning it on
 	TransportDebug bool `yaml:"-" category:"advanced"`
 
@@ -76,6 +79,7 @@ func (cfg *TCPTransportConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix s
 	f.DurationVar(&cfg.PacketDialTimeout, prefix+"memberlist.packet-dial-timeout", 2*time.Second, "Timeout used when connecting to other nodes to send packet.")
 	f.DurationVar(&cfg.PacketWriteTimeout, prefix+"memberlist.packet-write-timeout", 5*time.Second, "Timeout for writing 'packet' data.")
 	f.IntVar(&cfg.MaxConcurrentWrites, prefix+"memberlist.max-concurrent-writes", 3, "Maximum number of concurrent writes to other nodes.")
+	f.DurationVar(&cfg.AcquireWriterTimeout, prefix+"memberlist.acquire-writer-timeout", 250*time.Millisecond, "Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped.")
 	f.BoolVar(&cfg.TransportDebug, prefix+"memberlist.transport-debug", false, "Log debug transport messages. Note: global log.level must be at debug level as well.")
 
 	f.BoolVar(&cfg.TLSEnabled, prefix+"memberlist.tls-enabled", false, "Enable TLS on the memberlist transport layer.")
@@ -99,11 +103,11 @@ type TCPTransport struct {
 	tcpListeners []net.Listener
 	tlsConfig    *tls.Config
 
-	writeCh chan writeRequest
-	writeWG sync.WaitGroup
-
-	shutdown   bool
 	shutdownMu sync.RWMutex
+	shutdown   bool
+	writeCh    chan writeRequest // this channel is protected by shutdownMu
+
+	writeWG sync.WaitGroup
 
 	advertiseMu   sync.RWMutex
 	advertiseAddr string
@@ -454,7 +458,20 @@ func (t *TCPTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 	if t.shutdown {
 		return time.Time{}, errors.New("transport is shutting down")
 	}
-	t.writeCh <- writeRequest{b: b, addr: addr}
+
+	// Send the packet to the write workers
+	// If this blocks for too long (as configured), abort and log an error.
+	select {
+	case <-time.After(t.cfg.AcquireWriterTimeout):
+		level.Warn(t.logger).Log("msg", "WriteTo failed to acquire a writer. Dropping message", "timeout", t.cfg.AcquireWriterTimeout, "addr", addr)
+		t.sentPacketsErrors.Inc()
+		// WriteTo is used to send "UDP" packets. Since we use TCP, we can detect more errors,
+		// but memberlist library doesn't seem to cope with that very well. That is why we return nil instead.
+		return time.Now(), nil
+	case t.writeCh <- writeRequest{b: b, addr: addr}:
+		// OK
+	}
+
 	return time.Now(), nil
 }
 

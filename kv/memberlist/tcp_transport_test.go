@@ -3,6 +3,7 @@ package memberlist
 import (
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,10 +79,7 @@ func TestTCPTransportWriteToUnreachableAddr(t *testing.T) {
 	writeCt := 50
 
 	// Listen for TCP connections on a random port
-	freePorts, err := getFreePorts(1)
-	require.NoError(t, err)
-	addr := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: freePorts[0]}
-	listener, err := net.ListenTCP("tcp", addr)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 
@@ -107,7 +105,7 @@ func TestTCPTransportWriteToUnreachableAddr(t *testing.T) {
 	timeStart := time.Now()
 
 	for i := 0; i < writeCt; i++ {
-		_, err = transport.WriteTo([]byte("test"), addr.String())
+		_, err = transport.WriteTo([]byte("test"), listener.Addr().String())
 		require.NoError(t, err)
 	}
 
@@ -117,6 +115,39 @@ func TestTCPTransportWriteToUnreachableAddr(t *testing.T) {
 	assert.Equal(t, writeCt, gotErrorCt, "expected %d errors, got %d", writeCt, gotErrorCt)
 	assert.GreaterOrEqual(t, time.Since(timeStart), 500*time.Millisecond, "expected to take at least 500ms (timeout duration)")
 	assert.LessOrEqual(t, time.Since(timeStart), 2*time.Second, "expected to take less than 2s (timeout + a good margin), writing to unreachable addresses should not block")
+}
+
+func TestTCPTransportWriterAcquireTimeout(t *testing.T) {
+	// Listen for TCP connections on a random port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	logs := &concurrency.SyncBuffer{}
+	logger := log.NewLogfmtLogger(logs)
+
+	cfg := TCPTransportConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.MaxConcurrentWrites = 1
+	cfg.AcquireWriterTimeout = 1 * time.Millisecond // very short timeout
+	transport, err := NewTCPTransport(cfg, logger, nil)
+	require.NoError(t, err)
+
+	writeCt := 100
+	var reqWg sync.WaitGroup
+	for i := 0; i < writeCt; i++ {
+		reqWg.Add(1)
+		go func() {
+			defer reqWg.Done()
+			transport.WriteTo([]byte("test"), listener.Addr().String()) // nolint:errcheck
+		}()
+	}
+	reqWg.Wait()
+
+	require.NoError(t, transport.Shutdown())
+	gotErrorCt := strings.Count(logs.String(), "WriteTo failed to acquire a writer. Dropping message")
+	assert.Less(t, gotErrorCt, writeCt, "expected to have less errors (%d) than total writes (%d). Some writes should pass.", gotErrorCt, writeCt)
+	assert.NotZero(t, gotErrorCt, "expected errors, got none")
 }
 
 func TestFinalAdvertiseAddr(t *testing.T) {

@@ -331,12 +331,10 @@ func TestBasicLifecycler_HeartbeatWhileRunning(t *testing.T) {
 	desc, _ := getInstanceFromStore(t, store, testInstanceID)
 	initialTimestamp := desc.GetTimestamp()
 
-	test.Poll(t, time.Second, true, func() interface{} {
+	assert.Eventually(t, func() bool {
 		desc, _ := getInstanceFromStore(t, store, testInstanceID)
-		currTimestamp := desc.GetTimestamp()
-
-		return currTimestamp > initialTimestamp
-	})
+		return desc.GetTimestamp() > initialTimestamp
+	}, 2*time.Second, 10*time.Millisecond, "expected timestamp to be updated")
 
 	assert.Greater(t, testutil.ToFloat64(lifecycler.metrics.heartbeats), float64(0))
 }

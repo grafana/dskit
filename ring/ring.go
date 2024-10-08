@@ -336,7 +336,7 @@ func (r *Ring) loop(ctx context.Context) error {
 		// periodically update the ring.
 		d := newDelayedObserver(r.cfg.UpdateInterval, r.updateRingState)
 		d.run(ctx)
-		updateFunc = d.observeUpdate
+		updateFunc = d.put
 	}
 
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {

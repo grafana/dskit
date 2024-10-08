@@ -26,8 +26,8 @@ func newDelayedObserver[T any](interval time.Duration, receiver func(*T)) *delay
 	}
 }
 
-// observeUpdate stores an updated value for a later flush.
-func (w *delayedObserver[T]) observeUpdate(u *T) {
+// put stores an updated value for a later flush.
+func (w *delayedObserver[T]) put(u *T) {
 	w.value.Store(u)
 }
 

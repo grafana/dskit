@@ -1,6 +1,8 @@
 package ring
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,21 +27,52 @@ func TestDelayedUpdates(t *testing.T) {
 	o.flush()
 	assert.Nil(t, val, "multiple flushes without update is a no-op")
 
-	o.observeUpdate(&one)
+	o.put(&one)
 	assert.Nil(t, val, "no flush immediately")
 	o.flush()
 	assert.Same(t, &one, val, "flush after update")
 	o.flush()
 	assert.Same(t, &one, val, "no change if no new update")
 
-	o.observeUpdate(&two)
+	o.put(&two)
 	o.flush()
 	assert.Same(t, &two, val, "flush after update")
 	o.flush()
 	assert.Same(t, &two, val, "no change if no new update")
 
-	o.observeUpdate(&one)
-	o.observeUpdate(&two)
+	o.put(&one)
+	o.put(&two)
 	o.flush()
 	assert.Same(t, &two, val, "should observe last update")
+}
+
+func TestTickUpdates(t *testing.T) {
+	// This just exercises the ticker path.
+	one := 1
+	two := 2
+
+	var mu sync.Mutex
+	var val *int
+	putVal := func(d *int) {
+		mu.Lock()
+		defer mu.Unlock()
+		val = d
+	}
+	getVal := func() *int {
+		mu.Lock()
+		defer mu.Unlock()
+		return val
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	o := newDelayedObserver(3*time.Millisecond, putVal)
+	o.run(ctx)
+
+	o.put(&one)
+	assert.Eventually(t, func() bool { return getVal() == &one }, 100*time.Millisecond, 1*time.Millisecond)
+
+	o.put(&two)
+	assert.Eventually(t, func() bool { return getVal() == &two }, 100*time.Millisecond, 1*time.Millisecond)
 }

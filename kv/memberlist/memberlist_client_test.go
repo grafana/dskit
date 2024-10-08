@@ -1240,20 +1240,20 @@ func TestRejoin(t *testing.T) {
 		return mkv2.memberlist.NumMembers()
 	}
 
-	poll(t, 5*time.Second, 2, membersFunc)
+	poll(t, 7*time.Second, 2, membersFunc) // Probe interval is 5s, with 2s timeout, so probe for 7s.
 
 	// Shutdown first KV
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1))
 
 	// Second KV should see single member now.
-	poll(t, 5*time.Second, 1, membersFunc)
+	poll(t, 7*time.Second, 1, membersFunc)
 
 	// Let's start first KV again. It is not configured to join the cluster, but KV2 is rejoining.
 	mkv1 = NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
-	poll(t, 5*time.Second, 2, membersFunc)
+	poll(t, 7*time.Second, 2, membersFunc)
 }
 
 func TestMessageBuffer(t *testing.T) {

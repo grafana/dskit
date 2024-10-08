@@ -7,13 +7,9 @@ import (
 	"go.uber.org/atomic"
 )
 
-type updateObserver[T any] interface {
-	observeUpdate(*T)
-}
-
-// delayedObserver is an observer that waits for a certain interval before sending
-// the update to the receiver. This is useful when the updates are frequent and
-// we only care to observe the latest one.
+// delayedObserver waits for a certain interval before sending an update to the
+// receiver. This is useful when the updates are frequent and we only care to
+// observe the latest one.
 type delayedObserver[T any] struct {
 	value    atomic.Pointer[T]
 	receiver func(*T)
@@ -56,5 +52,3 @@ func (w *delayedObserver[T]) flush() {
 		w.receiver(v)
 	}
 }
-
-var _ updateObserver[int] = &delayedObserver[int]{}

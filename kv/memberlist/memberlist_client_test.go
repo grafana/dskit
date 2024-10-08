@@ -10,7 +10,6 @@ import (
 	"math"
 	"math/rand"
 	"net"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -610,7 +609,7 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 
 	err := testMultipleClientsWithConfigGenerator(t, len(membersLabel), configGen)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), fmt.Sprintf("expected to see at least %d updates, got", len(membersLabel)))
+	require.Contains(t, err.Error(), fmt.Sprintf("expected to see %d members, got", len(membersLabel)))
 }
 
 func TestMultipleClientsWithMixedLabelsAndClusterLabelVerificationDisabled(t *testing.T) {
@@ -721,6 +720,7 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 	firstKv := clients[0]
 	ctx, cancel := context.WithTimeout(context.Background(), casInterval*3) // Watch for 3x cas intervals.
 	updates := 0
+	gotMembers := 0
 	firstKv.WatchKey(ctx, key, func(in interface{}) bool {
 		updates++
 
@@ -733,11 +733,17 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 			"tokens, oldest timestamp:", now.Sub(time.Unix(minTimestamp, 0)).String(),
 			"avg timestamp:", now.Sub(time.Unix(avgTimestamp, 0)).String(),
 			"youngest timestamp:", now.Sub(time.Unix(maxTimestamp, 0)).String())
+		gotMembers = len(r.Members)
 		return true // yes, keep watching
 	})
 	cancel() // make linter happy
 
 	t.Logf("Ring updates observed: %d", updates)
+
+	// We expect that all members are in the ring
+	if gotMembers != members {
+		return fmt.Errorf("expected to see %d members, got %d", members, gotMembers)
+	}
 
 	if updates < members {
 		// in general, at least one update from each node. (although that's not necessarily true...
@@ -1236,24 +1242,24 @@ func TestRejoin(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
-	membersFunc := func() interface{} {
-		return mkv2.memberlist.NumMembers()
+	expectMembers := func(expected int) func() bool {
+		return func() bool { return mkv2.memberlist.NumMembers() == expected }
 	}
 
-	poll(t, 5*time.Second, 2, membersFunc)
+	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 members in the cluster")
 
 	// Shutdown first KV
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1))
 
 	// Second KV should see single member now.
-	poll(t, 5*time.Second, 1, membersFunc)
+	require.Eventually(t, expectMembers(1), 10*time.Second, 100*time.Millisecond, "expected 1 member in the cluster")
 
 	// Let's start first KV again. It is not configured to join the cluster, but KV2 is rejoining.
 	mkv1 = NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
-	poll(t, 5*time.Second, 2, membersFunc)
+	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 member in the cluster")
 }
 
 func TestMessageBuffer(t *testing.T) {
@@ -1592,26 +1598,6 @@ func getOrCreateData(in interface{}) *data {
 		return &data{Members: map[string]member{}}
 	}
 	return r
-}
-
-// poll repeatedly evaluates condition until we either timeout, or it succeeds.
-func poll(t testing.TB, d time.Duration, want interface{}, have func() interface{}) {
-	t.Helper()
-
-	deadline := time.Now().Add(d)
-	for {
-		if time.Now().After(deadline) {
-			break
-		}
-		if reflect.DeepEqual(want, have()) {
-			return
-		}
-		time.Sleep(d / 100)
-	}
-	h := have()
-	if !reflect.DeepEqual(want, h) {
-		t.Fatalf("expected %v, got %v", want, h)
-	}
 }
 
 type testLogger struct {

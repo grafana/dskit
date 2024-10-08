@@ -115,6 +115,23 @@ func newIntegrationClientServer(
 		require.NoError(t, err)
 	}()
 
+	// Wait until the server is up and running
+	assert.Eventually(t, func() bool {
+		conn, err := net.DialTimeout("tcp", httpAddr.String(), 1*time.Second)
+		if err != nil {
+			t.Logf("error dialing http: %v", err)
+			return false
+		}
+		defer conn.Close()
+		grpcConn, err := net.DialTimeout("tcp", grpcAddr.String(), 1*time.Second)
+		if err != nil {
+			t.Logf("error dialing grpc: %v", err)
+			return false
+		}
+		defer grpcConn.Close()
+		return true
+	}, 2500*time.Millisecond, 1*time.Second, "server is not up")
+
 	httpURL := fmt.Sprintf("https://localhost:%d/hello", httpAddr.Port)
 	grpcHost := net.JoinHostPort("localhost", strconv.Itoa(grpcAddr.Port))
 

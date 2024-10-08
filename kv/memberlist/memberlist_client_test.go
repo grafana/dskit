@@ -10,7 +10,6 @@ import (
 	"math"
 	"math/rand"
 	"net"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -1243,24 +1242,24 @@ func TestRejoin(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
-	membersFunc := func() interface{} {
-		return mkv2.memberlist.NumMembers()
+	expectMembers := func(expected int) func() bool {
+		return func() bool { return mkv2.memberlist.NumMembers() == expected }
 	}
 
-	poll(t, 7*time.Second, 2, membersFunc) // Probe interval is 5s, with 2s timeout, so probe for 7s.
+	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 members in the cluster")
 
 	// Shutdown first KV
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1))
 
 	// Second KV should see single member now.
-	poll(t, 7*time.Second, 1, membersFunc)
+	require.Eventually(t, expectMembers(1), 10*time.Second, 100*time.Millisecond, "expected 1 member in the cluster")
 
 	// Let's start first KV again. It is not configured to join the cluster, but KV2 is rejoining.
 	mkv1 = NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
-	poll(t, 7*time.Second, 2, membersFunc)
+	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 member in the cluster")
 }
 
 func TestMessageBuffer(t *testing.T) {
@@ -1599,26 +1598,6 @@ func getOrCreateData(in interface{}) *data {
 		return &data{Members: map[string]member{}}
 	}
 	return r
-}
-
-// poll repeatedly evaluates condition until we either timeout, or it succeeds.
-func poll(t testing.TB, d time.Duration, want interface{}, have func() interface{}) {
-	t.Helper()
-
-	deadline := time.Now().Add(d)
-	for {
-		if time.Now().After(deadline) {
-			break
-		}
-		if reflect.DeepEqual(want, have()) {
-			return
-		}
-		time.Sleep(d / 100)
-	}
-	h := have()
-	if !reflect.DeepEqual(want, h) {
-		t.Fatalf("expected %v, got %v", want, h)
-	}
 }
 
 type testLogger struct {

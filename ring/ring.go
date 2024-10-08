@@ -18,7 +18,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/internal/slices"
@@ -234,9 +233,6 @@ type Ring struct {
 	shuffledSubringCache             map[subringCacheKey]*Ring
 	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback[*Ring]
 
-	// The last observed update from the KV store.
-	watchKeyUpdate atomic.Pointer[Desc]
-
 	numMembersGaugeVec      *prometheus.GaugeVec
 	totalTokensGauge        prometheus.Gauge
 	oldestTimestampGaugeVec *prometheus.GaugeVec
@@ -332,7 +328,7 @@ func (r *Ring) loop(ctx context.Context) error {
 	r.updateRingMetrics()
 	r.mtx.Unlock()
 
-	var observer updateObserver[Desc]
+	updateFunc := r.updateRingState
 
 	if r.cfg.UpdateInterval > 0 {
 		// Debounce WatchKey updates, as they can be frequent enough to cause lock
@@ -340,9 +336,7 @@ func (r *Ring) loop(ctx context.Context) error {
 		// periodically update the ring.
 		d := newDelayedObserver(r.cfg.UpdateInterval, r.updateRingState)
 		d.run(ctx)
-		observer = d
-	} else {
-		observer = newNoDelayObserver(r.updateRingState)
+		updateFunc = d.observeUpdate
 	}
 
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {
@@ -350,7 +344,7 @@ func (r *Ring) loop(ctx context.Context) error {
 			level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 			return true
 		}
-		observer.observeUpdate(value.(*Desc))
+		updateFunc(value.(*Desc))
 		return true
 	})
 	return nil

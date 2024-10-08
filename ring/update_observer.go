@@ -58,22 +58,3 @@ func (w *delayedObserver[T]) flush() {
 }
 
 var _ updateObserver[int] = &delayedObserver[int]{}
-
-// noDelayObserver is an observer that synchronously sends the update to the
-// receiver.
-type noDelayObserver[T any] struct {
-	receiver func(*T)
-}
-
-func newNoDelayObserver[T any](receiver func(*T)) *noDelayObserver[T] {
-	return &noDelayObserver[T]{
-		receiver: receiver,
-	}
-}
-
-// observeUpdate sends the update to the receiver immediately.
-func (w *noDelayObserver[T]) observeUpdate(u *T) {
-	w.receiver(u)
-}
-
-var _ updateObserver[int] = &noDelayObserver[int]{}

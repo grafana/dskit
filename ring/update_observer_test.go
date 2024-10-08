@@ -12,7 +12,7 @@ func TestDelayedUpdates(t *testing.T) {
 	one := 1
 	two := 2
 
-	var val *int = nil
+	var val *int
 	storeVal := func(d *int) {
 		val = d
 	}
@@ -42,22 +42,4 @@ func TestDelayedUpdates(t *testing.T) {
 	o.observeUpdate(&two)
 	o.flush()
 	assert.Same(t, &two, val, "should observe last update")
-}
-
-func TestNoDelay(t *testing.T) {
-	one := 1
-	two := 2
-
-	var val *int = nil
-	storeVal := func(d *int) {
-		val = d
-	}
-	o := newNoDelayObserver(storeVal)
-	assert.Nil(t, val)
-
-	o.observeUpdate(&one)
-	assert.Same(t, &one, val)
-
-	o.observeUpdate(&two)
-	assert.Same(t, &two, val)
 }

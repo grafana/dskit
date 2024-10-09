@@ -326,6 +326,7 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 
 				logged := logs.String()
 				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeFirstLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				logs.Reset()
 				_, _, lineNumberTwoLinesBeforeSecondLogCall, ok := runtime.Caller(0)
@@ -334,6 +335,7 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 
 				logged = logs.String()
 				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeSecondLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				requireSpanHasTwoLogLinesWithoutCaller(t, span)
 			})
@@ -346,6 +348,7 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 
 				logged := logs.String()
 				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				logs.Reset()
 				_, _, lineNumberTwoLinesBeforeSecondLogCall, ok := runtime.Caller(0)
@@ -354,6 +357,7 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 
 				logged = logs.String()
 				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeSecondLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				requireSpanHasTwoLogLinesWithoutCaller(t, span)
 			})

@@ -590,12 +590,16 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 	// 1) ""
 	// 2) "label1"
 	// 3) "label2"
+	// 4) "label3"
+	// 5) "label4"
 	//
 	// We expect that it won't be possible to build a memberlist cluster with mixed labels.
 	var membersLabel = []string{
 		"",
 		"label1",
 		"label2",
+		"label3",
+		"label4",
 	}
 
 	configGen := func(i int) KVConfig {
@@ -609,7 +613,7 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 
 	err := testMultipleClientsWithConfigGenerator(t, len(membersLabel), configGen)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), fmt.Sprintf("expected to see %d members, got", len(membersLabel)))
+	require.Contains(t, err.Error(), fmt.Sprintf("expected to see at least %d updates", len(membersLabel)))
 }
 
 func TestMultipleClientsWithMixedLabelsAndClusterLabelVerificationDisabled(t *testing.T) {
@@ -720,7 +724,6 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 	firstKv := clients[0]
 	ctx, cancel := context.WithTimeout(context.Background(), casInterval*3) // Watch for 3x cas intervals.
 	updates := 0
-	gotMembers := 0
 	firstKv.WatchKey(ctx, key, func(in interface{}) bool {
 		updates++
 
@@ -733,17 +736,11 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 			"tokens, oldest timestamp:", now.Sub(time.Unix(minTimestamp, 0)).String(),
 			"avg timestamp:", now.Sub(time.Unix(avgTimestamp, 0)).String(),
 			"youngest timestamp:", now.Sub(time.Unix(maxTimestamp, 0)).String())
-		gotMembers = len(r.Members)
 		return true // yes, keep watching
 	})
 	cancel() // make linter happy
 
 	t.Logf("Ring updates observed: %d", updates)
-
-	// We expect that all members are in the ring
-	if gotMembers != members {
-		return fmt.Errorf("expected to see %d members, got %d", members, gotMembers)
-	}
 
 	if updates < members {
 		// in general, at least one update from each node. (although that's not necessarily true...

@@ -285,6 +285,14 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 			logger = level.NewFilter(logger, level.AllowAll())
 			return logger
 		},
+
+		"default logger that has been wrapped with further information": func(w io.Writer) log.Logger {
+			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
+			logger = level.NewFilter(logger, level.AllowAll())
+			logger = log.With(logger, "user", "user-1")
+			return logger
+		},
 	}
 
 	resolver := fakeResolver{}
@@ -307,12 +315,15 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 		return buf, spanLogger, span.(*jaeger.Span)
 	}
 
-	requireSpanHasTwoLogLinesWithoutCaller := func(t *testing.T, span *jaeger.Span) {
+	requireSpanHasTwoLogLinesWithoutCaller := func(t *testing.T, span *jaeger.Span, extraFields ...otlog.Field) {
 		logs := span.Logs()
 		require.Len(t, logs, 2)
 
-		require.Equal(t, []otlog.Field{otlog.String("msg", "this is a test")}, logs[0].Fields)
-		require.Equal(t, []otlog.Field{otlog.String("msg", "this is another test")}, logs[1].Fields)
+		expectedFields := append(slices.Clone(extraFields), otlog.String("msg", "this is a test"))
+		require.Equal(t, expectedFields, logs[0].Fields)
+
+		expectedFields = append(slices.Clone(extraFields), otlog.String("msg", "this is another test"))
+		require.Equal(t, expectedFields, logs[1].Fields)
 	}
 
 	for name, loggerFactory := range testCases {
@@ -360,6 +371,29 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				requireSpanHasTwoLogLinesWithoutCaller(t, span)
+			})
+
+			t.Run("logging with SpanLogger wrapped in a level", func(t *testing.T) {
+				logs, spanLogger, span := setupTest(t, loggerFactory)
+
+				_, thisFile, lineNumberTwoLinesBeforeFirstLogCall, ok := runtime.Caller(0)
+				require.True(t, ok)
+				_ = level.Info(spanLogger).Log("msg", "this is a test")
+
+				logged := logs.String()
+				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeFirstLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
+
+				logs.Reset()
+				_, _, lineNumberTwoLinesBeforeSecondLogCall, ok := runtime.Caller(0)
+				require.True(t, ok)
+				_ = level.Info(spanLogger).Log("msg", "this is another test")
+
+				logged = logs.String()
+				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeSecondLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
+
+				requireSpanHasTwoLogLinesWithoutCaller(t, span, otlog.String("level", "info"))
 			})
 		})
 	}

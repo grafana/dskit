@@ -207,7 +207,7 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			buf := bytes.NewBuffer(nil)
 			logger := dskit_log.NewGoKitWithWriter("logfmt", buf)
-			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", SpanLoggerAwareCaller(5))
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", Caller(5))
 
 			if debugEnabled {
 				logger = level.NewFilter(logger, level.AllowAll())
@@ -273,8 +273,8 @@ func BenchmarkSpanLoggerAwareCaller(b *testing.B) {
 		runBenchmark(b, log.Caller(defaultStackDepth))
 	})
 
-	b.Run("with dskit's SpanLoggerAwareCaller", func(b *testing.B) {
-		runBenchmark(b, SpanLoggerAwareCaller(defaultStackDepth))
+	b.Run("with dskit's spanlogger.Caller", func(b *testing.B) {
+		runBenchmark(b, Caller(defaultStackDepth))
 	})
 }
 
@@ -297,7 +297,7 @@ func TestSpanLoggerAwareCaller(t *testing.T) {
 		// This is based on Mimir's default logging configuration: https://github.com/grafana/mimir/blob/50d1c27b4ad82b265ff5a865345bec2d726f64ef/pkg/util/log/log.go#L45-L46
 		"default logger": func(w io.Writer) log.Logger {
 			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
-			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", SpanLoggerAwareCaller(5))
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", Caller(5))
 			logger = level.NewFilter(logger, level.AllowAll())
 			return logger
 		},
@@ -305,7 +305,7 @@ func TestSpanLoggerAwareCaller(t *testing.T) {
 		// This is based on Mimir's logging configuration with rate-limiting enabled: https://github.com/grafana/mimir/blob/50d1c27b4ad82b265ff5a865345bec2d726f64ef/pkg/util/log/log.go#L42-L43
 		"rate-limited logger": func(w io.Writer) log.Logger {
 			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
-			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", SpanLoggerAwareCaller(6))
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", Caller(6))
 			logger = dskit_log.NewRateLimitedLogger(logger, 1000, 1000, nil)
 			logger = level.NewFilter(logger, level.AllowAll())
 			return logger
@@ -313,7 +313,7 @@ func TestSpanLoggerAwareCaller(t *testing.T) {
 
 		"default logger that has been wrapped with further information": func(w io.Writer) log.Logger {
 			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
-			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", SpanLoggerAwareCaller(5))
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", Caller(5))
 			logger = level.NewFilter(logger, level.AllowAll())
 			logger = log.With(logger, "user", "user-1")
 			return logger

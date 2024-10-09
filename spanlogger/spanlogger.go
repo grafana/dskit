@@ -190,12 +190,12 @@ func (s *SpanLogger) SetSpanAndLogTag(key string, value interface{}) {
 	s.logger.Store(&wrappedLogger)
 }
 
-// SpanLoggerAwareCaller is like log.Caller, but ensures that the caller information is
+// Caller is like github.com/go-kit/log's Caller, but ensures that the caller information is
 // that of the caller to SpanLogger (if SpanLogger is being used), not SpanLogger itself.
 //
 // defaultStackDepth should be the number of stack frames to skip by default, as would be
 // passed to github.com/go-kit/log's Caller method.
-func SpanLoggerAwareCaller(defaultStackDepth int) log.Valuer {
+func Caller(defaultStackDepth int) log.Valuer {
 	return func() interface{} {
 		stackDepth := defaultStackDepth
 
@@ -221,7 +221,7 @@ func SpanLoggerAwareCaller(defaultStackDepth int) log.Valuer {
 	}
 }
 
-// This is based on github.com/go-kit/log's Caller, but modified for use by SpanLoggerAwareCaller above.
+// This is based on github.com/go-kit/log's Caller, but modified for use by Caller above.
 func formatCallerInfoForLog(file string, line int) string {
 	idx := strings.LastIndexByte(file, '/')
 	return file[idx+1:] + ":" + strconv.Itoa(line)

@@ -139,6 +139,7 @@ func benchmarkUpdateRingState(b *testing.B, numInstances, numTokens int, updateT
 	cfg := Config{
 		KVStore:              kv.Config{},
 		HeartbeatTimeout:     0, // get healthy stats
+		UpdateInterval:       250 * time.Millisecond,
 		ReplicationFactor:    3,
 		ZoneAwarenessEnabled: true,
 	}
@@ -3608,6 +3609,7 @@ func TestRingUpdates(t *testing.T) {
 			cfg := Config{
 				KVStore:           kv.Config{Mock: inmem},
 				HeartbeatTimeout:  1 * time.Minute,
+				UpdateInterval:    20 * time.Millisecond,
 				ReplicationFactor: 3,
 				ExcludedZones:     flagext.StringSliceCSV(testData.excludedZones),
 			}
@@ -3716,6 +3718,7 @@ func TestRing_ShuffleShard_Caching(t *testing.T) {
 	cfg := Config{
 		KVStore:              kv.Config{Mock: inmem},
 		HeartbeatTimeout:     1 * time.Minute,
+		UpdateInterval:       20 * time.Millisecond,
 		ReplicationFactor:    3,
 		ZoneAwarenessEnabled: true,
 	}

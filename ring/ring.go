@@ -143,6 +143,7 @@ var (
 type Config struct {
 	KVStore              kv.Config              `yaml:"kvstore"`
 	HeartbeatTimeout     time.Duration          `yaml:"heartbeat_timeout" category:"advanced"`
+	UpdateInterval       time.Duration          `yaml:"update_interval" category:"advanced"`
 	ReplicationFactor    int                    `yaml:"replication_factor"`
 	ZoneAwarenessEnabled bool                   `yaml:"zone_awareness_enabled"`
 	ExcludedZones        flagext.StringSliceCSV `yaml:"excluded_zones" category:"advanced"`
@@ -162,6 +163,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.KVStore.RegisterFlagsWithPrefix(prefix, "collectors/", f)
 
 	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled).")
+	f.DurationVar(&cfg.UpdateInterval, prefix+"ring.update-interval", 0, "How often to recompute ring state when a change is detected from the KVStore. 0 = no delay.")
 	f.IntVar(&cfg.ReplicationFactor, prefix+"distributor.replication-factor", 3, "The number of ingesters to write to and read from.")
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"distributor.zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones.")
 	f.Var(&cfg.ExcludedZones, prefix+"distributor.excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.")
@@ -215,13 +217,13 @@ type Ring struct {
 	// Number of registered instances per zone.
 	instancesCountPerZone map[string]int
 
-	// Nubmber of registered instances with tokens per zone.
+	// Number of registered instances with tokens per zone.
 	instancesWithTokensCountPerZone map[string]int
 
 	// Number of registered instances are writable and have tokens.
 	writableInstancesWithTokensCount int
 
-	// Nubmber of registered instances with tokens per zone that are writable.
+	// Number of registered instances with tokens per zone that are writable.
 	writableInstancesWithTokensCountPerZone map[string]int
 
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
@@ -324,13 +326,23 @@ func (r *Ring) loop(ctx context.Context) error {
 	r.updateRingMetrics()
 	r.mtx.Unlock()
 
+	updateFunc := r.updateRingState
+
+	if r.cfg.UpdateInterval > 0 {
+		// Debounce WatchKey updates, as they can be frequent enough to cause lock
+		// contention. The most recent update is the one we'll use when we
+		// periodically update the ring.
+		d := newDelayedObserver(r.cfg.UpdateInterval, r.updateRingState)
+		d.run(ctx)
+		updateFunc = d.put
+	}
+
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {
 		if value == nil {
 			level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 			return true
 		}
-
-		r.updateRingState(value.(*Desc))
+		updateFunc(value.(*Desc))
 		return true
 	})
 	return nil

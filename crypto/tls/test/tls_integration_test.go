@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,6 +138,22 @@ func newIntegrationClientServer(
 			require.NoError(t, err)
 
 			resp, err := client.Do(req)
+			// We retry the request a few times in case of a TCP reset (and we're expecting an error)
+			// Sometimes, the server resets the connection rather than sending the TLS error
+			// Seems that even Google have issues with RST flakiness: https://go-review.googlesource.com/c/go/+/527196
+			isRST := func(err error) bool {
+				if err == nil {
+					return false
+				}
+				return strings.Contains(err.Error(), "connection reset by peer") || strings.Contains(err.Error(), "broken pipe")
+			}
+			for i := 0; i < 3 && isRST(err) && tc.httpExpectError != nil; i++ {
+				time.Sleep(100 * time.Millisecond)
+				resp, err = client.Do(req)
+				if err == nil {
+					defer resp.Body.Close()
+				}
+			}
 			if err == nil {
 				defer resp.Body.Close()
 			}

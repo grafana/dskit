@@ -141,7 +141,7 @@ func newIntegrationClientServer(
 
 		// HTTP
 		t.Run("HTTP/"+tc.name, func(t *testing.T) {
-			transport := &http.Transport{TLSClientConfig: tlsClientConfig}
+			transport := &http.Transport{TLSClientConfig: tlsClientConfig, MaxIdleConnsPerHost: 100} // DefaultMaxIdleConnsPerHost is 2
 			client := &http.Client{Transport: transport}
 
 			resp, err := client.Get(httpURL)

@@ -223,7 +223,7 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 			resolver := fakeResolver{}
 			sl, _ := New(context.Background(), logger, "test", resolver, "bar")
 
-			b.Run("log", func(b *testing.B) {
+			b.Run("Log", func(b *testing.B) {
 				buf.Reset()
 				b.ResetTimer()
 
@@ -232,7 +232,7 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 				}
 			})
 
-			b.Run("level.debug", func(b *testing.B) {
+			b.Run("level.Debug", func(b *testing.B) {
 				buf.Reset()
 				b.ResetTimer()
 
@@ -241,7 +241,7 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 				}
 			})
 
-			b.Run("debuglog", func(b *testing.B) {
+			b.Run("DebugLog", func(b *testing.B) {
 				buf.Reset()
 				b.ResetTimer()
 
@@ -251,7 +251,31 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 			})
 		})
 	}
+}
 
+func BenchmarkSpanLoggerAwareCaller(b *testing.B) {
+	runBenchmark := func(b *testing.B, caller log.Valuer) {
+		buf := bytes.NewBuffer(nil)
+		logger := dskit_log.NewGoKitWithWriter("logfmt", buf)
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", caller)
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_ = logger.Log("msg", "foo", "more", "data")
+		}
+
+	}
+
+	defaultStackDepth := 5
+
+	b.Run("with go-kit's Caller", func(b *testing.B) {
+		runBenchmark(b, log.Caller(defaultStackDepth))
+	})
+
+	b.Run("with dskit's SpanLoggerAwareCaller", func(b *testing.B) {
+		runBenchmark(b, SpanLoggerAwareCaller(defaultStackDepth))
+	})
 }
 
 // Logger which does nothing and implements the DebugEnabled interface used by SpanLogger.

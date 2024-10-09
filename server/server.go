@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof" // anonymous import to get the pprof handler registered
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ import (
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/signals"
+
+	"github.com/coreos/go-systemd/v22/activation"
 )
 
 // Listen on the named network
@@ -47,6 +50,13 @@ const (
 	DefaultNetwork = "tcp"
 	// NetworkTCPV4 for IPV4 only
 	NetworkTCPV4 = "tcp4"
+	// NetworkSystemdListenFd for using a passed open file descriptor
+	NetworkSystemdListenFd = "sd_listen_fd"
+)
+
+const (
+	// See `SD_LISTEN_FDS(3)`
+	NetworkSystemdListenFdsStart = 3
 )
 
 // SignalHandler used by Server.
@@ -248,6 +258,40 @@ func NewWithMetrics(cfg Config, metrics *Metrics) (*Server, error) {
 	return newServer(cfg, metrics)
 }
 
+func listen(network string, address string, port int, systemdListenFiles []*os.File) (net.Listener, error) {
+	if network == "" {
+		network = DefaultNetwork
+	}
+
+	switch network {
+	case DefaultNetwork, NetworkTCPV4:
+		return net.Listen(network, net.JoinHostPort(address, strconv.Itoa(port)))
+	case NetworkSystemdListenFd:
+		if address == "" {
+			address = "LISTEN_FD_" + strconv.Itoa(NetworkSystemdListenFdsStart)
+		}
+
+		listeners := map[string]net.Listener{}
+		for index, file := range systemdListenFiles {
+			if listener, err := net.FileListener(file); err == nil {
+				listeners[file.Name()] = listener
+				listeners["LISTEN_FD_"+strconv.Itoa(index+NetworkSystemdListenFdsStart)] = listener
+				file.Close()
+			}
+		}
+
+		listener, hasListener := listeners[address]
+
+		if !hasListener {
+			return nil, fmt.Errorf("could not listen on 'sd_listen_fd', no file descriptor given for name '%s'", address)
+		}
+
+		return listener, nil
+	default:
+		return nil, fmt.Errorf("cannot listen on unknown network '%s'", network)
+	}
+}
+
 func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	// If user doesn't supply a logging implementation, by default instantiate go-kit.
 	logger := cfg.Log
@@ -260,15 +304,14 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		gatherer = prometheus.DefaultGatherer
 	}
 
-	network := cfg.HTTPListenNetwork
-	if network == "" {
-		network = DefaultNetwork
-	}
+	systemdListenFiles := activation.Files(true)
+
 	// Setup listeners first, so we can fail early if the port is in use.
-	httpListener, err := net.Listen(network, net.JoinHostPort(cfg.HTTPListenAddress, strconv.Itoa(cfg.HTTPListenPort)))
+	httpListener, err := listen(cfg.HTTPListenNetwork, cfg.HTTPListenAddress, cfg.HTTPListenPort, systemdListenFiles)
 	if err != nil {
 		return nil, err
 	}
+
 	httpListener = middleware.CountingListener(httpListener, metrics.TCPConnections.WithLabelValues("http"))
 	if cfg.HTTPLogClosedConnectionsWithoutResponse {
 		httpListener = middleware.NewZeroResponseListener(httpListener, level.Warn(logger))
@@ -279,11 +322,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		httpListener = netutil.LimitListener(httpListener, cfg.HTTPConnLimit)
 	}
 
-	network = cfg.GRPCListenNetwork
-	if network == "" {
-		network = DefaultNetwork
-	}
-	grpcListener, err := net.Listen(network, net.JoinHostPort(cfg.GRPCListenAddress, strconv.Itoa(cfg.GRPCListenPort)))
+	grpcListener, err := listen(cfg.GRPCListenNetwork, cfg.GRPCListenAddress, cfg.GRPCListenPort, systemdListenFiles)
 	if err != nil {
 		return nil, err
 	}

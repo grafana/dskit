@@ -46,9 +46,6 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 	}
 	resolver := fakeResolver{}
 
-	_, thisFile, thisLineNumber, ok := runtime.Caller(0)
-	require.True(t, ok)
-
 	span, ctx := New(context.Background(), logger, "test", resolver)
 	_ = span.Log("msg", "original spanlogger")
 
@@ -59,9 +56,9 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 	_ = span.Log("msg", "fallback spanlogger")
 
 	expect := [][]interface{}{
-		{"method", "test", "caller", toCallerInfo(thisFile, thisLineNumber+4), "msg", "original spanlogger"},
-		{"caller", toCallerInfo(thisFile, thisLineNumber+7), "msg", "restored spanlogger"},
-		{"caller", toCallerInfo(thisFile, thisLineNumber+10), "msg", "fallback spanlogger"},
+		{"method", "test", "msg", "original spanlogger"},
+		{"msg", "restored spanlogger"},
+		{"msg", "fallback spanlogger"},
 	}
 	require.Equal(t, expect, logged)
 }
@@ -89,9 +86,6 @@ func TestSpanLogger_SetSpanAndLogTag(t *testing.T) {
 		return nil
 	}
 
-	_, thisFile, thisLineNumber, ok := runtime.Caller(0)
-	require.True(t, ok)
-
 	spanLogger, _ := New(context.Background(), logger, "the_method", fakeResolver{})
 	require.NoError(t, spanLogger.Log("msg", "this is the first message"))
 
@@ -111,18 +105,15 @@ func TestSpanLogger_SetSpanAndLogTag(t *testing.T) {
 	expectedLogMessages := [][]interface{}{
 		{
 			"method", "the_method",
-			"caller", toCallerInfo(thisFile, thisLineNumber+4),
 			"msg", "this is the first message",
 		},
 		{
 			"method", "the_method",
-			"caller", toCallerInfo(thisFile, thisLineNumber+7),
 			"id", "123",
 			"msg", "this is the second message",
 		},
 		{
 			"method", "the_method",
-			"caller", toCallerInfo(thisFile, thisLineNumber+10),
 			"id", "123",
 			"more context", "abc",
 			"msg", "this is the third message",

@@ -132,6 +132,8 @@ func TestTCPv4Network(t *testing.T) {
 func TestDefaultAddresses(t *testing.T) {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+	cfg.GRPCListenAddress = "localhost"
+	cfg.HTTPListenAddress = "localhost"
 	cfg.HTTPListenPort = 9090
 	cfg.MetricsNamespace = "testing_addresses"
 
@@ -949,6 +951,8 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
 	cfg.ProxyProtocolEnabled = true
 	// Set this to 0 to have it choose a random port
+	cfg.HTTPListenAddress = "localhost"
+	cfg.GRPCListenAddress = "localhost"
 	cfg.HTTPListenPort = 0
 
 	fakeSourceIP := "1.2.3.4"

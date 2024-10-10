@@ -13,10 +13,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gogo/status"
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,6 +105,7 @@ func newIntegrationClientServer(
 
 	serv, err := server.New(cfg)
 	require.NoError(t, err)
+	defer serv.Shutdown()
 
 	serv.HTTP.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "OK")
@@ -115,36 +118,42 @@ func newIntegrationClientServer(
 		require.NoError(t, err)
 	}()
 
-	// Wait until the server is up and running
-	assert.Eventually(t, func() bool {
-		conn, err := net.DialTimeout("tcp", httpAddr.String(), 1*time.Second)
-		if err != nil {
-			t.Logf("error dialing http: %v", err)
-			return false
-		}
-		defer conn.Close()
-		grpcConn, err := net.DialTimeout("tcp", grpcAddr.String(), 1*time.Second)
-		if err != nil {
-			t.Logf("error dialing grpc: %v", err)
-			return false
-		}
-		defer grpcConn.Close()
-		return true
-	}, 2500*time.Millisecond, 1*time.Second, "server is not up")
-
 	httpURL := fmt.Sprintf("https://localhost:%d/hello", httpAddr.Port)
 	grpcHost := net.JoinHostPort("localhost", strconv.Itoa(grpcAddr.Port))
 
 	for _, tc := range tcs {
-		tlsClientConfig, err := tc.tlsConfig.GetTLSConfig()
-		require.NoError(t, err)
-
 		// HTTP
 		t.Run("HTTP/"+tc.name, func(t *testing.T) {
-			transport := &http.Transport{TLSClientConfig: tlsClientConfig}
+			tlsClientConfig, err := tc.tlsConfig.GetTLSConfig()
+			require.NoError(t, err)
+
+			transport := cleanhttp.DefaultTransport()
+			transport.TLSClientConfig = tlsClientConfig
 			client := &http.Client{Transport: transport}
 
-			resp, err := client.Get(httpURL)
+			cancellableCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			req, err := http.NewRequestWithContext(cancellableCtx, http.MethodGet, httpURL, nil)
+			require.NoError(t, err)
+
+			resp, err := client.Do(req)
+			// We retry the request a few times in case of a TCP reset (and we're expecting an error)
+			// Sometimes, the server resets the connection rather than sending the TLS error
+			// Seems that even Google have issues with RST flakiness: https://go-review.googlesource.com/c/go/+/527196
+			isRST := func(err error) bool {
+				if err == nil {
+					return false
+				}
+				return strings.Contains(err.Error(), "connection reset by peer") || strings.Contains(err.Error(), "broken pipe")
+			}
+			for i := 0; i < 3 && isRST(err) && tc.httpExpectError != nil; i++ {
+				time.Sleep(100 * time.Millisecond)
+				resp, err = client.Do(req)
+				if err == nil {
+					defer resp.Body.Close()
+				}
+			}
 			if err == nil {
 				defer resp.Body.Close()
 			}
@@ -175,16 +184,18 @@ func newIntegrationClientServer(
 			dialOptions = append([]grpc.DialOption{grpc.WithDefaultCallOptions(clientConfig.CallOptions()...)}, dialOptions...)
 
 			conn, err := grpc.NewClient(grpcHost, dialOptions...)
-			assert.NoError(t, err, tc.name)
 			require.NoError(t, err, tc.name)
-			require.NoError(t, err, tc.name)
+			defer conn.Close()
+
+			cancellableCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
 			client := grpc_health_v1.NewHealthClient(conn)
 
 			// TODO: Investigate why the client doesn't really receive the
 			// error about the bad certificate from the server side and just
 			// see connection closed instead
-			resp, err := client.Check(context.TODO(), &grpc_health_v1.HealthCheckRequest{})
+			resp, err := client.Check(cancellableCtx, &grpc_health_v1.HealthCheckRequest{})
 			if tc.grpcExpectError != nil {
 				tc.grpcExpectError(t, err)
 				return
@@ -194,10 +205,7 @@ func newIntegrationClientServer(
 				assert.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, resp.Status)
 			}
 		})
-
 	}
-
-	serv.Shutdown()
 }
 
 func TestServerWithoutTlsEnabled(t *testing.T) {

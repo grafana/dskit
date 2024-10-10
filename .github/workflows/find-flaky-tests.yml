@@ -1,13 +1,9 @@
 name: Find flaky tests
 on:
-  issue_comment:
-    types: [created]
   workflow_dispatch:
 
 jobs:
   find-flaky-tests:
-    # Only run this workflow when the comment contains '/find-flaky-tests' or it's manually triggered
-    if: contains(github.event.comment.body, '/find-flaky-tests') || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:

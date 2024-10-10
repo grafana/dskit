@@ -258,7 +258,7 @@ func BenchmarkSpanLoggerAwareCaller(b *testing.B) {
 
 	}
 
-	defaultStackDepth := 5
+	const defaultStackDepth = 5
 
 	b.Run("with go-kit's Caller", func(b *testing.B) {
 		runBenchmark(b, log.Caller(defaultStackDepth))

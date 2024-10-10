@@ -1,7 +1,11 @@
 package memberlist
 
 import (
+	"net"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -9,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 )
 
@@ -51,6 +56,8 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 			_, err = transport.WriteTo([]byte("test"), testData.remoteAddr)
 			require.NoError(t, err)
 
+			require.NoError(t, transport.Shutdown())
+
 			if testData.expectedLogs != "" {
 				assert.Contains(t, logs.String(), testData.expectedLogs)
 			}
@@ -59,6 +66,88 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 			}
 		})
 	}
+}
+
+type timeoutReader struct{}
+
+func (f *timeoutReader) ReadSecret(_ string) ([]byte, error) {
+	time.Sleep(1 * time.Second)
+	return nil, nil
+}
+
+func TestTCPTransportWriteToUnreachableAddr(t *testing.T) {
+	writeCt := 50
+
+	// Listen for TCP connections on a random port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	logs := &concurrency.SyncBuffer{}
+	logger := log.NewLogfmtLogger(logs)
+
+	cfg := TCPTransportConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.MaxConcurrentWrites = writeCt
+	cfg.PacketDialTimeout = 500 * time.Millisecond
+	transport, err := NewTCPTransport(cfg, logger, nil)
+	require.NoError(t, err)
+
+	// Configure TLS only for writes. The dialing should timeout (because of the timeoutReader)
+	transport.cfg.TLSEnabled = true
+	transport.cfg.TLS = tls.ClientConfig{
+		Reader:   &timeoutReader{},
+		CertPath: "fake",
+		KeyPath:  "fake",
+		CAPath:   "fake",
+	}
+
+	timeStart := time.Now()
+
+	for i := 0; i < writeCt; i++ {
+		_, err = transport.WriteTo([]byte("test"), listener.Addr().String())
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, transport.Shutdown())
+
+	gotErrorCt := strings.Count(logs.String(), "context deadline exceeded")
+	assert.Equal(t, writeCt, gotErrorCt, "expected %d errors, got %d", writeCt, gotErrorCt)
+	assert.GreaterOrEqual(t, time.Since(timeStart), 500*time.Millisecond, "expected to take at least 500ms (timeout duration)")
+	assert.LessOrEqual(t, time.Since(timeStart), 2*time.Second, "expected to take less than 2s (timeout + a good margin), writing to unreachable addresses should not block")
+}
+
+func TestTCPTransportWriterAcquireTimeout(t *testing.T) {
+	// Listen for TCP connections on a random port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	logs := &concurrency.SyncBuffer{}
+	logger := log.NewLogfmtLogger(logs)
+
+	cfg := TCPTransportConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.MaxConcurrentWrites = 1
+	cfg.AcquireWriterTimeout = 1 * time.Millisecond // very short timeout
+	transport, err := NewTCPTransport(cfg, logger, nil)
+	require.NoError(t, err)
+
+	writeCt := 100
+	var reqWg sync.WaitGroup
+	for i := 0; i < writeCt; i++ {
+		reqWg.Add(1)
+		go func() {
+			defer reqWg.Done()
+			transport.WriteTo([]byte("test"), listener.Addr().String()) // nolint:errcheck
+		}()
+	}
+	reqWg.Wait()
+
+	require.NoError(t, transport.Shutdown())
+	gotErrorCt := strings.Count(logs.String(), "WriteTo failed to acquire a writer. Dropping message")
+	assert.Less(t, gotErrorCt, writeCt, "expected to have less errors (%d) than total writes (%d). Some writes should pass.", gotErrorCt, writeCt)
+	assert.NotZero(t, gotErrorCt, "expected errors, got none")
 }
 
 func TestFinalAdvertiseAddr(t *testing.T) {

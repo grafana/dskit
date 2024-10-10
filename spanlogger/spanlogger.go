@@ -198,6 +198,7 @@ func (s *SpanLogger) SetSpanAndLogTag(key string, value interface{}) {
 func Caller(defaultStackDepth int) log.Valuer {
 	return func() interface{} {
 		stackDepth := defaultStackDepth
+		seenSpanLogger := false
 
 		for {
 			_, file, line, ok := runtime.Caller(stackDepth)
@@ -206,12 +207,22 @@ func Caller(defaultStackDepth int) log.Valuer {
 				return "<unknown>"
 			}
 
-			// If we're in this file, or log.go in the go-kit/log package, we need to continue searching in the stack.
-			//
+			// If we're in this file, or log.go in the go-kit/log package after having seen this file, we need to continue searching in the stack.
+			if strings.HasSuffix(file, "dskit/spanlogger/spanlogger.go") {
+				seenSpanLogger = true
+				stackDepth++
+				continue
+			}
+
 			// The path to log.go varies depending on how the package is imported:
 			// - if go-kit/log is vendored, the path is something like <project root>/vendor/github.com/go-kit/log/log.go
 			// - if it is not vendored, the path is something like /home/user/go/pkg/mod/github.com/go-kit/log@v0.2.1/log.go and varies based on the version imported
-			if strings.HasSuffix(file, "dskit/spanlogger/spanlogger.go") || (strings.HasSuffix(file, "/log.go") && strings.Contains(file, "github.com/go-kit/log")) {
+			//
+			// We need to check for go-kit/log stack frames because log.With, log.WithPrefix or log.WithSuffix (including the various level methods like level.Debug,
+			// level.Info etc.) to wrap a SpanLogger introduces an additional context.Log stack frame that calls into the SpanLogger. This is because the use of SpanLogger
+			// as the logger means the optimisation to avoid creating a new logger in https://github.com/go-kit/log/blob/c7bf81493e581feca11e11a7672b14be3591ca43/log.go#L141-L146
+			// used by those methods can't be used, and so the SpanLogger is wrapped in a new logger.
+			if seenSpanLogger && (strings.HasSuffix(file, "/log.go") && strings.Contains(file, "github.com/go-kit/log")) {
 				stackDepth++
 				continue
 			}

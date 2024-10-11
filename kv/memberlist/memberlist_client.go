@@ -949,6 +949,7 @@ func (m *KV) monitorKeyNotifications(ctx context.Context, tickChan <-chan time.T
 	}
 }
 
+// sendKeyNotifications sends accumulated notifications to watchers of respective keys.
 func (m *KV) sendKeyNotifications() {
 	newNotifs := func() map[string]struct{} {
 		// Grab and clear accumulated notifications.

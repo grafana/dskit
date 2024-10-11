@@ -256,7 +256,6 @@ func getLocalhostAddrs() []string {
 func TestBasicGetAndCas(t *testing.T) {
 	c := dataCodec{}
 
-	name := "Ing 1"
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{
@@ -279,6 +278,7 @@ func TestBasicGetAndCas(t *testing.T) {
 	}
 
 	// Create member in PENDING state, with some tokens
+	name := "Ing 1"
 	err = cas(kv, key, updateFn(name))
 	require.NoError(t, err)
 
@@ -1799,4 +1799,120 @@ func marshalState(t *testing.T, kvps ...*KeyValuePair) []byte {
 	}
 
 	return buf.Bytes()
+}
+
+func TestNotificationDelay(t *testing.T) {
+	cfg := KVConfig{}
+	// We're going to trigger sends manually, so effectively disable the automatic send interval.
+	const hundredYears = 100 * 365 * 24 * time.Hour
+	cfg.NotifyInterval = hundredYears
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+
+	watchChan := make(chan string, 16)
+
+	// Add ourselves as a watcher.
+	kv.watchersMu.Lock()
+	kv.watchers["foo_123"] = append(kv.watchers["foo_123"], watchChan)
+	kv.watchers["foo_124"] = append(kv.watchers["foo_124"], watchChan)
+	kv.watchersMu.Unlock()
+
+	defer func() {
+		kv.watchersMu.Lock()
+		removeWatcherChannel("foo_123", watchChan, kv.watchers)
+		removeWatcherChannel("foo_124", watchChan, kv.watchers)
+		kv.watchersMu.Unlock()
+	}()
+
+	verifyNotifs := func(expected map[string]int, comment string) {
+		observed := make(map[string]int, len(expected))
+		for kk := range expected {
+			observed[kk] = 0
+		}
+	loop:
+		for {
+			select {
+			case k := <-watchChan:
+				observed[k]++
+			default:
+				break loop
+			}
+		}
+		require.Equal(t, expected, observed, comment)
+	}
+
+	drainChan := func() {
+		for {
+			select {
+			case <-watchChan:
+			default:
+				return
+			}
+		}
+	}
+
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1}, "1 change 1 notification")
+
+	// Test coalescing of updates.
+	drainChan()
+	verifyNotifs(map[string]int{"foo_123": 0}, "chan drained")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1}, "flush should coalesce updates")
+
+	// multiple buffered updates
+	drainChan()
+	verifyNotifs(map[string]int{"foo_123": 0}, "chan drained")
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 2}, "two buffered updates")
+
+	// multiple keys
+	drainChan()
+	kv.notifyWatchers("foo_123")
+	kv.notifyWatchers("foo_124")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1, "foo_124": 1}, "2 changes 2 notifications")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 0, "foo_124": 0}, "no new notifications")
+
+	// sendKeyNotifications can be called repeatedly without new updates.
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
+
+	// Finally, exercise the monitor method.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tick := make(chan time.Time)
+	go kv.monitorKeyNotifications(ctx, tick)
+	kv.notifyWatchers("foo_123")
+	tick <- time.Now()
+
+	require.Eventually(t, func() bool {
+		select {
+		case k := <-watchChan:
+			if k != "foo_123" {
+				panic(fmt.Sprintf("unexpected key: %s", k))
+			}
+			return true
+		default: // nothing yet.
+			return false
+		}
+	}, 20*time.Second, 100*time.Millisecond)
 }

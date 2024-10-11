@@ -4,10 +4,12 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 func TestReusableGoroutinesPool(t *testing.T) {
@@ -58,4 +60,30 @@ func TestReusableGoroutinesPool(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("expected %d goroutines after closing, got %d", 0, countGoroutines())
+}
+
+// TestReusableGoroutinesPool_Race tests that Close() and Go() can be called concurrently.
+func TestReusableGoroutinesPool_Race(t *testing.T) {
+	w := NewReusableGoroutinesPool(2)
+
+	var runCountAtomic atomic.Int32
+	const maxMsgCount = 10
+
+	var testWG sync.WaitGroup
+	testWG.Add(1)
+	go func() {
+		defer testWG.Done()
+		for i := 0; i < maxMsgCount; i++ {
+			w.Go(func() {
+				runCountAtomic.Add(1)
+			})
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	time.Sleep(10 * time.Millisecond)
+	w.Close()     // close the pool
+	testWG.Wait() // wait for the test to finish
+
+	runCt := int(runCountAtomic.Load())
+	require.Equal(t, runCt, 10, "expected all functions to run")
 }

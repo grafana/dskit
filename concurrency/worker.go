@@ -22,15 +22,22 @@ func NewReusableGoroutinesPool(size int) *ReusableGoroutinesPool {
 }
 
 type ReusableGoroutinesPool struct {
-	jobsMu sync.Mutex
+	jobsMu sync.RWMutex
+	closed bool
 	jobs   chan func()
 }
 
 // Go will run the given function in a worker of the pool.
 // If all workers are busy, Go() will spawn a new goroutine to run the workload.
 func (p *ReusableGoroutinesPool) Go(f func()) {
-	p.jobsMu.Lock()
-	defer p.jobsMu.Unlock()
+	p.jobsMu.RLock()
+	defer p.jobsMu.RUnlock()
+
+	// If the pool is closed, run the function in a new goroutine.
+	if p.closed {
+		go f()
+		return
+	}
 
 	select {
 	case p.jobs <- f:
@@ -46,5 +53,6 @@ func (p *ReusableGoroutinesPool) Go(f func()) {
 func (p *ReusableGoroutinesPool) Close() {
 	p.jobsMu.Lock()
 	defer p.jobsMu.Unlock()
+	p.closed = true
 	close(p.jobs)
 }

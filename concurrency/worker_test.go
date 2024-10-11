@@ -62,10 +62,10 @@ func TestReusableGoroutinesPool(t *testing.T) {
 	t.Fatalf("expected %d goroutines after closing, got %d", 0, countGoroutines())
 }
 
+// TestReusableGoroutinesPool_Race tests that Close() and Go() can be called concurrently.
 func TestReusableGoroutinesPool_Race(t *testing.T) {
 	w := NewReusableGoroutinesPool(2)
 
-	var panicked bool
 	var runCountAtomic atomic.Int32
 	const maxMsgCount = 10
 
@@ -73,11 +73,6 @@ func TestReusableGoroutinesPool_Race(t *testing.T) {
 	testWG.Add(1)
 	go func() {
 		defer testWG.Done()
-		defer func() {
-			if r := recover(); r != nil {
-				panicked = true
-			}
-		}()
 		for i := 0; i < maxMsgCount; i++ {
 			w.Go(func() {
 				runCountAtomic.Add(1)
@@ -90,7 +85,5 @@ func TestReusableGoroutinesPool_Race(t *testing.T) {
 	testWG.Wait() // wait for the test to finish
 
 	runCt := int(runCountAtomic.Load())
-	require.NotZero(t, runCt, "expected at least one run")
-	require.Less(t, runCt, 10, "expected less than 10 runs")
-	require.True(t, panicked, "expected panic")
+	require.Equal(t, runCt, 10, "expected all functions to run")
 }

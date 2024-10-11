@@ -255,7 +255,6 @@ func getLocalhostAddrs() []string {
 func TestBasicGetAndCas(t *testing.T) {
 	c := dataCodec{}
 
-	name := "Ing 1"
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{
@@ -278,6 +277,7 @@ func TestBasicGetAndCas(t *testing.T) {
 	}
 
 	// Create member in PENDING state, with some tokens
+	name := "Ing 1"
 	err = cas(kv, key, updateFn(name))
 	require.NoError(t, err)
 
@@ -1782,4 +1782,131 @@ func marshalState(t *testing.T, kvps ...*KeyValuePair) []byte {
 	}
 
 	return buf.Bytes()
+}
+
+func TestNotificationDelay(t *testing.T) {
+	codec := dataCodec{}
+
+	cfg := KVConfig{}
+	cfg.Codecs = append(cfg.Codecs, codec)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+	}
+	// We're going to trigger sends manually, so effectively disable the automatic send interval.
+	const hundredYears = 100 * 365 * 24 * time.Hour
+	cfg.NotifyInterval = hundredYears
+
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), kv))
+	})
+
+	cli, err := NewClient(kv, codec)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tick := make(chan time.Time)
+	go kv.sendKeyNotifications(ctx, tick)
+
+	dbMu := sync.Mutex{}
+	db := make(map[string]*data)
+	keyCalls := make(map[string]int)
+
+	setData := func(key string, d *data) {
+		dbMu.Lock()
+		defer dbMu.Unlock()
+		db[key] = d
+		keyCalls[key]++
+	}
+	getData := func(key string) *data {
+		dbMu.Lock()
+		defer dbMu.Unlock()
+		return db[key]
+	}
+	callsForKey := func(key string) int {
+		dbMu.Lock()
+		defer dbMu.Unlock()
+		return keyCalls[key]
+	}
+	verifyVal := func(k, v string) bool {
+		d := getData(k)
+		if d == nil {
+			return false
+		}
+		_, ok := d.Members[v]
+		return ok
+	}
+
+	watchData := func(key string) {
+		go cli.WatchKey(ctx, key, func(in any) bool {
+			setData(key, in.(*data))
+			return true
+		})
+	}
+
+	watchData("foo_123")
+	watchData("foo_124")
+
+	assert.Equal(t, 0, callsForKey("foo_123"))
+	assert.Equal(t, 0, callsForKey("foo_124"))
+
+	err = cas(cli, "foo_123", updateFn("val1"))
+	require.NoError(t, err)
+
+	tick <- time.Now()
+
+	require.Eventually(t, func() bool {
+		return verifyVal("foo_123", "val1")
+	}, 1*time.Second, 5*time.Millisecond)
+
+	assert.Equal(t, 1, callsForKey("foo_123"))
+	assert.Equal(t, 0, callsForKey("foo_124"))
+
+	// Test coalescing of updates.
+	err = cas(cli, "foo_123", updateFn("val2"))
+	require.NoError(t, err)
+	err = cas(cli, "foo_123", updateFn("val3"))
+	require.NoError(t, err)
+	err = cas(cli, "foo_123", updateFn("val4"))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, callsForKey("foo_123"), "no flush -> no callback")
+	assert.Equal(t, 0, callsForKey("foo_124"), "no flush -> no callback")
+
+	tick <- time.Now()
+
+	require.Eventually(t, func() bool {
+		return verifyVal("foo_123", "val4")
+	}, 1*time.Second, 5*time.Millisecond, "multiple updates should be coalesced into the last one")
+
+	assert.Equal(t, 2, callsForKey("foo_123"))
+	assert.Equal(t, 0, callsForKey("foo_124"))
+
+	err = cas(cli, "foo_123", updateFn("val100"))
+	require.NoError(t, err)
+	err = cas(cli, "foo_124", updateFn("val101"))
+	require.NoError(t, err)
+
+	tick <- time.Now()
+
+	require.Eventually(t, func() bool {
+		return verifyVal("foo_123", "val100") && verifyVal("foo_124", "val101")
+	}, 1*time.Second, 5*time.Millisecond)
+
+	assert.Equal(t, 3, callsForKey("foo_123"))
+	assert.Equal(t, 1, callsForKey("foo_124"))
+
+	require.NotPanics(t, func() {
+		tick <- time.Now()
+		tick <- time.Now()
+		tick <- time.Now()
+	}, "shouldn't panic or anything like that when ticked without updates")
+
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, 3, callsForKey("foo_123"))
+	assert.Equal(t, 1, callsForKey("foo_124"))
 }

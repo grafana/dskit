@@ -28,11 +28,7 @@ func TestRingServiceDiscovery_WithoutMaxUsedInstances(t *testing.T) {
 	t.Cleanup(func() { _ = closer.Close() })
 
 	// Create a ring client.
-	ringCfg := ring.Config{
-		HeartbeatTimeout:  time.Minute,
-		ReplicationFactor: 1,
-		UpdateInterval:    20 * time.Millisecond,
-	}
+	ringCfg := ring.Config{HeartbeatTimeout: time.Minute, ReplicationFactor: 1}
 	ringClient, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", ringKey, inmem, ring.NewDefaultReplicationStrategy(), nil, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -134,11 +130,7 @@ func TestRingServiceDiscovery_WithMaxUsedInstances(t *testing.T) {
 	t.Cleanup(func() { _ = closer.Close() })
 
 	// Create a ring client.
-	ringCfg := ring.Config{
-		HeartbeatTimeout:  time.Minute,
-		ReplicationFactor: 1,
-		UpdateInterval:    20 * time.Millisecond,
-	}
+	ringCfg := ring.Config{HeartbeatTimeout: time.Minute, ReplicationFactor: 1}
 	ringClient, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", ringKey, inmem, ring.NewDefaultReplicationStrategy(), nil, log.NewNopLogger())
 	require.NoError(t, err)
 

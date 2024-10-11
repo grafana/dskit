@@ -1786,7 +1786,6 @@ func marshalState(t *testing.T, kvps ...*KeyValuePair) []byte {
 
 func TestNotificationDelay(t *testing.T) {
 	codec := dataCodec{}
-
 	cfg := KVConfig{}
 	cfg.Codecs = append(cfg.Codecs, codec)
 	cfg.TCPTransport = TCPTransportConfig{
@@ -1795,7 +1794,6 @@ func TestNotificationDelay(t *testing.T) {
 	// We're going to trigger sends manually, so effectively disable the automatic send interval.
 	const hundredYears = 100 * 365 * 24 * time.Hour
 	cfg.NotifyInterval = hundredYears
-
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
@@ -1806,11 +1804,17 @@ func TestNotificationDelay(t *testing.T) {
 	cli, err := NewClient(kv, codec)
 	require.NoError(t, err)
 
+	casInterval := 1 * time.Second
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Arrange to do our own ticking.
 	tick := make(chan time.Time)
 	go kv.sendKeyNotifications(ctx, tick)
+
+	// Mirror any WatchKey updates to our own map and verify that they
+	// eventually arrive.
 
 	dbMu := sync.Mutex{}
 	db := make(map[string]*data)
@@ -1861,7 +1865,7 @@ func TestNotificationDelay(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return verifyVal("foo_123", "val1")
-	}, 1*time.Second, 5*time.Millisecond)
+	}, 3*casInterval, 25*time.Millisecond)
 
 	assert.Equal(t, 1, callsForKey("foo_123"))
 	assert.Equal(t, 0, callsForKey("foo_124"))
@@ -1881,7 +1885,7 @@ func TestNotificationDelay(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return verifyVal("foo_123", "val4")
-	}, 1*time.Second, 5*time.Millisecond, "multiple updates should be coalesced into the last one")
+	}, 3*casInterval, 25*time.Millisecond, "multiple updates should be coalesced into the last one")
 
 	assert.Equal(t, 2, callsForKey("foo_123"))
 	assert.Equal(t, 0, callsForKey("foo_124"))
@@ -1895,7 +1899,7 @@ func TestNotificationDelay(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return verifyVal("foo_123", "val100") && verifyVal("foo_124", "val101")
-	}, 1*time.Second, 5*time.Millisecond)
+	}, 3*casInterval, 25*time.Millisecond)
 
 	assert.Equal(t, 3, callsForKey("foo_123"))
 	assert.Equal(t, 1, callsForKey("foo_124"))

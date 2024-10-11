@@ -1785,21 +1785,11 @@ func marshalState(t *testing.T, kvps ...*KeyValuePair) []byte {
 }
 
 func TestNotificationDelay(t *testing.T) {
-	codec := dataCodec{}
 	cfg := KVConfig{}
-	cfg.Codecs = append(cfg.Codecs, codec)
-	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: getLocalhostAddrs(),
-	}
 	// We're going to trigger sends manually, so effectively disable the automatic send interval.
 	const hundredYears = 100 * 365 * 24 * time.Hour
 	cfg.NotifyInterval = hundredYears
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
-
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), kv))
-	})
 
 	watchChan := make(chan string, 16)
 
@@ -1816,7 +1806,7 @@ func TestNotificationDelay(t *testing.T) {
 		kv.watchersMu.Unlock()
 	}()
 
-	verifyNotifs := func(expected map[string]int, comment string) {
+	verifyNotifs := func(expected map[string]int, comment string) bool {
 		observed := make(map[string]int, len(expected))
 		for kk := range expected {
 			observed[kk] = 0
@@ -1830,7 +1820,7 @@ func TestNotificationDelay(t *testing.T) {
 				break loop
 			}
 		}
-		require.Equal(t, expected, observed, comment)
+		return assert.Equal(t, expected, observed, comment)
 	}
 
 	drainChan := func() {
@@ -1883,9 +1873,29 @@ func TestNotificationDelay(t *testing.T) {
 	kv.sendKeyNotifications()
 	verifyNotifs(map[string]int{"foo_123": 0, "foo_124": 0}, "no new notifications")
 
-	// and finally, sendKeyNotifications can be called repeatedly without new updates.
+	// sendKeyNotifications can be called repeatedly without new updates.
 	kv.sendKeyNotifications()
 	kv.sendKeyNotifications()
 	kv.sendKeyNotifications()
 	kv.sendKeyNotifications()
+
+	// Finally, exercise the monitor method.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tick := make(chan time.Time)
+	go kv.monitorKeyNotifications(ctx, tick)
+	kv.notifyWatchers("foo_123")
+	tick <- time.Now()
+
+	require.Eventually(t, func() bool {
+		select {
+		case k := <-watchChan:
+			if k != "foo_123" {
+				panic(fmt.Sprintf("unexpected key: %s", k))
+			}
+			return true
+		default: // nothing yet.
+			return false
+		}
+	}, 20*time.Second, 100*time.Millisecond)
 }

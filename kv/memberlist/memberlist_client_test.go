@@ -1801,116 +1801,91 @@ func TestNotificationDelay(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), kv))
 	})
 
-	cli, err := NewClient(kv, codec)
-	require.NoError(t, err)
+	watchChan := make(chan string, 16)
 
-	casInterval := 1 * time.Second
+	// Add ourselves as a watcher.
+	kv.watchersMu.Lock()
+	kv.watchers["foo_123"] = append(kv.watchers["foo_123"], watchChan)
+	kv.watchers["foo_124"] = append(kv.watchers["foo_124"], watchChan)
+	kv.watchersMu.Unlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		kv.watchersMu.Lock()
+		removeWatcherChannel("foo_123", watchChan, kv.watchers)
+		removeWatcherChannel("foo_124", watchChan, kv.watchers)
+		kv.watchersMu.Unlock()
+	}()
 
-	// Arrange to do our own ticking.
-	tick := make(chan time.Time)
-	go kv.sendKeyNotifications(ctx, tick)
-
-	// Mirror any WatchKey updates to our own map and verify that they
-	// eventually arrive.
-
-	dbMu := sync.Mutex{}
-	db := make(map[string]*data)
-	keyCalls := make(map[string]int)
-
-	setData := func(key string, d *data) {
-		dbMu.Lock()
-		defer dbMu.Unlock()
-		db[key] = d
-		keyCalls[key]++
-	}
-	getData := func(key string) *data {
-		dbMu.Lock()
-		defer dbMu.Unlock()
-		return db[key]
-	}
-	callsForKey := func(key string) int {
-		dbMu.Lock()
-		defer dbMu.Unlock()
-		return keyCalls[key]
-	}
-	verifyVal := func(k, v string) bool {
-		d := getData(k)
-		if d == nil {
-			return false
+	verifyNotifs := func(expected map[string]int, comment string) {
+		observed := make(map[string]int, len(expected))
+		for kk := range expected {
+			observed[kk] = 0
 		}
-		_, ok := d.Members[v]
-		return ok
+	loop:
+		for {
+			select {
+			case k := <-watchChan:
+				observed[k]++
+			default:
+				break loop
+			}
+		}
+		require.Equal(t, expected, observed, comment)
 	}
 
-	watchData := func(key string) {
-		go cli.WatchKey(ctx, key, func(in any) bool {
-			setData(key, in.(*data))
-			return true
-		})
+	drainChan := func() {
+		for {
+			select {
+			case <-watchChan:
+			default:
+				return
+			}
+		}
 	}
 
-	watchData("foo_123")
-	watchData("foo_124")
-
-	assert.Equal(t, 0, callsForKey("foo_123"))
-	assert.Equal(t, 0, callsForKey("foo_124"))
-
-	err = cas(cli, "foo_123", updateFn("val1"))
-	require.NoError(t, err)
-
-	tick <- time.Now()
-
-	require.Eventually(t, func() bool {
-		return verifyVal("foo_123", "val1")
-	}, 3*casInterval, 25*time.Millisecond)
-
-	assert.Equal(t, 1, callsForKey("foo_123"))
-	assert.Equal(t, 0, callsForKey("foo_124"))
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1}, "1 change 1 notification")
 
 	// Test coalescing of updates.
-	err = cas(cli, "foo_123", updateFn("val2"))
-	require.NoError(t, err)
-	err = cas(cli, "foo_123", updateFn("val3"))
-	require.NoError(t, err)
-	err = cas(cli, "foo_123", updateFn("val4"))
-	require.NoError(t, err)
+	drainChan()
+	verifyNotifs(map[string]int{"foo_123": 0}, "chan drained")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1}, "flush should coalesce updates")
 
-	assert.Equal(t, 1, callsForKey("foo_123"), "no flush -> no callback")
-	assert.Equal(t, 0, callsForKey("foo_124"), "no flush -> no callback")
+	// multiple buffered updates
+	drainChan()
+	verifyNotifs(map[string]int{"foo_123": 0}, "chan drained")
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 2}, "two buffered updates")
 
-	tick <- time.Now()
+	// multiple keys
+	drainChan()
+	kv.notifyWatchers("foo_123")
+	kv.notifyWatchers("foo_124")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1, "foo_124": 1}, "2 changes 2 notifications")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 0, "foo_124": 0}, "no new notifications")
 
-	require.Eventually(t, func() bool {
-		return verifyVal("foo_123", "val4")
-	}, 3*casInterval, 25*time.Millisecond, "multiple updates should be coalesced into the last one")
-
-	assert.Equal(t, 2, callsForKey("foo_123"))
-	assert.Equal(t, 0, callsForKey("foo_124"))
-
-	err = cas(cli, "foo_123", updateFn("val100"))
-	require.NoError(t, err)
-	err = cas(cli, "foo_124", updateFn("val101"))
-	require.NoError(t, err)
-
-	tick <- time.Now()
-
-	require.Eventually(t, func() bool {
-		return verifyVal("foo_123", "val100") && verifyVal("foo_124", "val101")
-	}, 3*casInterval, 25*time.Millisecond)
-
-	assert.Equal(t, 3, callsForKey("foo_123"))
-	assert.Equal(t, 1, callsForKey("foo_124"))
-
-	require.NotPanics(t, func() {
-		tick <- time.Now()
-		tick <- time.Now()
-		tick <- time.Now()
-	}, "shouldn't panic or anything like that when ticked without updates")
-
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 3, callsForKey("foo_123"))
-	assert.Equal(t, 1, callsForKey("foo_124"))
+	// and finally, sendKeyNotifications can be called repeatedly without new updates.
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
 }

@@ -497,7 +497,7 @@ func (m *KV) running(ctx context.Context) error {
 		// Start delayed key notifications.
 		notifTicker := time.NewTicker(m.cfg.NotifyInterval)
 		defer notifTicker.Stop()
-		go m.sendKeyNotifications(ctx, notifTicker.C)
+		go m.monitorKeyNotifications(ctx, notifTicker.C)
 	}
 
 	var tickerChan <-chan time.Time
@@ -932,14 +932,26 @@ func (m *KV) notifyWatchers(key string) {
 	m.keyNotifications[key] = struct{}{}
 }
 
-// sendKeyNotifications sends accumulated notifications to all watchers of
+// monitorKeyNotifications sends accumulated notifications to all watchers of
 // respective keys when the given channel ticks.
-func (m *KV) sendKeyNotifications(ctx context.Context, tickChan <-chan time.Time) {
+func (m *KV) monitorKeyNotifications(ctx context.Context, tickChan <-chan time.Time) {
 	if m.cfg.NotifyInterval <= 0 {
 		panic("sendNotifications called with NotifyInterval <= 0")
 	}
 
+	for {
+		select {
+		case <-tickChan:
+			m.sendKeyNotifications()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (m *KV) sendKeyNotifications() {
 	newNotifs := func() map[string]struct{} {
+		// Grab and clear accumulated notifications.
 		m.notifMu.Lock()
 		defer m.notifMu.Unlock()
 
@@ -952,15 +964,8 @@ func (m *KV) sendKeyNotifications(ctx context.Context, tickChan <-chan time.Time
 		return notifs
 	}
 
-	for {
-		select {
-		case <-tickChan:
-			for key := range newNotifs() {
-				m.notifyWatchersSync(key)
-			}
-		case <-ctx.Done():
-			return
-		}
+	for key := range newNotifs() {
+		m.notifyWatchersSync(key)
 	}
 }
 

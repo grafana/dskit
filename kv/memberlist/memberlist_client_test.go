@@ -1806,7 +1806,7 @@ func TestNotificationDelay(t *testing.T) {
 		kv.watchersMu.Unlock()
 	}()
 
-	verifyNotifs := func(expected map[string]int, comment string) bool {
+	verifyNotifs := func(expected map[string]int, comment string) {
 		observed := make(map[string]int, len(expected))
 		for kk := range expected {
 			observed[kk] = 0
@@ -1820,7 +1820,7 @@ func TestNotificationDelay(t *testing.T) {
 				break loop
 			}
 		}
-		return assert.Equal(t, expected, observed, comment)
+		require.Equal(t, expected, observed, comment)
 	}
 
 	drainChan := func() {

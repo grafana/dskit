@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -45,9 +46,6 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 	}
 	resolver := fakeResolver{}
 
-	_, thisFile, thisLineNumber, ok := runtime.Caller(0)
-	require.True(t, ok)
-
 	span, ctx := New(context.Background(), logger, "test", resolver)
 	_ = span.Log("msg", "original spanlogger")
 
@@ -58,9 +56,9 @@ func TestSpanLogger_CustomLogger(t *testing.T) {
 	_ = span.Log("msg", "fallback spanlogger")
 
 	expect := [][]interface{}{
-		{"method", "test", "caller", toCallerInfo(thisFile, thisLineNumber+4), "msg", "original spanlogger"},
-		{"caller", toCallerInfo(thisFile, thisLineNumber+7), "msg", "restored spanlogger"},
-		{"caller", toCallerInfo(thisFile, thisLineNumber+10), "msg", "fallback spanlogger"},
+		{"method", "test", "msg", "original spanlogger"},
+		{"msg", "restored spanlogger"},
+		{"msg", "fallback spanlogger"},
 	}
 	require.Equal(t, expect, logged)
 }
@@ -88,9 +86,6 @@ func TestSpanLogger_SetSpanAndLogTag(t *testing.T) {
 		return nil
 	}
 
-	_, thisFile, thisLineNumber, ok := runtime.Caller(0)
-	require.True(t, ok)
-
 	spanLogger, _ := New(context.Background(), logger, "the_method", fakeResolver{})
 	require.NoError(t, spanLogger.Log("msg", "this is the first message"))
 
@@ -110,18 +105,15 @@ func TestSpanLogger_SetSpanAndLogTag(t *testing.T) {
 	expectedLogMessages := [][]interface{}{
 		{
 			"method", "the_method",
-			"caller", toCallerInfo(thisFile, thisLineNumber+4),
 			"msg", "this is the first message",
 		},
 		{
 			"method", "the_method",
-			"caller", toCallerInfo(thisFile, thisLineNumber+7),
 			"id", "123",
 			"msg", "this is the second message",
 		},
 		{
 			"method", "the_method",
-			"caller", toCallerInfo(thisFile, thisLineNumber+10),
 			"id", "123",
 			"more context", "abc",
 			"msg", "this is the third message",
@@ -206,7 +198,7 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			buf := bytes.NewBuffer(nil)
 			logger := dskit_log.NewGoKitWithWriter("logfmt", buf)
-			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", Caller(5))
 
 			if debugEnabled {
 				logger = level.NewFilter(logger, level.AllowAll())
@@ -222,7 +214,7 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 			resolver := fakeResolver{}
 			sl, _ := New(context.Background(), logger, "test", resolver, "bar")
 
-			b.Run("log", func(b *testing.B) {
+			b.Run("Log", func(b *testing.B) {
 				buf.Reset()
 				b.ResetTimer()
 
@@ -231,7 +223,7 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 				}
 			})
 
-			b.Run("level.debug", func(b *testing.B) {
+			b.Run("level.Debug", func(b *testing.B) {
 				buf.Reset()
 				b.ResetTimer()
 
@@ -240,7 +232,7 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 				}
 			})
 
-			b.Run("debuglog", func(b *testing.B) {
+			b.Run("DebugLog", func(b *testing.B) {
 				buf.Reset()
 				b.ResetTimer()
 
@@ -250,7 +242,31 @@ func BenchmarkSpanLoggerWithRealLogger(b *testing.B) {
 			})
 		})
 	}
+}
 
+func BenchmarkSpanLoggerAwareCaller(b *testing.B) {
+	runBenchmark := func(b *testing.B, caller log.Valuer) {
+		buf := bytes.NewBuffer(nil)
+		logger := dskit_log.NewGoKitWithWriter("logfmt", buf)
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", caller)
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_ = logger.Log("msg", "foo", "more", "data")
+		}
+
+	}
+
+	const defaultStackDepth = 5
+
+	b.Run("with go-kit's Caller", func(b *testing.B) {
+		runBenchmark(b, log.Caller(defaultStackDepth))
+	})
+
+	b.Run("with dskit's spanlogger.Caller", func(b *testing.B) {
+		runBenchmark(b, Caller(defaultStackDepth))
+	})
 }
 
 // Logger which does nothing and implements the DebugEnabled interface used by SpanLogger.
@@ -267,12 +283,12 @@ type loggerWithDebugEnabled struct {
 
 func (l loggerWithDebugEnabled) DebugEnabled() bool { return l.debugEnabled }
 
-func TestSpanLogger_CallerInfo(t *testing.T) {
+func TestSpanLoggerAwareCaller(t *testing.T) {
 	testCases := map[string]func(w io.Writer) log.Logger{
 		// This is based on Mimir's default logging configuration: https://github.com/grafana/mimir/blob/50d1c27b4ad82b265ff5a865345bec2d726f64ef/pkg/util/log/log.go#L45-L46
 		"default logger": func(w io.Writer) log.Logger {
 			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
-			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", Caller(5))
 			logger = level.NewFilter(logger, level.AllowAll())
 			return logger
 		},
@@ -280,9 +296,17 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 		// This is based on Mimir's logging configuration with rate-limiting enabled: https://github.com/grafana/mimir/blob/50d1c27b4ad82b265ff5a865345bec2d726f64ef/pkg/util/log/log.go#L42-L43
 		"rate-limited logger": func(w io.Writer) log.Logger {
 			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
-			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(6))
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", Caller(6))
 			logger = dskit_log.NewRateLimitedLogger(logger, 1000, 1000, nil)
 			logger = level.NewFilter(logger, level.AllowAll())
+			return logger
+		},
+
+		"default logger that has been wrapped with further information": func(w io.Writer) log.Logger {
+			logger := dskit_log.NewGoKitWithWriter("logfmt", w)
+			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", Caller(5))
+			logger = level.NewFilter(logger, level.AllowAll())
+			logger = log.With(logger, "user", "user-1")
 			return logger
 		},
 	}
@@ -307,12 +331,15 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 		return buf, spanLogger, span.(*jaeger.Span)
 	}
 
-	requireSpanHasTwoLogLinesWithoutCaller := func(t *testing.T, span *jaeger.Span) {
+	requireSpanHasTwoLogLinesWithoutCaller := func(t *testing.T, span *jaeger.Span, extraFields ...otlog.Field) {
 		logs := span.Logs()
 		require.Len(t, logs, 2)
 
-		require.Equal(t, []otlog.Field{otlog.String("msg", "this is a test")}, logs[0].Fields)
-		require.Equal(t, []otlog.Field{otlog.String("msg", "this is another test")}, logs[1].Fields)
+		expectedFields := append(slices.Clone(extraFields), otlog.String("msg", "this is a test"))
+		require.Equal(t, expectedFields, logs[0].Fields)
+
+		expectedFields = append(slices.Clone(extraFields), otlog.String("msg", "this is another test"))
+		require.Equal(t, expectedFields, logs[1].Fields)
 	}
 
 	for name, loggerFactory := range testCases {
@@ -326,6 +353,7 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 
 				logged := logs.String()
 				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeFirstLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				logs.Reset()
 				_, _, lineNumberTwoLinesBeforeSecondLogCall, ok := runtime.Caller(0)
@@ -334,6 +362,7 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 
 				logged = logs.String()
 				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeSecondLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				requireSpanHasTwoLogLinesWithoutCaller(t, span)
 			})
@@ -346,6 +375,7 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 
 				logged := logs.String()
 				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				logs.Reset()
 				_, _, lineNumberTwoLinesBeforeSecondLogCall, ok := runtime.Caller(0)
@@ -354,8 +384,32 @@ func TestSpanLogger_CallerInfo(t *testing.T) {
 
 				logged = logs.String()
 				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeSecondLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
 
 				requireSpanHasTwoLogLinesWithoutCaller(t, span)
+			})
+
+			t.Run("logging with SpanLogger wrapped in a level", func(t *testing.T) {
+				logs, spanLogger, span := setupTest(t, loggerFactory)
+
+				_, thisFile, lineNumberTwoLinesBeforeFirstLogCall, ok := runtime.Caller(0)
+				require.True(t, ok)
+				_ = level.Info(spanLogger).Log("msg", "this is a test")
+
+				logged := logs.String()
+				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeFirstLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
+
+				logs.Reset()
+				_, _, lineNumberTwoLinesBeforeSecondLogCall, ok := runtime.Caller(0)
+				require.True(t, ok)
+				_ = level.Info(spanLogger).Log("msg", "this is another test")
+
+				logged = logs.String()
+				require.Contains(t, logged, "caller="+toCallerInfo(thisFile, lineNumberTwoLinesBeforeSecondLogCall+2))
+				require.Equalf(t, 1, strings.Count(logged, "caller="), "expected to only have one caller field, but got: %v", logged)
+
+				requireSpanHasTwoLogLinesWithoutCaller(t, span, otlog.String("level", "info"))
 			})
 		})
 	}

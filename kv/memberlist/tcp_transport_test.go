@@ -44,7 +44,7 @@ func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T
 
 			cfg := TCPTransportConfig{}
 			flagext.DefaultValues(&cfg)
-			cfg.BindAddrs = []string{"127.0.0.1"}
+			cfg.BindAddrs = getLocalhostAddrs()
 			cfg.BindPort = 0
 			if testData.setup != nil {
 				testData.setup(t, &cfg)
@@ -88,6 +88,7 @@ func TestTCPTransportWriteToUnreachableAddr(t *testing.T) {
 
 	cfg := TCPTransportConfig{}
 	flagext.DefaultValues(&cfg)
+	cfg.BindAddrs = getLocalhostAddrs()
 	cfg.MaxConcurrentWrites = writeCt
 	cfg.PacketDialTimeout = 500 * time.Millisecond
 	transport, err := NewTCPTransport(cfg, logger, nil)
@@ -128,6 +129,7 @@ func TestTCPTransportWriterAcquireTimeout(t *testing.T) {
 
 	cfg := TCPTransportConfig{}
 	flagext.DefaultValues(&cfg)
+	cfg.BindAddrs = getLocalhostAddrs()
 	cfg.MaxConcurrentWrites = 1
 	cfg.AcquireWriterTimeout = 1 * time.Millisecond // very short timeout
 	transport, err := NewTCPTransport(cfg, logger, nil)

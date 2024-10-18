@@ -1,5 +1,8 @@
 ## Changelog
 
+* [CHANGE] Roll back the gRPC dependency to v1.65.0 to allow downstream projects to avoid a performance regression and maybe a bug in v1.66.0. #581
+* [CHANGE] Update the gRPC dependency to v1.66.0 and deprecate the `grpc_server_recv_buffer_pools_enabled` option that is no longer supported by it. #580
+* [CHANGE] `ring.DoBatchWithOptions` (and `ring.DoBatch`) reports the cancelation cause when the context is canceled instead of `context.Canceled`.
 * [CHANGE] Multierror: Implement `Unwrap() []error`. This allows to use `multierror.MultiError` with both `errors.Is()` and `errors.As()`. Previously implemented `Is(error) bool` has been removed. #522
 * [CHANGE] Add a new `grpc_server_recv_buffer_pools_enabled` option that enables recv buffer pools in the gRPC server (assuming `grpc_server_stats_tracking_enabled` is disabled). #510
 * [CHANGE] Add a new `grpc_server_stats_tracking_enabled` option that allows us to disable stats tracking and potentially improve server memory reuse. #507
@@ -77,7 +80,11 @@
 * [CHANGE] Changed `ShouldLog()` function signature in `middleware.OptionalLogging` interface to `ShouldLog(context.Context) (bool, string)`: the returned `string` contains an optional reason. When reason is valued, `GRPCServerLog` adds `(<reason>)` suffix to the error. #514
 * [CHANGE] Cache: Remove superfluous `cache.RemoteCacheClient` interface and unify all caches using the `cache.Cache` interface. #520
 * [CHANGE] Updated the minimum required Go version to 1.21. #540
+* [CHANGE] Backoff: added `Backoff.ErrCause()` which is like `Backoff.Err()` but returns the context cause if backoff is terminated because the context has been canceled. #538
 * [CHANGE] memberlist: Metric `memberlist_client_messages_in_broadcast_queue` is now split into `queue="local"` and `queue="gossip"` values. #539
+* [CHANGE] memberlist: Failure to fast-join a cluster via contacting a node is now logged at `info` instead of `debug`. #585
+* [CHANGE] `Service.AddListener` and `Manager.AddListener` now return function for stopping the listener. #564
+* [CHANGE] ring: Add `InstanceRingReader` interface to `ring` package. #597
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
@@ -218,7 +225,17 @@
 * [ENHANCEMENT] memberlist: use separate queue for broadcast messages that are result of local updates, and prioritize locally-generated messages when sending broadcasts. On stopping, only wait for queue with locally-generated messages to be empty. #539
 * [ENHANCEMENT] memberlist: Added `-<prefix>memberlist.broadcast-timeout-for-local-updates-on-shutdown` option to set timeout for sending locally-generated updates on shutdown, instead of previously hardcoded 10s (which is still the default). #539
 * [ENHANCEMENT] tracing: add ExtractTraceSpanID function.
-* [CHANGE] Backoff: added `Backoff.ErrCause()` which is like `Backoff.Err()` but returns the context cause if backoff is terminated because the context has been canceled. #538
+* [EHNANCEMENT] crypto/tls: Support reloading client certificates #537 #552
+* [ENHANCEMENT] Add read only support for ingesters in the ring and lifecycler. #553 #554 #556 #573 #578 #587
+* [ENHANCEMENT] Added new ring methods to expose number of writable instances with tokens per zone, and overall. #560 #562
+* [ENHANCEMENT] `services.FailureWatcher` can now be closed, which unregisters all service and manager listeners, and closes channel used to receive errors. #564
+* [ENHANCEMENT] Runtimeconfig: support gzip-compressed files with `.gz` extension. #571
+* [ENHANCEMENT] grpcclient: Support custom gRPC compressors. #583
+* [ENHANCEMENT] Adapt `metrics.SendSumOfGaugesPerTenant` to use `metrics.MetricOption`. #584
+* [ENHANCEMENT] Cache: Add `.Add()` and `.Set()` methods to cache clients. #591
+* [ENHANCEMENT] Cache: Add `.Advance()` methods to mock cache clients for easier testing of TTLs. #601
+* [ENHANCEMENT] Memberlist: Add concurrency to the transport's WriteTo method. #525
+* [ENHANCEMENT] Memberlist: Notifications can now be processed once per interval specified by `-memberlist.notify-interval` to reduce notify storms in large clusters. #592
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109
@@ -250,5 +267,8 @@
 * [BUGFIX] ring: don't mark trace spans as failed if `DoUntilQuorum` terminates due to cancellation. #449
 * [BUGFIX] middleware: fix issue where applications that used the httpgrpc tracing middleware would generate duplicate spans for incoming HTTP requests. #451
 * [BUGFIX] httpgrpc: store headers in canonical form when converting from gRPC to HTTP. #518
-* [BUGFIX] Memcached: Don't truncate sub-second TTLs to 0 which results in them being cached forever. #530 
+* [BUGFIX] Memcached: Don't truncate sub-second TTLs to 0 which results in them being cached forever. #530
 * [BUGFIX] Cache: initialise the `operation_failures_total{reason="connect-timeout"}` metric to 0 for each cache operation type on startup. #545
+* [BUGFIX] spanlogger: include correct caller information in log messages logged through a `SpanLogger`. #547
+* [BUGFIX] Ring: shuffle shard without lookback no longer returns entire ring when shard size >= number of instances. Instead proper subring is computed, with correct number of instances in each zone. Returning entire ring was a bug, and such ring can contain instances that were not supposed to be used, if zones are not balanced. #554 #556
+* [BUGFIX] Memberlist: clone value returned by function used in CAS operation before storing the value into KV store. #586

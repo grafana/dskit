@@ -3,13 +3,13 @@ package memberlist
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/gob"
 	"errors"
 	"fmt"
 	"math"
 	"math/rand"
 	"net"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -255,7 +255,6 @@ func getLocalhostAddrs() []string {
 func TestBasicGetAndCas(t *testing.T) {
 	c := dataCodec{}
 
-	name := "Ing 1"
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{
@@ -278,6 +277,7 @@ func TestBasicGetAndCas(t *testing.T) {
 	}
 
 	// Create member in PENDING state, with some tokens
+	name := "Ing 1"
 	err = cas(kv, key, updateFn(name))
 	require.NoError(t, err)
 
@@ -590,12 +590,16 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 	// 1) ""
 	// 2) "label1"
 	// 3) "label2"
+	// 4) "label3"
+	// 5) "label4"
 	//
 	// We expect that it won't be possible to build a memberlist cluster with mixed labels.
 	var membersLabel = []string{
 		"",
 		"label1",
 		"label2",
+		"label3",
+		"label4",
 	}
 
 	configGen := func(i int) KVConfig {
@@ -609,7 +613,7 @@ func TestMultipleClientsWithMixedLabelsAndExpectFailure(t *testing.T) {
 
 	err := testMultipleClientsWithConfigGenerator(t, len(membersLabel), configGen)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), fmt.Sprintf("expected to see at least %d updates, got", len(membersLabel)))
+	require.Contains(t, err.Error(), "expected to see at least 2 members, got 1")
 }
 
 func TestMultipleClientsWithMixedLabelsAndClusterLabelVerificationDisabled(t *testing.T) {
@@ -658,6 +662,8 @@ func TestMultipleClientsWithSameLabelWithClusterLabelVerification(t *testing.T) 
 }
 
 func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen func(memberId int) KVConfig) error {
+	t.Helper()
+
 	c := dataCodec{}
 	const key = "ring"
 	var clients []*Client
@@ -719,11 +725,10 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 	startTime := time.Now()
 	firstKv := clients[0]
 	ctx, cancel := context.WithTimeout(context.Background(), casInterval*3) // Watch for 3x cas intervals.
-	updates := 0
+	joinedMembers := 0
 	firstKv.WatchKey(ctx, key, func(in interface{}) bool {
-		updates++
-
 		r := in.(*data)
+		joinedMembers = len(r.Members)
 
 		minTimestamp, maxTimestamp, avgTimestamp := getTimestamps(r.Members)
 
@@ -736,12 +741,9 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 	})
 	cancel() // make linter happy
 
-	t.Logf("Ring updates observed: %d", updates)
-
-	if updates < members {
-		// in general, at least one update from each node. (although that's not necessarily true...
-		// but typically we get more updates than that anyway)
-		return fmt.Errorf("expected to see at least %d updates, got %d", members, updates)
+	if joinedMembers <= 1 {
+		// expect at least 2 members. Otherwise, this means that the ring has failed to sync.
+		return fmt.Errorf("expected to see at least 2 members, got %d", joinedMembers)
 	}
 
 	if err := getClientErr(); err != nil {
@@ -751,47 +753,69 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 	// Let's check all the clients to see if they have relatively up-to-date information
 	// All of them should at least have all the clients
 	// And same tokens.
-	allTokens := []uint32(nil)
+	check := func() error {
+		allTokens := []uint32(nil)
 
-	for i := 0; i < members; i++ {
-		kv := clients[i]
+		for i := 0; i < members; i++ {
+			kv := clients[i]
 
-		r := getData(t, kv, key)
-		t.Logf("KV %d: number of known members: %d\n", i, len(r.Members))
-		if len(r.Members) != members {
-			return fmt.Errorf("Member %d has only %d members in the ring", i, len(r.Members))
-		}
-
-		minTimestamp, maxTimestamp, avgTimestamp := getTimestamps(r.Members)
-		for n, ing := range r.Members {
-			if ing.State != ACTIVE {
-				return fmt.Errorf("Member %d: invalid state of member %s in the ring: %v ", i, n, ing.State)
-			}
-		}
-		now := time.Now()
-		t.Logf("Member %d: oldest: %v, avg: %v, youngest: %v", i,
-			now.Sub(time.Unix(minTimestamp, 0)).String(),
-			now.Sub(time.Unix(avgTimestamp, 0)).String(),
-			now.Sub(time.Unix(maxTimestamp, 0)).String())
-
-		tokens := r.getAllTokens()
-		if allTokens == nil {
-			allTokens = tokens
-			t.Logf("Found tokens: %d", len(allTokens))
-		} else {
-			if len(allTokens) != len(tokens) {
-				return fmt.Errorf("Member %d: Expected %d tokens, got %d", i, len(allTokens), len(tokens))
+			r := getData(t, kv, key)
+			t.Logf("KV %d: number of known members: %d\n", i, len(r.Members))
+			if len(r.Members) != members {
+				return fmt.Errorf("Member %d has only %d members in the ring", i, len(r.Members))
 			}
 
-			for ix, tok := range allTokens {
-				if tok != tokens[ix] {
-					return fmt.Errorf("Member %d: Tokens at position %d differ: %v, %v", i, ix, tok, tokens[ix])
+			minTimestamp, maxTimestamp, avgTimestamp := getTimestamps(r.Members)
+			for n, ing := range r.Members {
+				if ing.State != ACTIVE {
+					stateStr := "UNKNOWN"
+					switch ing.State {
+					case JOINING:
+						stateStr = "JOINING"
+					case LEFT:
+						stateStr = "LEFT"
+					}
+					return fmt.Errorf("Member %d: invalid state of member %s in the ring: %s (%v) ", i, n, stateStr, ing.State)
+				}
+			}
+			now := time.Now()
+			t.Logf("Member %d: oldest: %v, avg: %v, youngest: %v", i,
+				now.Sub(time.Unix(minTimestamp, 0)).String(),
+				now.Sub(time.Unix(avgTimestamp, 0)).String(),
+				now.Sub(time.Unix(maxTimestamp, 0)).String())
+
+			tokens := r.getAllTokens()
+			if allTokens == nil {
+				allTokens = tokens
+				t.Logf("Found tokens: %d", len(allTokens))
+			} else {
+				if len(allTokens) != len(tokens) {
+					return fmt.Errorf("Member %d: Expected %d tokens, got %d", i, len(allTokens), len(tokens))
+				}
+
+				for ix, tok := range allTokens {
+					if tok != tokens[ix] {
+						return fmt.Errorf("Member %d: Tokens at position %d differ: %v, %v", i, ix, tok, tokens[ix])
+					}
 				}
 			}
 		}
+
+		return getClientErr()
 	}
 
-	return getClientErr()
+	// Try this for ~10 seconds. memberlist is eventually consistent, so we may need to wait a bit, especially with `-race`.
+	for timeout := time.After(10 * time.Second); ; {
+		select {
+		case <-timeout:
+			return check() // return last error
+		default:
+			if err := check(); err == nil {
+				return nil // it passed
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }
 
 func TestJoinMembersWithRetryBackoff(t *testing.T) {
@@ -1235,24 +1259,24 @@ func TestRejoin(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
-	membersFunc := func() interface{} {
-		return mkv2.memberlist.NumMembers()
+	expectMembers := func(expected int) func() bool {
+		return func() bool { return mkv2.memberlist.NumMembers() == expected }
 	}
 
-	poll(t, 5*time.Second, 2, membersFunc)
+	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 members in the cluster")
 
 	// Shutdown first KV
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1))
 
 	// Second KV should see single member now.
-	poll(t, 5*time.Second, 1, membersFunc)
+	require.Eventually(t, expectMembers(1), 10*time.Second, 100*time.Millisecond, "expected 1 member in the cluster")
 
 	// Let's start first KV again. It is not configured to join the cluster, but KV2 is rejoining.
 	mkv1 = NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
-	poll(t, 5*time.Second, 2, membersFunc)
+	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 member in the cluster")
 }
 
 func TestMessageBuffer(t *testing.T) {
@@ -1567,12 +1591,18 @@ func decodeDataFromMarshalledKeyValuePair(t *testing.T, marshalledKVP []byte, ke
 	return d
 }
 
-func marshalKeyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) []byte {
+func keyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) *KeyValuePair {
 	data, err := codec.Encode(value)
 	require.NoError(t, err)
 
-	kvp := KeyValuePair{Key: key, Codec: codec.CodecID(), Value: data}
-	data, err = kvp.Marshal()
+	return &KeyValuePair{Key: key, Codec: codec.CodecID(), Value: data}
+
+}
+
+func marshalKeyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) []byte {
+	kvp := keyValuePair(t, key, codec, value)
+
+	data, err := kvp.Marshal()
 	require.NoError(t, err)
 	return data
 }
@@ -1585,26 +1615,6 @@ func getOrCreateData(in interface{}) *data {
 		return &data{Members: map[string]member{}}
 	}
 	return r
-}
-
-// poll repeatedly evaluates condition until we either timeout, or it succeeds.
-func poll(t testing.TB, d time.Duration, want interface{}, have func() interface{}) {
-	t.Helper()
-
-	deadline := time.Now().Add(d)
-	for {
-		if time.Now().After(deadline) {
-			break
-		}
-		if reflect.DeepEqual(want, have()) {
-			return
-		}
-		time.Sleep(d / 100)
-	}
-	h := have()
-	if !reflect.DeepEqual(want, h) {
-		t.Fatalf("expected %v, got %v", want, h)
-	}
 }
 
 type testLogger struct {
@@ -1709,4 +1719,203 @@ func getKey(t *testing.T, msg []byte) string {
 	err := kvPair.Unmarshal(msg)
 	require.NoError(t, err)
 	return kvPair.Key
+}
+
+func TestRaceBetweenStoringNewValueForKeyAndUpdatingIt(t *testing.T) {
+	codec := dataCodec{}
+
+	cfg := KVConfig{}
+	cfg.Codecs = append(cfg.Codecs, codec)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+	}
+
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), kv))
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	vals := make(chan int64, 10000)
+
+	go func() {
+		d := &data{Members: map[string]member{}}
+		for i := 0; i < 100; i++ {
+			d.Members[fmt.Sprintf("member_%d", i)] = member{Timestamp: time.Now().Unix(), State: i % 3}
+		}
+
+		err := kv.CAS(context.Background(), key, codec, func(_ interface{}) (out interface{}, retry bool, err error) {
+			return d, true, nil
+		})
+		require.NoError(t, err)
+
+		// keep iterating over d.Members. If other goroutine modifies same ring descriptor, we will see a race error.
+		for ctx.Err() == nil {
+			sum := int64(0)
+			for n, m := range d.Members {
+				sum += int64(len(n))
+				sum += m.Timestamp
+				sum += int64(len(m.Tokens))
+			}
+			vals <- sum
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	// Wait until CAS and iteration finishes before pushing remote state.
+	<-vals
+
+	s := 0
+	for ctx.Err() == nil {
+		s++
+		d := &data{Members: map[string]member{}}
+		for i := 0; i < 100; i++ {
+			d.Members[fmt.Sprintf("member_%d", i)] = member{Timestamp: time.Now().Unix(), State: (i + s) % 3}
+		}
+
+		kv.MergeRemoteState(marshalState(t, keyValuePair(t, key, codec, d)), false)
+		time.Sleep(10 * time.Millisecond)
+
+	drain:
+		select {
+		case <-vals:
+			goto drain
+		default:
+			// stop draining.
+		}
+	}
+}
+
+func marshalState(t *testing.T, kvps ...*KeyValuePair) []byte {
+	buf := bytes.Buffer{}
+
+	for _, kvp := range kvps {
+		d, err := kvp.Marshal()
+		require.NoError(t, err)
+		err = binary.Write(&buf, binary.BigEndian, uint32(len(d)))
+		require.NoError(t, err)
+		buf.Write(d)
+	}
+
+	return buf.Bytes()
+}
+
+func TestNotificationDelay(t *testing.T) {
+	cfg := KVConfig{}
+	// We're going to trigger sends manually, so effectively disable the automatic send interval.
+	const hundredYears = 100 * 365 * 24 * time.Hour
+	cfg.NotifyInterval = hundredYears
+	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+
+	watchChan := make(chan string, 16)
+
+	// Add ourselves as a watcher.
+	kv.watchersMu.Lock()
+	kv.watchers["foo_123"] = append(kv.watchers["foo_123"], watchChan)
+	kv.watchers["foo_124"] = append(kv.watchers["foo_124"], watchChan)
+	kv.watchersMu.Unlock()
+
+	defer func() {
+		kv.watchersMu.Lock()
+		removeWatcherChannel("foo_123", watchChan, kv.watchers)
+		removeWatcherChannel("foo_124", watchChan, kv.watchers)
+		kv.watchersMu.Unlock()
+	}()
+
+	verifyNotifs := func(expected map[string]int, comment string) {
+		observed := make(map[string]int, len(expected))
+		for kk := range expected {
+			observed[kk] = 0
+		}
+	loop:
+		for {
+			select {
+			case k := <-watchChan:
+				observed[k]++
+			default:
+				break loop
+			}
+		}
+		require.Equal(t, expected, observed, comment)
+	}
+
+	drainChan := func() {
+		for {
+			select {
+			case <-watchChan:
+			default:
+				return
+			}
+		}
+	}
+
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1}, "1 change 1 notification")
+
+	// Test coalescing of updates.
+	drainChan()
+	verifyNotifs(map[string]int{"foo_123": 0}, "chan drained")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.notifyWatchers("foo_123")
+	verifyNotifs(map[string]int{"foo_123": 0}, "no flush -> no watcher notification")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1}, "flush should coalesce updates")
+
+	// multiple buffered updates
+	drainChan()
+	verifyNotifs(map[string]int{"foo_123": 0}, "chan drained")
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	kv.notifyWatchers("foo_123")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 2}, "two buffered updates")
+
+	// multiple keys
+	drainChan()
+	kv.notifyWatchers("foo_123")
+	kv.notifyWatchers("foo_124")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 1, "foo_124": 1}, "2 changes 2 notifications")
+	kv.sendKeyNotifications()
+	verifyNotifs(map[string]int{"foo_123": 0, "foo_124": 0}, "no new notifications")
+
+	// sendKeyNotifications can be called repeatedly without new updates.
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
+	kv.sendKeyNotifications()
+
+	// Finally, exercise the monitor method.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tick := make(chan time.Time)
+	go kv.monitorKeyNotifications(ctx, tick)
+	kv.notifyWatchers("foo_123")
+	tick <- time.Now()
+
+	require.Eventually(t, func() bool {
+		select {
+		case k := <-watchChan:
+			if k != "foo_123" {
+				panic(fmt.Sprintf("unexpected key: %s", k))
+			}
+			return true
+		default: // nothing yet.
+			return false
+		}
+	}, 20*time.Second, 100*time.Millisecond)
 }

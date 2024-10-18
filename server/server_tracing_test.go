@@ -233,7 +233,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			t.Cleanup(server.Shutdown)
 
 			target := server.GRPCListenAddr()
-			conn, err := grpc.Dial(
+			conn, err := grpc.NewClient(
 				target.String(),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
 				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)),

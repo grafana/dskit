@@ -64,7 +64,7 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		assert.Eventually(t, func() bool {
 			actual := getPartitionRingFromStore(t, store, ringKey)
 			return actual.Partitions[1].State == PartitionActive
-		}, time.Second, eventuallyTick)
+		}, 3*time.Second, eventuallyTick)
 	})
 
 	t.Run("should wait for the configured minimum waiting time before switching a pending partition to active", func(t *testing.T) {

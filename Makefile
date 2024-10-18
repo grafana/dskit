@@ -82,7 +82,7 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.13.0
 
 .tools/bin/golangci-lint: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.1
+	GOPATH=$(CURDIR)/.tools go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.60.1
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")
@@ -96,14 +96,3 @@ endif
 
 .tools/bin/protoc-gen-go: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/golang/protobuf/protoc-gen-go@v1.3.1
-
-.PHONY: drone
-drone: .drone/drone.yml
-
-.drone/drone.yml: .drone/drone.jsonnet
-	# Drone's jsonnet formatting causes issues where arrays disappear
-	drone jsonnet --source $< --target $@.tmp --stream --format=false
-	drone sign --save grafana/dskit $@.tmp
-	drone lint --trusted $@.tmp
-	# When all passes move to correct destination
-	mv $@.tmp $@

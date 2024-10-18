@@ -83,6 +83,14 @@ func (r *RingMock) InstancesWithTokensInZoneCount(_ string) int {
 	return 0
 }
 
+func (r *RingMock) WritableInstancesWithTokensCount() int {
+	return 0
+}
+
+func (r *RingMock) WritableInstancesWithTokensInZoneCount(_ string) int {
+	return 0
+}
+
 func (r *RingMock) ZonesCount() int {
 	return 0
 }

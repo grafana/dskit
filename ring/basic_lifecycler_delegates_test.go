@@ -172,7 +172,7 @@ func TestTokensPersistencyDelegate_ShouldHandleTheCaseTheInstanceIsAlreadyInTheR
 			// Add the instance to the ring.
 			require.NoError(t, store.CAS(ctx, testRingKey, func(interface{}) (out interface{}, retry bool, err error) {
 				ringDesc := NewDesc()
-				ringDesc.AddIngester(cfg.ID, cfg.Addr, cfg.Zone, testData.initialTokens, testData.initialState, registeredAt)
+				ringDesc.AddIngester(cfg.ID, cfg.Addr, cfg.Zone, testData.initialTokens, testData.initialState, registeredAt, false, time.Now())
 				return ringDesc, true, nil
 			}))
 
@@ -234,6 +234,7 @@ func TestDelegatesChain(t *testing.T) {
 func TestAutoForgetDelegate(t *testing.T) {
 	const forgetPeriod = time.Minute
 	registeredAt := time.Now()
+	readOnlyUpdated := time.Time{}
 
 	tests := map[string]struct {
 		setup             func(ringDesc *Desc)
@@ -241,13 +242,13 @@ func TestAutoForgetDelegate(t *testing.T) {
 	}{
 		"no unhealthy instance in the ring": {
 			setup: func(ringDesc *Desc) {
-				ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt)
+				ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt, false, readOnlyUpdated)
 			},
 			expectedInstances: []string{testInstanceID, "instance-1"},
 		},
 		"unhealthy instance in the ring that has NOTreached the forget period yet": {
 			setup: func(ringDesc *Desc) {
-				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt)
+				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt, false, readOnlyUpdated)
 				i.Timestamp = time.Now().Add(-forgetPeriod).Add(5 * time.Second).Unix()
 				ringDesc.Ingesters["instance-1"] = i
 			},
@@ -255,7 +256,7 @@ func TestAutoForgetDelegate(t *testing.T) {
 		},
 		"unhealthy instance in the ring that has reached the forget period": {
 			setup: func(ringDesc *Desc) {
-				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt)
+				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt, false, readOnlyUpdated)
 				i.Timestamp = time.Now().Add(-forgetPeriod).Add(-5 * time.Second).Unix()
 				ringDesc.Ingesters["instance-1"] = i
 			},
@@ -320,7 +321,7 @@ func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
 		otherIngesterTokens := []uint32{100, 200, 300, 400, 500}
 
 		desc := NewDesc()
-		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now())
+		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now(), false, time.Time{})
 
 		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, false, "test-instance", InstanceDesc{})
 		require.Equal(t, JOINING, state)
@@ -341,10 +342,10 @@ func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
 		otherIngesterTokens := []uint32{100, 200, 300, 400, 500}
 
 		desc := NewDesc()
-		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now())
+		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now(), false, time.Time{})
 
 		prevTokens := []uint32{10, 20, 30}
-		desc.AddIngester("test-instance", "test-addr", "zone", prevTokens, JOINING, time.Now())
+		desc.AddIngester("test-instance", "test-addr", "zone", prevTokens, JOINING, time.Now(), false, time.Time{})
 
 		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, true, "test-instance", desc.GetIngesters()["test-instance"])
 		require.Equal(t, ACTIVE, state)

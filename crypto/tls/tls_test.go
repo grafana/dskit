@@ -109,7 +109,12 @@ func TestGetTLSConfig_ClientCerts(t *testing.T) {
 	tlsConfig, err := c.GetTLSConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, false, tlsConfig.InsecureSkipVerify, "make sure we default to not skip verification")
-	assert.Equal(t, 1, len(tlsConfig.Certificates), "ensure a certificate is returned")
+	require.NotNil(t, tlsConfig.GetClientCertificate, "ensure GetClientCertificate is set")
+	cert, err := tlsConfig.GetClientCertificate(nil)
+	require.Equal(t, []tls.Certificate{*cert}, tlsConfig.Certificates,
+		"Certificates should be set for backwards compatibility with callers using client config for servers")
+	require.NoError(t, err)
+	assert.NotNil(t, cert, "ensure GetClientCertificate returns a certificate")
 
 	// expect error with key and cert swapped passed along
 	c = &ClientConfig{

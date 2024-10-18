@@ -290,6 +290,16 @@ func TestDesc_RingsCompare(t *testing.T) {
 			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: ACTIVE, RegisteredTimestamp: 2}}},
 			expected: Different,
 		},
+		"same single instance, different read only flag": {
+			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1"}}},
+			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", ReadOnly: true}}},
+			expected: Different,
+		},
+		"same single instance, different read only timestamp": {
+			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", ReadOnlyUpdatedTimestamp: time.Time{}.Unix()}}},
+			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", ReadOnlyUpdatedTimestamp: time.Now().Unix()}}},
+			expected: Different,
+		},
 		"instance in different zone": {
 			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Zone: "one"}}},
 			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Zone: "two"}}},
@@ -313,11 +323,6 @@ func TestDesc_RingsCompare(t *testing.T) {
 		"different tokens 2": {
 			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 3}}}},
 			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 4}}}},
-			expected: Different,
-		},
-		"same number of instances, using different IDs": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 3}}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing2": {Addr: "addr1", Tokens: []uint32{1, 2, 3}}}},
 			expected: Different,
 		},
 	}

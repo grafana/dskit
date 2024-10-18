@@ -2,6 +2,7 @@ package grpcutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -26,10 +27,10 @@ func TestErrorToStatus(t *testing.T) {
 			err: nil,
 		},
 		"a random error cannot be cast to status.Status": {
-			err: fmt.Errorf(msgErr),
+			err: errors.New(msgErr),
 		},
 		"a wrapped error of a random error cannot be cast to status.Status": {
-			err: fmt.Errorf("wrapped: %w", fmt.Errorf(msgErr)),
+			err: fmt.Errorf("wrapped: %w", errors.New(msgErr)),
 		},
 		"a gRPC error built by gogo/status can be cast to status.Status": {
 			err:            status.Error(codes.Internal, msgErr),
@@ -74,11 +75,11 @@ func TestErrorToStatusCode(t *testing.T) {
 			expectedStatusCode: codes.OK,
 		},
 		"a non-gRPC error returns codes.Unknown": {
-			err:                fmt.Errorf(msgErr),
+			err:                errors.New(msgErr),
 			expectedStatusCode: codes.Unknown,
 		},
 		"a wrapped non-gRPC error returns codes.Unknown": {
-			err:                fmt.Errorf("wrapped: %w", fmt.Errorf(msgErr)),
+			err:                fmt.Errorf("wrapped: %w", errors.New(msgErr)),
 			expectedStatusCode: codes.Unknown,
 		},
 		"a gRPC error built by gogo/status returns its code": {
@@ -132,11 +133,11 @@ func TestIsCanceled(t *testing.T) {
 			expectedOutcome: true,
 		},
 		"a random error returns false": {
-			err:             fmt.Errorf(msgErr),
+			err:             errors.New(msgErr),
 			expectedOutcome: false,
 		},
 		"a wrapped random error returns false": {
-			err:             fmt.Errorf("wrapped: %w", fmt.Errorf(msgErr)),
+			err:             fmt.Errorf("wrapped: %w", errors.New(msgErr)),
 			expectedOutcome: false,
 		},
 		"a gRPC error with code different from codes.Canceled returns false": {

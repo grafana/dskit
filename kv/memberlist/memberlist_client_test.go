@@ -1686,11 +1686,11 @@ func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	require.Equal(t, 0, len(kv.GetBroadcasts(0, math.MaxInt32)))
 
 	// Check that locally-generated broadcast messages will be prioritized and sent out first, even if they are enqueued later or are smaller than other messages in the queue.
-	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false)
-	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false)
-	kv.broadcastNewValue("local", smallUpdate, 1, codec, true)
-	kv.broadcastNewValue("local", bigUpdate, 2, codec, true)
-	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true)
+	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false, false, time.Now())
+	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false, false, time.Now())
+	kv.broadcastNewValue("local", smallUpdate, 1, codec, true, false, time.Now())
+	kv.broadcastNewValue("local", bigUpdate, 2, codec, true, false, time.Now())
+	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true, false, time.Now())
 
 	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP memberlist_client_messages_in_broadcast_queue Number of user messages in the broadcast queue

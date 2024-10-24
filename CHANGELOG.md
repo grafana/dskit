@@ -1,5 +1,6 @@
 ## Changelog
 
+* [ENHANCEMENT] Implement `sd_listen_fds` (socket activation) support for gRPC and HTTP listeners. #589
 * [CHANGE] Roll back the gRPC dependency to v1.65.0 to allow downstream projects to avoid a performance regression and maybe a bug in v1.66.0. #581
 * [CHANGE] Update the gRPC dependency to v1.66.0 and deprecate the `grpc_server_recv_buffer_pools_enabled` option that is no longer supported by it. #580
 * [CHANGE] `ring.DoBatchWithOptions` (and `ring.DoBatch`) reports the cancelation cause when the context is canceled instead of `context.Canceled`.

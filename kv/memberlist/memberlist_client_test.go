@@ -565,6 +565,7 @@ func defaultKVConfig(i int) KVConfig {
 	cfg.GossipInterval = 100 * time.Millisecond
 	cfg.GossipNodes = 10
 	cfg.PushPullInterval = 5 * time.Second
+	cfg.ObsoleteEntriesTimeout = 5 * time.Second
 
 	cfg.TCPTransport = TCPTransportConfig{
 		BindAddrs: getLocalhostAddrs(),
@@ -572,6 +573,55 @@ func defaultKVConfig(i int) KVConfig {
 	}
 
 	return cfg
+}
+
+func TestDelete(t *testing.T) {
+	c := dataCodec{}
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+		BindPort:  0, // randomize ports
+	}
+	cfg.GossipNodes = 1
+	cfg.GossipInterval = 100 * time.Millisecond
+	cfg.PushPullInterval = 1 * time.Second
+	cfg.ObsoleteEntriesTimeout = 1 * time.Second
+	cfg.ClusterLabelVerificationDisabled = true
+	cfg.Codecs = []codec.Codec{c}
+
+	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
+
+	kv, err := NewClient(mkv, c)
+	require.NoError(t, err)
+
+	const key = "test"
+
+	val := get(t, kv, key)
+	if val != nil {
+		t.Error("Expected nil, got:", val)
+	}
+
+	err = cas(kv, key, updateFn("test"))
+	require.NoError(t, err)
+
+	err = kv.Delete(context.Background(), key)
+	if err != nil {
+		t.Fatalf("Failed to delete key %s: %v", key, err)
+	}
+	t.Log("Deleted key", key)
+
+	time.Sleep(1100 * time.Millisecond) // wait for obsolete entries to be removed
+	ctx := context.Background()
+	val, err = kv.Get(ctx, key)
+
+	if val != nil {
+		t.Errorf("Expected nil, got: %v", val)
+	}
+	t.Log("Key", key, "is nil")
 }
 
 func TestMultipleClients(t *testing.T) {
@@ -653,7 +703,6 @@ func TestMultipleClientsWithSameLabelWithClusterLabelVerification(t *testing.T) 
 		cfg := defaultKVConfig(i)
 
 		cfg.ClusterLabel = label
-
 		return cfg
 	}
 
@@ -1303,6 +1352,7 @@ func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 		TCPTransport: TCPTransportConfig{
 			BindAddrs: getLocalhostAddrs(),
 		},
+		PushPullInterval: 30 * time.Second,
 	}
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
@@ -1372,6 +1422,7 @@ func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 		TCPTransport: TCPTransportConfig{
 			BindAddrs: getLocalhostAddrs(),
 		},
+		PushPullInterval: 30 * time.Second,
 	}
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
@@ -1518,6 +1569,7 @@ func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 	cfg.TCPTransport = TCPTransportConfig{
 		BindAddrs: getLocalhostAddrs(),
 	}
+	cfg.PushPullInterval = 30 * time.Second
 
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 
@@ -1561,6 +1613,7 @@ func TestMetricsRegistration(t *testing.T) {
 
 	cfg := KVConfig{}
 	cfg.Codecs = append(cfg.Codecs, c)
+	cfg.PushPullInterval = 30 * time.Second
 
 	reg := prometheus.NewPedanticRegistry()
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
@@ -1670,6 +1723,7 @@ func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
+	cfg.PushPullInterval = 30 * time.Second
 
 	reg := prometheus.NewRegistry()
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
@@ -1686,11 +1740,11 @@ func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	require.Equal(t, 0, len(kv.GetBroadcasts(0, math.MaxInt32)))
 
 	// Check that locally-generated broadcast messages will be prioritized and sent out first, even if they are enqueued later or are smaller than other messages in the queue.
-	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false)
-	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false)
-	kv.broadcastNewValue("local", smallUpdate, 1, codec, true)
-	kv.broadcastNewValue("local", bigUpdate, 2, codec, true)
-	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true)
+	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false, false, time.Now())
+	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false, false, time.Now())
+	kv.broadcastNewValue("local", smallUpdate, 1, codec, true, false, time.Now())
+	kv.broadcastNewValue("local", bigUpdate, 2, codec, true, false, time.Now())
+	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true, false, time.Now())
 
 	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP memberlist_client_messages_in_broadcast_queue Number of user messages in the broadcast queue
@@ -1729,6 +1783,7 @@ func TestRaceBetweenStoringNewValueForKeyAndUpdatingIt(t *testing.T) {
 	cfg.TCPTransport = TCPTransportConfig{
 		BindAddrs: getLocalhostAddrs(),
 	}
+	cfg.PushPullInterval = 30 * time.Second
 
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 
@@ -1809,6 +1864,7 @@ func TestNotificationDelay(t *testing.T) {
 	// We're going to trigger sends manually, so effectively disable the automatic send interval.
 	const hundredYears = 100 * 365 * 24 * time.Hour
 	cfg.NotifyInterval = hundredYears
+	cfg.PushPullInterval = 30 * time.Second
 	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 
 	watchChan := make(chan string, 16)

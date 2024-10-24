@@ -7,18 +7,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/dskit/loser"
 )
 
-func checkTreeEqual[E constraints.Ordered](t *testing.T, tree *loser.Tree[E], expected []E, msg ...interface{}) {
+func checkTreeEqual[E loser.Value, S loser.Sequence[E]](t *testing.T, tree *loser.Tree[E, S], expected []E, msg ...interface{}) {
 	t.Helper()
 	actual := []E{}
 
 	for tree.Next() {
-		actual = append(actual, tree.Winner())
+		actual = append(actual, tree.At())
 	}
 
 	require.Equal(t, expected, actual, msg...)
@@ -100,10 +99,35 @@ var testCases = []struct {
 	},
 }
 
+type sliceSequence struct {
+	s           []uint64
+	initialized bool
+}
+
+func (it *sliceSequence) At() uint64 {
+	return it.s[0]
+}
+
+func (it *sliceSequence) Next() bool {
+	if !it.initialized {
+		it.initialized = true
+		return len(it.s) > 0
+	}
+	if len(it.s) > 1 {
+		it.s = it.s[1:]
+		return true
+	}
+	return false
+}
+
 func TestMerge(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			lt := loser.New(tt.args, math.MaxUint64)
+			lists := make([]*sliceSequence, len(tt.args))
+			for i := range tt.args {
+				lists[i] = &sliceSequence{s: tt.args[i]}
+			}
+			lt := loser.New[uint64](lists, math.MaxUint64)
 			checkTreeEqual(t, lt, tt.want)
 		})
 	}
@@ -113,7 +137,7 @@ func FuzzMerge(f *testing.F) {
 	f.Fuzz(func(t *testing.T, seed int64) {
 		r := rand.New(rand.NewSource(seed))
 		listCount := r.Intn(9) + 1
-		lists := make([][]uint64, listCount)
+		lists := make([]*sliceSequence, listCount)
 		allElements := []uint64{}
 
 		for listIdx := 0; listIdx < listCount; listIdx++ {
@@ -126,10 +150,10 @@ func FuzzMerge(f *testing.F) {
 
 			slices.Sort(list)
 			allElements = append(allElements, list...)
-			lists[listIdx] = list
+			lists[listIdx] = &sliceSequence{s: list}
 		}
 
-		lt := loser.New(lists, math.MaxUint64)
+		lt := loser.New[uint64](lists, math.MaxUint64)
 		slices.Sort(allElements)
 		checkTreeEqual(t, lt, allElements, fmt.Sprintf("merging %v", lists))
 	})
@@ -138,9 +162,9 @@ func FuzzMerge(f *testing.F) {
 func TestPush(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			lt := loser.New[uint64](nil, math.MaxUint64)
+			lt := loser.New[uint64, *sliceSequence](nil, math.MaxUint64)
 			for _, s := range tt.args {
-				lt.Push(s)
+				lt.Push(&sliceSequence{s: s})
 			}
 			checkTreeEqual(t, lt, tt.want)
 		})

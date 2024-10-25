@@ -250,7 +250,7 @@ type KV struct {
 	gossipBroadcasts *memberlist.TransmitLimitedQueue // queue for messages that we forward from other nodes
 
 	// KV Store.
-	storeMu sync.Mutex
+	storeMu sync.RWMutex
 	store   map[string]ValueDesc
 
 	// Codec registry
@@ -521,8 +521,13 @@ func (m *KV) running(ctx context.Context) error {
 		tickerChan = t.C
 	}
 
-	obsoleteEntriesTicker := time.NewTicker(m.cfg.ObsoleteEntriesTimeout)
-	defer obsoleteEntriesTicker.Stop()
+	var obsoleteEntriesTickerChan <-chan time.Time
+	if m.cfg.ObsoleteEntriesTimeout > 0 {
+		obsoleteEntriesTicker := time.NewTicker(m.cfg.ObsoleteEntriesTimeout)
+		defer obsoleteEntriesTicker.Stop()
+
+		obsoleteEntriesTickerChan = obsoleteEntriesTicker.C
+	}
 
 	logger := log.With(m.logger, "phase", "periodic_rejoin")
 	for {
@@ -537,7 +542,7 @@ func (m *KV) running(ctx context.Context) error {
 				level.Warn(logger).Log("msg", "re-joining memberlist cluster failed", "err", err, "next_try_in", m.cfg.RejoinInterval)
 			}
 
-		case <-obsoleteEntriesTicker.C:
+		case <-obsoleteEntriesTickerChan:
 			// cleanupObsoleteEntries is normally called during push/pull, but if there are no other
 			// nodes to push/pull with, we can call it periodically to make sure we remove unused entries from memory.
 			m.cleanupObsoleteEntries()
@@ -1639,7 +1644,7 @@ func (m *KV) deleteSentReceivedMessages() {
 
 func (m *KV) cleanupObsoleteEntries() {
 	m.storeMu.Lock()
-	defer m.storeMu.Lock()
+	defer m.storeMu.Unlock()
 
 	for k, v := range m.store {
 		if v.Deleted && time.Since(v.UpdateTime) > m.cfg.ObsoleteEntriesTimeout {

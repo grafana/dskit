@@ -150,9 +150,6 @@ func Test_IntString_UnmarshalJSON(t *testing.T) {
 			var b IntString
 
 			require.True(t, (b.UnmarshalJSON(tcase.input) != nil) == tcase.expectedErr)
-			// err := json.Unmarshal(tcase.input, &b)
-			// require.Nil(t, err)
-
 			require.Equal(t, IntString(tcase.expected), b)
 		})
 	}

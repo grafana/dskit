@@ -30,8 +30,6 @@ func (is *IntString) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (is *IntString) UnmarshalJSON(data []byte) error {
-	fmt.Printf("OK: %v\n", data)
-	fmt.Printf("data: %v\n", data)
 	if len(data) == 0 {
 		return nil
 	}

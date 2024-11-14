@@ -234,9 +234,11 @@ func testCheckingOfKeyOwnership(t *testing.T, randomizeInstanceStates bool) {
 		ringInstanceByToken:  ringDesc.getTokensInfo(),
 		ringZones:            getZones(ringDesc.getTokensByZone()),
 		shuffledSubringCache: map[subringCacheKey]*Ring{},
-		strategy:             NewDefaultReplicationStrategy(),
+		strategy:             nopReplicationStrategy{},
 		lastTopologyChange:   time.Now(),
 	}
+
+	bufInstances, bufHosts, bufZones := MakeBuffersForGet()
 
 	for uid, tokens := range userTokens {
 		shardSize := shardSizes[uid]
@@ -257,16 +259,47 @@ func testCheckingOfKeyOwnership(t *testing.T, randomizeInstanceStates bool) {
 			}
 
 			// Compute owned tokens using numberOfKeysOwnedByInstance.
-			bufDescs := make([]InstanceDesc, 5)
-			bufHosts := make([]string, 5)
-			bufZones := make([]string, numZones)
-
-			cntViaGet, err := sr.numberOfKeysOwnedByInstance(tokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
+			cntViaGet, err := numberOfKeysOwnedByInstance(sr, tokens, WriteNoExtend, instanceID, bufInstances, bufHosts, bufZones)
 			require.NoError(t, err)
 
 			assert.Equal(t, cntViaTokens, cntViaGet, "user=%s, instance=%s", uid, instanceID)
 		}
 	}
+}
+
+// numberOfKeysOwnedByInstance returns how many of the supplied keys are owned by given instance.
+func numberOfKeysOwnedByInstance(r *Ring, keys []uint32, op Operation, instanceID string, bufDescs []InstanceDesc, bufHosts, bufZones []string) (int, error) {
+	owned := 0
+	if !r.HasInstance(instanceID) {
+		return 0, nil
+	}
+
+	for _, tok := range keys {
+		s, err := r.Get(tok, op, bufDescs, bufHosts, bufZones)
+		if err != nil {
+			return 0, err
+		}
+
+		for _, inst := range s.Instances {
+			if inst.Id == instanceID {
+				owned++
+				break
+			}
+		}
+	}
+
+	return owned, nil
+}
+
+type nopReplicationStrategy struct{}
+
+func (n nopReplicationStrategy) Filter(instances []InstanceDesc, _ Operation, _ int, _ time.Duration, _ bool) (healthy []InstanceDesc, maxFailures int, err error) {
+	// Don't filter any instances because we don't care, we only need to check their token ownership
+	return instances, 0, nil
+}
+
+func (n nopReplicationStrategy) SupportsExpandedReplication() bool {
+	return false
 }
 
 func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
@@ -317,21 +350,6 @@ func BenchmarkCompareCountingOfSeriesViaRingAndTokenRanges(b *testing.B) {
 				}
 			}
 			if cntViaTokens <= 0 {
-				b.Fatal("no owned tokens found!")
-			}
-		}
-	})
-
-	b.Run("numberOfKeysOwnedByInstance", func(b *testing.B) {
-		bufDescs := make([]InstanceDesc, 5)
-		bufHosts := make([]string, 5)
-		bufZones := make([]string, numZones)
-
-		for i := 0; i < b.N; i++ {
-			cntViaGet, err := sr.numberOfKeysOwnedByInstance(seriesTokens, WriteNoExtend, instanceID, bufDescs, bufHosts, bufZones)
-			require.NoError(b, err)
-
-			if cntViaGet <= 0 {
 				b.Fatal("no owned tokens found!")
 			}
 		}

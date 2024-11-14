@@ -149,32 +149,49 @@ func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
 		setHeaderList     []string
 		excludeHeaderList []string
 		mustNotContain    []string
+		statusCode        int
+		logRequestHeaders bool
 	}{
 		{
-			name:           "Default excluded headers are excluded",
-			setHeaderList:  defaultHeaders,
-			mustNotContain: defaultHeaders,
+			name:              "Default excluded headers are excluded",
+			setHeaderList:     defaultHeaders,
+			mustNotContain:    defaultHeaders,
+			statusCode:        http.StatusOK,
+			logRequestHeaders: true,
 		},
 		{
 			name:              "Extra configured header is also excluded",
 			setHeaderList:     append(defaultHeaders, "X-Secret-Header"),
 			excludeHeaderList: []string{"X-Secret-Header"},
 			mustNotContain:    append(defaultHeaders, "X-Secret-Header"),
+			statusCode:        http.StatusOK,
+			logRequestHeaders: true,
 		},
 		{
 			name:              "Multiple extra configured headers are also excluded",
 			setHeaderList:     append(defaultHeaders, "X-Secret-Header", "X-Secret-Header-2"),
 			excludeHeaderList: []string{"X-Secret-Header", "X-Secret-Header-2"},
 			mustNotContain:    append(defaultHeaders, "X-Secret-Header", "X-Secret-Header-2"),
+			statusCode:        http.StatusOK,
+			logRequestHeaders: true,
+		},
+		{
+			name:              "Log request headers disabled and status code 500",
+			setHeaderList:     append(defaultHeaders, "X-Secret-Header"),
+			excludeHeaderList: []string{},
+			mustNotContain:    append(defaultHeaders, "X-Secret-Header"),
+			statusCode:        http.StatusInternalServerError,
+			logRequestHeaders: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
 
-			loggingMiddleware := NewLogMiddleware(log.NewGoKitWithWriter(log.LogfmtFormat, buf), true, false, nil, tc.excludeHeaderList)
+			loggingMiddleware := NewLogMiddleware(log.NewGoKitWithWriter(log.LogfmtFormat, buf), tc.logRequestHeaders, false, nil, tc.excludeHeaderList)
 
 			handler := func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = io.WriteString(w, "<html><body>Hello world!</body></html>")
+				w.WriteHeader(tc.statusCode)
 			}
 			loggingHandler := loggingMiddleware.Wrap(http.HandlerFunc(handler))
 

@@ -6,10 +6,12 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/felixge/httpsnoop"
 	"github.com/gorilla/mux"
@@ -44,12 +46,15 @@ func (f PerTenantCallback) shouldInstrument(ctx context.Context) (string, bool) 
 
 // Instrument is a Middleware which records timings for every HTTP request
 type Instrument struct {
-	Duration          *prometheus.HistogramVec
-	PerTenantDuration *prometheus.HistogramVec
-	PerTenantCallback PerTenantCallback
-	RequestBodySize   *prometheus.HistogramVec
-	ResponseBodySize  *prometheus.HistogramVec
-	InflightRequests  *prometheus.GaugeVec
+	Duration                    *prometheus.HistogramVec
+	PerTenantDuration           *prometheus.HistogramVec
+	PerTenantCallback           PerTenantCallback
+	RequestBodySize             *prometheus.HistogramVec
+	ResponseBodySize            *prometheus.HistogramVec
+	InflightRequests            *prometheus.GaugeVec
+	SlowRequestCutoff           time.Duration
+	ServerThroughputUnit        string
+	SlowRequestServerThroughput *prometheus.HistogramVec
 }
 
 // IsWSHandshakeRequest returns true if the given request is a websocket handshake request.
@@ -104,6 +109,17 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 		if tenantID, ok := i.PerTenantCallback.shouldInstrument(r.Context()); ok {
 			labelValues = append(labelValues, tenantID)
 			instrument.ObserveWithExemplar(r.Context(), i.PerTenantDuration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
+		}
+		if i.SlowRequestCutoff > 0 && respMetrics.Duration > i.SlowRequestCutoff {
+			parts := strings.Split(w.Header().Get("Server-Timing"), ", ")
+			volume := int64(0)
+			for _, part := range parts {
+				if strings.HasPrefix(part, i.ServerThroughputUnit) {
+					_, _ = fmt.Sscanf(part, i.ServerThroughputUnit+"=%d", &volume)
+					break
+				}
+			}
+			i.SlowRequestServerThroughput.WithLabelValues(r.Method, route).Observe(float64(volume) / respMetrics.Duration.Seconds())
 		}
 	})
 }

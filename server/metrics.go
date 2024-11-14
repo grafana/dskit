@@ -5,6 +5,7 @@
 package server
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,13 +16,14 @@ import (
 )
 
 type Metrics struct {
-	TCPConnections           *prometheus.GaugeVec
-	TCPConnectionsLimit      *prometheus.GaugeVec
-	RequestDuration          *prometheus.HistogramVec
-	PerTenantRequestDuration *prometheus.HistogramVec
-	ReceivedMessageSize      *prometheus.HistogramVec
-	SentMessageSize          *prometheus.HistogramVec
-	InflightRequests         *prometheus.GaugeVec
+	TCPConnections              *prometheus.GaugeVec
+	TCPConnectionsLimit         *prometheus.GaugeVec
+	RequestDuration             *prometheus.HistogramVec
+	PerTenantRequestDuration    *prometheus.HistogramVec
+	ReceivedMessageSize         *prometheus.HistogramVec
+	SentMessageSize             *prometheus.HistogramVec
+	InflightRequests            *prometheus.GaugeVec
+	SlowRequestServerThroughput *prometheus.HistogramVec
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
@@ -72,6 +74,15 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Namespace: cfg.MetricsNamespace,
 			Name:      "inflight_requests",
 			Help:      "Current number of inflight requests.",
+		}, []string{"method", "route"}),
+		SlowRequestServerThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace:                       cfg.MetricsNamespace,
+			Name:                            "slow_request_server_throughput_" + cfg.ThroughputConfig.Unit,
+			Help:                            "Server throughput of long running requests.",
+			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.ThroughputConfig.SlowRequestCutoff.Milliseconds(), 10)},
+			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),
 	}
 }

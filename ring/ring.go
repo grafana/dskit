@@ -34,6 +34,37 @@ const (
 	GetBufferSize = 5
 )
 
+type Options struct {
+	ReplicationFactor int
+	BufDescs          []InstanceDesc
+	BufHosts          []string
+	BufZones          []string
+}
+
+type Option func(opts *Options)
+
+func WithBuffers(bufDescs []InstanceDesc, bufHosts, bufZones []string) Option {
+	return func(opts *Options) {
+		opts.BufDescs = bufDescs
+		opts.BufHosts = bufHosts
+		opts.BufZones = bufZones
+	}
+}
+
+func WithReplicationFactor(replication int) Option {
+	return func(opts *Options) {
+		opts.ReplicationFactor = replication
+	}
+}
+
+func collectOptions(opts ...Option) *Options {
+	final := &Options{}
+	for _, opt := range opts {
+		opt(final)
+	}
+	return final
+}
+
 // ReadRing represents the read interface to the ring.
 // Support for read-only instances requires use of ShuffleShard or ShuffleShardWithLookback prior to getting a ReplicationSet.
 type ReadRing interface {
@@ -42,13 +73,16 @@ type ReadRing interface {
 	// to avoid memory allocation; can be nil, or created with ring.MakeBuffersForGet().
 	Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error)
 
+	// Get2 is a hackity hack hack
+	Get2(key uint32, op Operation, opts ...Option) (ReplicationSet, error)
+
 	// GetAllHealthy returns all healthy instances in the ring, for the given operation.
 	// This function doesn't check if the quorum is honored, so doesn't fail if the number
 	// of unhealthy instances is greater than the tolerated max unavailable.
 	GetAllHealthy(op Operation) (ReplicationSet, error)
 
 	// GetReplicationSetForOperation returns all instances where the input operation should be executed.
-	// The resulting ReplicationSet doesn't necessarily contains all healthy instances
+	// The resulting ReplicationSet doesn't necessarily contain all healthy instances
 	// in the ring, but could contain the minimum set of instances required to execute
 	// the input operation.
 	GetReplicationSetForOperation(op Operation) (ReplicationSet, error)
@@ -422,13 +456,22 @@ func (r *Ring) setRingStateFromDesc(ringDesc *Desc, updateMetrics, updateRegiste
 
 // Get returns n (or more) instances which form the replicas for the given key.
 func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
+	return r.getForKey(key, op, bufDescs, bufHosts, bufZones, 0)
+}
+
+func (r *Ring) Get2(key uint32, op Operation, opts ...Option) (ReplicationSet, error) {
+	options := collectOptions(opts...)
+	return r.getForKey(key, op, options.BufDescs, options.BufHosts, options.BufZones, options.ReplicationFactor)
+}
+
+func (r *Ring) getForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string, replicationFactor int) (ReplicationSet, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 	if r.ringDesc == nil || len(r.ringTokens) == 0 {
 		return ReplicationSet{}, ErrEmptyRing
 	}
 
-	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, nil)
+	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, replicationFactor, nil)
 	if err != nil {
 		return ReplicationSet{}, err
 	}
@@ -447,9 +490,13 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 // Returns instances for given key and operation. Instances are not filtered through ReplicationStrategy.
 // InstanceFilter can ignore uninteresting instances that would otherwise be part of the output, and can also stop search early.
 // This function needs to be called with read lock on the ring.
-func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, bufZones []string, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]InstanceDesc, error) {
+func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, bufZones []string, replicationFactor int, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]InstanceDesc, error) {
+	if replicationFactor <= 0 || replicationFactor < r.cfg.ReplicationFactor {
+		replicationFactor = r.cfg.ReplicationFactor
+	}
+
 	var (
-		n            = r.cfg.ReplicationFactor
+		n            = replicationFactor
 		instances    = bufDescs[:0]
 		start        = searchToken(r.ringTokens, key)
 		iterations   = 0
@@ -1349,7 +1396,7 @@ func (r *Ring) numberOfKeysOwnedByInstance(keys []uint32, op Operation, instance
 
 	owned := 0
 	for _, tok := range keys {
-		i, err := r.findInstancesForKey(tok, op, bufDescs, bufHosts, bufZones, func(foundInstanceID string) (include, keepGoing bool) {
+		i, err := r.findInstancesForKey(tok, op, bufDescs, bufHosts, bufZones, 0, func(foundInstanceID string) (include, keepGoing bool) {
 			if foundInstanceID == instanceID {
 				// If we've found our instance, we can stop.
 				return true, false

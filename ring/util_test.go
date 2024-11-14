@@ -28,6 +28,11 @@ func (r *RingMock) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHos
 	return args.Get(0).(ReplicationSet), args.Error(1)
 }
 
+func (r *RingMock) Get2(key uint32, op Operation, opts ...Option) (ReplicationSet, error) {
+	args := r.Called(key, op, opts)
+	return args.Get(0).(ReplicationSet), args.Error(1)
+}
+
 func (r *RingMock) GetAllHealthy(op Operation) (ReplicationSet, error) {
 	args := r.Called(op)
 	return args.Get(0).(ReplicationSet), args.Error(1)

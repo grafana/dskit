@@ -2,7 +2,6 @@ package kv
 
 import (
 	"context"
-	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -45,72 +44,57 @@ func (m mockClient) WatchPrefix(_ context.Context, _ string, _ func(string, inte
 type MockCountingClient struct {
 	client Client
 
-	mtx   sync.Mutex
-	calls map[string]*atomic.Int32
+	ListCalls        *atomic.Uint32
+	GetCalls         *atomic.Uint32
+	DeleteCalls      *atomic.Uint32
+	CASCalls         *atomic.Uint32
+	WatchKeyCalls    *atomic.Uint32
+	WatchPrefixCalls *atomic.Uint32
 }
 
 func NewMockCountingClient(client Client) *MockCountingClient {
 	return &MockCountingClient{
-		client: client,
-		calls:  make(map[string]*atomic.Int32),
+		client:           client,
+		ListCalls:        atomic.NewUint32(0),
+		GetCalls:         atomic.NewUint32(0),
+		DeleteCalls:      atomic.NewUint32(0),
+		CASCalls:         atomic.NewUint32(0),
+		WatchKeyCalls:    atomic.NewUint32(0),
+		WatchPrefixCalls: atomic.NewUint32(0),
 	}
 }
 
 func (mc *MockCountingClient) List(ctx context.Context, prefix string) ([]string, error) {
-	mc.incCall("List")
+	mc.ListCalls.Inc()
 
 	return mc.client.List(ctx, prefix)
 }
 func (mc *MockCountingClient) Get(ctx context.Context, key string) (interface{}, error) {
-	mc.incCall("Get")
+	mc.GetCalls.Inc()
 
 	return mc.client.Get(ctx, key)
 }
 
 func (mc *MockCountingClient) Delete(ctx context.Context, key string) error {
-	mc.incCall("Delete")
+	mc.DeleteCalls.Inc()
 
 	return mc.client.Delete(ctx, key)
 }
 
 func (mc *MockCountingClient) CAS(ctx context.Context, key string, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	mc.incCall("CAS")
+	mc.CASCalls.Inc()
 
 	return mc.client.CAS(ctx, key, f)
 }
 
 func (mc *MockCountingClient) WatchKey(ctx context.Context, key string, f func(interface{}) bool) {
-	mc.incCall("WatchKey")
+	mc.WatchKeyCalls.Inc()
 
 	mc.client.WatchKey(ctx, key, f)
 }
 
 func (mc *MockCountingClient) WatchPrefix(ctx context.Context, key string, f func(string, interface{}) bool) {
-	mc.incCall("WatchPrefix")
+	mc.WatchPrefixCalls.Inc()
 
 	mc.client.WatchPrefix(ctx, key, f)
-}
-
-func (mc *MockCountingClient) GetCalls(name string) int {
-	mc.mtx.Lock()
-	defer mc.mtx.Unlock()
-	count, exists := mc.calls[name]
-
-	if !exists {
-		return 0
-	}
-
-	return int(count.Load())
-}
-
-func (mc *MockCountingClient) incCall(name string) {
-	mc.mtx.Lock()
-	defer mc.mtx.Unlock()
-
-	if _, exists := mc.calls[name]; !exists {
-		mc.calls[name] = atomic.NewInt32(0)
-	}
-
-	value := mc.calls[name]
-	value.Add(1)
 }

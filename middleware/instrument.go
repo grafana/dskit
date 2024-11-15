@@ -46,15 +46,15 @@ func (f PerTenantCallback) shouldInstrument(ctx context.Context) (string, bool) 
 
 // Instrument is a Middleware which records timings for every HTTP request
 type Instrument struct {
-	Duration                    *prometheus.HistogramVec
-	PerTenantDuration           *prometheus.HistogramVec
-	PerTenantCallback           PerTenantCallback
-	RequestBodySize             *prometheus.HistogramVec
-	ResponseBodySize            *prometheus.HistogramVec
-	InflightRequests            *prometheus.GaugeVec
-	SlowRequestCutoff           time.Duration
-	ServerThroughputUnit        string
-	SlowRequestServerThroughput *prometheus.HistogramVec
+	Duration              *prometheus.HistogramVec
+	PerTenantDuration     *prometheus.HistogramVec
+	PerTenantCallback     PerTenantCallback
+	RequestBodySize       *prometheus.HistogramVec
+	ResponseBodySize      *prometheus.HistogramVec
+	InflightRequests      *prometheus.GaugeVec
+	SlowRequestCutoff     time.Duration
+	ThroughputUnit        string
+	SlowRequestThroughput *prometheus.HistogramVec
 }
 
 // IsWSHandshakeRequest returns true if the given request is a websocket handshake request.
@@ -112,14 +112,16 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 		}
 		if i.SlowRequestCutoff > 0 && respMetrics.Duration > i.SlowRequestCutoff {
 			parts := strings.Split(w.Header().Get("Server-Timing"), ", ")
-			volume := int64(0)
-			for _, part := range parts {
-				if strings.HasPrefix(part, i.ServerThroughputUnit) {
-					_, _ = fmt.Sscanf(part, i.ServerThroughputUnit+"=%d", &volume)
-					break
+			if len(parts) == 0 {
+				volume := int64(0)
+				for _, part := range parts {
+					if strings.HasPrefix(part, i.ThroughputUnit) {
+						_, _ = fmt.Sscanf(part, i.ThroughputUnit+"=%d", &volume)
+						instrument.ObserveWithExemplar(r.Context(), i.SlowRequestThroughput.WithLabelValues(r.Method, route), float64(volume)/respMetrics.Duration.Seconds())
+						break
+					}
 				}
 			}
-			i.SlowRequestServerThroughput.WithLabelValues(r.Method, route).Observe(float64(volume) / respMetrics.Duration.Seconds())
 		}
 	})
 }

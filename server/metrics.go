@@ -16,14 +16,14 @@ import (
 )
 
 type Metrics struct {
-	TCPConnections              *prometheus.GaugeVec
-	TCPConnectionsLimit         *prometheus.GaugeVec
-	RequestDuration             *prometheus.HistogramVec
-	PerTenantRequestDuration    *prometheus.HistogramVec
-	ReceivedMessageSize         *prometheus.HistogramVec
-	SentMessageSize             *prometheus.HistogramVec
-	InflightRequests            *prometheus.GaugeVec
-	SlowRequestServerThroughput *prometheus.HistogramVec
+	TCPConnections           *prometheus.GaugeVec
+	TCPConnectionsLimit      *prometheus.GaugeVec
+	RequestDuration          *prometheus.HistogramVec
+	PerTenantRequestDuration *prometheus.HistogramVec
+	ReceivedMessageSize      *prometheus.HistogramVec
+	SentMessageSize          *prometheus.HistogramVec
+	InflightRequests         *prometheus.GaugeVec
+	SlowRequestThroughput    *prometheus.HistogramVec
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
@@ -75,11 +75,12 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Name:      "inflight_requests",
 			Help:      "Current number of inflight requests.",
 		}, []string{"method", "route"}),
-		SlowRequestServerThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
+		SlowRequestThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace:                       cfg.MetricsNamespace,
-			Name:                            "slow_request_server_throughput_" + cfg.ThroughputConfig.Unit,
+			Name:                            "slow_request_throughput_" + cfg.Throughput.Unit,
 			Help:                            "Server throughput of long running requests.",
-			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.ThroughputConfig.SlowRequestCutoff.Milliseconds(), 10)},
+			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.Throughput.SlowRequestCutoff.Milliseconds(), 10)},
+			Buckets:                         instrument.DefBuckets,
 			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,

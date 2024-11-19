@@ -86,6 +86,7 @@
 * [CHANGE] memberlist: Failure to fast-join a cluster via contacting a node is now logged at `info` instead of `debug`. #585
 * [CHANGE] `Service.AddListener` and `Manager.AddListener` now return function for stopping the listener. #564
 * [CHANGE] ring: Add `InstanceRingReader` interface to `ring` package. #597
+* [CHANGE] KV: Add `MemberlistKVConfig` at kv `StoreConfig`. Extended `RegisterFlagsWithPrefix` to populate `MemberlistKVConfig` flags with specific prefix. #621
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

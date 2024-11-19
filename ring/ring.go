@@ -57,10 +57,10 @@ func WithReplicationFactor(replication int) Option {
 	}
 }
 
-func collectOptions(opts ...Option) *Options {
-	final := &Options{}
+func collectOptions(opts ...Option) Options {
+	final := Options{}
 	for _, opt := range opts {
-		opt(final)
+		opt(&final)
 	}
 	return final
 }
@@ -69,14 +69,12 @@ func collectOptions(opts ...Option) *Options {
 // Support for read-only instances requires use of ShuffleShard or ShuffleShardWithLookback prior to getting a ReplicationSet.
 type ReadRing interface {
 	// Get returns n (or more) instances which form the replicas for the given key.
-	//
 	// bufDescs, bufHosts and bufZones are slices to be overwritten for the return value
 	// to avoid memory allocation; can be nil, or created with ring.MakeBuffersForGet().
 	Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error)
 
 	// GetWithOptions returns n (or more) instances which form the replicas for the given key
-	// with 0 or more options to change the behavior of the method call. This method is a superset
-	// of the functionality of the Get method.
+	// with 0 or more options to change the behavior of the method call.
 	GetWithOptions(key uint32, op Operation, opts ...Option) (ReplicationSet, error)
 
 	// GetAllHealthy returns all healthy instances in the ring, for the given operation.
@@ -459,21 +457,27 @@ func (r *Ring) setRingStateFromDesc(ringDesc *Desc, updateMetrics, updateRegiste
 
 // Get returns n (or more) instances which form the replicas for the given key.
 func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
-	return r.GetWithOptions(key, op, WithBuffers(bufDescs, bufHosts, bufZones))
+	// Note that we purposefully aren't calling GetWithOptions here since the closures it
+	// uses result in heap allocations which we specifically avoid in this method since it's
+	// called in hot loops.
+	return r.getReplicationSetForKey(key, op, bufDescs, bufHosts, bufZones, 0)
 }
 
 // GetWithOptions returns n (or more) instances which form the replicas for the given key
 // with 0 or more options to change the behavior of the method call.
 func (r *Ring) GetWithOptions(key uint32, op Operation, opts ...Option) (ReplicationSet, error) {
 	options := collectOptions(opts...)
+	return r.getReplicationSetForKey(key, op, options.BufDescs, options.BufHosts, options.BufZones, options.ReplicationFactor)
+}
 
+func (r *Ring) getReplicationSetForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string, replicationFactor int) (ReplicationSet, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 	if r.ringDesc == nil || len(r.ringTokens) == 0 {
 		return ReplicationSet{}, ErrEmptyRing
 	}
 
-	instances, err := r.findInstancesForKey(key, op, options.BufDescs, options.BufHosts, options.BufZones, options.ReplicationFactor, nil)
+	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, replicationFactor, nil)
 	if err != nil {
 		return ReplicationSet{}, err
 	}

@@ -23,6 +23,10 @@ consul:
   host: "consul:8500"
   consistentreads: true
 prefix: "test/"
+memberlist:
+  node_name: "testNode"	
+  randomize_node_name: false
+  stream_timeout: 3s
 multi:
   primary: consul
   secondary: etcd
@@ -35,6 +39,9 @@ multi:
 	require.Equal(t, "consul", cfg.Store)
 	require.Equal(t, "test/", cfg.Prefix)
 	require.Equal(t, "consul:8500", cfg.Consul.Host)
+	require.Equal(t, "testNode", cfg.MemberlistKVConfig.NodeName)
+	require.Equal(t, false, cfg.MemberlistKVConfig.RandomizeNodeName)
+	require.Equal(t, 3*time.Second, cfg.MemberlistKVConfig.StreamTimeout)
 	require.Equal(t, "consul", cfg.Multi.Primary)
 	require.Equal(t, "etcd", cfg.Multi.Secondary)
 }

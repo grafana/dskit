@@ -46,15 +46,15 @@ func (f PerTenantCallback) shouldInstrument(ctx context.Context) (string, bool) 
 
 // Instrument is a Middleware which records timings for every HTTP request
 type Instrument struct {
-	Duration              *prometheus.HistogramVec
-	PerTenantDuration     *prometheus.HistogramVec
-	PerTenantCallback     PerTenantCallback
-	RequestBodySize       *prometheus.HistogramVec
-	ResponseBodySize      *prometheus.HistogramVec
-	InflightRequests      *prometheus.GaugeVec
-	SlowRequestCutoff     time.Duration
-	ThroughputUnit        string
-	SlowRequestThroughput *prometheus.HistogramVec
+	Duration          *prometheus.HistogramVec
+	PerTenantDuration *prometheus.HistogramVec
+	PerTenantCallback PerTenantCallback
+	RequestBodySize   *prometheus.HistogramVec
+	ResponseBodySize  *prometheus.HistogramVec
+	InflightRequests  *prometheus.GaugeVec
+	RequestCutoff     time.Duration
+	ThroughputUnit    string
+	RequestThroughput *prometheus.HistogramVec
 }
 
 // IsWSHandshakeRequest returns true if the given request is a websocket handshake request.
@@ -110,20 +110,29 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 			labelValues = append(labelValues, tenantID)
 			instrument.ObserveWithExemplar(r.Context(), i.PerTenantDuration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
 		}
-		if i.SlowRequestCutoff > 0 && respMetrics.Duration > i.SlowRequestCutoff {
-			parts := strings.Split(w.Header().Get("Server-Timing"), ", ")
-			if len(parts) == 0 {
-				volume := int64(0)
-				for _, part := range parts {
-					if strings.HasPrefix(part, i.ThroughputUnit) {
-						_, _ = fmt.Sscanf(part, i.ThroughputUnit+"=%d", &volume)
-						instrument.ObserveWithExemplar(r.Context(), i.SlowRequestThroughput.WithLabelValues(r.Method, route), float64(volume)/respMetrics.Duration.Seconds())
-						break
-					}
-				}
+		if i.RequestCutoff > 0 && respMetrics.Duration > i.RequestCutoff {
+			volume, err := extractValueFromMultiValueHeader(w.Header().Get("Server-Timing"), i.ThroughputUnit)
+			if err == nil {
+				instrument.ObserveWithExemplar(r.Context(), i.RequestThroughput.WithLabelValues(r.Method, route), float64(volume)/respMetrics.Duration.Seconds())
 			}
 		}
 	})
+}
+
+// Extracts a single value from a multi-value header, e.g. "throughput=500, duration=1000"
+func extractValueFromMultiValueHeader(h, key string) (int64, error) {
+	parts := strings.Split(h, ", ")
+	if len(parts) == 0 {
+		return 0, fmt.Errorf("no a multi-value header")
+	}
+	value := int64(0)
+	for _, part := range parts {
+		if strings.HasPrefix(part, key) {
+			_, err := fmt.Sscanf(part, key+"=%d", &value)
+			return value, err
+		}
+	}
+	return 0, fmt.Errorf("desired key not found in header")
 }
 
 // Return a name identifier for ths request.  There are three options:

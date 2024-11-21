@@ -158,8 +158,8 @@ type Config struct {
 }
 
 type Throughput struct {
-	SlowRequestCutoff time.Duration `yaml:"slow_request_cutoff"`
-	Unit              string        `yaml:"unit"`
+	RequestCutoff time.Duration `yaml:"request_cutoff"`
+	Unit          string        `yaml:"unit"`
 }
 
 var infinty = time.Duration(math.MaxInt64)
@@ -216,8 +216,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.LogRequestExcludeHeadersList, "server.log-request-headers-exclude-list", "", "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.")
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
-	f.DurationVar(&cfg.Throughput.SlowRequestCutoff, "server.throughput.slow-request-cutoff", 0, "Duration after which a request is considered slow. For requests taking longer than this duration to finish, the throughput will be calculated. If set to 0, the throughput will not be calculated.")
-	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "total_samples", "Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. If set, it is appended to the slow_request_server_throughput metric name.")
+	f.DurationVar(&cfg.Throughput.RequestCutoff, "server.throughput.request-cutoff", 0, "Duration after which a request will be observed. For requests taking longer than this duration to finish, the throughput will be calculated. If set to 0, the throughput will not be calculated.")
+	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "total_samples", "Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values will be gathered from Server-Timing header with defined key. If set, it is appended to the request_server_throughput metric name.")
 }
 
 func (cfg *Config) registererOrDefault() prometheus.Registerer {
@@ -530,15 +530,15 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		},
 		defaultLogMiddleware,
 		middleware.Instrument{
-			Duration:              metrics.RequestDuration,
-			PerTenantDuration:     metrics.PerTenantRequestDuration,
-			PerTenantCallback:     cfg.PerTenantDurationInstrumentation,
-			RequestBodySize:       metrics.ReceivedMessageSize,
-			ResponseBodySize:      metrics.SentMessageSize,
-			InflightRequests:      metrics.InflightRequests,
-			SlowRequestCutoff:     cfg.Throughput.SlowRequestCutoff,
-			ThroughputUnit:        cfg.Throughput.Unit,
-			SlowRequestThroughput: metrics.SlowRequestThroughput,
+			Duration:          metrics.RequestDuration,
+			PerTenantDuration: metrics.PerTenantRequestDuration,
+			PerTenantCallback: cfg.PerTenantDurationInstrumentation,
+			RequestBodySize:   metrics.ReceivedMessageSize,
+			ResponseBodySize:  metrics.SentMessageSize,
+			InflightRequests:  metrics.InflightRequests,
+			RequestCutoff:     cfg.Throughput.RequestCutoff,
+			ThroughputUnit:    cfg.Throughput.Unit,
+			RequestThroughput: metrics.RequestThroughput,
 		},
 	}
 	var httpMiddleware []middleware.Interface

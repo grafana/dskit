@@ -23,7 +23,7 @@ type Metrics struct {
 	ReceivedMessageSize      *prometheus.HistogramVec
 	SentMessageSize          *prometheus.HistogramVec
 	InflightRequests         *prometheus.GaugeVec
-	SlowRequestThroughput    *prometheus.HistogramVec
+	RequestThroughput        *prometheus.HistogramVec
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
@@ -75,11 +75,11 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Name:      "inflight_requests",
 			Help:      "Current number of inflight requests.",
 		}, []string{"method", "route"}),
-		SlowRequestThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
+		RequestThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace:                       cfg.MetricsNamespace,
 			Name:                            "slow_request_throughput_" + cfg.Throughput.Unit,
 			Help:                            "Server throughput of long running requests.",
-			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.Throughput.SlowRequestCutoff.Milliseconds(), 10)},
+			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.Throughput.RequestCutoff.Milliseconds(), 10)},
 			Buckets:                         instrument.DefBuckets,
 			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
 			NativeHistogramMaxBucketNumber:  100,

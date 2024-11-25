@@ -126,7 +126,7 @@ func extractValueFromMultiValueHeader(h, name string, key string) (float64, erro
 		return 0, fmt.Errorf("not a multi-value header")
 	}
 	for _, part := range parts {
-		if part, found := strings.CutPrefix(part, name); found == true {
+		if part, found := strings.CutPrefix(part, name); found {
 			for _, spart := range strings.Split(part, ";") {
 				if !strings.HasPrefix(spart, key) {
 					continue

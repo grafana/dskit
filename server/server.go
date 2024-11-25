@@ -216,8 +216,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.LogRequestExcludeHeadersList, "server.log-request-headers-exclude-list", "", "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.")
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
-	f.DurationVar(&cfg.Throughput.RequestCutoff, "server.throughput.request-cutoff", 0, "Requests taking over cutoff will be observed to measure Throughput. Server-Timing header will be used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput will not be calculated.")
-	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "total_samples", "Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values will be gathered from Server-Timing header with defined key. If set, it is appended to the request_server_throughput metric name.")
+f.DurationVar(&cfg.Throughput.RequestCutoff, "server.throughput.request-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
+	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "total_samples", "Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
 }
 
 func (cfg *Config) registererOrDefault() prometheus.Registerer {

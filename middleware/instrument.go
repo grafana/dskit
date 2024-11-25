@@ -52,7 +52,7 @@ type Instrument struct {
 	RequestBodySize   *prometheus.HistogramVec
 	ResponseBodySize  *prometheus.HistogramVec
 	InflightRequests  *prometheus.GaugeVec
-	RequestCutoff     time.Duration
+	LatencyCutoff     time.Duration
 	ThroughputUnit    string
 	RequestThroughput *prometheus.HistogramVec
 }
@@ -110,7 +110,7 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 			labelValues = append(labelValues, tenantID)
 			instrument.ObserveWithExemplar(r.Context(), i.PerTenantDuration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
 		}
-		if i.RequestCutoff > 0 && respMetrics.Duration > i.RequestCutoff {
+		if i.LatencyCutoff > 0 && respMetrics.Duration > i.LatencyCutoff {
 			volume, err := extractValueFromMultiValueHeader(w.Header().Get("Server-Timing"), i.ThroughputUnit, "val")
 			if err == nil {
 				instrument.ObserveWithExemplar(r.Context(), i.RequestThroughput.WithLabelValues(r.Method, route), volume/respMetrics.Duration.Seconds())
@@ -126,20 +126,20 @@ func extractValueFromMultiValueHeader(h, name string, key string) (float64, erro
 		return 0, fmt.Errorf("not a multi-value header")
 	}
 	for _, part := range parts {
-		if strings.HasPrefix(part, name) {
-			part = part[len(name):]
-			sparts := strings.Split(part, ";")
-			for _, spart := range sparts {
-				if strings.HasPrefix(spart, key) {
-					var value float64
-					_, err := fmt.Sscanf(spart, key+"=%f", &value)
-					if err != nil {
-						return 0, err
-					}
-					return value, nil
+		if part, found := strings.CutPrefix(part, name); found == true {
+			for _, spart := range strings.Split(part, ";") {
+				if !strings.HasPrefix(spart, key) {
+					continue
 				}
+				var value float64
+				_, err := fmt.Sscanf(spart, key+"=%f", &value)
+				if err != nil {
+					return 0, fmt.Errorf("failed to parse value from header: %w", err)
+				}
+				return value, nil
 			}
 		}
+
 	}
 	return 0, fmt.Errorf("desired name not found in header")
 }

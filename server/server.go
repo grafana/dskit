@@ -158,7 +158,7 @@ type Config struct {
 }
 
 type Throughput struct {
-	RequestCutoff time.Duration `yaml:"throughput_request_cutoff"`
+	LatencyCutoff time.Duration `yaml:"throughput_latency_cutoff"`
 	Unit          string        `yaml:"throughput_unit"`
 }
 
@@ -216,7 +216,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.LogRequestExcludeHeadersList, "server.log-request-headers-exclude-list", "", "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.")
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
-f.DurationVar(&cfg.Throughput.RequestCutoff, "server.throughput.request-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
+	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
 	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "total_samples", "Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
 }
 
@@ -536,7 +536,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 			RequestBodySize:   metrics.ReceivedMessageSize,
 			ResponseBodySize:  metrics.SentMessageSize,
 			InflightRequests:  metrics.InflightRequests,
-			RequestCutoff:     cfg.Throughput.RequestCutoff,
+			LatencyCutoff:     cfg.Throughput.LatencyCutoff,
 			ThroughputUnit:    cfg.Throughput.Unit,
 			RequestThroughput: metrics.RequestThroughput,
 		},

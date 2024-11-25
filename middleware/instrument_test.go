@@ -57,7 +57,7 @@ func TestThroughputMetricHistogram(t *testing.T) {
 
 			wrap := i.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if tt.sleep {
-					time.Sleep(i.RequestCutoff)
+					time.Sleep(i.LatencyCutoff)
 				}
 				w.Header().Set("Server-Timing", tt.header)
 			}))
@@ -90,7 +90,7 @@ func newInstrument(registry *prometheus.Registry) Instrument {
 	reg := promauto.With(registry)
 
 	const throughputUnit = "unit"
-	const slowRequestCutoff = 100 * time.Millisecond
+	const LatencyCutoff = 100 * time.Millisecond
 
 	return Instrument{
 		Duration: reg.NewHistogramVec(prometheus.HistogramOpts{
@@ -117,12 +117,12 @@ func newInstrument(registry *prometheus.Registry) Instrument {
 			Name: "inflight_requests",
 			Help: "Current number of inflight requests.",
 		}, []string{"method", "route"}),
-		RequestCutoff:  slowRequestCutoff,
+		LatencyCutoff:  LatencyCutoff,
 		ThroughputUnit: throughputUnit,
 		RequestThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Name:        "request_throughput_" + throughputUnit,
 			Help:        "Server throughput running requests.",
-			ConstLabels: prometheus.Labels{"cutoff_ms": strconv.FormatInt(slowRequestCutoff.Milliseconds(), 10)},
+			ConstLabels: prometheus.Labels{"cutoff_ms": strconv.FormatInt(LatencyCutoff.Milliseconds(), 10)},
 			Buckets:     []float64{1, 5, 10},
 		}, []string{"method", "route"}),
 	}
@@ -146,14 +146,6 @@ func TestExtractValueFromMultiValueHeader(t *testing.T) {
 			err:      false,
 		},
 		{
-			testName: "NonExistantName1",
-			header:   "name0;key0=0.0;key1=1.1, name1;key0=1.1",
-			name:     "name2",
-			key:      "key0",
-			expected: 0.0,
-			err:      true,
-		},
-		{
 			testName: "ExistantKeyInName2",
 			header:   "name0;key0=0.0;key1=1.1, name1;key1=1.1",
 			name:     "name0",
@@ -162,11 +154,27 @@ func TestExtractValueFromMultiValueHeader(t *testing.T) {
 			err:      false,
 		},
 		{
+			testName: "NonExistantName1",
+			header:   "name0;key0=0.0;key1=1.1, name1;key0=1.1",
+			name:     "name2",
+			key:      "key0",
+			expected: 0.0,
+			err:      true,
+		},
+		{
 			testName: "NonExistantName2",
 			header:   "name0;key0=0.0;key1=1.1, name1;key1=1.1",
 			name:     "name2",
 			key:      "key1",
 			expected: 0.0,
+			err:      true,
+		},
+		{
+			testName: "NonExistantKeyInName",
+			header:   "name0;key0=0.0;key1=1.1",
+			name:     "name0",
+			key:      "key2",
+			expected: 0,
 			err:      true,
 		},
 		{

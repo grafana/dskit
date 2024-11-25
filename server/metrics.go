@@ -79,7 +79,7 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Namespace:                       cfg.MetricsNamespace,
 			Name:                            "request_throughput_" + cfg.Throughput.Unit,
 			Help:                            "Server throughput of running requests.",
-			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.Throughput.RequestCutoff.Milliseconds(), 10)},
+			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.Throughput.LatencyCutoff.Milliseconds(), 10)},
 			Buckets:                         instrument.DefBuckets,
 			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
 			NativeHistogramMaxBucketNumber:  100,

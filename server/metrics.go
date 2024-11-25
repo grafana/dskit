@@ -77,8 +77,8 @@ func NewServerMetrics(cfg Config) *Metrics {
 		}, []string{"method", "route"}),
 		RequestThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace:                       cfg.MetricsNamespace,
-			Name:                            "slow_request_throughput_" + cfg.Throughput.Unit,
-			Help:                            "Server throughput of long running requests.",
+			Name:                            "request_throughput_" + cfg.Throughput.Unit,
+			Help:                            "Server throughput of running requests.",
 			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.Throughput.RequestCutoff.Milliseconds(), 10)},
 			Buckets:                         instrument.DefBuckets,
 			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,

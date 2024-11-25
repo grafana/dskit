@@ -18,22 +18,42 @@ import (
 
 func TestThroughputMetricHistogram(t *testing.T) {
 	tests := []struct {
-		name     string
+		testName string
 		sleep    bool
 		header   string
 		observed bool
 	}{
-		{"WithSleep", true, "unit=0, other_unit=2", true},
-		{"WithoutSleep", false, "unit=0, other_unit=2", false},
-		{"WithoutSleep", true, "", false},
-		{"WithoutSleep", false, "", false},
+		{
+			testName: "WithSleep",
+			sleep:    true,
+			header:   "unit;val=0, other_unit;val=2",
+			observed: true,
+		},
+		{
+			testName: "WithoutSleep",
+			sleep:    false,
+			header:   "unit;val=0, other_unit;val=2",
+			observed: false,
+		},
+		{
+			testName: "WithSleepEmptyHeader",
+			sleep:    true,
+			header:   "",
+			observed: false,
+		},
+		{
+			testName: "WithoutSleepEmptyHeader",
+			sleep:    false,
+			header:   "",
+			observed: false,
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.testName, func(t *testing.T) {
 
 			reg := prometheus.NewPedanticRegistry()
-			i := NewInstrument(reg)
+			i := newInstrument(reg)
 
 			wrap := i.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if tt.sleep {
@@ -61,34 +81,27 @@ func TestThroughputMetricHistogram(t *testing.T) {
 			`
 			}
 
-			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(output), "slow_request_throughput_"+i.ThroughputUnit))
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(output), "request_throughput_"+i.ThroughputUnit))
 		})
 	}
 }
 
-func NewInstrument(registry *prometheus.Registry) Instrument {
+func newInstrument(registry *prometheus.Registry) Instrument {
 	reg := promauto.With(registry)
 
-	const metricsNativeHistogramFactor = 1.1
 	const throughputUnit = "unit"
-	const SlowRequestCutoff = 100 * time.Millisecond
+	const slowRequestCutoff = 100 * time.Millisecond
 
 	return Instrument{
 		Duration: reg.NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "request_duration_seconds",
-			Help:                            "Time (in seconds) spent serving HTTP requests.",
-			Buckets:                         instrument.DefBuckets,
-			NativeHistogramBucketFactor:     metricsNativeHistogramFactor,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: time.Hour,
+			Name:    "request_duration_seconds",
+			Help:    "Time (in seconds) spent serving HTTP requests.",
+			Buckets: instrument.DefBuckets,
 		}, []string{"method", "route", "status_code", "ws"}),
 		PerTenantDuration: reg.NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "per_tenant_request_duration_seconds",
-			Help:                            "Time (in seconds) spent serving HTTP requests for a particular tenant.",
-			Buckets:                         instrument.DefBuckets,
-			NativeHistogramBucketFactor:     metricsNativeHistogramFactor,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: time.Hour,
+			Name:    "per_tenant_request_duration_seconds",
+			Help:    "Time (in seconds) spent serving HTTP requests for a particular tenant.",
+			Buckets: instrument.DefBuckets,
 		}, []string{"method", "route", "status_code", "ws", "tenant"}),
 		RequestBodySize: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "request_message_bytes",
@@ -104,45 +117,89 @@ func NewInstrument(registry *prometheus.Registry) Instrument {
 			Name: "inflight_requests",
 			Help: "Current number of inflight requests.",
 		}, []string{"method", "route"}),
-		RequestCutoff:  SlowRequestCutoff,
+		RequestCutoff:  slowRequestCutoff,
 		ThroughputUnit: throughputUnit,
 		RequestThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "request_throughput_" + throughputUnit,
-			Help:                            "Server throughput running requests.",
-			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(SlowRequestCutoff.Milliseconds(), 10)},
-			Buckets:                         []float64{1, 5, 10},
-			NativeHistogramBucketFactor:     metricsNativeHistogramFactor,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: time.Hour,
+			Name:        "request_throughput_" + throughputUnit,
+			Help:        "Server throughput running requests.",
+			ConstLabels: prometheus.Labels{"cutoff_ms": strconv.FormatInt(slowRequestCutoff.Milliseconds(), 10)},
+			Buckets:     []float64{1, 5, 10},
 		}, []string{"method", "route"}),
 	}
 }
 
 func TestExtractValueFromMultiValueHeader(t *testing.T) {
 	tests := []struct {
+		testName string
 		header   string
+		name     string
 		key      string
-		expected int64
+		expected float64
 		err      bool
 	}{
-		{"key0=0, key1=1", "key0", 0, false},
-		{"key0=0, key1=1", "key1", 1, false},
-		{"key0=0, key1=1", "key2", 0, true},
-		{"key0=1.0, key1=1", "key0", 1, false},
-		{"foo", "foo", 0, true},
-		{"foo=bar", "foo", 0, true},
-		{"", "foo", 0, true},
+		{
+			testName: "ExistantKeyInName1",
+			header:   "name0;key0=0.0;key1=1.1, name1;key0=1.1",
+			name:     "name0",
+			key:      "key0",
+			expected: 0.0,
+			err:      false,
+		},
+		{
+			testName: "NonExistantName1",
+			header:   "name0;key0=0.0;key1=1.1, name1;key0=1.1",
+			name:     "name2",
+			key:      "key0",
+			expected: 0.0,
+			err:      true,
+		},
+		{
+			testName: "ExistantKeyInName2",
+			header:   "name0;key0=0.0;key1=1.1, name1;key1=1.1",
+			name:     "name0",
+			key:      "key1",
+			expected: 1.1,
+			err:      false,
+		},
+		{
+			testName: "NonExistantName2",
+			header:   "name0;key0=0.0;key1=1.1, name1;key1=1.1",
+			name:     "name2",
+			key:      "key1",
+			expected: 0.0,
+			err:      true,
+		},
+		{
+			testName: "StringInKey",
+			header:   "name0;key0=str;key1=1.1",
+			name:     "name0",
+			key:      "key0",
+			expected: 0,
+			err:      true,
+		},
+		{
+			testName: "EmptyHeader",
+			header:   "",
+			name:     "name0",
+			key:      "key0",
+			expected: 0,
+			err:      true,
+		},
+		{
+			testName: "IncorrectFormat",
+			header:   "key0=0.0, key1=1.1",
+			name:     "key0",
+			key:      "key0",
+			expected: 0,
+			err:      true,
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.key, func(t *testing.T) {
-			value, err := extractValueFromMultiValueHeader(tt.header, tt.key)
-			if (err != nil) != tt.err {
-				t.Errorf("expected error: %v, got: %v", tt.err, err)
-			}
-			if value != tt.expected {
-				t.Errorf("expected value: %d, got: %d", tt.expected, value)
-			}
+		t.Run(tt.testName, func(t *testing.T) {
+			value, err := extractValueFromMultiValueHeader(tt.header, tt.name, tt.key)
+			require.Equal(t, tt.err, err != nil, "expected error: %v, got: %v", tt.err, err)
+			require.Equal(t, tt.expected, value, "expected value: %f, got: %f", tt.expected, value)
 		})
 	}
 }

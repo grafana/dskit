@@ -111,28 +111,37 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 			instrument.ObserveWithExemplar(r.Context(), i.PerTenantDuration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
 		}
 		if i.RequestCutoff > 0 && respMetrics.Duration > i.RequestCutoff {
-			volume, err := extractValueFromMultiValueHeader(w.Header().Get("Server-Timing"), i.ThroughputUnit)
+			volume, err := extractValueFromMultiValueHeader(w.Header().Get("Server-Timing"), i.ThroughputUnit, "val")
 			if err == nil {
-				instrument.ObserveWithExemplar(r.Context(), i.RequestThroughput.WithLabelValues(r.Method, route), float64(volume)/respMetrics.Duration.Seconds())
+				instrument.ObserveWithExemplar(r.Context(), i.RequestThroughput.WithLabelValues(r.Method, route), volume/respMetrics.Duration.Seconds())
 			}
 		}
 	})
 }
 
-// Extracts a single value from a multi-value header, e.g. "throughput=500, duration=1000"
-func extractValueFromMultiValueHeader(h, key string) (int64, error) {
+// Extracts a single value from a multi-value header, e.g. "name0;key0=0.0;key1=1.1, name1;key0=1.1"
+func extractValueFromMultiValueHeader(h, name string, key string) (float64, error) {
 	parts := strings.Split(h, ", ")
 	if len(parts) == 0 {
-		return 0, fmt.Errorf("no a multi-value header")
+		return 0, fmt.Errorf("not a multi-value header")
 	}
-	value := int64(0)
 	for _, part := range parts {
-		if strings.HasPrefix(part, key) {
-			_, err := fmt.Sscanf(part, key+"=%d", &value)
-			return value, err
+		if strings.HasPrefix(part, name) {
+			part = part[len(name):]
+			sparts := strings.Split(part, ";")
+			for _, spart := range sparts {
+				if strings.HasPrefix(spart, key) {
+					var value float64
+					_, err := fmt.Sscanf(spart, key+"=%f", &value)
+					if err != nil {
+						return 0, err
+					}
+					return value, nil
+				}
+			}
 		}
 	}
-	return 0, fmt.Errorf("desired key not found in header")
+	return 0, fmt.Errorf("desired name not found in header")
 }
 
 // Return a name identifier for ths request.  There are three options:

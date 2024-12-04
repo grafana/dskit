@@ -76,9 +76,9 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 // GetReplicationSetForPartitionAndOperation returns a ReplicationSet for the input partition. If the partition doesn't
 // exist or there are no healthy owners for the partition, an error is returned.
 func (r *PartitionInstanceRing) GetReplicationSetForPartitionAndOperation(partitionID int32, op Operation) (ReplicationSet, error) {
-	zonesBuffer := make([]string, 0, 3) // Pre-allocate buffer assuming 3 zones.
+	var stackZonesBuffer [3]string // Pre-allocate buffer assuming 3 zones.
 
-	return r.getReplicationSetForPartitionAndOperation(partitionID, op, time.Now(), zonesBuffer)
+	return r.getReplicationSetForPartitionAndOperation(partitionID, op, time.Now(), stackZonesBuffer[:])
 }
 
 func (r *PartitionInstanceRing) getReplicationSetForPartitionAndOperation(partitionID int32, op Operation, now time.Time, zonesBuffer []string) (ReplicationSet, error) {

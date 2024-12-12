@@ -724,14 +724,40 @@ func MergeTokens(instances [][]uint32) []uint32 {
 		numTokens += len(tokens)
 	}
 
-	tree := loser.New(instances, math.MaxUint32)
+	lists := make([]*sliceSequence, len(instances))
+	for i := range instances {
+		lists[i] = &sliceSequence{s: instances[i]}
+	}
+	tree := loser.New[uint32](lists, math.MaxUint32)
 	out := make([]uint32, 0, numTokens)
 
 	for tree.Next() {
-		out = append(out, tree.Winner())
+		out = append(out, tree.At())
 	}
 
 	return out
+}
+
+// Wrapper over a slice that implements the loser.Sequence API
+type sliceSequence struct {
+	s           []uint32
+	initialized bool
+}
+
+func (it *sliceSequence) At() uint32 {
+	return it.s[0]
+}
+
+func (it *sliceSequence) Next() bool {
+	if !it.initialized {
+		it.initialized = true
+		return len(it.s) > 0
+	}
+	if len(it.s) > 1 {
+		it.s = it.s[1:]
+		return true
+	}
+	return false
 }
 
 // MergeTokensByZone is like MergeTokens but does it for each input zone.

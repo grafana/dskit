@@ -68,6 +68,8 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 			State:          partition.State,
 			StateTimestamp: partition.GetStateTime(),
 			OwnerIDs:       owners,
+			Tokens:         partition.Tokens,
+			NumTokens:      len(partition.Tokens),
 		}
 	}
 
@@ -83,6 +85,8 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 				State:          PartitionUnknown,
 				StateTimestamp: time.Time{},
 				OwnerIDs:       []string{ownerID},
+				Tokens:         partition.Tokens,
+				NumTokens:      len(partition.Tokens),
 			}
 
 			partitionsByID[owner.OwnedPartition] = partition
@@ -105,6 +109,8 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 		return partitions[i].ID < partitions[j].ID
 	})
 
+	tokensParam := req.URL.Query().Get("tokens")
+
 	renderHTTPResponse(w, partitionRingPageData{
 		Partitions: partitions,
 		PartitionStateChanges: map[PartitionState]PartitionState{
@@ -112,6 +118,7 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 			PartitionActive:   PartitionInactive,
 			PartitionInactive: PartitionActive,
 		},
+		ShowTokens: tokensParam == "true",
 	}, partitionRingPageTemplate, req)
 }
 
@@ -146,6 +153,7 @@ type partitionRingPageData struct {
 
 	// PartitionStateChanges maps the allowed state changes through the UI.
 	PartitionStateChanges map[PartitionState]PartitionState `json:"-"`
+	ShowTokens            bool                              `json:"-"`
 }
 
 type partitionPageData struct {
@@ -154,4 +162,6 @@ type partitionPageData struct {
 	State          PartitionState `json:"state"`
 	StateTimestamp time.Time      `json:"state_timestamp"`
 	OwnerIDs       []string       `json:"owner_ids"`
+	Tokens         []uint32       `json:"tokens"`
+	NumTokens      int            `json:"-"`
 }

@@ -1,19 +1,19 @@
 package loser_test
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/constraints"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/dskit/loser"
 )
 
-func checkTreeEqual[E constraints.Ordered](t *testing.T, tree *loser.Tree[E], expected []E, msg ...interface{}) {
+func checkTreeEqual[E cmp.Ordered](t *testing.T, tree *loser.Tree[E], expected []E, msg ...interface{}) {
 	t.Helper()
 	actual := []E{}
 

@@ -2,12 +2,12 @@ package ring
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {

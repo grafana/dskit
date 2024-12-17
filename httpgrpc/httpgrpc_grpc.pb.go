@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.4.0
 // - protoc             v3.6.1
-// source: httpgrpc.proto
+// source: httpgrpc/httpgrpc.proto
 
 package httpgrpc
 
@@ -104,5 +104,5 @@ var HTTP_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "httpgrpc.proto",
+	Metadata: "httpgrpc/httpgrpc.proto",
 }

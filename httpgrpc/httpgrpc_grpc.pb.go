@@ -48,21 +48,19 @@ func (c *hTTPClient) Handle(ctx context.Context, in *HTTPRequest, opts ...grpc.C
 }
 
 // HTTPServer is the server API for HTTP service.
-// All implementations must embed UnimplementedHTTPServer
+// All implementations should embed UnimplementedHTTPServer
 // for forward compatibility
 type HTTPServer interface {
 	Handle(context.Context, *HTTPRequest) (*HTTPResponse, error)
-	mustEmbedUnimplementedHTTPServer()
 }
 
-// UnimplementedHTTPServer must be embedded to have forward compatible implementations.
+// UnimplementedHTTPServer should be embedded to have forward compatible implementations.
 type UnimplementedHTTPServer struct {
 }
 
 func (UnimplementedHTTPServer) Handle(context.Context, *HTTPRequest) (*HTTPResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Handle not implemented")
 }
-func (UnimplementedHTTPServer) mustEmbedUnimplementedHTTPServer() {}
 
 // UnsafeHTTPServer may be embedded to opt out of forward compatibility for this service.
 // Use of this interface is not recommended, as added methods to HTTPServer will

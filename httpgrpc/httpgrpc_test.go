@@ -4,14 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"net/http"
 	"testing"
 
-	"github.com/gogo/status"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/grpc/status"
 )
 
 func TestAppendMessageSizeToOutgoingContext(t *testing.T) {
@@ -97,7 +97,7 @@ func TestHTTPResponseFromError(t *testing.T) {
 			err: status.Error(codes.Internal, msgErr),
 		},
 		"a gRPC error built by grpc/status cannot be parsed to an HTTPResponse": {
-			err: grpcstatus.Error(codes.Internal, msgErr),
+			err: status.Error(codes.Internal, msgErr),
 		},
 		"a gRPC error built by httpgrpc can be parsed to an HTTPResponse": {
 			err:                  Error(400, msgErr),
@@ -129,6 +129,6 @@ func checkDetailAsHTTPResponse(t *testing.T, httpResponse *HTTPResponse, stat *s
 	require.True(t, ok)
 	require.NotNil(t, respDetails)
 	require.Equal(t, httpResponse.Code, respDetails.Code)
-	require.Equal(t, httpResponse.Headers, respDetails.Headers)
+	require.EqualExportedValues(t, httpResponse.Headers, respDetails.Headers)
 	require.Equal(t, httpResponse.Body, respDetails.Body)
 }

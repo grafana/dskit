@@ -721,6 +721,170 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 	}
 }
 
+func TestRing_GetWithOptions(t *testing.T) {
+	const testCount = 10_000
+
+	majority := NewDefaultReplicationStrategy()
+	healthy := NewIgnoreUnhealthyInstancesReplicationStrategy()
+	healthyHeartbeat := time.Now()
+	unhealthyHeartbeat := healthyHeartbeat.Add(-2 * time.Hour)
+
+	type testCase struct {
+		name               string
+		healthyInstances   int
+		unhealthyInstances int
+		replicationFactor  int
+		strategy           ReplicationStrategy
+		options            []Option
+		expectedSetSize    int
+		expectError        bool
+	}
+
+	cases := []testCase{
+		{
+			name:               "no options, default strategy",
+			healthyInstances:   6,
+			unhealthyInstances: 0,
+			replicationFactor:  3,
+			strategy:           majority,
+			expectedSetSize:    3,
+			expectError:        false,
+		},
+		{
+			name:               "invalid replication factor, default strategy",
+			healthyInstances:   6,
+			unhealthyInstances: 0,
+			replicationFactor:  3,
+			strategy:           majority,
+			options:            []Option{WithReplicationFactor(1)},
+			expectedSetSize:    3,
+			expectError:        false,
+		},
+		{
+			name:               "higher replication factor, default strategy",
+			healthyInstances:   6,
+			unhealthyInstances: 0,
+			replicationFactor:  3,
+			strategy:           majority,
+			options:            []Option{WithReplicationFactor(6)},
+			expectedSetSize:    6,
+			expectError:        false,
+		},
+		{
+			name:               "higher replication factor, default strategy, some unhealthy",
+			healthyInstances:   4,
+			unhealthyInstances: 2,
+			replicationFactor:  3,
+			strategy:           majority,
+			options:            []Option{WithReplicationFactor(6)},
+			expectedSetSize:    4,
+			expectError:        false,
+		},
+		{
+			name:               "higher replication factor, default strategy, most unhealthy",
+			healthyInstances:   3,
+			unhealthyInstances: 3,
+			replicationFactor:  3,
+			strategy:           majority,
+			options:            []Option{WithReplicationFactor(6)},
+			expectedSetSize:    0,
+			expectError:        true,
+		},
+		{
+			name:               "higher replication factor, ignore unhealthy strategy, some unhealthy",
+			healthyInstances:   4,
+			unhealthyInstances: 2,
+			replicationFactor:  3,
+			strategy:           healthy,
+			options:            []Option{WithReplicationFactor(6)},
+			expectedSetSize:    4,
+			expectError:        false,
+		},
+		{
+			name:               "higher replication factor, ignore unhealthy strategy, most unhealthy",
+			healthyInstances:   3,
+			unhealthyInstances: 3,
+			replicationFactor:  3,
+			strategy:           healthy,
+			options:            []Option{WithReplicationFactor(6)},
+			expectedSetSize:    3,
+			expectError:        false,
+		},
+		{
+			name:               "higher replication factor, ignore unhealthy strategy, single healthy",
+			healthyInstances:   1,
+			unhealthyInstances: 5,
+			replicationFactor:  3,
+			strategy:           healthy,
+			options:            []Option{WithReplicationFactor(6)},
+			expectedSetSize:    1,
+			expectError:        false,
+		},
+		{
+			name:               "higher replication factor, ignore unhealthy strategy, all unhealthy",
+			healthyInstances:   0,
+			unhealthyInstances: 6,
+			replicationFactor:  3,
+			strategy:           healthy,
+			options:            []Option{WithReplicationFactor(6)},
+			expectedSetSize:    0,
+			expectError:        true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gen := initTokenGenerator(t)
+			r := NewDesc()
+
+			var prevTokens []uint32
+
+			for i := 0; i < (tc.healthyInstances + tc.unhealthyInstances); i++ {
+				id := fmt.Sprintf("instance-%d", i)
+				addr := fmt.Sprintf("127.0.0.%d", i)
+				tokens := gen.GenerateTokens(128, prevTokens)
+				inst := r.AddIngester(id, addr, "", tokens, ACTIVE, time.Now(), false, time.Time{})
+
+				// Mark instances as unhealthy by giving them a last heartbeat timestamp of longer than
+				// the heartbeat timeout. Assign back to the map of ingesters since these are not pointers.
+				if i >= tc.healthyInstances {
+					inst.Timestamp = unhealthyHeartbeat.Unix()
+					r.Ingesters[id] = inst
+				}
+
+				prevTokens = append(prevTokens, tokens...)
+			}
+
+			cfg := Config{
+				HeartbeatTimeout:     time.Hour,
+				ReplicationFactor:    tc.replicationFactor,
+				ZoneAwarenessEnabled: false,
+			}
+
+			ring := newRingForTesting(cfg, false)
+			ring.setRingStateFromDesc(r, false, false, false)
+			ring.strategy = tc.strategy
+
+			// Use the GenerateTokens to get an array of random uint32 values.
+			testValues := gen.GenerateTokens(testCount, nil)
+
+			for i := 0; i < testCount; i++ {
+				set, err := ring.GetWithOptions(testValues[i], Write, tc.options...)
+				if tc.expectError {
+					require.Error(t, err)
+				} else {
+					require.Equal(t, tc.expectedSetSize, len(set.Instances))
+				}
+			}
+		})
+	}
+
+}
+
+func TestRing_GetWithOptions_ZoneAwareness(t *testing.T) {
+
+}
+
 func TestRing_GetAllHealthy(t *testing.T) {
 	const heartbeatTimeout = time.Minute
 	now := time.Now()

@@ -65,8 +65,24 @@ clean-protos: ## Removes the proto files
 .PHONY: protos
 protos: .tools/bin/protoc .tools/bin/protoc-gen-gogoslick .tools/bin/protoc-gen-go $(PROTO_GOS) ## Creates proto files
 
+PROTO_DEFS_VITESS := ./httpgrpc/httpgrpc.proto
+.PHONY: protos-vitess
+protos-vitess:
+	@for name in $(PROTO_DEFS_VITESS); do \
+        .tools/protoc/bin/protoc \
+        --go_out=. --plugin protoc-gen-go=".tools/bin/protoc-gen-go" \
+        --go-grpc_out=. --plugin protoc-gen-go-grpc=".tools/bin/protoc-gen-go-grpc" \
+        --go-vtproto_out=. --plugin protoc-gen-go-vtproto=".tools/bin/protoc-gen-go-vtproto" \
+        --go-vtproto_opt=features=marshal+unmarshal+size+pool \
+        --go-vtproto_opt=pool=github.com/grafana/dskit/httpgrpc.HTTPRequest \
+        --go-vtproto_opt=pool=github.com/grafana/dskit/httpgrpc.HTTPResponse \
+        --go-vtproto_opt=pool=github.com/grafana/dskit/httpgrpc.Header \
+        --go-grpc_opt=require_unimplemented_servers=false \
+       $${name}; \
+    done
+
 %.pb.go:
-	.tools/protoc/bin/protoc -I $(GOPATH):./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+	.tools/protoc/bin/protoc protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative ./$(patsubst %.pb.go,%.proto,$@)
 
 .PHONY: check-protos
 check-protos: clean-protos protos ## Re-generates protos and git diffs them
@@ -95,4 +111,7 @@ endif
 	GOPATH=$(CURDIR)/.tools go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0
 
 .tools/bin/protoc-gen-go: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/golang/protobuf/protoc-gen-go@v1.3.1
+	GOPATH=$(CURDIR)/.tools go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.35.2
+
+.tools/bin/protoc-gen-go-vtproto: .tools
+		GOPATH=$(CURDIR)/.tools go install github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto@latest

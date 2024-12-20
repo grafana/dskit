@@ -49,12 +49,12 @@ func FromHTTPRequest(r *http.Request) (*HTTPRequest, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &HTTPRequest{
-		Method:  r.Method,
-		Url:     r.RequestURI,
-		Body:    body,
-		Headers: FromHeader(r.Header),
-	}, nil
+	req := HTTPRequestFromVTPool()
+	req.Method = r.Method
+	req.Url = r.RequestURI
+	req.Body = body
+	req.Headers = FromHeader(r.Header)
+	return req, nil
 }
 
 // ToHTTPRequest converts httpgrpc.HTTPRequest to http.Request.

@@ -9,6 +9,7 @@ import (
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	io "io"
+	sync "sync"
 )
 
 const (
@@ -190,6 +191,84 @@ func (m *Header) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+var vtprotoPool_HTTPRequest = sync.Pool{
+	New: func() interface{} {
+		return &HTTPRequest{}
+	},
+}
+
+func (m *HTTPRequest) ResetVT() {
+	if m != nil {
+		for _, mm := range m.Headers {
+			mm.ResetVT()
+		}
+		f0 := m.Headers[:0]
+		f1 := m.Body[:0]
+		m.Reset()
+		m.Headers = f0
+		m.Body = f1
+	}
+}
+func (m *HTTPRequest) ReturnToVTPool() {
+	if m != nil {
+		m.ResetVT()
+		vtprotoPool_HTTPRequest.Put(m)
+	}
+}
+func HTTPRequestFromVTPool() *HTTPRequest {
+	return vtprotoPool_HTTPRequest.Get().(*HTTPRequest)
+}
+
+var vtprotoPool_HTTPResponse = sync.Pool{
+	New: func() interface{} {
+		return &HTTPResponse{}
+	},
+}
+
+func (m *HTTPResponse) ResetVT() {
+	if m != nil {
+		for _, mm := range m.Headers {
+			mm.ResetVT()
+		}
+		f0 := m.Headers[:0]
+		f1 := m.Body[:0]
+		m.Reset()
+		m.Headers = f0
+		m.Body = f1
+	}
+}
+func (m *HTTPResponse) ReturnToVTPool() {
+	if m != nil {
+		m.ResetVT()
+		vtprotoPool_HTTPResponse.Put(m)
+	}
+}
+func HTTPResponseFromVTPool() *HTTPResponse {
+	return vtprotoPool_HTTPResponse.Get().(*HTTPResponse)
+}
+
+var vtprotoPool_Header = sync.Pool{
+	New: func() interface{} {
+		return &Header{}
+	},
+}
+
+func (m *Header) ResetVT() {
+	if m != nil {
+		f0 := m.Values[:0]
+		m.Reset()
+		m.Values = f0
+	}
+}
+func (m *Header) ReturnToVTPool() {
+	if m != nil {
+		m.ResetVT()
+		vtprotoPool_Header.Put(m)
+	}
+}
+func HeaderFromVTPool() *Header {
+	return vtprotoPool_Header.Get().(*Header)
+}
 func (m *HTTPRequest) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -383,7 +462,14 @@ func (m *HTTPRequest) UnmarshalVT(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Headers = append(m.Headers, &Header{})
+			if len(m.Headers) == cap(m.Headers) {
+				m.Headers = append(m.Headers, &Header{})
+			} else {
+				m.Headers = m.Headers[:len(m.Headers)+1]
+				if m.Headers[len(m.Headers)-1] == nil {
+					m.Headers[len(m.Headers)-1] = &Header{}
+				}
+			}
 			if err := m.Headers[len(m.Headers)-1].UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -521,7 +607,14 @@ func (m *HTTPResponse) UnmarshalVT(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Headers = append(m.Headers, &Header{})
+			if len(m.Headers) == cap(m.Headers) {
+				m.Headers = append(m.Headers, &Header{})
+			} else {
+				m.Headers = m.Headers[:len(m.Headers)+1]
+				if m.Headers[len(m.Headers)-1] == nil {
+					m.Headers[len(m.Headers)-1] = &Header{}
+				}
+			}
 			if err := m.Headers[len(m.Headers)-1].UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}

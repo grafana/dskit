@@ -208,6 +208,8 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req, err := httpgrpc.FromHTTPRequest(r)
+	defer req.ReturnToVTPool()
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

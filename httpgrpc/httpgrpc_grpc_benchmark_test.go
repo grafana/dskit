@@ -3,59 +3,47 @@ package httpgrpc
 import (
 	"strings"
 	"testing"
-
-	health "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
-	smallVT = &HTTPRequest{
+	small = &HTTPRequest{
 		Method: "GET",
 		Url:    "/test",
-		Body:   []byte("test"),
+		Body:   []byte(strings.Repeat(".", 32)),
 	}
-	mediumVT = &HTTPRequest{
+	medium = &HTTPRequest{
 		Method: "GET",
 		Url:    "/test",
-		Body:   []byte(strings.Repeat(".", 2<<10)),
+		Body:   []byte(strings.Repeat(".", 16*1024)),
 	}
-	largeVT = &HTTPRequest{
+	large = &HTTPRequest{
 		Method: "GET",
 		Url:    "/test",
-		Body:   []byte(strings.Repeat(".", 20<<10)),
+		Body:   []byte(strings.Repeat(".", 4*16*1024)),
 	}
-
-	smallVanilla  = &health.HealthCheckRequest{Service: string(smallVT.Body)}
-	mediumVanilla = &health.HealthCheckRequest{Service: string(mediumVT.Body)}
-	largeVanilla  = &health.HealthCheckRequest{Service: string(largeVT.Body)}
-
-	//vtMsgs      = []*HTTPRequest{smallVT, mediumVT, largeVT}
-	vanillaMsgs = []*health.HealthCheckRequest{smallVanilla, mediumVanilla, largeVanilla}
 )
 
 func BenchmarkCodec(b *testing.B) {
-	smallVTBytes, err := smallVT.Marshal()
+	smallBytes, err := small.Marshal()
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	//var mediumVTBytes []byte
-	mediumVTBytes, err := mediumVT.Marshal()
+	mediumBytes, err := medium.Marshal()
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	largeVTBytes, err := largeVT.Marshal()
+	largeBytes, err := large.Marshal()
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	vtMsgs := [][]byte{smallVTBytes, mediumVTBytes, largeVTBytes}
+	msgs := [][]byte{smallBytes, mediumBytes, largeBytes}
 
 	names := []string{"sm", "md", "lg"}
 	b.Run("marshall-unmarshall", func(b *testing.B) {
-		//var err error
-		//var bytes []byte
-		for msgIdx, msgBytes := range vtMsgs {
+		for msgIdx, msgBytes := range msgs {
 			b.Run(names[msgIdx], func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 
@@ -75,50 +63,4 @@ func BenchmarkCodec(b *testing.B) {
 		}
 	})
 
-	//b.Run("marshall-unmarshall", func(b *testing.B) {
-	//	//var err error
-	//	//var bytes []byte
-	//	for msgIdx, msgBytes := range vtMsgs {
-	//		b.Run(names[msgIdx], func(b *testing.B) {
-	//			for i := 0; i < b.N; i++ {
-	//
-	//				outputMsg := new(HTTPRequest)
-	//				err := outputMsg.UnmarshalVT(msgBytes)
-	//				if err != nil {
-	//					b.Fatal(err)
-	//				}
-	//
-	//				_, err = outputMsg.MarshalVT()
-	//				if err != nil {
-	//					b.Fatal(err)
-	//				}
-	//
-	//			}
-	//		})
-	//	}
-	//})
-	//
-	//b.Run("marshall-unmarshall", func(b *testing.B) {
-	//	//var err error
-	//	//var bytes []byte
-	//	//var outputMsg *HTTPRequest
-	//	for msgIdx, msgBytes := range vtMsgs {
-	//		b.Run(names[msgIdx], func(b *testing.B) {
-	//			for i := 0; i < b.N; i++ {
-	//
-	//				outputMsg := HTTPRequestFromVTPool()
-	//				err := outputMsg.UnmarshalVT(msgBytes)
-	//				if err != nil {
-	//					b.Fatal(err)
-	//				}
-	//
-	//				_, err = outputMsg.MarshalVT()
-	//				if err != nil {
-	//					b.Fatal(err)
-	//				}
-	//				outputMsg.ReturnToVTPool()
-	//			}
-	//		})
-	//	}
-	//})
 }

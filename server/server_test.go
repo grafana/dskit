@@ -619,6 +619,7 @@ func TestTLSServer(t *testing.T) {
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
+	empty.Reset() // reset request to compare with the response, which will not have sizeCache=1
 	require.EqualValues(t, &empty, grpcRes)
 }
 
@@ -710,6 +711,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
+	empty.Reset() // reset request to compare with the response, which will not have sizeCache=1
 	require.EqualValues(t, &empty, grpcRes)
 }
 

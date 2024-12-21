@@ -6,7 +6,6 @@ package httpgrpc
 import (
 	"fmt"
 	"sync/atomic"
-
 	"github.com/CrowdStrike/csproto"
 )
 

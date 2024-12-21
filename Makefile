@@ -73,7 +73,7 @@ protos-csproto:
         -I . \
         --go_out=paths=source_relative:. \
         --fastmarshal_out=apiversion=v2,paths=source_relative:. \
-        --go-grpc_out=require_unimplemented_servers=false:. \
+        --go-grpc_out=require_unimplemented_servers=false,paths=source_relative:. \
        $${name}; \
     done
 

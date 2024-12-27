@@ -223,7 +223,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() (map[int]T
 	tokensQueues := make([]ownershipPriorityQueue[ringToken], t.instanceID)
 
 	// Create and initialize priority queue of tokens for the first instance
-	tokensQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
+	tokensQueue := newPriorityQueue[ringToken](optimalTokensPerInstance, true)
 	prev := len(firstInstanceTokens) - 1
 	firstInstanceOwnership := 0.0
 	for tk, token := range firstInstanceTokens {
@@ -235,7 +235,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() (map[int]T
 	tokensQueues[0] = tokensQueue
 
 	// instanceQueue is a priority queue of instances such that instances with higher ownership have a higher priority
-	instanceQueue := newPriorityQueue[ringInstance](t.instanceID)
+	instanceQueue := newPriorityQueue[ringInstance](t.instanceID, true)
 	heap.Push(&instanceQueue, newRingInstanceOwnershipInfo(0, firstInstanceOwnership))
 
 	// ignoredInstances is a slice of the current instances whose tokens
@@ -249,7 +249,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() (map[int]T
 		ignoredInstances = ignoredInstances[:0]
 		tokens := make(Tokens, 0, optimalTokensPerInstance)
 		// currInstanceTokenQueue is the priority queue of tokens of newInstance
-		currInstanceTokenQueue := newPriorityQueue[ringToken](optimalTokensPerInstance)
+		currInstanceTokenQueue := newPriorityQueue[ringToken](optimalTokensPerInstance, true)
 		for addedTokens < optimalTokensPerInstance {
 			optimalTokenOwnership := t.optimalTokenOwnership(optimalInstanceOwnership, currInstanceOwnership, uint32(optimalTokensPerInstance-addedTokens))
 			highestOwnershipInstance := instanceQueue.Peek()

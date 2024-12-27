@@ -69,12 +69,14 @@ func newRingInstanceOwnershipInfo(instanceID int, ownership float64) ownershipIn
 // in the case of items with equal ownership, we rely on the
 // order of item ids.
 type ownershipPriorityQueue[T ringItem] struct {
-	items []ownershipInfo[T]
+	items     []ownershipInfo[T]
+	isMaxHeap bool
 }
 
-func newPriorityQueue[T ringItem](capacity int) ownershipPriorityQueue[T] {
+func newPriorityQueue[T ringItem](capacity int, isMaxHeap bool) ownershipPriorityQueue[T] {
 	return ownershipPriorityQueue[T]{
-		items: make([]ownershipInfo[T], 0, capacity),
+		items:     make([]ownershipInfo[T], 0, capacity),
+		isMaxHeap: isMaxHeap,
 	}
 }
 
@@ -87,15 +89,29 @@ func (pq *ownershipPriorityQueue[T]) Swap(i, j int) {
 }
 
 func (pq *ownershipPriorityQueue[T]) Less(i, j int) bool {
+	if pq.isMaxHeap {
+		if pq.items[i].ownership == pq.items[j].ownership {
+			// In order to guarantee the stability, i.e., that the same instanceID and zone as input
+			// always generate the same slice of tokens as output, we enforce that by equal ownership
+			// higher priority is determined by the order of ids.
+			return pq.items[i].item.key() > pq.items[j].item.key()
+		}
+
+		// In case of a max-heap, we are using >.
+		// Since we compare float64, NaN values must be placed at the end.
+		return pq.items[i].ownership > pq.items[j].ownership || (math.IsNaN(pq.items[j].ownership) && !math.IsNaN(pq.items[i].ownership))
+	}
+
 	if pq.items[i].ownership == pq.items[j].ownership {
 		// In order to guarantee the stability, i.e., that the same instanceID and zone as input
 		// always generate the same slice of tokens as output, we enforce that by equal ownership
 		// higher priority is determined by the order of ids.
-		return pq.items[i].item.key() > pq.items[j].item.key()
+		return pq.items[i].item.key() < pq.items[j].item.key()
 	}
-	// We are implementing a max-heap, so we are using > here.
-	// Since we compare float64, NaN values must be placed at the end.
-	return pq.items[i].ownership > pq.items[j].ownership || (math.IsNaN(pq.items[j].ownership) && !math.IsNaN(pq.items[i].ownership))
+
+	// In case of a min-heap, we are using <.
+	// Since we compare float64, NaN values must be placed at the beginning.
+	return pq.items[i].ownership < pq.items[j].ownership || (math.IsNaN(pq.items[i].ownership) && !math.IsNaN(pq.items[j].ownership))
 }
 
 // Push implements heap.Push(any). It pushes the element item onto ownershipPriorityQueue.

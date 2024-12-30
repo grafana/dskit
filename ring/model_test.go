@@ -93,6 +93,36 @@ func TestInstanceDesc_GetRegisteredAt(t *testing.T) {
 	}
 }
 
+func TestInstanceDesc_GetLastHeartbeatAt(t *testing.T) {
+	tests := map[string]struct {
+		desc     *InstanceDesc
+		expected time.Time
+	}{
+		"should return zero value on nil desc": {
+			desc:     nil,
+			expected: time.Time{},
+		},
+		"should return zero value if timestamp = 0": {
+			desc: &InstanceDesc{
+				Timestamp: 0,
+			},
+			expected: time.Time{},
+		},
+		"should return timestamp parsed from desc": {
+			desc: &InstanceDesc{
+				Timestamp: time.Unix(10000000, 0).Unix(),
+			},
+			expected: time.Unix(10000000, 0),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.True(t, testData.desc.GetLastHeartbeatAt().Equal(testData.expected))
+		})
+	}
+}
+
 func normalizedSource() *Desc {
 	r := NewDesc()
 	r.Ingesters["first"] = InstanceDesc{

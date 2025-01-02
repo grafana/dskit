@@ -28,10 +28,12 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 					1: {
 						State:          PartitionActive,
 						StateTimestamp: time.Now().Unix(),
+						Tokens:         []uint32{1000000, 3000000, 6000000},
 					},
 					2: {
 						State:          PartitionInactive,
 						StateTimestamp: time.Now().Unix(),
+						Tokens:         []uint32{2000000, 4000000, 5000000, 7000000},
 					},
 				},
 				Owners: map[string]OwnerDesc{
@@ -59,31 +61,77 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 	)
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/partition-ring", nil))
 
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
+	t.Run("displays expected partition info", func(t *testing.T) {
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/partition-ring", nil))
 
-	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
-		"<td>", "1", "</td>",
-		"<td>", "Active", "</td>",
-		"<td>", "[^<]+", "</td>",
-		"<td>", "ingester-zone-a-0", "<br />", "ingester-zone-b-0", "<br />", "</td>",
-	}, `\s*`))), recorder.Body.String())
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
 
-	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
-		"<td>", "2", "</td>",
-		"<td>", "Inactive", "</td>",
-		"<td>", "[^<]+", "</td>",
-		"<td>", "ingester-zone-a-1", "<br />", "ingester-zone-b-1", "<br />", "</td>",
-	}, `\s*`))), recorder.Body.String())
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "1", "</td>",
+			"<td>", "Active", "</td>",
+			"<td>", "[^<]+", "</td>",
+			"<td>", "ingester-zone-a-0", "<br />", "ingester-zone-b-0", "<br />", "</td>",
+			"<td>", "3", "</td>",
+			"<td>", "99.9%", "</td>",
+		}, `\s*`))), recorder.Body.String())
 
-	assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
-		"<td>", "3", "</td>",
-		"<td>", "Corrupt", "</td>",
-		"<td>", "N/A", "</td>",
-		"<td>", "ingester-zone-b-2", "<br />", "</td>",
-	}, `\s*`))), recorder.Body.String())
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "2", "</td>",
+			"<td>", "Inactive", "</td>",
+			"<td>", "[^<]+", "</td>",
+			"<td>", "ingester-zone-a-1", "<br />", "ingester-zone-b-1", "<br />", "</td>",
+			"<td>", "4", "</td>",
+			"<td>", "0.0931%", "</td>",
+		}, `\s*`))), recorder.Body.String())
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "3", "</td>",
+			"<td>", "Corrupt", "</td>",
+			"<td>", "N/A", "</td>",
+			"<td>", "ingester-zone-b-2", "<br />", "</td>",
+			"<td>", "0", "</td>",
+			"<td>", "0%", "</td>",
+		}, `\s*`))), recorder.Body.String())
+	})
+
+	t.Run("displays Show Tokens button by default", func(t *testing.T) {
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/partition-ring", nil))
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			`<input type="button" value="Show Tokens" onclick="window.location.href = '\?tokens=true'"/>`,
+		}, `\s*`))), recorder.Body.String())
+	})
+
+	t.Run("displays tokens when Show Tokens is enabled", func(t *testing.T) {
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/partition-ring?tokens=true", nil))
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			`<input type="button" value="Hide Tokens" onclick="window.location.href = '\?tokens=false'"/>`,
+		}, `\s*`))), recorder.Body.String())
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<h2>", "Instance: 1", "</h2>",
+			"<p>", "Tokens:<br/>", "1000000", "3000000", "6000000", "</p>",
+		}, `\s*`))), recorder.Body.String())
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<h2>", "Instance: 2", "</h2>",
+			"<p>", "Tokens:<br/>", "2000000", "4000000", "5000000", "7000000", "</p>",
+		}, `\s*`))), recorder.Body.String())
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<h2>", "Instance: 3", "</h2>",
+			"<p>", "Tokens:<br/>", "</p>",
+		}, `\s*`))), recorder.Body.String())
+	})
 }
 
 func TestPartitionRingPageHandler_ChangePartitionState(t *testing.T) {

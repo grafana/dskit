@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -17,6 +18,9 @@ var partitionRingPageContent string
 var partitionRingPageTemplate = template.Must(template.New("webpage").Funcs(template.FuncMap{
 	"mod": func(i, j int32) bool {
 		return i%j == 0
+	},
+	"humanFloat": func(f float64) string {
+		return fmt.Sprintf("%.3g", f)
 	},
 	"formatTimestamp": func(ts time.Time) string {
 		return ts.Format("2006-01-02 15:04:05 MST")
@@ -55,6 +59,7 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 		ring     = h.reader.PartitionRing()
 		ringDesc = ring.desc
 	)
+	ownedTokens := ringDesc.countTokens()
 
 	// Prepare the data to render partitions in the page.
 	partitionsByID := make(map[int32]partitionPageData, len(ringDesc.Partitions))
@@ -70,6 +75,7 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 			OwnerIDs:       owners,
 			Tokens:         partition.Tokens,
 			NumTokens:      len(partition.Tokens),
+			Ownership:      distancePercentage(ownedTokens[id]),
 		}
 	}
 
@@ -87,6 +93,7 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 				OwnerIDs:       []string{ownerID},
 				Tokens:         partition.Tokens,
 				NumTokens:      len(partition.Tokens),
+				Ownership:      distancePercentage(ownedTokens[owner.OwnedPartition]),
 			}
 
 			partitionsByID[owner.OwnedPartition] = partition
@@ -164,4 +171,10 @@ type partitionPageData struct {
 	OwnerIDs       []string       `json:"owner_ids"`
 	Tokens         []uint32       `json:"tokens"`
 	NumTokens      int            `json:"-"`
+	Ownership      float64        `json:"-"`
+}
+
+// distancePercentage renders a given token distance as the percentage of all possible token values covered by that distance.
+func distancePercentage(distance int64) float64 {
+	return (float64(distance) / float64(math.MaxUint32)) * 100
 }

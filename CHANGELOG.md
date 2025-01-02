@@ -99,6 +99,7 @@
 * [FEATURE] Add methods `Increment`, `FlushAll`, `CompareAndSwap`, `Touch` to `cache.MemcachedClient` #477
 * [FEATURE] Add `concurrency.ForEachJobMergeResults()` utility function. #486
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
+* [ENHANCEMENT] Display token information in partition ring status page #631
 * [ENHANCEMENT] Add ability to log all source hosts from http header instead of only the first one. #444
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
 * [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274

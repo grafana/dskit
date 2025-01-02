@@ -2,6 +2,7 @@ package ring
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -76,6 +77,51 @@ func TestPartitionRingDesc_countPartitionsByState(t *testing.T) {
 		}
 
 		assert.Equal(t, map[PartitionState]int{PartitionPending: 1, PartitionActive: 3, PartitionInactive: 2}, desc.countPartitionsByState())
+	})
+}
+
+func TestPartitionRingDesc_countTokens(t *testing.T) {
+	t.Run("empty ring should return an empty result", func(t *testing.T) {
+		desc := &PartitionRingDesc{}
+
+		result := desc.countTokens()
+
+		assert.Empty(t, result)
+	})
+
+	t.Run("ring with some partitions should return correct distances", func(t *testing.T) {
+		desc := &PartitionRingDesc{
+			Partitions: map[int32]PartitionDesc{
+				1: {Tokens: []uint32{1000000, 3000000, 6000000}},
+				2: {Tokens: []uint32{2000000, 4000000, 8000000}},
+				3: {Tokens: []uint32{5000000, 9000000}},
+			},
+		}
+
+		result := desc.countTokens()
+
+		expected := map[int32]int64{
+			1: 3000000 + (int64(math.MaxUint32) + 1 - 9000000),
+			2: 4000000,
+			3: 2000000,
+		}
+		assert.Equal(t, expected, result)
+	})
+
+	t.Run("partitions with no tokens should be present in the result, with 0 distance", func(t *testing.T) {
+		desc := &PartitionRingDesc{
+			Partitions: map[int32]PartitionDesc{
+				1: {Tokens: []uint32{1000000, 3000000, 6000000}},
+				2: {Tokens: []uint32{2000000, 4000000, 8000000}},
+				3: {Tokens: []uint32{5000000, 9000000}},
+				4: {Tokens: []uint32{}},
+			},
+		}
+
+		result := desc.countTokens()
+
+		assert.Contains(t, result, int32(4))
+		assert.Equal(t, int64(0), result[4])
 	})
 }
 

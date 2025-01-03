@@ -72,7 +72,7 @@
 
     {{ if .ShowTokens }}
         {{ range $i, $partition := .Partitions }}
-            <h2>Instance: {{ .ID }}</h2>
+            <h2>Partition: {{ .ID }}</h2>
             <p>
                 Tokens:<br/>
                 {{ range $token := .Tokens }}

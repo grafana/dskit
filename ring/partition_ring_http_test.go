@@ -118,17 +118,17 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 		}, `\s*`))), recorder.Body.String())
 
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
-			"<h2>", "Instance: 1", "</h2>",
+			"<h2>", "Partition: 1", "</h2>",
 			"<p>", "Tokens:<br/>", "1000000", "3000000", "6000000", "</p>",
 		}, `\s*`))), recorder.Body.String())
 
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
-			"<h2>", "Instance: 2", "</h2>",
+			"<h2>", "Partition: 2", "</h2>",
 			"<p>", "Tokens:<br/>", "2000000", "4000000", "5000000", "7000000", "</p>",
 		}, `\s*`))), recorder.Body.String())
 
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
-			"<h2>", "Instance: 3", "</h2>",
+			"<h2>", "Partition: 3", "</h2>",
 			"<p>", "Tokens:<br/>", "</p>",
 		}, `\s*`))), recorder.Body.String())
 	})

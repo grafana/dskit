@@ -60,9 +60,8 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 		nil,
 	)
 
-	recorder := httptest.NewRecorder()
-
 	t.Run("displays expected partition info", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/partition-ring", nil))
 
 		assert.Equal(t, http.StatusOK, recorder.Code)
@@ -97,6 +96,7 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 	})
 
 	t.Run("displays Show Tokens button by default", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/partition-ring", nil))
 
 		assert.Equal(t, http.StatusOK, recorder.Code)
@@ -108,6 +108,7 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 	})
 
 	t.Run("displays tokens when Show Tokens is enabled", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/partition-ring?tokens=true", nil))
 
 		assert.Equal(t, http.StatusOK, recorder.Code)

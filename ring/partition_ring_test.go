@@ -121,7 +121,7 @@ func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
 			}
 			pr := NewPartitionRing(*desc)
 
-			partitionID, err := pr.ActivePartitionForKey(testCase.key)
+			partitionID, _, err := pr.ActivePartitionForKey(testCase.key)
 
 			assert.ErrorIs(t, err, testCase.expectedErr)
 			if testCase.expectedErr == nil {
@@ -141,7 +141,7 @@ func TestPartitionRing_ActivePartitionForKey_NoMemoryAllocations(t *testing.T) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	numAllocs := testing.AllocsPerRun(10, func() {
-		_, err := ring.ActivePartitionForKey(r.Uint32())
+		_, _, err := ring.ActivePartitionForKey(r.Uint32())
 		if err != nil {
 			t.Fail()
 		}
@@ -162,7 +162,7 @@ func BenchmarkPartitionRing_ActivePartitionForKey(b *testing.B) {
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		_, err := ring.ActivePartitionForKey(r.Uint32())
+		_, _, err := ring.ActivePartitionForKey(r.Uint32())
 		if err != nil {
 			b.Fail()
 		}
@@ -1090,27 +1090,27 @@ func TestPartitionRingGetTokenRangesForPartitionExhaustive(t *testing.T) {
 				require.NoError(t, err)
 
 				for rng := 0; rng < len(ranges); rng += 2 {
-					pid, err := pr.ActivePartitionForKey(ranges[rng])
+					pid, _, err := pr.ActivePartitionForKey(ranges[rng])
 					require.NoError(t, err)
 					require.Equal(t, partition, pid, "first token in the range")
 
-					pid, err = pr.ActivePartitionForKey(ranges[rng+1])
+					pid, _, err = pr.ActivePartitionForKey(ranges[rng+1])
 					require.NoError(t, err)
 					require.Equal(t, partition, pid, "last token in the range")
 
 					tokenInTheMiddle := uint32((uint64(ranges[rng]) + uint64(ranges[rng+1])) / 2)
-					pid, err = pr.ActivePartitionForKey(tokenInTheMiddle)
+					pid, _, err = pr.ActivePartitionForKey(tokenInTheMiddle)
 					require.NoError(t, err)
 					require.Equal(t, partition, pid, "middle token in the range")
 
 					if ranges[rng] > 0 {
-						pid, err = pr.ActivePartitionForKey(ranges[rng] - 1)
+						pid, _, err = pr.ActivePartitionForKey(ranges[rng] - 1)
 						require.NoError(t, err)
 						require.NotEqual(t, partition, pid, "token just before the range start")
 					}
 
 					if ranges[rng+1] < math.MaxUint32 {
-						pid, err = pr.ActivePartitionForKey(ranges[rng+1] + 1)
+						pid, _, err = pr.ActivePartitionForKey(ranges[rng+1] + 1)
 						require.NoError(t, err)
 						require.NotEqual(t, partition, pid, "token just after the range end")
 					}
@@ -1197,7 +1197,7 @@ func TestActivePartitionBatchRing_Get(t *testing.T) {
 
 				for i := 0; i < numRuns; i++ {
 					key := uint32(rnd.Intn(math.MaxUint32))
-					expected, err := ring.ActivePartitionForKey(key)
+					expected, _, err := ring.ActivePartitionForKey(key)
 					require.NoError(t, err)
 
 					actual, err := activeRing.Get(key, WriteNoExtend, getBuf, nil, nil)

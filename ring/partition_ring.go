@@ -55,7 +55,7 @@ func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 
 // ActivePartitionForKey returns partition for the given key. Only active partitions are considered.
 // Only one partition is returned: in other terms, the replication factor is always 1.
-func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
+func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, Token, error) {
 	var (
 		start       = searchToken(r.ringTokens, key)
 		iterations  = 0
@@ -73,21 +73,21 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
 
 		partitionID, ok := r.partitionByToken[Token(token)]
 		if !ok {
-			return 0, ErrInconsistentTokensInfo
+			return 0, 0, ErrInconsistentTokensInfo
 		}
 
 		partition, ok := r.desc.Partitions[partitionID]
 		if !ok {
-			return 0, ErrInconsistentTokensInfo
+			return 0, 0, ErrInconsistentTokensInfo
 		}
 
 		// If the partition is not active we'll keep walking the ring.
 		if partition.IsActive() {
-			return partitionID, nil
+			return partitionID, Token(token), nil
 		}
 	}
 
-	return 0, ErrNoActivePartitionFound
+	return 0, 0, ErrNoActivePartitionFound
 }
 
 // ShuffleShardSize returns number of partitions that would be in the result of ShuffleShard call with the same size.
@@ -456,7 +456,7 @@ func (r *ActivePartitionBatchRing) ReplicationFactor() int {
 
 // Get implements DoBatchRing.Get.
 func (r *ActivePartitionBatchRing) Get(key uint32, _ Operation, bufInstances []InstanceDesc, _, _ []string) (ReplicationSet, error) {
-	partitionID, err := r.ring.ActivePartitionForKey(key)
+	partitionID, _, err := r.ring.ActivePartitionForKey(key)
 	if err != nil {
 		return ReplicationSet{}, err
 	}

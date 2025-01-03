@@ -149,6 +149,6 @@ func (f *fakeRingAccess) getRing(context.Context) (*Desc, error) {
 	return f.desc, nil
 }
 
-func (f *fakeRingAccess) casRing(ctx context.Context, fn func(in interface{}) (out interface{}, retry bool, err error)) error {
+func (f *fakeRingAccess) casRing(_ context.Context, _ func(in interface{}) (out interface{}, retry bool, err error)) error {
 	return nil
 }

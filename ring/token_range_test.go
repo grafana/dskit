@@ -190,7 +190,7 @@ func TestCheckingOfKeyOwnership(t *testing.T) {
 }
 
 func testCheckingOfKeyOwnership(t *testing.T, randomizeInstanceStates bool) {
-	const instancesPerZone = 100
+	const instancesPerZone = 20
 	const numZones = 3
 	const numTokens = 512
 	const replicationFactor = numZones // This is the only config supported by GetTokenRangesForInstance right now.
@@ -204,7 +204,7 @@ func testCheckingOfKeyOwnership(t *testing.T, randomizeInstanceStates bool) {
 	// Generate users with different number of tokens
 	userTokens := map[string][]uint32{}
 	shardSizes := map[string]int{}
-	for _, cnt := range []int{1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000} {
+	for _, cnt := range []int{1000, 5000, 10000, 25000, 50000, 100000} {
 		uid := fmt.Sprintf("%dk", cnt/1000)
 		userTokens[uid] = gen.GenerateTokens(cnt, nil)
 

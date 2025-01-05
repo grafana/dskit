@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	shard2 "github.com/grafana/dskit/ring/shard"
+	shard "github.com/grafana/dskit/ring/shard"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -46,25 +46,27 @@ func Test_SimpleRing(t *testing.T) {
 func Test_CortexProd13(t *testing.T) {
 	activePartitionsCount := 282
 	ring := preparePartitionRingWithActivePartitions(activePartitionsCount)
-	shuffler := preserveConsistencyPartitionRingTokenShuffler{duration: 13 * time.Hour}
+	shuffler := preserveConsistencyPartitionRingTokenShuffler{}
 
+	currRing := ring
 	for i := 0; i < 3; i++ {
 		timeseriesOwnershipByToken := simulateTimeseriesDistribution(t, "", "cortex-prod-13", zones, ring, false)
 		ownershipByPartitionID := calculateOwnershipByPartitionID(ring, timeseriesOwnershipByToken)
 		printSimulation(t, fmt.Sprintf("simulation number %d", i+1), ownershipByPartitionID, false)
 
-		newRing := ring
 		for j := 0; j < 20; j++ {
-			printCurrentUpdatedPartitions(newRing, "number of tokens with more than 1 partition before shuffling")
-			shuffledRing := shuffler.shuffle(*newRing, timeseriesOwnershipByToken, false)
+			printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition before shuffling")
+			shuffledRing := shuffler.shuffle(*currRing, timeseriesOwnershipByToken, false)
 			require.NotNil(t, shuffledRing)
-			printCurrentUpdatedPartitions(newRing, "number of tokens with more than 1 partition after shuffling (original ring)")
+			printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition after shuffling (original ring)")
 			printCurrentUpdatedPartitions(shuffledRing, "number of tokens with more than 1 partition after shuffling (new ring)")
 
 			ownershipByPartitionID = calculateOwnershipByPartitionID(shuffledRing, timeseriesOwnershipByToken)
 			printSimulation(t, fmt.Sprintf("spread after shuffling number %d-%d", i+1, j+1), ownershipByPartitionID, false)
 
-			newRing = shuffledRing
+			compareAllShardsFromCell(t, "", "cortex-prod-13", zones, currRing, shuffledRing)
+
+			currRing = shuffledRing
 		}
 	}
 }
@@ -190,7 +192,7 @@ func simulateTimeseriesDistribution(t *testing.T, dir string, cell string, zones
 			shardSize = 0
 		}
 
-		shardSize = shard2.ShuffleShardExpectedInstancesPerZone(shardSize, len(zones))
+		shardSize = shard.ShuffleShardExpectedInstancesPerZone(shardSize, len(zones))
 
 		shard, err := ring.ShuffleShard(tenantID, shardSize)
 		require.NoError(t, err)
@@ -209,6 +211,31 @@ func simulateTimeseriesDistribution(t *testing.T, dir string, cell string, zones
 	}
 	fmt.Printf("\n%s completed\n", cell)
 	return timeseriesOwnershipByToken
+}
+
+func compareAllShardsFromCell(t *testing.T, dir string, cell string, zones []string, first *PartitionRing, second *PartitionRing) {
+	shardSizeByTenantID, err := GetShardSizeByTenantID(dir, cell)
+	require.NoError(t, err)
+	for tenantID, ss := range shardSizeByTenantID {
+		shardSize := shard.ShuffleShardExpectedInstancesPerZone(ss, len(zones))
+		firstShard, err := first.ShuffleShard(tenantID, shardSize)
+		require.NoError(t, err)
+		if tenantID == "1921822" {
+			partitions := firstShard.PartitionIDs()
+			slices.Sort(partitions)
+			fmt.Printf("\tshard of tenant %s before reshuffling: %v\n", tenantID, partitions)
+		}
+		secondShard, err := second.ShuffleShard(tenantID, shardSize)
+		require.NoError(t, err)
+		if tenantID == "1921822" {
+			partitions := secondShard.PartitionIDs()
+			slices.Sort(partitions)
+			fmt.Printf("\tshard of tenant %s after reshuffling: %v\n", tenantID, partitions)
+		}
+		added, removed := compareShards(firstShard, secondShard)
+		require.LessOrEqual(t, len(added), 1, fmt.Sprintf("tenant %s, shard size %d", tenantID, shardSize))
+		require.LessOrEqual(t, len(removed), 1, fmt.Sprintf("tenant %s, shard size %d", tenantID, shardSize))
+	}
 }
 
 func compareAllShards(t *testing.T, first *PartitionRing, second *PartitionRing, tenantIDs []string, shardSizes []int) {

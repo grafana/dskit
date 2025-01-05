@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"strconv"
 	"testing"
+	"time"
 
 	shard2 "github.com/grafana/dskit/ring/shard"
 	"github.com/stretchr/testify/require"
@@ -19,27 +20,33 @@ func Test_SimpleRing(t *testing.T) {
 	timeseriesCounts := []int{150_000, 150_000, 150_000, 1_000_000, 1_000_000, 3_000_000}
 
 	ring := preparePartitionRingWithActivePartitions(activePartitionsCount)
-	shuffler := preserveConsistencyPartitionRingTokenShuffler{}
+	shuffler := preserveConsistencyPartitionRingTokenShuffler{duration: 13 * time.Hour}
 
+	newRing := ring
 	for i := 0; i < 10; i++ {
-		timeseriesOwnershipByToken, _ := simulateDistribution(t, ring, tenantIDs, shardSizes, timeseriesCounts)
-		ownershipByPartitionID := calculateOwnershipByPartitionID(ring, timeseriesOwnershipByToken)
+		timeseriesOwnershipByToken, _ := simulateDistribution(t, newRing, tenantIDs, shardSizes, timeseriesCounts)
+		ownershipByPartitionID := calculateOwnershipByPartitionID(newRing, timeseriesOwnershipByToken)
 		printSimulation(t, fmt.Sprintf("simulation number %d", i+1), ownershipByPartitionID, false)
+		printCurrentUpdatedPartitions(newRing, "number of tokens with more than 1 partition before shuffling")
 
-		newRing := shuffler.shuffle(*ring, timeseriesOwnershipByToken, false)
-		require.NotNil(t, newRing)
+		shuffledRing := shuffler.shuffle(*newRing, timeseriesOwnershipByToken, false)
+		require.NotNil(t, shuffledRing)
 
-		ownershipByPartitionID = calculateOwnershipByPartitionID(newRing, timeseriesOwnershipByToken)
+		printCurrentUpdatedPartitions(newRing, "number of tokens with more than 1 partition after shuffling (original ring)")
+		printCurrentUpdatedPartitions(shuffledRing, "number of tokens with more than 1 partition after shuffling (new ring)")
+
+		ownershipByPartitionID = calculateOwnershipByPartitionID(shuffledRing, timeseriesOwnershipByToken)
 		printSimulation(t, fmt.Sprintf("spread after shuffling number %d", i+1), ownershipByPartitionID, false)
 
-		compareAllShards(t, ring, newRing, tenantIDs, shardSizes)
+		compareAllShards(t, newRing, shuffledRing, tenantIDs, shardSizes)
+		newRing = shuffledRing
 	}
 }
 
 func Test_CortexProd13(t *testing.T) {
 	activePartitionsCount := 282
 	ring := preparePartitionRingWithActivePartitions(activePartitionsCount)
-	shuffler := preserveConsistencyPartitionRingTokenShuffler{}
+	shuffler := preserveConsistencyPartitionRingTokenShuffler{duration: 13 * time.Hour}
 
 	for i := 0; i < 3; i++ {
 		timeseriesOwnershipByToken := simulateTimeseriesDistribution(t, "", "cortex-prod-13", zones, ring, false)
@@ -48,8 +55,11 @@ func Test_CortexProd13(t *testing.T) {
 
 		newRing := ring
 		for j := 0; j < 20; j++ {
+			printCurrentUpdatedPartitions(newRing, "number of tokens with more than 1 partition before shuffling")
 			shuffledRing := shuffler.shuffle(*newRing, timeseriesOwnershipByToken, false)
 			require.NotNil(t, shuffledRing)
+			printCurrentUpdatedPartitions(newRing, "number of tokens with more than 1 partition after shuffling (original ring)")
+			printCurrentUpdatedPartitions(shuffledRing, "number of tokens with more than 1 partition after shuffling (new ring)")
 
 			ownershipByPartitionID = calculateOwnershipByPartitionID(shuffledRing, timeseriesOwnershipByToken)
 			printSimulation(t, fmt.Sprintf("spread after shuffling number %d-%d", i+1, j+1), ownershipByPartitionID, false)
@@ -142,6 +152,20 @@ func printSimulation(t *testing.T, message string, ownershipByPartitionID map[in
 			fmt.Printf("\tpartition %10s, %10d\n", ic.instanceID, ic.timeseriesCount)
 		}
 	}
+}
+
+func printCurrentUpdatedPartitions(ring *PartitionRing, message string) {
+	count := 0
+	pts := make(map[int32]struct{})
+	for _, partitions := range ring.partitionsByToken {
+		if partitions.Len() > 1 {
+			for e := partitions.Front(); e != nil; e = e.Next() {
+				pts[e.Value.(*partition).id] = struct{}{}
+			}
+			count++
+		}
+	}
+	fmt.Printf("%80s: %d (%v)\n", message, count, pts)
 }
 
 func simulateTimeseriesDistribution(t *testing.T, dir string, cell string, zones []string, ring *PartitionRing, timeseriesAlreadyReplicated bool) map[Token]float64 {

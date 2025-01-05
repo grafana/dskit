@@ -62,10 +62,6 @@ func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 		l.PushFront(&partition{id: pid})
 		partitionsByToken[token] = l
 	}
-	return NewPartitionRingWithPartitionsByToken(desc, partitionsByToken)
-}
-
-func NewPartitionRingWithPartitionsByToken(desc PartitionRingDesc, partitionsByToken map[Token]*list.List) *PartitionRing {
 	return &PartitionRing{
 		desc:                  desc,
 		ringTokens:            desc.tokens(),
@@ -75,6 +71,11 @@ func NewPartitionRingWithPartitionsByToken(desc PartitionRingDesc, partitionsByT
 		activePartitionsCount: desc.activePartitionsCount(),
 		shuffleShardCache:     newPartitionRingShuffleShardCache(),
 	}
+}
+
+func (r *PartitionRing) clearShuffleShardCache() {
+	r.partitionByToken = r.desc.partitionByToken()
+	r.shuffleShardCache = newPartitionRingShuffleShardCache()
 }
 
 func (r *PartitionRing) activePartitionForToken(token Token) (int32, bool) {

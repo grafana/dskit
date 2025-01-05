@@ -11,19 +11,18 @@ import (
 
 type partitionRingTokenShuffler interface {
 	// shuffle gets a PartitionRing, and a map of timeseries ownership by token,
-	// and builds a new PartitionRing with the same partitions and tokens as the original
-	// ring, but possibly with a different distribution of tokens among partitions.
-	shuffle(PartitionRing, map[Token]float64, bool) *PartitionRing
+	// and reshuffles ring's tokens among its partitions.
+	shuffle(*PartitionRing, map[Token]float64, bool)
 }
 
 type preserveConsistencyPartitionRingTokenShuffler struct {
-	partitionRingTokenShuffler
+	ring     *PartitionRing
 	duration time.Duration
 }
 
-func (s *preserveConsistencyPartitionRingTokenShuffler) minMaxOwnership(partitionsByToken map[Token]*list.List, timeseriesOwnershipByToken map[Token]float64) (int32, float64, int32, float64, bool) {
+func (s *preserveConsistencyPartitionRingTokenShuffler) minMaxOwnership(ring *PartitionRing, timeseriesOwnershipByToken map[Token]float64) (int32, float64, int32, float64, bool) {
 	timeseriesOwnershipByPartition := make(map[int32]float64)
-	for token, partitions := range partitionsByToken {
+	for token, partitions := range ring.partitionsByToken {
 		// We consider only partitions with tokens that haven't been already reshuffled.
 		if partitions.Len() == 1 {
 			activePartition := partitions.Front().Value.(*partition)
@@ -55,7 +54,7 @@ func (s *preserveConsistencyPartitionRingTokenShuffler) minMaxOwnership(partitio
 	return minPartition, minTimeseriesOwnership, maxPartition, maxTimeseriesOwnership, true
 }
 
-func (s *preserveConsistencyPartitionRingTokenShuffler) createPartitionTokensPQs(ring PartitionRing, timeseriesOwnershipByToken map[Token]float64, minPartition int32, maxPartition int32) (ownershipPriorityQueue[ringInstance], ownershipPriorityQueue[ringInstance]) {
+func (s *preserveConsistencyPartitionRingTokenShuffler) createPartitionTokensPQs(ring *PartitionRing, timeseriesOwnershipByToken map[Token]float64, minPartition int32, maxPartition int32) (ownershipPriorityQueue[ringInstance], ownershipPriorityQueue[ringInstance]) {
 	maxPartitionTokensPQ := newPriorityQueue[ringInstance](optimalTokensPerInstance, true)
 	minPartitionTokensPQ := newPriorityQueue[ringInstance](optimalTokensPerInstance, false)
 
@@ -76,13 +75,13 @@ func (s *preserveConsistencyPartitionRingTokenShuffler) createPartitionTokensPQs
 	return minPartitionTokensPQ, maxPartitionTokensPQ
 }
 
-func (s *preserveConsistencyPartitionRingTokenShuffler) shuffle(ring PartitionRing, timeseriesOwnershipByToken map[Token]float64, printSteps bool) *PartitionRing {
+func (s *preserveConsistencyPartitionRingTokenShuffler) shuffle(ring *PartitionRing, timeseriesOwnershipByToken map[Token]float64, printSteps bool) {
 	ring.cleanupExpiredPartitions(s.duration)
-	minPartition, minTimeseriesOwnership, maxPartition, maxTimeseriesOwnership, found := s.minMaxOwnership(ring.partitionsByToken, timeseriesOwnershipByToken)
+	minPartition, minTimeseriesOwnership, maxPartition, maxTimeseriesOwnership, found := s.minMaxOwnership(ring, timeseriesOwnershipByToken)
 
 	if !found {
 		fmt.Println("It wasn't possible to determine min and max info")
-		return &ring
+		return
 	}
 
 	if printSteps {
@@ -108,12 +107,11 @@ func (s *preserveConsistencyPartitionRingTokenShuffler) shuffle(ring PartitionRi
 		}
 	}
 
-	desc := ring.desc
 	if len(ring.partitionsByToken) == 0 {
 		ring.partitionsByToken = make(map[Token]*list.List, 2)
 	}
 
-	for partition, partitionDesc := range desc.Partitions {
+	for partition, partitionDesc := range ring.desc.Partitions {
 		if partition == minPartition {
 			s.updateTokensFromPQ(&partitionDesc, minPartitionTokensPQ, ring.partitionsByToken)
 		} else if partition == maxPartition {
@@ -121,19 +119,7 @@ func (s *preserveConsistencyPartitionRingTokenShuffler) shuffle(ring PartitionRi
 		}
 	}
 
-	return NewPartitionRingWithPartitionsByToken(desc, ring.partitionsByToken)
-}
-
-func (s *preserveConsistencyPartitionRingTokenShuffler) updateTokensFromPQOld(partitionDesc *PartitionDesc, tokenPQ ownershipPriorityQueue[ringInstance]) {
-	tokens := partitionDesc.GetTokens()
-	if tokens == nil {
-		tokens = make(Tokens, optimalTokensPerInstance)
-	}
-	for i := 0; i < len(tokens); i++ {
-		token := heap.Pop(&tokenPQ).(ownershipInfo[ringInstance])
-		tokens[i] = uint32(token.item.instanceID)
-	}
-	partitionDesc.Tokens = tokens
+	ring.clearShuffleShardCache()
 }
 
 func (s *preserveConsistencyPartitionRingTokenShuffler) updateTokensFromPQ(partitionDesc *PartitionDesc, tokenPQ ownershipPriorityQueue[ringInstance], partitionsByToken map[Token]*list.List) {

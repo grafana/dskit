@@ -22,31 +22,29 @@ func Test_SimpleRing(t *testing.T) {
 	ring := preparePartitionRingWithActivePartitions(activePartitionsCount)
 	shuffler := preserveConsistencyPartitionRingTokenShuffler{duration: 13 * time.Hour}
 
-	newRing := ring
+	currRing := ring
 	for i := 0; i < 10; i++ {
-		timeseriesOwnershipByToken, _ := simulateDistribution(t, newRing, tenantIDs, shardSizes, timeseriesCounts)
-		ownershipByPartitionID := calculateOwnershipByPartitionID(newRing, timeseriesOwnershipByToken)
+		originalRing := currRing
+		timeseriesOwnershipByToken, _ := simulateDistribution(t, currRing, tenantIDs, shardSizes, timeseriesCounts)
+		ownershipByPartitionID := calculateOwnershipByPartitionID(currRing, timeseriesOwnershipByToken)
 		printSimulation(t, fmt.Sprintf("simulation number %d", i+1), ownershipByPartitionID, false)
-		printCurrentUpdatedPartitions(newRing, "number of tokens with more than 1 partition before shuffling")
+		printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition before shuffling")
 
-		shuffledRing := shuffler.shuffle(*newRing, timeseriesOwnershipByToken, false)
-		require.NotNil(t, shuffledRing)
+		shuffler.shuffle(currRing, timeseriesOwnershipByToken, false)
 
-		printCurrentUpdatedPartitions(newRing, "number of tokens with more than 1 partition after shuffling (original ring)")
-		printCurrentUpdatedPartitions(shuffledRing, "number of tokens with more than 1 partition after shuffling (new ring)")
+		printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition after shuffling")
 
-		ownershipByPartitionID = calculateOwnershipByPartitionID(shuffledRing, timeseriesOwnershipByToken)
+		ownershipByPartitionID = calculateOwnershipByPartitionID(currRing, timeseriesOwnershipByToken)
 		printSimulation(t, fmt.Sprintf("spread after shuffling number %d", i+1), ownershipByPartitionID, false)
 
-		compareAllShards(t, newRing, shuffledRing, tenantIDs, shardSizes)
-		newRing = shuffledRing
+		compareAllShards(t, originalRing, currRing, tenantIDs, shardSizes)
 	}
 }
 
 func Test_CortexProd13(t *testing.T) {
 	activePartitionsCount := 282
 	ring := preparePartitionRingWithActivePartitions(activePartitionsCount)
-	shuffler := preserveConsistencyPartitionRingTokenShuffler{}
+	shuffler := preserveConsistencyPartitionRingTokenShuffler{duration: 13 * time.Hour}
 
 	currRing := ring
 	for i := 0; i < 3; i++ {
@@ -55,18 +53,15 @@ func Test_CortexProd13(t *testing.T) {
 		printSimulation(t, fmt.Sprintf("simulation number %d", i+1), ownershipByPartitionID, false)
 
 		for j := 0; j < 20; j++ {
+			originalRing := currRing
 			printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition before shuffling")
-			shuffledRing := shuffler.shuffle(*currRing, timeseriesOwnershipByToken, false)
-			require.NotNil(t, shuffledRing)
-			printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition after shuffling (original ring)")
-			printCurrentUpdatedPartitions(shuffledRing, "number of tokens with more than 1 partition after shuffling (new ring)")
+			shuffler.shuffle(currRing, timeseriesOwnershipByToken, false)
+			printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition after shuffling")
 
-			ownershipByPartitionID = calculateOwnershipByPartitionID(shuffledRing, timeseriesOwnershipByToken)
+			ownershipByPartitionID = calculateOwnershipByPartitionID(currRing, timeseriesOwnershipByToken)
 			printSimulation(t, fmt.Sprintf("spread after shuffling number %d-%d", i+1, j+1), ownershipByPartitionID, false)
 
-			compareAllShardsFromCell(t, "", "cortex-prod-13", zones, currRing, shuffledRing)
-
-			currRing = shuffledRing
+			compareAllShardsFromCell(t, "", "cortex-prod-13", zones, originalRing, currRing)
 		}
 	}
 }

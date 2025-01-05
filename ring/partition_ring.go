@@ -2,6 +2,7 @@ package ring
 
 import (
 	"bytes"
+	"container/list"
 	"fmt"
 	"math"
 	"math/rand"
@@ -13,6 +14,11 @@ import (
 )
 
 var ErrNoActivePartitionFound = fmt.Errorf("no active partition found")
+
+type partition struct {
+	id         int32
+	validUntil int64
+}
 
 // PartitionRing holds an immutable view of the partitions ring.
 //
@@ -32,6 +38,11 @@ type PartitionRing struct {
 	// that registered that token.
 	partitionByToken map[Token]int32
 
+	// partitionByToken is a map where they key is a registered token and the value is a list of partition objects
+	// that currently correspond or previously corresponded to that token. Head of the list represents the current
+	// active partition.
+	partitionsByToken map[Token]*list.List
+
 	// ownersByPartition is a map where the key is the partition ID and the value is a list of owner IDs.
 	ownersByPartition map[int32][]string
 
@@ -43,13 +54,50 @@ type PartitionRing struct {
 }
 
 func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
+	partitionByToken := desc.partitionByToken()
+
+	partitionsByToken := make(map[Token]*list.List, len(partitionByToken))
+	for token, pid := range partitionByToken {
+		l := list.New()
+		l.PushFront(&partition{id: pid})
+		partitionsByToken[token] = l
+	}
+	return NewPartitionRingWithPartitionsByToken(desc, partitionsByToken)
+}
+
+func NewPartitionRingWithPartitionsByToken(desc PartitionRingDesc, partitionsByToken map[Token]*list.List) *PartitionRing {
 	return &PartitionRing{
 		desc:                  desc,
 		ringTokens:            desc.tokens(),
 		partitionByToken:      desc.partitionByToken(),
+		partitionsByToken:     partitionsByToken,
 		ownersByPartition:     desc.ownersByPartition(),
 		activePartitionsCount: desc.activePartitionsCount(),
 		shuffleShardCache:     newPartitionRingShuffleShardCache(),
+	}
+}
+
+func (r *PartitionRing) activePartitionForToken(token Token) (int32, bool) {
+	partitions, ok := r.partitionsByToken[token]
+	if !ok {
+		return 0, false
+	}
+	activePartition := partitions.Front().Value.(*partition)
+	return activePartition.id, true
+}
+
+func (r *PartitionRing) cleanupExpiredPartitions(duration time.Duration) {
+	validUntil := time.Now().Add(-duration).Unix()
+	for _, partitions := range r.partitionsByToken {
+		curr := partitions.Front()
+		for curr != nil {
+			next := curr.Next()
+			currPartition, ok := curr.Value.(*partition)
+			if ok && currPartition.validUntil != 0 && currPartition.validUntil < validUntil {
+				partitions.Remove(curr)
+			}
+			curr = next
+		}
 	}
 }
 
@@ -71,7 +119,7 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, Token, error) 
 
 		token := r.ringTokens[i]
 
-		partitionID, ok := r.partitionByToken[Token(token)]
+		partitionID, ok := r.activePartitionForToken(Token(token))
 		if !ok {
 			return 0, 0, ErrInconsistentTokensInfo
 		}

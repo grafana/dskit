@@ -11,13 +11,25 @@ import (
 	"time"
 
 	shardUtil "github.com/grafana/dskit/ring/shard"
+	"github.com/pkg/errors"
 )
 
-var ErrNoActivePartitionFound = fmt.Errorf("no active partition found")
+var (
+	ErrNoActivePartitionFound    = errors.New("no active partition found")
+	ErrInconsistentPartitionInfo = errors.New("inconsistent partition info")
+)
 
 type partition struct {
 	id         int32
 	validUntil int64
+}
+
+func (p *partition) isValid(timestamp int64) bool {
+	return p.isActive() || p.validUntil > timestamp
+}
+
+func (p *partition) isActive() bool {
+	return p.validUntil == 0
 }
 
 // PartitionRing holds an immutable view of the partitions ring.
@@ -94,7 +106,7 @@ func (r *PartitionRing) cleanupExpiredPartitions(duration time.Duration) {
 		for curr != nil {
 			next := curr.Next()
 			currPartition, ok := curr.Value.(*partition)
-			if ok && currPartition.validUntil != 0 && currPartition.validUntil < validUntil {
+			if ok && !currPartition.isValid(validUntil) {
 				partitions.Remove(curr)
 			}
 			curr = next
@@ -211,6 +223,122 @@ func (r *PartitionRing) ShuffleShardWithLookback(identifier string, size int, lo
 }
 
 func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
+	// If the size is too small or too large, run with a size equal to the total number of partitions.
+	// We have to run the function anyway because the logic may filter out some INACTIVE partitions.
+	if size <= 0 || size >= len(r.desc.Partitions) {
+		size = len(r.desc.Partitions)
+	}
+
+	var lookbackUntil int64
+	if lookbackPeriod > 0 {
+		lookbackUntil = now.Add(-lookbackPeriod).Unix()
+	}
+
+	// Initialise the random generator used to select instances in the ring.
+	// There are no zones
+	random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(identifier, "")))
+
+	// To select one more instance while guaranteeing the "consistency" property,
+	// we do pick a random value from the generator and resolve uniqueness collisions
+	// (if any) continuing walking the ring.
+	tokensCount := len(r.ringTokens)
+
+	result := make(map[int32]struct{}, size)
+	exclude := map[int32]struct{}{}
+
+	for len(result) < size {
+		start := searchToken(r.ringTokens, random.Uint32())
+		iterations := 0
+		found := false
+
+		for p := start; !found && iterations < tokensCount; p++ {
+			iterations++
+
+			// Wrap p around in the ring.
+			if p >= tokensCount {
+				p %= tokensCount
+			}
+
+			partitions, ok := r.partitionsByToken[Token(r.ringTokens[p])]
+			if !ok {
+				return nil, ErrInconsistentTokensInfo
+			}
+
+			for e := partitions.Front(); e != nil; e = e.Next() {
+				currentPartition, ok := e.Value.(*partition)
+				if !ok {
+					return nil, ErrInconsistentPartitionInfo
+				}
+
+				validUntil := now.Unix()
+				if lookbackUntil > 0 {
+					validUntil = now.Add(-lookbackPeriod).Unix()
+				}
+				if !currentPartition.isValid(validUntil) {
+					continue
+				}
+
+				shouldExtend := !currentPartition.isActive()
+
+				pid := currentPartition.id
+				// Ensure the partition has not already been included or excluded.
+				if _, ok := result[pid]; ok {
+					continue
+				}
+				if _, ok := exclude[pid]; ok {
+					continue
+				}
+
+				p, ok := r.desc.Partitions[pid]
+				if !ok {
+					return nil, ErrInconsistentPartitionInfo
+				}
+
+				// PENDING partitions should be skipped because they're not ready for read or write yet,
+				// and they don't need to be looked back.
+				if p.IsPending() {
+					exclude[pid] = struct{}{}
+					continue
+				}
+
+				var (
+					withinLookbackPeriod = lookbackPeriod > 0 && p.GetStateTimestamp() >= lookbackUntil
+					shouldInclude        = p.IsActive() || withinLookbackPeriod
+				)
+
+				shouldExtend = shouldExtend || withinLookbackPeriod
+
+				// Either include or exclude the found partition.
+				if shouldInclude {
+					result[pid] = struct{}{}
+				} else {
+					exclude[pid] = struct{}{}
+				}
+
+				// Extend the shard, if requested.
+				if shouldExtend {
+					size++
+				}
+
+				// We can stop searching for other partitions only if this partition was included
+				// and no extension was requested, which means it's the "stop partition" for this cycle.
+				if shouldInclude && !shouldExtend {
+					found = true
+				}
+
+			}
+		}
+
+		// If we iterated over all tokens, and no new partition has been found, we can stop looking for more partitions.
+		if !found {
+			break
+		}
+	}
+
+	return NewPartitionRing(r.desc.WithPartitions(result)), nil
+}
+
+func (r *PartitionRing) shuffleShardOld(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
 	// If the size is too small or too large, run with a size equal to the total number of partitions.
 	// We have to run the function anyway because the logic may filter out some INACTIVE partitions.
 	if size <= 0 || size >= len(r.desc.Partitions) {

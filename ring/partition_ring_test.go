@@ -480,6 +480,7 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 		update
 		remove
 		test
+		reshuffle
 
 		lookbackPeriod = time.Hour
 		userID         = "user-1"
@@ -489,12 +490,20 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 	outsideLookback := now.Add(-2 * lookbackPeriod)
 	withinLookback := now.Add(-lookbackPeriod / 2)
 
+	type reshuffleInfo struct {
+		firstPartitionID    int32
+		secondPartitionID   int32
+		oldTokensValidUntil int64
+	}
+
 	type event struct {
 		what          eventType
 		partitionID   int32
 		partitionDesc PartitionDesc
 		shardSize     int
 		expected      []int32
+		reshuffle     reshuffleInfo
+		reuseRing     bool
 	}
 
 	tests := map[string]struct {
@@ -508,9 +517,9 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 2) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(1, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 4, expected: []int32{0, 1, 2}},
 			},
 		},
@@ -521,9 +530,9 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 2) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(1, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 1, expected: []int32{0}},
 			},
 		},
@@ -534,12 +543,12 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 1) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(1, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{0, 1}},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{0, 1, 2}},
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{0, 2}},
 			},
 		},
@@ -550,20 +559,20 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 0) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(1, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionInactive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
 				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to include partition 1
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionInactive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
 				// Partition 2 becomes active again
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
 				// Partition 2 still active, but now falls outside the lookback period, there's no need to include partition 1
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 			},
 		},
@@ -574,24 +583,24 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 0) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(1, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 				// Partition 2 switches to inactive
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, withinLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionInactive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
 				// Partition 2 still inactive, but now falls outside the lookback period, there's no need to include partition 1
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionInactive, outsideLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionInactive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
 				// Partition 2 now gone
 				{what: remove, partitionID: 2},
 				{what: test, shardSize: 2, expected: []int32{1, 0}},
 				// Partition 2 becomes active again
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, withinLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, withinLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 1, 0}},
 				// Partition 2 still active, but now falls outside the lookback period, there's no need to include partition 1
-				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: update, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 2, expected: []int32{2, 0}},
 			},
 		},
@@ -602,13 +611,52 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				2: {userToken(userID, "", 2) + 1},
 			},
 			timeline: []event{
-				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
-				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(PartitionActive, outsideLookback)},
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(1, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
 				{what: test, shardSize: 1, expected: []int32{0}},
 				{what: test, shardSize: 2, expected: []int32{0, 1}},
 				{what: test, shardSize: 3, expected: []int32{0, 1, 2}},
 				{what: test, shardSize: 4, expected: []int32{0, 1, 2}},
+			},
+		},
+		"partitions reshuffled, shard withing old tokens validity": {
+			partitionTokens: map[int32][]uint32{
+				0: {userToken(userID, "", 0) + 1},
+				1: {userToken(userID, "", 2) + 1},
+				2: {userToken(userID, "", 1) + 1},
+			},
+			timeline: []event{
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(1, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
+				{what: test, shardSize: 2, expected: []int32{0, 2}},
+				// We swap tokens of partitions 0 and 1, and the shard should contain partitions 1, 2.
+				// But, since the old tokens have not expired yet, we include partition 0 too.
+				{what: reshuffle, reshuffle: reshuffleInfo{firstPartitionID: 0, secondPartitionID: 1, oldTokensValidUntil: now.Unix()}},
+				{what: test, reuseRing: true, shardSize: 2, expected: []int32{0, 1, 2}},
+				// Partition 0 switches to inactive
+				{what: update, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionInactive, withinLookback)},
+				{what: test, reuseRing: true, shardSize: 2, expected: []int32{0, 1, 2}},
+				// Partition 0 still inactive, but now falls outside the lookback period, there's no need to include partition 0.
+				{what: update, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionInactive, outsideLookback)},
+				{what: test, reuseRing: true, shardSize: 2, expected: []int32{1, 2}},
+			},
+		},
+		"partitions reshuffled, shard outside old tokens validity": {
+			partitionTokens: map[int32][]uint32{
+				0: {userToken(userID, "", 0) + 1},
+				1: {userToken(userID, "", 2) + 1},
+				2: {userToken(userID, "", 1) + 1},
+			},
+			timeline: []event{
+				{what: add, partitionID: 0, partitionDesc: generatePartitionWithInfo(0, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 1, partitionDesc: generatePartitionWithInfo(1, PartitionActive, outsideLookback)},
+				{what: add, partitionID: 2, partitionDesc: generatePartitionWithInfo(2, PartitionActive, outsideLookback)},
+				{what: test, shardSize: 2, expected: []int32{0, 2}},
+				// We swap tokens of partitions 0 and 1, and the shard should contain partitions 1, 2.
+				{what: reshuffle, reshuffle: reshuffleInfo{firstPartitionID: 0, secondPartitionID: 1, oldTokensValidUntil: outsideLookback.Unix()}},
+				{what: test, reuseRing: true, shardSize: 2, expected: []int32{1, 2}},
 			},
 		},
 	}
@@ -616,6 +664,7 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			ringDesc := NewPartitionRingDesc()
+			var ring *PartitionRing
 
 			// Replay the events on the timeline.
 			for ix, event := range testData.timeline {
@@ -628,11 +677,54 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 				case remove:
 					delete(ringDesc.Partitions, event.partitionID)
 				case test:
-					// Create a new ring for every test so that it can create its own
-					ring := NewPartitionRing(*ringDesc)
+					if ring == nil || !event.reuseRing {
+						// Create a new ring unless we want to reuse the existing one.
+						ring = NewPartitionRing(*ringDesc)
+					} else {
+						ring.clearShuffleShardCache()
+					}
 					shuffledRing, err := ring.ShuffleShardWithLookback(userID, event.shardSize, lookbackPeriod, now)
 					assert.NoError(t, err, "step %d", ix)
+					fmt.Println(shuffledRing.Partitions())
 					assert.ElementsMatch(t, event.expected, maps.Keys(shuffledRing.desc.Partitions), "step %d", ix)
+				case reshuffle:
+					ring = NewPartitionRing(*ringDesc)
+
+					firstPartitionTokens := make([]uint32, len(testData.partitionTokens[event.reshuffle.firstPartitionID]))
+					copy(firstPartitionTokens, testData.partitionTokens[event.reshuffle.firstPartitionID])
+
+					secondPartitionTokens := make([]uint32, len(testData.partitionTokens[event.reshuffle.secondPartitionID]))
+					copy(secondPartitionTokens, testData.partitionTokens[event.reshuffle.secondPartitionID])
+
+					updateTokens := func(partitionID int32, part *PartitionDesc) {
+						var (
+							newTokens      []uint32
+							newPartitionID int32
+						)
+						switch partitionID {
+						case event.reshuffle.firstPartitionID:
+							newTokens = secondPartitionTokens
+							newPartitionID = event.reshuffle.secondPartitionID
+						case event.reshuffle.secondPartitionID:
+							newTokens = firstPartitionTokens
+							newPartitionID = event.reshuffle.firstPartitionID
+						default:
+							return
+						}
+
+						for _, token := range part.Tokens {
+							partitions, ok := ring.partitionsByToken[Token(token)]
+							assert.True(t, ok)
+							partitions.Front().Value.(*partition).validUntil = event.reshuffle.oldTokensValidUntil
+							partitions.PushFront(&partition{id: newPartitionID})
+						}
+
+						copy(part.Tokens, newTokens)
+					}
+
+					for partitionID, partitionDesc := range ringDesc.Partitions {
+						updateTokens(partitionID, &partitionDesc)
+					}
 				}
 			}
 		})
@@ -1258,8 +1350,9 @@ func BenchmarkActivePartitionBatchRing_Get(b *testing.B) {
 	}
 }
 
-func generatePartitionWithInfo(state PartitionState, stateTS time.Time) PartitionDesc {
+func generatePartitionWithInfo(id int32, state PartitionState, stateTS time.Time) PartitionDesc {
 	return PartitionDesc{
+		Id:             id,
 		State:          state,
 		StateTimestamp: stateTS.Unix(),
 	}

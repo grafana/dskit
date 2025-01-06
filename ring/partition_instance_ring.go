@@ -16,7 +16,7 @@ type InstanceRingReader interface {
 	// GetInstance return the InstanceDesc for the given instanceID or an error
 	// if the instance doesn't exist in the ring. The returned InstanceDesc is NOT a
 	// deep copy, so the caller should never modify it.
-	GetInstance(string) (InstanceDesc, error)
+	GetInstance(string) (*InstanceDesc, error)
 
 	// InstancesCount returns the number of instances in the ring.
 	InstancesCount() int
@@ -63,7 +63,7 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 
 	for partitionID := range partitionsRingDesc.Partitions {
 		ownerIDs := partitionsRing.PartitionOwnerIDs(partitionID)
-		instances := make([]InstanceDesc, 0, len(ownerIDs))
+		instances := make([]*InstanceDesc, 0, len(ownerIDs))
 
 		for _, instanceID := range ownerIDs {
 			instance, err := r.instancesRing.GetInstance(instanceID)
@@ -148,7 +148,7 @@ func (m staticPartitionRingReader) PartitionRing() *PartitionRing {
 
 // uniqueZonesFromInstances returns the unique list of zones among the input instances. The input buf MUST have
 // zero length, but could be capacity in order to avoid memory allocations.
-func uniqueZonesFromInstances(instances []InstanceDesc, buf []string) []string {
+func uniqueZonesFromInstances(instances []*InstanceDesc, buf []string) []string {
 	for _, instance := range instances {
 		if !slices.Contains(buf, instance.Zone) {
 			buf = append(buf, instance.Zone)

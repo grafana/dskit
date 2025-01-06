@@ -20,7 +20,7 @@ type batchTracker struct {
 }
 
 type instance struct {
-	desc         InstanceDesc
+	desc         *InstanceDesc
 	itemTrackers []*itemTracker
 	indexes      []int
 }
@@ -57,7 +57,7 @@ type DoBatchRing interface {
 	// The input buffers may be referenced in the returned ReplicationSet. This means that it's unsafe to call
 	// Get() multiple times passing the same buffers if ReplicationSet is retained between two different Get()
 	// calls. In this cas, you can pass nil buffers.
-	Get(key uint32, op Operation, bufInstances []InstanceDesc, bufStrings1, bufStrings2 []string) (ReplicationSet, error)
+	Get(key uint32, op Operation, bufInstances []*InstanceDesc, bufStrings1, bufStrings2 []string) (ReplicationSet, error)
 
 	// ReplicationFactor returns the number of instances each key is expected to be sharded to.
 	ReplicationFactor() int
@@ -68,7 +68,7 @@ type DoBatchRing interface {
 
 // DoBatch is a deprecated version of DoBatchWithOptions where grpc errors containing status codes 4xx are treated as client errors.
 // Deprecated. Use DoBatchWithOptions instead.
-func DoBatch(ctx context.Context, op Operation, r DoBatchRing, keys []uint32, callback func(InstanceDesc, []int) error, cleanup func()) error {
+func DoBatch(ctx context.Context, op Operation, r DoBatchRing, keys []uint32, callback func(*InstanceDesc, []int) error, cleanup func()) error {
 	return DoBatchWithOptions(ctx, op, r, keys, callback, DoBatchOptions{
 		Cleanup:       cleanup,
 		IsClientError: isHTTPStatus4xx,
@@ -111,7 +111,7 @@ func (o *DoBatchOptions) replaceZeroValuesWithDefaults() {
 // See comments on DoBatchOptions for available options for this call.
 //
 // Not implemented as a method on Ring, so we can test separately.
-func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys []uint32, callback func(InstanceDesc, []int) error, o DoBatchOptions) error {
+func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys []uint32, callback func(*InstanceDesc, []int) error, o DoBatchOptions) error {
 	o.replaceZeroValuesWithDefaults()
 
 	if r.InstancesCount() <= 0 {
@@ -123,7 +123,7 @@ func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys [
 	instances := make(map[string]instance, r.InstancesCount())
 
 	var (
-		bufDescs [GetBufferSize]InstanceDesc
+		bufDescs [GetBufferSize]*InstanceDesc
 		bufHosts [GetBufferSize]string
 		bufZones [GetBufferSize]string
 	)

@@ -31,7 +31,7 @@ func TestReplicationSet_GetAddresses(t *testing.T) {
 		},
 		"should return instances addresses (no order guaranteed)": {
 			rs: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "127.0.0.1"},
 					{Addr: "127.0.0.2"},
 					{Addr: "127.0.0.3"},
@@ -61,7 +61,7 @@ func TestReplicationSet_GetAddressesWithout(t *testing.T) {
 		},
 		"non-matching exclusion, should return all addresses": {
 			rs: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "127.0.0.1"},
 					{Addr: "127.0.0.2"},
 					{Addr: "127.0.0.3"},
@@ -72,7 +72,7 @@ func TestReplicationSet_GetAddressesWithout(t *testing.T) {
 		},
 		"matching exclusion, should return non-excluded addresses": {
 			rs: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "127.0.0.1"},
 					{Addr: "127.0.0.2"},
 					{Addr: "127.0.0.3"},
@@ -121,7 +121,7 @@ func failingFunctionOnZones(zones ...string) func(context.Context, *InstanceDesc
 func TestReplicationSet_Do(t *testing.T) {
 	tests := []struct {
 		name                string
-		instances           []InstanceDesc
+		instances           []*InstanceDesc
 		maxErrors           int
 		maxUnavailableZones int
 		f                   func(context.Context, *InstanceDesc) (interface{}, error)
@@ -132,7 +132,7 @@ func TestReplicationSet_Do(t *testing.T) {
 	}{
 		{
 			name: "max errors = 0, no errors no delay",
-			instances: []InstanceDesc{
+			instances: []*InstanceDesc{
 				{},
 			},
 			f: func(context.Context, *InstanceDesc) (interface{}, error) {
@@ -142,7 +142,7 @@ func TestReplicationSet_Do(t *testing.T) {
 		},
 		{
 			name:      "max errors = 0, should fail on 1 error out of 1 instance",
-			instances: []InstanceDesc{{}},
+			instances: []*InstanceDesc{{}},
 			f: func(context.Context, *InstanceDesc) (interface{}, error) {
 				return nil, errFailure
 			},
@@ -151,14 +151,14 @@ func TestReplicationSet_Do(t *testing.T) {
 		},
 		{
 			name:          "max errors = 0, should fail on 1 error out of 3 instances (last call fails)",
-			instances:     []InstanceDesc{{}, {}, {}},
+			instances:     []*InstanceDesc{{}, {}, {}},
 			f:             failingFunctionAfter(2, 10*time.Millisecond),
 			want:          nil,
 			expectedError: errFailure,
 		},
 		{
 			name:          "max errors = 1, should fail on 3 errors out of 5 instances (last calls fail)",
-			instances:     []InstanceDesc{{}, {}, {}, {}, {}},
+			instances:     []*InstanceDesc{{}, {}, {}, {}, {}},
 			maxErrors:     1,
 			f:             failingFunctionAfter(2, 10*time.Millisecond),
 			delay:         100 * time.Millisecond,
@@ -167,7 +167,7 @@ func TestReplicationSet_Do(t *testing.T) {
 		},
 		{
 			name:      "max errors = 1, should handle context canceled",
-			instances: []InstanceDesc{{}, {}, {}},
+			instances: []*InstanceDesc{{}, {}, {}},
 			maxErrors: 1,
 			f: func(context.Context, *InstanceDesc) (interface{}, error) {
 				time.Sleep(300 * time.Millisecond)
@@ -179,7 +179,7 @@ func TestReplicationSet_Do(t *testing.T) {
 		},
 		{
 			name:      "max errors = 0, should succeed on all successful instances",
-			instances: []InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}},
+			instances: []*InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}},
 			f: func(context.Context, *InstanceDesc) (interface{}, error) {
 				return 1, nil
 			},
@@ -187,35 +187,35 @@ func TestReplicationSet_Do(t *testing.T) {
 		},
 		{
 			name:                "max unavailable zones = 1, should succeed on instances failing in 1 out of 3 zones (3 instances)",
-			instances:           []InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}},
+			instances:           []*InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}},
 			f:                   failingFunctionOnZones("zone1"),
 			maxUnavailableZones: 1,
 			want:                []interface{}{1, 1},
 		},
 		{
 			name:                "max unavailable zones = 1, should fail on instances failing in 2 out of 3 zones (3 instances)",
-			instances:           []InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}},
+			instances:           []*InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}},
 			f:                   failingFunctionOnZones("zone1", "zone2"),
 			maxUnavailableZones: 1,
 			expectedError:       errZoneFailure,
 		},
 		{
 			name:                "max unavailable zones = 1, should succeed on instances failing in 1 out of 3 zones (6 instances)",
-			instances:           []InstanceDesc{{Zone: "zone1"}, {Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone2"}, {Zone: "zone3"}, {Zone: "zone3"}},
+			instances:           []*InstanceDesc{{Zone: "zone1"}, {Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone2"}, {Zone: "zone3"}, {Zone: "zone3"}},
 			f:                   failingFunctionOnZones("zone1"),
 			maxUnavailableZones: 1,
 			want:                []interface{}{1, 1, 1, 1},
 		},
 		{
 			name:                "max unavailable zones = 2, should fail on instances failing in 3 out of 5 zones (5 instances)",
-			instances:           []InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}, {Zone: "zone4"}, {Zone: "zone5"}},
+			instances:           []*InstanceDesc{{Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone3"}, {Zone: "zone4"}, {Zone: "zone5"}},
 			f:                   failingFunctionOnZones("zone1", "zone2", "zone3"),
 			maxUnavailableZones: 2,
 			expectedError:       errZoneFailure,
 		},
 		{
 			name:                "max unavailable zones = 2, should succeed on instances failing in 2 out of 5 zones (10 instances)",
-			instances:           []InstanceDesc{{Zone: "zone1"}, {Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone2"}, {Zone: "zone3"}, {Zone: "zone3"}, {Zone: "zone4"}, {Zone: "zone4"}, {Zone: "zone5"}, {Zone: "zone5"}},
+			instances:           []*InstanceDesc{{Zone: "zone1"}, {Zone: "zone1"}, {Zone: "zone2"}, {Zone: "zone2"}, {Zone: "zone3"}, {Zone: "zone3"}, {Zone: "zone4"}, {Zone: "zone4"}, {Zone: "zone5"}, {Zone: "zone5"}},
 			f:                   failingFunctionOnZones("zone1", "zone5"),
 			maxUnavailableZones: 2,
 			want:                []interface{}{1, 1, 1, 1, 1, 1},
@@ -302,7 +302,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		},
 		"one replica, max errors = 0, max unavailable zones = 0, call succeeds": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "replica-1", Zone: "zone-1"},
 				},
 			},
@@ -313,7 +313,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		},
 		"one replica, max errors = 0, max unavailable zones = 0, call fails": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "replica-1", Zone: "zone-1"},
 				},
 			},
@@ -324,7 +324,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		},
 		"one replica, max errors = 1, call succeeds": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "replica-1", Zone: "zone-1"},
 				},
 				MaxErrors: 1,
@@ -336,7 +336,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		},
 		"one replica, max errors = 1, call fails": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "replica-1", Zone: "zone-1"},
 				},
 				MaxErrors: 1,
@@ -348,7 +348,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		},
 		"one replica, max unavailable zones = 1, call succeeds": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "replica-1", Zone: "zone-1"},
 				},
 				MaxUnavailableZones: 1,
@@ -360,7 +360,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		},
 		"one replica, max unavailable zones = 1, call fails": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "replica-1", Zone: "zone-1"},
 				},
 				MaxUnavailableZones: 1,
@@ -372,7 +372,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		},
 		"total zone failure with many replicas, max unavailable zones = 1": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "zone-a-replica-1", Zone: "zone-a"},
 					{Addr: "zone-a-replica-2", Zone: "zone-a"},
 					{Addr: "zone-b-replica-1", Zone: "zone-b"},
@@ -455,7 +455,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZones(t *testing.T) {
 	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Addr: "zone-a-replica-1", Zone: "zone-a"},
 			{Addr: "zone-a-replica-2", Zone: "zone-a"},
 			{Addr: "zone-b-replica-1", Zone: "zone-b"},
@@ -514,7 +514,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZo
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t *testing.T) {
 	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Addr: "zone-a-replica-1", Zone: "zone-a"},
 			{Addr: "zone-a-replica-2", Zone: "zone-a"},
 			{Addr: "zone-b-replica-1", Zone: "zone-b"},
@@ -580,7 +580,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_PartialZoneFailure(t 
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_TerminalError(t *testing.T) {
 	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Addr: "zone-a-replica-1", Zone: "zone-a"},
 			{Addr: "zone-a-replica-2", Zone: "zone-a"},
 			{Addr: "zone-b-replica-1", Zone: "zone-b"},
@@ -632,7 +632,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_TerminalError(t *test
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ZoneSorting(t *testing.T) {
 	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Addr: "zone-a-replica-1", Zone: "zone-a"},
 			{Addr: "zone-a-replica-2", Zone: "zone-a"},
 			{Addr: "zone-b-replica-1", Zone: "zone-b"},
@@ -682,7 +682,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImme
 	defer goleak.VerifyNone(t)
 
 	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Addr: "zone-a-replica-1", Zone: "zone-a"},
 			{Addr: "zone-a-replica-2", Zone: "zone-a"},
 			{Addr: "zone-b-replica-1", Zone: "zone-b"},
@@ -757,7 +757,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_RunsCallsInParallel(t
 
 			ctx := context.Background()
 			replicationSet := ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{
 						Addr: "replica-1",
 					},
@@ -789,7 +789,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_RunsCallsInParallel(t
 }
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultSetForZoneAwareWhenAllSucceed(t *testing.T) {
-	instances := []InstanceDesc{
+	instances := []*InstanceDesc{
 		{Addr: "zone-a-replica-1", Zone: "zone-a"},
 		{Addr: "zone-a-replica-2", Zone: "zone-a"},
 		{Addr: "zone-b-replica-1", Zone: "zone-b"},
@@ -877,7 +877,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultS
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ReturnsMinimumResultSetForNonZoneAwareWhenAllSucceed(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
-	instances := []InstanceDesc{
+	instances := []*InstanceDesc{
 		{Addr: "zone-a-replica-1", Zone: "zone-a"},
 		{Addr: "zone-a-replica-2", Zone: "zone-a"},
 		{Addr: "zone-b-replica-1", Zone: "zone-b"},
@@ -951,7 +951,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_DoesNotWaitForUnneces
 	}{
 		"not zone aware": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "instance-1"},
 					{Addr: "instance-2-slow"},
 					{Addr: "instance-3"},
@@ -963,7 +963,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_DoesNotWaitForUnneces
 		},
 		"zone aware": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "zone-a-instance-1", Zone: "zone-a"},
 					{Addr: "zone-a-instance-2-slow", Zone: "zone-a"},
 					{Addr: "zone-b-instance-1", Zone: "zone-b"},
@@ -1042,7 +1042,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 	spanLogger, ctx := spanlogger.New(parentCtx, logger, "DoUntilQuorum test", dummyTenantResolver{})
 
 	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Addr: "instance-1"},
 			{Addr: "instance-2"},
 			{Addr: "instance-3"},
@@ -1097,7 +1097,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling_WithMinimizeRequests(t *testing.T) {
 	testCases := map[string]ReplicationSet{
 		"with zone awareness": {
-			Instances: []InstanceDesc{
+			Instances: []*InstanceDesc{
 				{Addr: "instance-1", Zone: "zone-a"},
 				{Addr: "instance-2", Zone: "zone-b"},
 				{Addr: "instance-3", Zone: "zone-c"},
@@ -1105,7 +1105,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 			MaxUnavailableZones: 1,
 		},
 		"without zone awareness": {
-			Instances: []InstanceDesc{
+			Instances: []*InstanceDesc{
 				{Addr: "instance-1"},
 				{Addr: "instance-2"},
 				{Addr: "instance-3"},
@@ -1181,7 +1181,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandli
 	}{
 		"with zone awareness": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "instance-1", Zone: "zone-a"},
 					{Addr: "instance-2", Zone: "zone-a"},
 					{Addr: "instance-3", Zone: "zone-b"},
@@ -1195,7 +1195,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_InstanceContextHandli
 		},
 		"without zone awareness": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "instance-1"},
 					{Addr: "instance-2"},
 					{Addr: "instance-3"},
@@ -1285,7 +1285,7 @@ func instancesFor(results []hedgingTestInvocation) []*InstanceDesc {
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_Hedging_ZoneAware(t *testing.T) {
 	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Addr: "instance-1", Zone: "zone-a"},
 			{Addr: "instance-2", Zone: "zone-a"},
 			{Addr: "instance-3", Zone: "zone-b"},
@@ -1358,7 +1358,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_Hedging_ZoneAware(t *
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_Hedging_NonZoneAware(t *testing.T) {
 	replicationSet := ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Addr: "instance-1"},
 			{Addr: "instance-2"},
 			{Addr: "instance-3"},
@@ -1415,7 +1415,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_Hedging_NonZoneAware(
 }
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_LoggingWithNoFailingInstancesOrZones(t *testing.T) {
-	instances := []InstanceDesc{
+	instances := []*InstanceDesc{
 		{Addr: "instance-1", Zone: "zone-a"},
 		{Addr: "instance-2", Zone: "zone-a"},
 		{Addr: "instance-3", Zone: "zone-b"},
@@ -1492,7 +1492,7 @@ func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
 	}{
 		"with zone awareness": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "instance-1", Zone: "zone-a"},
 					{Addr: "instance-2", Zone: "zone-a"},
 					{Addr: "instance-3", Zone: "zone-b"},
@@ -1506,7 +1506,7 @@ func TestDoUntilQuorum_InstanceContextHandling(t *testing.T) {
 		},
 		"without zone awareness": {
 			replicationSet: ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Addr: "instance-1"},
 					{Addr: "instance-2"},
 					{Addr: "instance-3"},
@@ -1550,8 +1550,8 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 
 	// If you change the instances in these replication sets you will also have to change tests accordingly.
 	sets := []ReplicationSet{
-		{Instances: []InstanceDesc{{Addr: "instance-1"}, {Addr: "instance-2"}}, MaxErrors: 0},
-		{Instances: []InstanceDesc{{Addr: "instance-3"}}, MaxErrors: 0},
+		{Instances: []*InstanceDesc{{Addr: "instance-1"}, {Addr: "instance-2"}}, MaxErrors: 0},
+		{Instances: []*InstanceDesc{{Addr: "instance-3"}}, MaxErrors: 0},
 	}
 
 	t.Run("should run successfully if all callback functions return no error and they cancel context before returning", func(t *testing.T) {
@@ -1655,8 +1655,8 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 			t.Run(fmt.Sprintf("minimize requets: %t", minimizeRequests), func(t *testing.T) {
 				cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
 				sets := []ReplicationSet{
-					{Instances: []InstanceDesc{{Addr: "instance-fail"}, {Addr: "instance-success"}}, MaxErrors: 1},
-					{Instances: []InstanceDesc{{Addr: "instance-fail"}, {Addr: "instance-success"}}, MaxErrors: 1},
+					{Instances: []*InstanceDesc{{Addr: "instance-fail"}, {Addr: "instance-success"}}, MaxErrors: 1},
+					{Instances: []*InstanceDesc{{Addr: "instance-fail"}, {Addr: "instance-success"}}, MaxErrors: 1},
 				}
 
 				f := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
@@ -1908,7 +1908,7 @@ func (c *cleanupTracker) assertCorrectCleanup(successfulInstances []string, fail
 
 var (
 	replicationSetChangesInitialState = ReplicationSet{
-		Instances: []InstanceDesc{
+		Instances: []*InstanceDesc{
 			{Id: "ingester-0"},
 			{Id: "ingester-1"},
 			{Id: "ingester-2"},
@@ -1922,7 +1922,7 @@ var (
 	}{
 		"timestamp changed": {
 			ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Id: "ingester-0", Timestamp: time.Hour.Microseconds()},
 					{Id: "ingester-1"},
 					{Id: "ingester-2"},
@@ -1934,8 +1934,8 @@ var (
 		},
 		"state changed": {
 			ReplicationSet{
-				Instances: []InstanceDesc{
-					{Id: "ingester-0", State: PENDING},
+				Instances: []*InstanceDesc{
+					{Id: "ingester-0", State: InstanceState_PENDING},
 					{Id: "ingester-1"},
 					{Id: "ingester-2"},
 				},
@@ -1946,7 +1946,7 @@ var (
 		},
 		"addr changed": {
 			ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Id: "ingester-0", Addr: "127.0.0.1"},
 					{Id: "ingester-1"},
 					{Id: "ingester-2"},
@@ -1958,7 +1958,7 @@ var (
 		},
 		"more instances": {
 			ReplicationSet{
-				Instances: []InstanceDesc{
+				Instances: []*InstanceDesc{
 					{Id: "ingester-0"},
 					{Id: "ingester-1"},
 					{Id: "ingester-2"},
@@ -2001,21 +2001,21 @@ func TestHasReplicationSetChangedWithoutStateOrAddr_IgnoresTimeStampAndStateAndA
 
 func TestReplicationSet_ZoneCount(t *testing.T) {
 	testCases := map[string]struct {
-		instances         []InstanceDesc
+		instances         []*InstanceDesc
 		expectedZoneCount int
 	}{
 		"empty ring": {
-			instances:         []InstanceDesc{},
+			instances:         []*InstanceDesc{},
 			expectedZoneCount: 0,
 		},
 		"ring with single instance without a zone": {
-			instances: []InstanceDesc{
+			instances: []*InstanceDesc{
 				{Addr: "instance-1"},
 			},
 			expectedZoneCount: 1,
 		},
 		"ring with many instances without a zone": {
-			instances: []InstanceDesc{
+			instances: []*InstanceDesc{
 				{Addr: "instance-1"},
 				{Addr: "instance-2"},
 				{Addr: "instance-3"},
@@ -2023,13 +2023,13 @@ func TestReplicationSet_ZoneCount(t *testing.T) {
 			expectedZoneCount: 1,
 		},
 		"ring with single instance with a zone": {
-			instances: []InstanceDesc{
+			instances: []*InstanceDesc{
 				{Addr: "instance-1", Zone: "zone-a"},
 			},
 			expectedZoneCount: 1,
 		},
 		"ring with many instances in one zone": {
-			instances: []InstanceDesc{
+			instances: []*InstanceDesc{
 				{Addr: "instance-1", Zone: "zone-a"},
 				{Addr: "instance-2", Zone: "zone-a"},
 				{Addr: "instance-3", Zone: "zone-a"},
@@ -2037,7 +2037,7 @@ func TestReplicationSet_ZoneCount(t *testing.T) {
 			expectedZoneCount: 1,
 		},
 		"ring with many instances, each in their own zone": {
-			instances: []InstanceDesc{
+			instances: []*InstanceDesc{
 				{Addr: "instance-1", Zone: "zone-a"},
 				{Addr: "instance-2", Zone: "zone-b"},
 				{Addr: "instance-3", Zone: "zone-c"},
@@ -2045,7 +2045,7 @@ func TestReplicationSet_ZoneCount(t *testing.T) {
 			expectedZoneCount: 3,
 		},
 		"ring with many instances in each zone": {
-			instances: []InstanceDesc{
+			instances: []*InstanceDesc{
 				{Addr: "zone-a-instance-1", Zone: "zone-a"},
 				{Addr: "zone-a-instance-2", Zone: "zone-a"},
 				{Addr: "zone-a-instance-3", Zone: "zone-a"},
@@ -2073,13 +2073,13 @@ func TestReplicationSet_ZoneCount(t *testing.T) {
 func BenchmarkReplicationSetZoneCount(b *testing.B) {
 	for _, instancesPerZone := range []int{1, 2, 5, 10, 100, 300} {
 		for _, zones := range []int{1, 2, 3} {
-			instances := make([]InstanceDesc, 0, instancesPerZone*zones)
+			instances := make([]*InstanceDesc, 0, instancesPerZone*zones)
 
 			for zoneIdx := 0; zoneIdx < zones; zoneIdx++ {
 				zoneName := fmt.Sprintf("zone-%v", string(rune('a'+zoneIdx)))
 
 				for instanceIdx := 0; instanceIdx < instancesPerZone; instanceIdx++ {
-					instance := InstanceDesc{
+					instance := &InstanceDesc{
 						Addr: fmt.Sprintf("%v-instance-%v", zoneName, instanceIdx+1),
 						Zone: zoneName,
 					}

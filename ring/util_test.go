@@ -23,7 +23,7 @@ func (r *RingMock) Collect(_ chan<- prometheus.Metric) {}
 
 func (r *RingMock) Describe(_ chan<- *prometheus.Desc) {}
 
-func (r *RingMock) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
+func (r *RingMock) Get(key uint32, op Operation, bufDescs []*InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
 	args := r.Called(key, op, bufDescs, bufHosts, bufZones)
 	return args.Get(0).(ReplicationSet), args.Error(1)
 }
@@ -97,12 +97,12 @@ func (r *RingMock) ZonesCount() int {
 
 func createStartingRing() *Ring {
 	// Init the ring.
-	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{
-		"instance-1": {Id: "instance-1", Addr: "127.0.0.1", State: ACTIVE, Timestamp: time.Now().Unix()},
-		"instance-2": {Id: "instance-2", Addr: "127.0.0.2", State: PENDING, Timestamp: time.Now().Unix()},
-		"instance-3": {Id: "instance-3", Addr: "127.0.0.3", State: JOINING, Timestamp: time.Now().Unix()},
-		"instance-4": {Id: "instance-4", Addr: "127.0.0.4", State: LEAVING, Timestamp: time.Now().Unix()},
-		"instance-5": {Id: "instance-5", Addr: "127.0.0.5", State: ACTIVE, Timestamp: time.Now().Unix()},
+	ringDesc := &Desc{Ingesters: map[string]*InstanceDesc{
+		"instance-1": {Id: "instance-1", Addr: "127.0.0.1", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},
+		"instance-2": {Id: "instance-2", Addr: "127.0.0.2", State: InstanceState_PENDING, Timestamp: time.Now().Unix()},
+		"instance-3": {Id: "instance-3", Addr: "127.0.0.3", State: InstanceState_JOINING, Timestamp: time.Now().Unix()},
+		"instance-4": {Id: "instance-4", Addr: "127.0.0.4", State: InstanceState_LEAVING, Timestamp: time.Now().Unix()},
+		"instance-5": {Id: "instance-5", Addr: "127.0.0.5", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},
 	}}
 
 	ring := &Ring{
@@ -162,7 +162,7 @@ func addInstanceAfterSomeTime(ring *Ring, addInstanceAfter time.Duration) {
 		defer ring.mtx.Unlock()
 		ringDesc := ring.ringDesc
 		instanceID := fmt.Sprintf("127.0.0.%d", len(ringDesc.Ingesters)+1)
-		ringDesc.Ingesters[instanceID] = InstanceDesc{Addr: instanceID, State: ACTIVE, Timestamp: time.Now().Unix()}
+		ringDesc.Ingesters[instanceID] = &InstanceDesc{Addr: instanceID, State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()}
 		ring.ringDesc = ringDesc
 		ring.ringTokens = ringDesc.GetTokens()
 		ring.ringTokensByZone = ringDesc.getTokensByZone()
@@ -228,7 +228,7 @@ func addInstancesPeriodically(ring *Ring) chan struct{} {
 				ring.mtx.Lock()
 				ringDesc := ring.ringDesc
 				instanceID := fmt.Sprintf("127.0.0.%d", len(ringDesc.Ingesters)+1)
-				ringDesc.Ingesters[instanceID] = InstanceDesc{Id: instanceID, Addr: instanceID, State: ACTIVE, Timestamp: time.Now().Unix()}
+				ringDesc.Ingesters[instanceID] = &InstanceDesc{Id: instanceID, Addr: instanceID, State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()}
 				ring.ringDesc = ringDesc
 				ring.ringTokens = ringDesc.GetTokens()
 				ring.ringTokensByZone = ringDesc.getTokensByZone()
@@ -287,7 +287,7 @@ func changeStatePeriodically(ring *Ring) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		instanceToMutate := "instance-1"
-		states := []InstanceState{PENDING, JOINING, ACTIVE, LEAVING}
+		states := []InstanceState{InstanceState_PENDING, InstanceState_JOINING, InstanceState_ACTIVE, InstanceState_LEAVING}
 		stateIdx := 0
 
 		for states[stateIdx] != ring.ringDesc.Ingesters[instanceToMutate].State {
@@ -369,9 +369,9 @@ func TestWaitInstanceState_Timeout(t *testing.T) {
 	defer cancel()
 
 	ring := &RingMock{}
-	ring.On("GetInstanceState", mock.Anything, mock.Anything).Return(ACTIVE, nil)
+	ring.On("GetInstanceState", mock.Anything, mock.Anything).Return(InstanceState_ACTIVE, nil)
 
-	err := WaitInstanceState(ctx, ring, instanceID, PENDING)
+	err := WaitInstanceState(ctx, ring, instanceID, InstanceState_PENDING)
 
 	assert.Equal(t, context.DeadlineExceeded, err)
 	ring.AssertCalled(t, "GetInstanceState", instanceID)
@@ -389,9 +389,9 @@ func TestWaitInstanceState_TimeoutOnError(t *testing.T) {
 	defer cancel()
 
 	ring := &RingMock{}
-	ring.On("GetInstanceState", mock.Anything, mock.Anything).Return(PENDING, errors.New("instance not found in the ring"))
+	ring.On("GetInstanceState", mock.Anything, mock.Anything).Return(InstanceState_PENDING, errors.New("instance not found in the ring"))
 
-	err := WaitInstanceState(ctx, ring, instanceID, ACTIVE)
+	err := WaitInstanceState(ctx, ring, instanceID, InstanceState_ACTIVE)
 
 	assert.Equal(t, context.DeadlineExceeded, err)
 	ring.AssertCalled(t, "GetInstanceState", instanceID)
@@ -409,9 +409,9 @@ func TestWaitInstanceState_ExitsAfterActualStateEqualsState(t *testing.T) {
 	defer cancel()
 
 	ring := &RingMock{}
-	ring.On("GetInstanceState", mock.Anything, mock.Anything).Return(ACTIVE, nil)
+	ring.On("GetInstanceState", mock.Anything, mock.Anything).Return(InstanceState_ACTIVE, nil)
 
-	err := WaitInstanceState(ctx, ring, instanceID, ACTIVE)
+	err := WaitInstanceState(ctx, ring, instanceID, InstanceState_ACTIVE)
 
 	assert.Nil(t, err)
 	ring.AssertNumberOfCalls(t, "GetInstanceState", 1)

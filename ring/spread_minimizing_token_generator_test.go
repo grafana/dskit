@@ -478,10 +478,10 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 			tokens Tokens
 		)
 		if i <= instanceID-2 {
-			state = ACTIVE
+			state = InstanceState_ACTIVE
 			tokens = allTokens[i]
 		} else {
-			state = PENDING
+			state = InstanceState_PENDING
 			tokens = nil
 		}
 		ringDesc.AddIngester(instance, instance, zone, tokens, state, time.Now(), false, time.Time{})
@@ -507,7 +507,7 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 
 	// if canJoinEnabled is true, the check returns nil all instances have tokens
 	tokenGenerator.canJoinEnabled = true
-	pendingInstanceDesc.State = ACTIVE
+	pendingInstanceDesc.State = InstanceState_ACTIVE
 	pendingInstanceDesc.Tokens = allTokens[pendingInstanceID]
 	ringDesc.Ingesters[pendingInstance] = pendingInstanceDesc
 	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
@@ -589,7 +589,7 @@ func newSpreadMinimizingTokenGeneratorWithDelay(instance, zone string, spreadMin
 	return result, nil
 }
 
-func (t *spreadMinimizingTokenGeneratorWithDelay) CanJoin(instances map[string]InstanceDesc) error {
+func (t *spreadMinimizingTokenGeneratorWithDelay) CanJoin(instances map[string]*InstanceDesc) error {
 	time.Sleep(t.canJoinDelay)
 	return t.SpreadMinimizingTokenGenerator.CanJoin(instances)
 }

@@ -15,7 +15,7 @@ type TokenGenerator interface {
 
 	// CanJoin checks whether the instance owning this TokenGenerator can join the set of the given instances satisfies,
 	// and fails if it is not possible.
-	CanJoin(instances map[string]InstanceDesc) error
+	CanJoin(instances map[string]*InstanceDesc) error
 
 	// CanJoinEnabled returns true if the instance owning this TokenGenerator should perform the CanJoin check before
 	// it tries to join the ring.
@@ -70,7 +70,7 @@ func (t *RandomTokenGenerator) GenerateTokens(requestedTokensCount int, allTaken
 	return tokens
 }
 
-func (t *RandomTokenGenerator) CanJoin(_ map[string]InstanceDesc) error {
+func (t *RandomTokenGenerator) CanJoin(_ map[string]*InstanceDesc) error {
 	return nil
 }
 

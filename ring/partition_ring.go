@@ -110,7 +110,7 @@ func (r *PartitionRing) ShuffleShardSize(size int) int {
 // predictable numbers. The random generator is initialised with a seed based on the
 // provided identifier.
 //
-// This function returns a subring containing ONLY ACTIVE partitions.
+// This function returns a subring containing ONLY InstanceState_ACTIVE partitions.
 //
 // This function supports caching.
 //
@@ -141,8 +141,8 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 // ShuffleShardWithLookback is like ShuffleShard() but the returned subring includes all instances
 // that have been part of the identifier's shard in [now - lookbackPeriod, now] time window.
 //
-// This function can return a mix of ACTIVE and INACTIVE partitions. INACTIVE partitions are only
-// included if they were part of the identifier's shard within the lookbackPeriod. PENDING partitions
+// This function can return a mix of InstanceState_ACTIVE and INACTIVE partitions. INACTIVE partitions are only
+// included if they were part of the identifier's shard within the lookbackPeriod. InstanceState_PENDING partitions
 // are never returned.
 //
 // This function supports caching, but the cache will only be effective if successive calls for the
@@ -216,7 +216,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 				return nil, ErrInconsistentTokensInfo
 			}
 
-			// PENDING partitions should be skipped because they're not ready for read or write yet,
+			// InstanceState_PENDING partitions should be skipped because they're not ready for read or write yet,
 			// and they don't need to be looked back.
 			if p.IsPending() {
 				exclude[pid] = struct{}{}
@@ -292,7 +292,7 @@ func (r *PartitionRing) PartitionIDs() []int32 {
 	return ids
 }
 
-// PendingPartitionIDs returns a sorted list of all PENDING partition IDs in the ring.
+// PendingPartitionIDs returns a sorted list of all InstanceState_PENDING partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) PendingPartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
@@ -307,7 +307,7 @@ func (r *PartitionRing) PendingPartitionIDs() []int32 {
 	return ids
 }
 
-// ActivePartitionIDs returns a sorted list of all ACTIVE partition IDs in the ring.
+// ActivePartitionIDs returns a sorted list of all InstanceState_ACTIVE partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) ActivePartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
@@ -428,7 +428,7 @@ func (r *PartitionRing) GetTokenRangesForPartition(partitionID int32) (TokenRang
 	return ranges, nil
 }
 
-// ActivePartitionBatchRing wraps PartitionRing and implements DoBatchRing to lookup ACTIVE partitions.
+// ActivePartitionBatchRing wraps PartitionRing and implements DoBatchRing to lookup InstanceState_ACTIVE partitions.
 type ActivePartitionBatchRing struct {
 	ring *PartitionRing
 }
@@ -455,7 +455,7 @@ func (r *ActivePartitionBatchRing) ReplicationFactor() int {
 }
 
 // Get implements DoBatchRing.Get.
-func (r *ActivePartitionBatchRing) Get(key uint32, _ Operation, bufInstances []InstanceDesc, _, _ []string) (ReplicationSet, error) {
+func (r *ActivePartitionBatchRing) Get(key uint32, _ Operation, bufInstances []*InstanceDesc, _, _ []string) (ReplicationSet, error) {
 	partitionID, err := r.ring.ActivePartitionForKey(key)
 	if err != nil {
 		return ReplicationSet{}, err
@@ -463,17 +463,17 @@ func (r *ActivePartitionBatchRing) Get(key uint32, _ Operation, bufInstances []I
 
 	// Ensure we have enough capacity in bufInstances.
 	if cap(bufInstances) < 1 {
-		bufInstances = []InstanceDesc{{}}
+		bufInstances = []*InstanceDesc{{}}
 	} else {
 		bufInstances = bufInstances[:1]
 	}
 
 	partitionIDString := strconv.Itoa(int(partitionID))
 
-	bufInstances[0] = InstanceDesc{
+	bufInstances[0] = &InstanceDesc{
 		Addr:      partitionIDString,
 		Timestamp: 0,
-		State:     ACTIVE,
+		State:     InstanceState_ACTIVE,
 		Id:        partitionIDString,
 	}
 

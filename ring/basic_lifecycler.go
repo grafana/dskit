@@ -22,7 +22,7 @@ type BasicLifecyclerDelegate interface {
 	// OnRingInstanceRegister is called while the lifecycler is registering the
 	// instance within the ring and should return the state and set of tokens to
 	// use for the instance itself.
-	OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens)
+	OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc *InstanceDesc) (InstanceState, Tokens)
 
 	// OnRingInstanceTokens is called once the instance tokens are set and are
 	// stable within the ring (honoring the observe period, if set).
@@ -147,7 +147,7 @@ func (l *BasicLifecycler) GetState() InstanceState {
 	defer l.currState.RUnlock()
 
 	if l.currInstanceDesc == nil {
-		return PENDING
+		return InstanceState_PENDING
 	}
 
 	return l.currInstanceDesc.GetState()
@@ -250,7 +250,7 @@ func (l *BasicLifecycler) stopping(runningError error) error {
 		return nil
 	}
 
-	// Let the delegate change the instance state (ie. to LEAVING) and handling any
+	// Let the delegate change the instance state (ie. to InstanceState_LEAVING) and handling any
 	// state transferring / flushing while we continue to heartbeat.
 	done := make(chan struct{})
 	go func() {
@@ -288,7 +288,7 @@ heartbeatLoop:
 // registerInstance registers the instance in the ring. The initial state and set of tokens
 // depends on the OnRingInstanceRegister() delegate function.
 func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
-	var instanceDesc InstanceDesc
+	var instanceDesc *InstanceDesc
 
 	err := l.store.CAS(ctx, l.ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := GetOrCreateRingDesc(in)
@@ -329,7 +329,7 @@ func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 	}
 
 	l.currState.Lock()
-	l.currInstanceDesc = &instanceDesc
+	l.currInstanceDesc = instanceDesc
 	l.currState.Unlock()
 
 	return nil
@@ -430,7 +430,7 @@ func (l *BasicLifecycler) unregisterInstance(ctx context.Context) error {
 }
 
 func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc, *InstanceDesc) bool) error {
-	var instanceDesc InstanceDesc
+	var instanceDesc *InstanceDesc
 
 	err := l.store.CAS(ctx, l.ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := GetOrCreateRingDesc(in)
@@ -451,7 +451,7 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 		}
 
 		prevTimestamp := instanceDesc.Timestamp
-		changed := update(ringDesc, &instanceDesc)
+		changed := update(ringDesc, instanceDesc)
 		if ok && !changed {
 			return nil, false, nil
 		}
@@ -471,7 +471,7 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 	}
 
 	l.currState.Lock()
-	l.currInstanceDesc = &instanceDesc
+	l.currInstanceDesc = instanceDesc
 	l.currState.Unlock()
 
 	return nil

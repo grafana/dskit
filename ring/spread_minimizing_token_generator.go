@@ -312,7 +312,7 @@ func (t *SpreadMinimizingTokenGenerator) generateTokensByInstanceID() (map[int]T
 	return tokensByInstanceID, nil
 }
 
-func (t *SpreadMinimizingTokenGenerator) CanJoin(instances map[string]InstanceDesc) error {
+func (t *SpreadMinimizingTokenGenerator) CanJoin(instances map[string]*InstanceDesc) error {
 	if !t.canJoinEnabled {
 		return nil
 	}

@@ -82,13 +82,13 @@ type defaultResultTracker struct {
 	numSucceeded     int
 	numErrors        int
 	maxErrors        int
-	instances        []InstanceDesc
+	instances        []*InstanceDesc
 	instanceRelease  map[*InstanceDesc]chan struct{}
 	pendingInstances []*InstanceDesc
 	logger           log.Logger
 }
 
-func newDefaultResultTracker(instances []InstanceDesc, maxErrors int, logger log.Logger) *defaultResultTracker {
+func newDefaultResultTracker(instances []*InstanceDesc, maxErrors int, logger log.Logger) *defaultResultTracker {
 	return &defaultResultTracker{
 		minSucceeded: len(instances) - maxErrors,
 		numSucceeded: 0,
@@ -144,7 +144,7 @@ func (t *defaultResultTracker) startMinimumRequests() {
 	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
 
 	for i := range t.instances {
-		instance := &t.instances[i]
+		instance := t.instances[i]
 		t.instanceRelease[instance] = make(chan struct{}, 1)
 	}
 
@@ -152,7 +152,7 @@ func (t *defaultResultTracker) startMinimumRequests() {
 	t.pendingInstances = make([]*InstanceDesc, 0, t.maxErrors)
 
 	for _, instanceIdx := range releaseOrder {
-		instance := &t.instances[instanceIdx]
+		instance := t.instances[instanceIdx]
 
 		if len(t.pendingInstances) < t.maxErrors {
 			t.pendingInstances = append(t.pendingInstances, instance)
@@ -187,7 +187,7 @@ func (t *defaultResultTracker) startAllRequests() {
 	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
 
 	for i := range t.instances {
-		instance := &t.instances[i]
+		instance := t.instances[i]
 		level.Debug(t.logger).Log("msg", "starting request to instance", "reason", "initial requests", "instanceAddr", instance.Addr, "instanceID", instance.Id)
 		t.instanceRelease[instance] = make(chan struct{}, 1)
 		t.instanceRelease[instance] <- struct{}{}
@@ -212,7 +212,7 @@ type defaultContextTracker struct {
 	cancelFuncs map[*InstanceDesc]context.CancelCauseFunc
 }
 
-func newDefaultContextTracker(ctx context.Context, instances []InstanceDesc) *defaultContextTracker {
+func newDefaultContextTracker(ctx context.Context, instances []*InstanceDesc) *defaultContextTracker {
 	return &defaultContextTracker{
 		ctx:         ctx,
 		cancelFuncs: make(map[*InstanceDesc]context.CancelCauseFunc, len(instances)),
@@ -255,7 +255,7 @@ type zoneAwareResultTracker struct {
 
 type ZoneSorter func(zones []string) []string
 
-func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int, zoneSorter ZoneSorter, logger log.Logger) *zoneAwareResultTracker {
+func newZoneAwareResultTracker(instances []*InstanceDesc, maxUnavailableZones int, zoneSorter ZoneSorter, logger log.Logger) *zoneAwareResultTracker {
 	t := &zoneAwareResultTracker{
 		waitingByZone:       make(map[string]int),
 		failuresByZone:      make(map[string]int),
@@ -426,14 +426,14 @@ type zoneAwareContextTracker struct {
 	cancelFuncs map[*InstanceDesc]context.CancelCauseFunc
 }
 
-func newZoneAwareContextTracker(ctx context.Context, instances []InstanceDesc) *zoneAwareContextTracker {
+func newZoneAwareContextTracker(ctx context.Context, instances []*InstanceDesc) *zoneAwareContextTracker {
 	t := &zoneAwareContextTracker{
 		contexts:    make(map[*InstanceDesc]context.Context, len(instances)),
 		cancelFuncs: make(map[*InstanceDesc]context.CancelCauseFunc, len(instances)),
 	}
 
 	for i := range instances {
-		instance := &instances[i]
+		instance := instances[i]
 		ctx, cancel := context.WithCancelCause(ctx)
 		t.contexts[instance] = ctx
 		t.cancelFuncs[instance] = cancel

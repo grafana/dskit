@@ -30,7 +30,7 @@ const (
 	unhealthy = "Unhealthy"
 
 	// GetBufferSize is the suggested size of buffers passed to Ring.Get(). It's based on
-	// a typical replication factor 3, plus extra room for a JOINING + LEAVING instance.
+	// a typical replication factor 3, plus extra room for a InstanceState_JOINING + InstanceState_LEAVING instance.
 	GetBufferSize = 5
 )
 
@@ -40,7 +40,7 @@ type ReadRing interface {
 	// Get returns n (or more) instances which form the replicas for the given key.
 	// bufDescs, bufHosts and bufZones are slices to be overwritten for the return value
 	// to avoid memory allocation; can be nil, or created with ring.MakeBuffersForGet().
-	Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error)
+	Get(key uint32, op Operation, bufDescs []*InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error)
 
 	// GetAllHealthy returns all healthy instances in the ring, for the given operation.
 	// This function doesn't check if the quorum is honored, so doesn't fail if the number
@@ -99,23 +99,23 @@ type ReadRing interface {
 }
 
 var (
-	// Write operation that also extends replica set, if instance state is not ACTIVE.
-	Write = NewOp([]InstanceState{ACTIVE}, func(s InstanceState) bool {
-		// We do not want to Write to instances that are not ACTIVE, but we do want
+	// Write operation that also extends replica set, if instance state is not InstanceState_ACTIVE.
+	Write = NewOp([]InstanceState{InstanceState_ACTIVE}, func(s InstanceState) bool {
+		// We do not want to Write to instances that are not InstanceState_ACTIVE, but we do want
 		// to write the extra replica somewhere.  So we increase the size of the set
 		// of replicas for the key.
 		// NB unhealthy instances will be filtered later by defaultReplicationStrategy.Filter().
-		return s != ACTIVE
+		return s != InstanceState_ACTIVE
 	})
 
 	// WriteNoExtend is like Write, but with no replicaset extension.
-	WriteNoExtend = NewOp([]InstanceState{ACTIVE}, nil)
+	WriteNoExtend = NewOp([]InstanceState{InstanceState_ACTIVE}, nil)
 
-	// Read operation that extends the replica set if an instance is not ACTIVE or LEAVING
-	Read = NewOp([]InstanceState{ACTIVE, PENDING, LEAVING}, func(s InstanceState) bool {
+	// Read operation that extends the replica set if an instance is not InstanceState_ACTIVE or InstanceState_LEAVING
+	Read = NewOp([]InstanceState{InstanceState_ACTIVE, InstanceState_PENDING, InstanceState_LEAVING}, func(s InstanceState) bool {
 		// To match Write with extended replica set we have to also increase the
-		// size of the replica set for Read, but we can read from LEAVING ingesters.
-		return s != ACTIVE && s != LEAVING
+		// size of the replica set for Read, but we can read from InstanceState_LEAVING ingesters.
+		return s != InstanceState_ACTIVE && s != InstanceState_LEAVING
 	})
 
 	// Reporting is a special value for inquiring about health.
@@ -424,7 +424,7 @@ func (r *Ring) setRingStateFromDesc(ringDesc *Desc, updateMetrics, updateRegiste
 }
 
 // Get returns n (or more) instances which form the replicas for the given key.
-func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
+func (r *Ring) Get(key uint32, op Operation, bufDescs []*InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 	if r.ringDesc == nil || len(r.ringTokens) == 0 {
@@ -450,7 +450,7 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 // Returns instances for given key and operation. Instances are not filtered through ReplicationStrategy.
 // InstanceFilter can ignore uninteresting instances that would otherwise be part of the output, and can also stop search early.
 // This function needs to be called with read lock on the ring.
-func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, bufZones []string, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]InstanceDesc, error) {
+func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []*InstanceDesc, bufHosts []string, bufZones []string, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]*InstanceDesc, error) {
 	var (
 		n            = r.cfg.ReplicationFactor
 		instances    = bufDescs[:0]
@@ -525,9 +525,9 @@ func (r *Ring) GetAllHealthy(op Operation) (ReplicationSet, error) {
 	}
 
 	now := time.Now()
-	instances := make([]InstanceDesc, 0, len(r.ringDesc.Ingesters))
+	instances := make([]*InstanceDesc, 0, len(r.ringDesc.Ingesters))
 	for _, instance := range r.ringDesc.Ingesters {
-		if r.IsHealthy(&instance, op, now) {
+		if r.IsHealthy(instance, op, now) {
 			instances = append(instances, instance)
 		}
 	}
@@ -548,12 +548,12 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	}
 
 	// Build the initial replication set, excluding unhealthy instances.
-	healthyInstances := make([]InstanceDesc, 0, len(r.ringDesc.Ingesters))
+	healthyInstances := make([]*InstanceDesc, 0, len(r.ringDesc.Ingesters))
 	zoneFailures := make(map[string]struct{})
 	now := time.Now()
 
 	for _, instance := range r.ringDesc.Ingesters {
-		if r.IsHealthy(&instance, op, now) {
+		if r.IsHealthy(instance, op, now) {
 			healthyInstances = append(healthyInstances, instance)
 		} else {
 			zoneFailures[instance.Zone] = struct{}{}
@@ -583,7 +583,7 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 			// enabled (data is replicated to RF different zones), there's no benefit in
 			// querying healthy instances from "failing zones". A zone is considered
 			// failed if there is single error.
-			filteredInstances := make([]InstanceDesc, 0, len(r.ringDesc.Ingesters))
+			filteredInstances := make([]*InstanceDesc, 0, len(r.ringDesc.Ingesters))
 			for _, instance := range healthyInstances {
 				if _, ok := zoneFailures[instance.Zone]; !ok {
 					filteredInstances = append(filteredInstances, instance)
@@ -665,14 +665,14 @@ func (r *Ring) updateRingMetrics() {
 	oldestTimestampByState := map[string]int64{}
 
 	// Initialized to zero so we emit zero-metrics (instead of not emitting anything)
-	for _, s := range []string{unhealthy, ACTIVE.String(), LEAVING.String(), PENDING.String(), JOINING.String()} {
+	for _, s := range []string{unhealthy, InstanceState_ACTIVE.String(), InstanceState_LEAVING.String(), InstanceState_PENDING.String(), InstanceState_JOINING.String()} {
 		numByState[s] = 0
 		oldestTimestampByState[s] = 0
 	}
 
 	for _, instance := range r.ringDesc.Ingesters {
 		s := instance.State.String()
-		if !r.IsHealthy(&instance, Reporting, time.Now()) {
+		if !r.IsHealthy(instance, Reporting, time.Now()) {
 			s = unhealthy
 		}
 		numByState[s]++
@@ -791,7 +791,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		actualZones = []string{""}
 	}
 
-	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
+	shard := make(map[string]*InstanceDesc, min(len(r.ringDesc.Ingesters), size))
 
 	// We need to iterate zones always in the same order to guarantee stability.
 	for _, zone := range actualZones {
@@ -890,7 +890,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 }
 
 // shouldIncludeReadonlyInstanceInTheShard returns true if instance is not read-only, or when it is read-only and should be included in the shuffle shard.
-func shouldIncludeReadonlyInstanceInTheShard(instance InstanceDesc, lookbackPeriod time.Duration, lookbackUntil int64) bool {
+func shouldIncludeReadonlyInstanceInTheShard(instance *InstanceDesc, lookbackPeriod time.Duration, lookbackUntil int64) bool {
 	if !instance.ReadOnly {
 		return true
 	}
@@ -923,7 +923,7 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 		return r
 	}
 
-	shard := make(map[string]InstanceDesc, len(r.ringDesc.Ingesters))
+	shard := make(map[string]*InstanceDesc, len(r.ringDesc.Ingesters))
 
 	for id, inst := range r.ringDesc.Ingesters {
 		if shouldIncludeReadonlyInstanceInTheShard(inst, lookbackPeriod, lookbackUntil) {
@@ -935,7 +935,7 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 }
 
 // buildRingForTheShard builds read-only ring for the shard (this ring won't be updated in the future).
-func (r *Ring) buildRingForTheShard(shard map[string]InstanceDesc) *Ring {
+func (r *Ring) buildRingForTheShard(shard map[string]*InstanceDesc) *Ring {
 	shardDesc := &Desc{Ingesters: shard}
 	shardTokensByZone := shardDesc.getTokensByZone()
 	shardTokens := mergeTokenGroups(shardTokensByZone)
@@ -1018,18 +1018,18 @@ func mergeTokenGroups(groupsByName map[string][]uint32) []uint32 {
 // GetInstance return the InstanceDesc for the given instanceID or an error
 // if the instance doesn't exist in the ring. The returned InstanceDesc is NOT a
 // deep copy, so the caller should never modify it.
-func (r *Ring) GetInstance(instanceID string) (doNotModify InstanceDesc, _ error) {
+func (r *Ring) GetInstance(instanceID string) (doNotModify *InstanceDesc, _ error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
 	instances := r.ringDesc.GetIngesters()
 	if instances == nil {
-		return InstanceDesc{}, ErrInstanceNotFound
+		return nil, ErrInstanceNotFound
 	}
 
 	instance, ok := instances[instanceID]
 	if !ok {
-		return InstanceDesc{}, ErrInstanceNotFound
+		return nil, ErrInstanceNotFound
 	}
 
 	return instance, nil
@@ -1040,7 +1040,7 @@ func (r *Ring) GetInstance(instanceID string) (doNotModify InstanceDesc, _ error
 func (r *Ring) GetInstanceState(instanceID string) (InstanceState, error) {
 	instance, err := r.GetInstance(instanceID)
 	if err != nil {
-		return PENDING, err
+		return InstanceState_PENDING, err
 	}
 
 	return instance.GetState(), nil
@@ -1311,7 +1311,7 @@ func NewOp(healthyStates []InstanceState, shouldExtendReplicaSet func(s Instance
 	}
 
 	if shouldExtendReplicaSet != nil {
-		for _, s := range []InstanceState{ACTIVE, LEAVING, PENDING, JOINING, LEFT} {
+		for _, s := range []InstanceState{InstanceState_ACTIVE, InstanceState_LEAVING, InstanceState_PENDING, InstanceState_JOINING, InstanceState_LEFT} {
 			if shouldExtendReplicaSet(s) {
 				op |= (0x10000 << s)
 			}
@@ -1337,7 +1337,7 @@ func (op Operation) ShouldExtendReplicaSetOnState(s InstanceState) bool {
 var allStatesRingOperation = Operation(0x0000ffff)
 
 // numberOfKeysOwnedByInstance returns how many of the supplied keys are owned by given instance.
-func (r *Ring) numberOfKeysOwnedByInstance(keys []uint32, op Operation, instanceID string, bufDescs []InstanceDesc, bufHosts []string, bufZones []string) (int, error) {
+func (r *Ring) numberOfKeysOwnedByInstance(keys []uint32, op Operation, instanceID string, bufDescs []*InstanceDesc, bufHosts []string, bufZones []string) (int, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 

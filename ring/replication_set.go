@@ -19,7 +19,7 @@ import (
 // ReplicationSet describes the instances to talk to for a given key, and how
 // many errors to tolerate.
 type ReplicationSet struct {
-	Instances []InstanceDesc
+	Instances []*InstanceDesc
 
 	// Maximum number of tolerated failing instances. Max errors and max unavailable zones are
 	// mutually exclusive.
@@ -71,7 +71,7 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 				err:      err,
 				instance: ing,
 			}
-		}(i, &r.Instances[i])
+		}(i, r.Instances[i])
 	}
 
 	results := make([]interface{}, 0, len(r.Instances))
@@ -281,7 +281,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	}
 
 	for i := range r.Instances {
-		instance := &r.Instances[i]
+		instance := r.Instances[i]
 		ctx, ctxCancel := contextTracker.contextFor(instance)
 
 		go func(desc *InstanceDesc) {
@@ -370,7 +370,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	results := make([]T, 0, len(r.Instances))
 
 	for i := range r.Instances {
-		instance := &r.Instances[i]
+		instance := r.Instances[i]
 		result, haveResult := resultsMap[instance]
 
 		if haveResult {
@@ -580,7 +580,7 @@ func HasReplicationSetChanged(before, after ReplicationSet) bool {
 func HasReplicationSetChangedWithoutState(before, after ReplicationSet) bool {
 	return hasReplicationSetChangedExcluding(before, after, func(i *InstanceDesc) {
 		i.Timestamp = 0
-		i.State = PENDING
+		i.State = InstanceState_PENDING
 	})
 }
 
@@ -590,7 +590,7 @@ func HasReplicationSetChangedWithoutState(before, after ReplicationSet) bool {
 func HasReplicationSetChangedWithoutStateOrAddr(before, after ReplicationSet) bool {
 	return hasReplicationSetChangedExcluding(before, after, func(i *InstanceDesc) {
 		i.Timestamp = 0
-		i.State = PENDING
+		i.State = InstanceState_PENDING
 		i.Addr = ""
 	})
 }
@@ -612,8 +612,8 @@ func hasReplicationSetChangedExcluding(before, after ReplicationSet, exclude fun
 		b := beforeInstances[i]
 		a := afterInstances[i]
 
-		exclude(&a)
-		exclude(&b)
+		exclude(a)
+		exclude(b)
 
 		if !b.Equal(a) {
 			return true

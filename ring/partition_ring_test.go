@@ -190,7 +190,7 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 		assert.Equal(t, subring.PartitionsCount(), ring.ShuffleShardSize(numActivePartitions+1))
 	})
 
-	t.Run("should never return INACTIVE or PENDING partitions", func(t *testing.T) {
+	t.Run("should never return INACTIVE or InstanceState_PENDING partitions", func(t *testing.T) {
 		const (
 			numActivePartitions   = 5
 			numInactivePartitions = 5
@@ -1169,7 +1169,7 @@ func TestActivePartitionBatchRing(t *testing.T) {
 }
 
 func TestActivePartitionBatchRing_InstancesCount(t *testing.T) {
-	t.Run("should return the number of ACTIVE partitions", func(t *testing.T) {
+	t.Run("should return the number of InstanceState_ACTIVE partitions", func(t *testing.T) {
 		activeRing := NewActivePartitionBatchRing(createPartitionRingWithPartitions(10, 3, 2))
 		assert.Equal(t, 10, activeRing.InstancesCount())
 	})
@@ -1180,7 +1180,7 @@ func TestActivePartitionBatchRing_Get(t *testing.T) {
 
 	ring := createPartitionRingWithPartitions(10, 5, 5)
 	activeRing := NewActivePartitionBatchRing(ring)
-	buf := [GetBufferSize]InstanceDesc{}
+	buf := [GetBufferSize]*InstanceDesc{}
 
 	t.Run("should return a ReplicationSet with the active partition owning the input key", func(t *testing.T) {
 		for _, withBuffer := range []bool{true, false} {
@@ -1190,7 +1190,7 @@ func TestActivePartitionBatchRing_Get(t *testing.T) {
 				rnd := rand.New(rand.NewSource(seed))
 				t.Log("random generator seed:", seed)
 
-				var getBuf []InstanceDesc
+				var getBuf []*InstanceDesc
 				if withBuffer {
 					getBuf = buf[:0]
 				}
@@ -1230,20 +1230,20 @@ func BenchmarkActivePartitionBatchRing_Get(b *testing.B) {
 	benchCases := map[string]struct {
 		ring *ActivePartitionBatchRing
 	}{
-		"ACTIVE partitions only": {
+		"InstanceState_ACTIVE partitions only": {
 			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 0, 0)),
 		},
-		"ACTIVE and INACTIVE partitions": {
+		"InstanceState_ACTIVE and INACTIVE partitions": {
 			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 10, 0)),
 		},
-		"ACTIVE, INACTIVE and PENDING partitions": {
+		"InstanceState_ACTIVE, INACTIVE and InstanceState_PENDING partitions": {
 			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 10, 10)),
 		},
 	}
 
 	for benchName, benchCase := range benchCases {
 		b.Run(benchName, func(b *testing.B) {
-			buf := [GetBufferSize]InstanceDesc{}
+			buf := [GetBufferSize]*InstanceDesc{}
 
 			for n := 0; n < b.N; n++ {
 				set, err := benchCase.ring.Get(uint32(n), WriteNoExtend, buf[:0], nil, nil)

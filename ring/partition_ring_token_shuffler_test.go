@@ -26,7 +26,7 @@ func Test_SimpleRing(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		originalRing := currRing
 		timeseriesOwnershipByToken, _ := simulateDistribution(t, currRing, tenantIDs, shardSizes, timeseriesCounts)
-		ownershipByPartitionID := calculateOwnershipByPartitionID(currRing, timeseriesOwnershipByToken)
+		ownershipByPartitionID := calculateOwnershipByPartitionID(t, currRing, timeseriesOwnershipByToken)
 		printSimulation(t, fmt.Sprintf("simulation number %d", i+1), ownershipByPartitionID, false)
 		printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition before shuffling")
 
@@ -34,7 +34,7 @@ func Test_SimpleRing(t *testing.T) {
 
 		printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition after shuffling")
 
-		ownershipByPartitionID = calculateOwnershipByPartitionID(currRing, timeseriesOwnershipByToken)
+		ownershipByPartitionID = calculateOwnershipByPartitionID(t, currRing, timeseriesOwnershipByToken)
 		printSimulation(t, fmt.Sprintf("spread after shuffling number %d", i+1), ownershipByPartitionID, false)
 
 		compareAllShards(t, originalRing, currRing, tenantIDs, shardSizes)
@@ -49,7 +49,7 @@ func Test_CortexProd13(t *testing.T) {
 	currRing := ring
 	for i := 0; i < 3; i++ {
 		timeseriesOwnershipByToken := simulateTimeseriesDistribution(t, "", "cortex-prod-13", zones, ring, false)
-		ownershipByPartitionID := calculateOwnershipByPartitionID(ring, timeseriesOwnershipByToken)
+		ownershipByPartitionID := calculateOwnershipByPartitionID(t, ring, timeseriesOwnershipByToken)
 		printSimulation(t, fmt.Sprintf("simulation number %d", i+1), ownershipByPartitionID, false)
 
 		for j := 0; j < 20; j++ {
@@ -58,7 +58,7 @@ func Test_CortexProd13(t *testing.T) {
 			shuffler.shuffle(currRing, timeseriesOwnershipByToken, false)
 			printCurrentUpdatedPartitions(currRing, "number of tokens with more than 1 partition after shuffling")
 
-			ownershipByPartitionID = calculateOwnershipByPartitionID(currRing, timeseriesOwnershipByToken)
+			ownershipByPartitionID = calculateOwnershipByPartitionID(t, currRing, timeseriesOwnershipByToken)
 			printSimulation(t, fmt.Sprintf("spread after shuffling number %d-%d", i+1, j+1), ownershipByPartitionID, false)
 
 			compareAllShardsFromCell(t, "", "cortex-prod-13", zones, originalRing, currRing)
@@ -90,7 +90,8 @@ func simulateDistribution(t *testing.T, ring *PartitionRing, tenantIDs []string,
 	verification := make(map[int32]float64, len(ring.Partitions()))
 
 	for token, ownership := range timeseriesOwnershipByToken {
-		partitionID := ring.partitionByToken[token]
+		partitionID, ok := ring.activePartitionForToken(token)
+		require.True(t, ok)
 		verification[partitionID] = verification[partitionID] + ownership
 	}
 
@@ -104,11 +105,12 @@ func simulateDistribution(t *testing.T, ring *PartitionRing, tenantIDs []string,
 	return timeseriesOwnershipByToken, ownershipByPartitionID
 }
 
-func calculateOwnershipByPartitionID(ring *PartitionRing, timeseriesOwnershipByToken map[Token]float64) map[int32]float64 {
+func calculateOwnershipByPartitionID(t *testing.T, ring *PartitionRing, timeseriesOwnershipByToken map[Token]float64) map[int32]float64 {
 	ownershipByPartitionID := make(map[int32]float64, len(ring.Partitions()))
 
 	for token, ownership := range timeseriesOwnershipByToken {
-		partitionID := ring.partitionByToken[token]
+		partitionID, ok := ring.activePartitionForToken(token)
+		require.True(t, ok)
 		ownershipByPartitionID[partitionID] = ownershipByPartitionID[partitionID] + ownership
 	}
 	return ownershipByPartitionID

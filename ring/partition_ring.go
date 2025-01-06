@@ -46,11 +46,7 @@ type PartitionRing struct {
 	// ringTokens is a sorted list of all tokens registered by all partitions.
 	ringTokens Tokens
 
-	// partitionByToken is a map where they key is a registered token and the value is ID of the partition
-	// that registered that token.
-	partitionByToken map[Token]int32
-
-	// partitionByToken is a map where they key is a registered token and the value is a list of partition objects
+	// partitionsByToken is a map where they key is a registered token and the value is a list of partition objects
 	// that currently correspond or previously corresponded to that token. Head of the list represents the current
 	// active partition.
 	partitionsByToken map[Token]*list.List
@@ -77,7 +73,6 @@ func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 	return &PartitionRing{
 		desc:                  desc,
 		ringTokens:            desc.tokens(),
-		partitionByToken:      desc.partitionByToken(),
 		partitionsByToken:     partitionsByToken,
 		ownersByPartition:     desc.ownersByPartition(),
 		activePartitionsCount: desc.activePartitionsCount(),
@@ -86,7 +81,6 @@ func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 }
 
 func (r *PartitionRing) clearShuffleShardCache() {
-	r.partitionByToken = r.desc.partitionByToken()
 	r.shuffleShardCache = newPartitionRingShuffleShardCache()
 }
 
@@ -326,102 +320,6 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 					found = true
 				}
 
-			}
-		}
-
-		// If we iterated over all tokens, and no new partition has been found, we can stop looking for more partitions.
-		if !found {
-			break
-		}
-	}
-
-	return NewPartitionRing(r.desc.WithPartitions(result)), nil
-}
-
-func (r *PartitionRing) shuffleShardOld(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
-	// If the size is too small or too large, run with a size equal to the total number of partitions.
-	// We have to run the function anyway because the logic may filter out some INACTIVE partitions.
-	if size <= 0 || size >= len(r.desc.Partitions) {
-		size = len(r.desc.Partitions)
-	}
-
-	var lookbackUntil int64
-	if lookbackPeriod > 0 {
-		lookbackUntil = now.Add(-lookbackPeriod).Unix()
-	}
-
-	// Initialise the random generator used to select instances in the ring.
-	// There are no zones
-	random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(identifier, "")))
-
-	// To select one more instance while guaranteeing the "consistency" property,
-	// we do pick a random value from the generator and resolve uniqueness collisions
-	// (if any) continuing walking the ring.
-	tokensCount := len(r.ringTokens)
-
-	result := make(map[int32]struct{}, size)
-	exclude := map[int32]struct{}{}
-
-	for len(result) < size {
-		start := searchToken(r.ringTokens, random.Uint32())
-		iterations := 0
-		found := false
-
-		for p := start; !found && iterations < tokensCount; p++ {
-			iterations++
-
-			// Wrap p around in the ring.
-			if p >= tokensCount {
-				p %= tokensCount
-			}
-
-			pid, ok := r.partitionByToken[Token(r.ringTokens[p])]
-			if !ok {
-				return nil, ErrInconsistentTokensInfo
-			}
-
-			// Ensure the partition has not already been included or excluded.
-			if _, ok := result[pid]; ok {
-				continue
-			}
-			if _, ok := exclude[pid]; ok {
-				continue
-			}
-
-			p, ok := r.desc.Partitions[pid]
-			if !ok {
-				return nil, ErrInconsistentTokensInfo
-			}
-
-			// PENDING partitions should be skipped because they're not ready for read or write yet,
-			// and they don't need to be looked back.
-			if p.IsPending() {
-				exclude[pid] = struct{}{}
-				continue
-			}
-
-			var (
-				withinLookbackPeriod = lookbackPeriod > 0 && p.GetStateTimestamp() >= lookbackUntil
-				shouldExtend         = withinLookbackPeriod
-				shouldInclude        = p.IsActive() || withinLookbackPeriod
-			)
-
-			// Either include or exclude the found partition.
-			if shouldInclude {
-				result[pid] = struct{}{}
-			} else {
-				exclude[pid] = struct{}{}
-			}
-
-			// Extend the shard, if requested.
-			if shouldExtend {
-				size++
-			}
-
-			// We can stop searching for other partitions only if this partition was included
-			// and no extension was requested, which means it's the "stop partition" for this cycle.
-			if shouldInclude && !shouldExtend {
-				found = true
 			}
 		}
 

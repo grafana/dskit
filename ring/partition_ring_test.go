@@ -1160,7 +1160,7 @@ func TestPartitionRingGetTokenRangesForPartition(t *testing.T) {
 				for _, token := range ranges {
 					i := searchToken(r.ringTokens, token)
 					tok := r.ringTokens[i]
-					p, ok := r.partitionByToken[Token(tok)]
+					p, ok := r.activePartitionForToken(Token(tok))
 					require.True(t, ok)
 					assert.Equal(t, int32(id), p)
 				}

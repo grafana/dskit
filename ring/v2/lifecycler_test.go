@@ -1308,7 +1308,9 @@ func TestTokensOnDisk(t *testing.T) {
 
 		desc, ok := d.(*Desc)
 		if ok {
-			expTokens = desc.Ingesters["ing1"].Tokens
+			if instance, ok := desc.GetIngesterVal("ing1"); ok {
+				expTokens = instance.Tokens
+			}
 		}
 		return ok &&
 			len(desc.Ingesters) == 1 &&
@@ -1332,7 +1334,9 @@ func TestTokensOnDisk(t *testing.T) {
 		require.NoError(t, err)
 		desc, ok := d.(*Desc)
 		if ok {
-			actTokens = desc.Ingesters["ing2"].Tokens
+			if instance, ok := desc.GetIngesterVal("ing2"); ok {
+				actTokens = instance.Tokens
+			}
 		}
 		return ok &&
 			len(desc.Ingesters) == 1 &&

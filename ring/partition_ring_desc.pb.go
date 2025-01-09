@@ -31,7 +31,7 @@ type PartitionState int32
 
 const (
 	PartitionUnknown PartitionState = 0
-	// Pending partition is a partition that is about to be switched to ACTIVE. This state is used
+	// Pending partition is a partition that is about to be switched to InstanceState_ACTIVE. This state is used
 	// to let owners to attach to the partition and get ready to handle the partition.
 	//
 	// When a partition is in this state, it must not be used for writing or reading.

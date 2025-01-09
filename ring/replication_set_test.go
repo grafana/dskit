@@ -1935,7 +1935,7 @@ var (
 		"state changed": {
 			ReplicationSet{
 				Instances: []InstanceDesc{
-					{Id: "ingester-0", State: PENDING},
+					{Id: "ingester-0", State: InstanceState_PENDING},
 					{Id: "ingester-1"},
 					{Id: "ingester-2"},
 				},

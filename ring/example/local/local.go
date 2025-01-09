@@ -216,7 +216,7 @@ func SimpleRingLifecycler(store kv.Client, bindaddr string, bindport int) (*ring
 
 	var delegate ring.BasicLifecyclerDelegate
 
-	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, 128)
+	delegate = ring.NewInstanceRegisterDelegate(ring.InstanceState_ACTIVE, 128)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewAutoForgetDelegate(1*time.Minute, delegate, logger)
 

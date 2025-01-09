@@ -1,4 +1,4 @@
-package v2
+package ring
 
 func (this *InstanceDesc) Equal(that interface{}) bool {
 	if that == nil {

@@ -17,17 +17,17 @@ func TestRingPageHandler_handle(t *testing.T) {
 	now := time.Now()
 	ring := fakeRingAccess{
 		desc: &Desc{
-			Ingesters: map[string]InstanceDesc{
+			Ingesters: map[string]*InstanceDesc{
 				"1": {
 					Zone:      "zone-a",
-					State:     ACTIVE,
+					State:     InstanceState_ACTIVE,
 					Addr:      "addr-a",
 					Timestamp: now.Unix(),
 					Tokens:    []uint32{1000000, 3000000, 6000000},
 				},
 				"2": {
 					Zone:      "zone-b",
-					State:     ACTIVE,
+					State:     InstanceState_ACTIVE,
 					Addr:      "addr-b",
 					Timestamp: now.Unix(),
 					Tokens:    []uint32{2000000, 4000000, 5000000, 7000000},

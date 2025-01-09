@@ -1,5 +1,5 @@
 /*
-Package ring contains types and functions for creating and working with rings.
+package ring contains types and functions for creating and working with rings.
 
 # Overview
 

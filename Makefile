@@ -8,12 +8,12 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 # Download the proper protoc version for Darwin (osx) and Linux.
 # If you need windows for some reason it's at https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/protoc-3.6.1-win32.zip
 UNAME_S := $(shell uname -s)
-PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/
+PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v29.3/
 ifeq ($(UNAME_S), Linux)
-	PROTO_ZIP=protoc-3.6.1-linux-x86_64.zip
+	PROTO_ZIP=protoc-29.3-linux-x86_64.zip
 endif
 ifeq ($(UNAME_S), Darwin)
-	PROTO_ZIP=protoc-3.6.1-osx-x86_64.zip
+	PROTO_ZIP=protoc-v29.3-osx-x86_64.zip
 endif
 GO_MODS=$(shell find . $(DONT_FIND) -type f -name 'go.mod' -print)
 
@@ -66,7 +66,7 @@ clean-protos: ## Removes the proto files
 protos: .tools/bin/protoc .tools/bin/protoc-gen-gogoslick .tools/bin/protoc-gen-go $(PROTO_GOS) ## Creates proto files
 
 
-PROTO_DEFS_CSPROTO := ./ring/v2/ring.proto
+PROTO_DEFS_CSPROTO := ./ring/ring.proto
 .PHONY: protos-csproto
 protos-csproto:
 	@for name in $(PROTO_DEFS_CSPROTO); do \

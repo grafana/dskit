@@ -478,10 +478,10 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 			tokens Tokens
 		)
 		if i <= instanceID-2 {
-			state = ACTIVE
+			state = InstanceState_ACTIVE
 			tokens = allTokens[i]
 		} else {
-			state = PENDING
+			state = InstanceState_PENDING
 			tokens = nil
 		}
 		ringDesc.AddIngester(instance, instance, zone, tokens, state, time.Now(), false, time.Time{})
@@ -496,21 +496,21 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 
 	// if canJoinEnabled is false, the check is skipped
 	tokenGenerator.canJoinEnabled = false
-	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesterVals())
 	require.NoError(t, err)
 
 	// if canJoinEnabled is true, the check returns an error because not all previous instances have tokens
 	tokenGenerator.canJoinEnabled = true
-	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesterVals())
 	require.Error(t, err)
 	require.Equal(t, errorMissingPreviousInstance(pendingInstance), err)
 
 	// if canJoinEnabled is true, the check returns nil all instances have tokens
 	tokenGenerator.canJoinEnabled = true
-	pendingInstanceDesc.State = ACTIVE
+	pendingInstanceDesc.State = InstanceState_ACTIVE
 	pendingInstanceDesc.Tokens = allTokens[pendingInstanceID]
 	ringDesc.Ingesters[pendingInstance] = pendingInstanceDesc
-	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesterVals())
 	require.NoError(t, err)
 }
 

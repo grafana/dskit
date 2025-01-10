@@ -508,6 +508,11 @@ func (r *Ring) getReplicationSetForKey(key uint32, op Operation, bufDescs []Inst
 	}, nil
 }
 
+type zoneInstance struct {
+	zone  string
+	count int
+}
+
 // Returns instances for given key and operation. Instances are not filtered through ReplicationStrategy.
 // InstanceFilter can ignore uninteresting instances that would otherwise be part of the output, and can also stop search early.
 // This function needs to be called with read lock on the ring.
@@ -526,13 +531,23 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		distinctHosts = bufHosts[:0]
 
 		// TODO: Do we need to pass this in to avoid allocations?
-		hostsPerZone       = make(map[string]int)
+		//hostsPerZone = make(map[string]int)
+
+		distinctZones      = make([]zoneInstance, 0, 5)
 		targetHostsPerZone = max(1, replicationFactor/maxZones)
 	)
 
+	for z := range r.ringTokensByZone {
+		distinctZones = append(distinctZones, zoneInstance{
+			zone:  z,
+			count: 0,
+		})
+	}
+
+OUTER:
 	for i := start; len(distinctHosts) < min(maxInstances, n) && iterations < len(r.ringTokens); i++ {
 		// If we have the target number of instances in all zones, stop looking.
-		if r.cfg.ZoneAwarenessEnabled && haveTargetHostsInAllZones(hostsPerZone, targetHostsPerZone, maxZones) {
+		if r.cfg.ZoneAwarenessEnabled && haveTargetHostsInAllZones2(distinctZones, targetHostsPerZone, maxZones) {
 			break
 		}
 
@@ -554,9 +569,15 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 
 		// If we already have the required number of instances for this zone, skip.
 		if r.cfg.ZoneAwarenessEnabled && info.Zone != "" {
-			if hostsPerZone[info.Zone] >= targetHostsPerZone {
-				continue
+
+			for _, z := range distinctZones {
+				if z.zone == info.Zone && z.count >= targetHostsPerZone {
+					continue OUTER
+				}
 			}
+			//if hostsPerZone[info.Zone] >= targetHostsPerZone {
+			//	continue
+			//}
 		}
 
 		distinctHosts = append(distinctHosts, info.InstanceID)
@@ -567,9 +588,16 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		if op.ShouldExtendReplicaSetOnState(instance.State) {
 			n++
 		} else if r.cfg.ZoneAwarenessEnabled && info.Zone != "" {
+			for i, z := range distinctZones {
+				if z.zone == info.Zone {
+					z.count++
+					distinctZones[i] = z
+				}
+			}
+
 			// We should only increment the count for this zone if we are not going to
 			// extend, as we want to extend the instance in the same AZ.
-			hostsPerZone[info.Zone]++
+			//hostsPerZone[info.Zone]++
 		}
 
 		include, keepGoing := true, true
@@ -593,6 +621,20 @@ func haveTargetHostsInAllZones(hostsByZone map[string]int, targetHostsPerZone in
 
 	for _, count := range hostsByZone {
 		if count < targetHostsPerZone {
+			return false
+		}
+	}
+
+	return true
+}
+
+func haveTargetHostsInAllZones2(distinctZones []zoneInstance, targetHostsPerZone int, maxZones int) bool {
+	if len(distinctZones) != maxZones {
+		return false
+	}
+
+	for _, z := range distinctZones {
+		if z.count < targetHostsPerZone {
 			return false
 		}
 	}

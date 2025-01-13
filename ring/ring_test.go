@@ -41,7 +41,7 @@ func newRingForTesting(cfg Config, createCacheMaps bool) *Ring {
 	}
 	if createCacheMaps {
 		ring.shuffledSubringCache = map[subringCacheKey]*Ring{}
-		ring.shuffledSubringWithLookbackCache = map[subringCacheKey]cachedSubringWithLookback[*Ring]{}
+		ring.shuffledSubringWithLookbackCache = map[subringCacheKey]*cachedSubringWithLookback[*Ring]{}
 	}
 	return &ring
 }

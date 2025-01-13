@@ -6,7 +6,6 @@ package ring
 import (
 	"fmt"
 	"sync/atomic"
-
 	"github.com/CrowdStrike/csproto"
 )
 

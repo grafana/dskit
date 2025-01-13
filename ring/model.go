@@ -700,7 +700,7 @@ func (d *Desc) RingCompare(o *Desc) CompareResult {
 	equalStatesAndTimestamps := true
 
 	for name, ing := range d.Ingesters {
-		oing, ok := o.Ingesters[name]
+		oing, ok := o.GetIngesterVal(name)
 		if !ok {
 			return Different
 		}

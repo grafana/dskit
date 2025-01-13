@@ -230,7 +230,7 @@ type Ring struct {
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
 	// If set to nil, no caching is done (used by tests, and subrings).
 	shuffledSubringCache             map[subringCacheKey]*Ring
-	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback[*Ring]
+	shuffledSubringWithLookbackCache map[subringCacheKey]*cachedSubringWithLookback[*Ring]
 
 	numMembersGaugeVec      *prometheus.GaugeVec
 	totalTokensGauge        prometheus.Gauge
@@ -280,7 +280,7 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		strategy:                         strategy,
 		ringDesc:                         &Desc{},
 		shuffledSubringCache:             map[subringCacheKey]*Ring{},
-		shuffledSubringWithLookbackCache: map[subringCacheKey]cachedSubringWithLookback[*Ring]{},
+		shuffledSubringWithLookbackCache: map[subringCacheKey]*cachedSubringWithLookback[*Ring]{},
 		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
@@ -415,7 +415,7 @@ func (r *Ring) setRingStateFromDesc(ringDesc *Desc, updateMetrics, updateRegiste
 		r.shuffledSubringCache = make(map[subringCacheKey]*Ring)
 	}
 	if r.shuffledSubringWithLookbackCache != nil {
-		r.shuffledSubringWithLookbackCache = make(map[subringCacheKey]cachedSubringWithLookback[*Ring])
+		r.shuffledSubringWithLookbackCache = make(map[subringCacheKey]*cachedSubringWithLookback[*Ring])
 	}
 
 	if updateMetrics {
@@ -1105,8 +1105,8 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 		return nil
 	}
 
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 
 	cached, ok := r.shuffledSubringWithLookbackCache[subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}]
 	if !ok {
@@ -1178,7 +1178,7 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 	key := subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}
 
 	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackWindowsStartingAfter < lookbackWindowStart {
-		r.shuffledSubringWithLookbackCache[key] = cachedSubringWithLookback[*Ring]{
+		r.shuffledSubringWithLookbackCache[key] = &cachedSubringWithLookback[*Ring]{
 			subring:                               subring,
 			validForLookbackWindowsStartingAfter:  lookbackWindowStart,
 			validForLookbackWindowsStartingBefore: validForLookbackWindowsStartingBefore,

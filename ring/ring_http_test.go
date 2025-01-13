@@ -20,14 +20,14 @@ func TestRingPageHandler_handle(t *testing.T) {
 			Ingesters: map[string]InstanceDesc{
 				"1": {
 					Zone:      "zone-a",
-					State:     ACTIVE,
+					State:     InstanceState_ACTIVE,
 					Addr:      "addr-a",
 					Timestamp: now.Unix(),
 					Tokens:    []uint32{1000000, 3000000, 6000000},
 				},
 				"2": {
 					Zone:      "zone-b",
-					State:     ACTIVE,
+					State:     InstanceState_ACTIVE,
 					Addr:      "addr-b",
 					Timestamp: now.Unix(),
 					Tokens:    []uint32{2000000, 4000000, 5000000, 7000000},
@@ -47,7 +47,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
 			"<td>", "1", "</td>",
 			"<td>", "zone-a", "</td>",
-			"<td>", "ACTIVE", "</td>",
+			"<td>", "InstanceState_ACTIVE", "</td>",
 			"<td>", "addr-a", "</td>",
 		}, `\s*`))), recorder.Body.String())
 
@@ -59,7 +59,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
 			"<td>", "2", "</td>",
 			"<td>", "zone-b", "</td>",
-			"<td>", "ACTIVE", "</td>",
+			"<td>", "InstanceState_ACTIVE", "</td>",
 			"<td>", "addr-b", "</td>",
 		}, `\s*`))), recorder.Body.String())
 

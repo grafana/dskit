@@ -221,7 +221,7 @@ func testCheckingOfKeyOwnership(t *testing.T, randomizeInstanceStates bool) {
 
 	if randomizeInstanceStates {
 		for ins, ing := range ringDesc.Ingesters {
-			ing.State = InstanceState(stateRand.Int31n(int32(LEFT))) // LEFT is not state that clients can see, so we don't test it.
+			ing.State = InstanceState(stateRand.Int31n(int32(InstanceState_LEFT))) // InstanceState_LEFT is not state that clients can see, so we don't test it.
 			ringDesc.Ingesters[ins] = ing
 		}
 	}

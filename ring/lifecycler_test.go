@@ -53,7 +53,7 @@ func checkNormalised(d interface{}, id string) bool {
 	desc, ok := d.(*Desc)
 	return ok &&
 		len(desc.Ingesters) == 1 &&
-		desc.Ingesters[id].State == ACTIVE &&
+		desc.Ingesters[id].State == InstanceState_ACTIVE &&
 		len(desc.Ingesters[id].Tokens) == 1
 }
 
@@ -617,7 +617,7 @@ func TestLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 	// Ensure other information has been preserved.
 	assert.Greater(t, desc.GetTimestamp(), int64(0))
 	assert.Equal(t, testInstanceID, desc.GetId())
-	assert.Equal(t, ACTIVE, desc.GetState())
+	assert.Equal(t, InstanceState_ACTIVE, desc.GetState())
 	assert.Equal(t, net.JoinHostPort(lifecyclerCfg.Addr, strconv.Itoa(lifecyclerCfg.Port)), desc.GetAddr())
 	assert.Equal(t, lifecyclerCfg.Zone, desc.Zone)
 	assert.Equal(t, prevTokens, Tokens(desc.GetTokens()))
@@ -647,7 +647,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig.HeartbeatPeriod = 0
 	lifecyclerConfig.NumTokens = numTokens
 
-	// Simulate ingester with 64 tokens left the ring in LEAVING state
+	// Simulate ingester with 64 tokens left the ring in InstanceState_LEAVING state
 	origTokens := initTokenGenerator(t).GenerateTokens(64, nil)
 	err = r.KVClient.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
@@ -656,7 +656,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 			return nil, false, err
 		}
 
-		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now(), false, time.Time{})
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, InstanceState_LEAVING, time.Now(), false, time.Time{})
 		return ringDesc, false, nil
 	})
 	require.NoError(t, err)
@@ -680,7 +680,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		ingDesc = desc.Ingesters["ing1"]
 		t.Log(fmt.Sprintf("Polling for new ingester to have become active with %d tokens", numTokens),
 			"state", ingDesc.State, "tokens", len(ingDesc.Tokens))
-		return ingDesc.State == ACTIVE && len(ingDesc.Tokens) == numTokens
+		return ingDesc.State == InstanceState_ACTIVE && len(ingDesc.Tokens) == numTokens
 	})
 
 	origSeen := 0
@@ -825,7 +825,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	lifecyclerConfig.HeartbeatPeriod = 0
 	lifecyclerConfig.NumTokens = numTokens
 
-	// Simulate ingester with 128 tokens left the ring in LEAVING state
+	// Simulate ingester with 128 tokens left the ring in InstanceState_LEAVING state
 	origTokens := initTokenGenerator(t).GenerateTokens(128, nil)
 	err = r.KVClient.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := NewDesc()
@@ -834,7 +834,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 			return nil, false, err
 		}
 
-		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, LEAVING, time.Now(), false, time.Time{})
+		ringDesc.AddIngester("ing1", addr, lifecyclerConfig.Zone, origTokens, InstanceState_LEAVING, time.Now(), false, time.Time{})
 		return ringDesc, false, nil
 	})
 	require.NoError(t, err)
@@ -858,7 +858,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 		ingDesc = desc.Ingesters["ing1"]
 		t.Log(fmt.Sprintf("Polling for new ingester to have become active with %d tokens", numTokens),
 			"state", ingDesc.State, "tokens", len(ingDesc.Tokens))
-		return ingDesc.Id == "ing1" && ingDesc.State == ACTIVE && len(ingDesc.Tokens) == numTokens
+		return ingDesc.Id == "ing1" && ingDesc.State == InstanceState_ACTIVE && len(ingDesc.Tokens) == numTokens
 	})
 
 	seen := map[uint32]struct{}{}
@@ -973,11 +973,11 @@ func TestCheckReady_MinReadyDuration(t *testing.T) {
 		minReadyDuration time.Duration
 		expectedMinDelay time.Duration
 	}{
-		"should immediately pass the check if the instance is ACTIVE and healthy and min ready duration is disabled": {
+		"should immediately pass the check if the instance is InstanceState_ACTIVE and healthy and min ready duration is disabled": {
 			minReadyDuration: 0,
 			expectedMinDelay: 0,
 		},
-		"should wait min ready duration before passing the check after the instance is ACTIVE and healthy": {
+		"should wait min ready duration before passing the check after the instance is InstanceState_ACTIVE and healthy": {
 			minReadyDuration: time.Second,
 			expectedMinDelay: time.Second,
 		},
@@ -1007,7 +1007,7 @@ func TestCheckReady_MinReadyDuration(t *testing.T) {
 
 			startTime := time.Now()
 
-			// Wait until the instance is ACTIVE and healthy in the ring.
+			// Wait until the instance is InstanceState_ACTIVE and healthy in the ring.
 			waitRingInstance(t, 3*time.Second, l, func(instance InstanceDesc) error {
 				return instance.IsReady(time.Now(), cfg.RingConfig.HeartbeatTimeout)
 			})
@@ -1035,14 +1035,14 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 		expectedFirstMinReady  time.Duration
 		expectedFirstMaxReady  time.Duration
 	}{
-		"should wait until the self instance is ACTIVE and healthy in the ring when 'check ring health' is disabled": {
+		"should wait until the self instance is InstanceState_ACTIVE and healthy in the ring when 'check ring health' is disabled": {
 			checkRingHealthEnabled: false,
 			firstJoinAfter:         time.Second,
 			secondJoinAfter:        3 * time.Second,
 			expectedFirstMinReady:  time.Second,
 			expectedFirstMaxReady:  2 * time.Second,
 		},
-		"should wait until all instances are ACTIVE and healthy in the ring when 'check ring health' is enabled": {
+		"should wait until all instances are InstanceState_ACTIVE and healthy in the ring when 'check ring health' is enabled": {
 			checkRingHealthEnabled: true,
 			firstJoinAfter:         time.Second,
 			secondJoinAfter:        3 * time.Second,
@@ -1095,7 +1095,7 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 			startTime := time.Now()
 
 			// Wait until both instances are registered in the ring. We expect them to be registered
-			// immediately and then switch to ACTIVE after the configured auto join delay.
+			// immediately and then switch to InstanceState_ACTIVE after the configured auto join delay.
 			waitRingInstance(t, 3*time.Second, l1, func(InstanceDesc) error { return nil })
 			waitRingInstance(t, 3*time.Second, l2, func(InstanceDesc) error { return nil })
 
@@ -1157,46 +1157,46 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), lifecycler))
 		poll(func(desc *Desc) bool {
-			return desc.Ingesters[ingId].State == ACTIVE
+			return desc.Ingesters[ingId].State == InstanceState_ACTIVE
 		})
 		return lifecycler
 	}
 
 	// We are going to create 2 fake ingester with disabled heart beat and `unregister_on_shutdown=false` then
 	// test if the ingester 2 became active after:
-	// * Clean Shutdown (LEAVING after shutdown)
-	// * Crashes while in the PENDING or JOINING state
+	// * Clean Shutdown (InstanceState_LEAVING after shutdown)
+	// * Crashes while in the InstanceState_PENDING or InstanceState_JOINING state
 	l1 := startIngesterAndWaitActive("ing1")
 	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
 
 	l2 := startIngesterAndWaitActive("ing2")
 
 	ingesters := poll(func(desc *Desc) bool {
-		return len(desc.Ingesters) == 2 && desc.Ingesters["ing1"].State == ACTIVE && desc.Ingesters["ing2"].State == ACTIVE
+		return len(desc.Ingesters) == 2 && desc.Ingesters["ing1"].State == InstanceState_ACTIVE && desc.Ingesters["ing2"].State == InstanceState_ACTIVE
 	})
 
 	// Both Ingester should be active and running
-	assert.Equal(t, ACTIVE, ingesters["ing1"].State)
-	assert.Equal(t, ACTIVE, ingesters["ing2"].State)
+	assert.Equal(t, InstanceState_ACTIVE, ingesters["ing1"].State)
+	assert.Equal(t, InstanceState_ACTIVE, ingesters["ing2"].State)
 
-	// Stop One ingester gracefully should leave it on LEAVING STATE on the ring
+	// Stop One ingester gracefully should leave it on InstanceState_LEAVING STATE on the ring
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), l2))
 
 	ingesters = poll(func(desc *Desc) bool {
-		return len(desc.Ingesters) == 2 && desc.Ingesters["ing2"].State == LEAVING
+		return len(desc.Ingesters) == 2 && desc.Ingesters["ing2"].State == InstanceState_LEAVING
 	})
-	assert.Equal(t, LEAVING, ingesters["ing2"].State)
+	assert.Equal(t, InstanceState_LEAVING, ingesters["ing2"].State)
 
-	// Start Ingester2 again - Should flip back to ACTIVE in the ring
+	// Start Ingester2 again - Should flip back to InstanceState_ACTIVE in the ring
 	l2 = startIngesterAndWaitActive("ing2")
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), l2))
 
-	// Simulate ingester2 crash on startup and left the ring with JOINING state
+	// Simulate ingester2 crash on startup and left the ring with InstanceState_JOINING state
 	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc, ok := in.(*Desc)
 		require.True(t, ok)
 		ingester2Desc := desc.Ingesters["ing2"]
-		ingester2Desc.State = JOINING
+		ingester2Desc.State = InstanceState_JOINING
 		desc.Ingesters["ing2"] = ingester2Desc
 		return desc, true, nil
 	})
@@ -1205,12 +1205,12 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 	l2 = startIngesterAndWaitActive("ing2")
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), l2))
 
-	// Simulate ingester2 crash on startup and left the ring with PENDING state
+	// Simulate ingester2 crash on startup and left the ring with InstanceState_PENDING state
 	err = r.KVClient.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc, ok := in.(*Desc)
 		require.True(t, ok)
 		ingester2Desc := desc.Ingesters["ing2"]
-		ingester2Desc.State = PENDING
+		ingester2Desc.State = InstanceState_PENDING
 		desc.Ingesters["ing2"] = ingester2Desc
 		return desc, true, nil
 	})
@@ -1230,9 +1230,9 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 	registeredAt := time.Now().Add(-1 * time.Hour)
 
 	err := ringStore.CAS(context.Background(), ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
-		// Create ring with LEAVING entry with some tokens
+		// Create ring with InstanceState_LEAVING entry with some tokens
 		r := GetOrCreateRingDesc(in)
-		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, LEAVING, registeredAt, false, time.Time{})
+		r.AddIngester(id, "3.3.3.3:333", "old", origTokens, InstanceState_LEAVING, registeredAt, false, time.Time{})
 		return r, true, err
 	})
 	require.NoError(t, err)
@@ -1259,8 +1259,8 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 		return l.CheckReady(context.Background())
 	})
 
-	// Lifecycler should be in ACTIVE state, using tokens from the ring.
-	require.Equal(t, ACTIVE, l.GetState())
+	// Lifecycler should be in InstanceState_ACTIVE state, using tokens from the ring.
+	require.Equal(t, InstanceState_ACTIVE, l.GetState())
 	require.Equal(t, origTokens, l.getTokens())
 	require.Equal(t, registeredAt.Truncate(time.Second), l.getRegisteredAt())
 
@@ -1270,7 +1270,7 @@ func TestRestartIngester_NoUnregister_LongHeartbeat(t *testing.T) {
 
 	r := GetOrCreateRingDesc(desc)
 	require.Equal(t, lifecyclerConfig.ID, r.Ingesters[id].Id)
-	require.Equal(t, ACTIVE, r.Ingesters[id].State)
+	require.Equal(t, InstanceState_ACTIVE, r.Ingesters[id].State)
 	require.Equal(t, "1.1.1.1:111", r.Ingesters[id].Addr)
 	require.Equal(t, "new", r.Ingesters[id].Zone)
 	require.Equal(t, registeredAt.Unix(), r.Ingesters[id].RegisteredTimestamp)
@@ -1312,7 +1312,7 @@ func TestTokensOnDisk(t *testing.T) {
 		}
 		return ok &&
 			len(desc.Ingesters) == 1 &&
-			desc.Ingesters["ing1"].State == ACTIVE &&
+			desc.Ingesters["ing1"].State == InstanceState_ACTIVE &&
 			len(desc.Ingesters["ing1"].Tokens) == 512
 	})
 
@@ -1336,7 +1336,7 @@ func TestTokensOnDisk(t *testing.T) {
 		}
 		return ok &&
 			len(desc.Ingesters) == 1 &&
-			desc.Ingesters["ing2"].State == ACTIVE &&
+			desc.Ingesters["ing2"].State == InstanceState_ACTIVE &&
 			len(desc.Ingesters["ing2"].Tokens) == 512
 	})
 
@@ -1382,7 +1382,7 @@ func TestDeletePersistedTokensOnShutdown(t *testing.T) {
 		desc, ok := d.(*Desc)
 		return ok &&
 			len(desc.Ingesters) == 1 &&
-			desc.Ingesters["ing1"].State == ACTIVE &&
+			desc.Ingesters["ing1"].State == InstanceState_ACTIVE &&
 			len(desc.Ingesters["ing1"].Tokens) == 512
 	})
 
@@ -1395,7 +1395,7 @@ func TestDeletePersistedTokensOnShutdown(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 }
 
-// JoinInLeavingState ensures that if the lifecycler starts up and the ring already has it in a LEAVING state that it still is able to auto join
+// JoinInLeavingState ensures that if the lifecycler starts up and the ring already has it in a InstanceState_LEAVING state that it still is able to auto join
 func TestJoinInLeavingState(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -1413,12 +1413,12 @@ func TestJoinInLeavingState(t *testing.T) {
 	cfg.NumTokens = 2
 	cfg.MinReadyDuration = 1 * time.Nanosecond
 
-	// Set state as LEAVING
+	// Set state as InstanceState_LEAVING
 	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				"ing1": {
-					State:  LEAVING,
+					State:  InstanceState_LEAVING,
 					Tokens: []uint32{1, 4},
 				},
 				"ing2": {
@@ -1436,7 +1436,7 @@ func TestJoinInLeavingState(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
 	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
 
-	// Check that the lifecycler was able to join after coming up in LEAVING
+	// Check that the lifecycler was able to join after coming up in InstanceState_LEAVING
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
 		d, err := r.KVClient.Get(context.Background(), ringKey)
 		require.NoError(t, err)
@@ -1444,13 +1444,13 @@ func TestJoinInLeavingState(t *testing.T) {
 		desc, ok := d.(*Desc)
 		return ok &&
 			len(desc.Ingesters) == 2 &&
-			desc.Ingesters["ing1"].State == ACTIVE &&
+			desc.Ingesters["ing1"].State == InstanceState_ACTIVE &&
 			len(desc.Ingesters["ing1"].Tokens) == cfg.NumTokens &&
 			len(desc.Ingesters["ing2"].Tokens) == 2
 	})
 }
 
-// JoinInJoiningState ensures that if the lifecycler starts up and the ring already has it in a JOINING state that it still is able to auto join
+// JoinInJoiningState ensures that if the lifecycler starts up and the ring already has it in a InstanceState_JOINING state that it still is able to auto join
 func TestJoinInJoiningState(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -1470,12 +1470,12 @@ func TestJoinInJoiningState(t *testing.T) {
 	instance1RegisteredAt := time.Now().Add(-1 * time.Hour)
 	instance2RegisteredAt := time.Now().Add(-2 * time.Hour)
 
-	// Set state as JOINING
+	// Set state as InstanceState_JOINING
 	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				"ing1": {
-					State:               JOINING,
+					State:               InstanceState_JOINING,
 					Tokens:              []uint32{1, 4},
 					RegisteredTimestamp: instance1RegisteredAt.Unix(),
 				},
@@ -1495,7 +1495,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
 	defer services.StopAndAwaitTerminated(context.Background(), l1) //nolint:errcheck
 
-	// Check that the lifecycler was able to join after coming up in JOINING
+	// Check that the lifecycler was able to join after coming up in InstanceState_JOINING
 	test.Poll(t, 1000*time.Millisecond, true, func() interface{} {
 		d, err := r.KVClient.Get(context.Background(), ringKey)
 		require.NoError(t, err)
@@ -1503,7 +1503,7 @@ func TestJoinInJoiningState(t *testing.T) {
 		desc, ok := d.(*Desc)
 		return ok &&
 			len(desc.Ingesters) == 2 &&
-			desc.Ingesters["ing1"].State == ACTIVE &&
+			desc.Ingesters["ing1"].State == InstanceState_ACTIVE &&
 			len(desc.Ingesters["ing1"].Tokens) == cfg.NumTokens &&
 			len(desc.Ingesters["ing2"].Tokens) == 2 &&
 			desc.Ingesters["ing1"].RegisteredTimestamp == instance1RegisteredAt.Unix() &&
@@ -1530,11 +1530,11 @@ func TestWaitBeforeJoining(t *testing.T) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				instanceName(0, 1): {
-					State:  ACTIVE,
+					State:  InstanceState_ACTIVE,
 					Tokens: []uint32{1, 2, 3},
 				},
 				instanceName(1, 1): {
-					State:  ACTIVE,
+					State:  InstanceState_ACTIVE,
 					Tokens: []uint32{4, 5, 6},
 				},
 			},
@@ -1658,14 +1658,14 @@ func TestAutoJoinWithSpreadMinimizingTokenGenerator(t *testing.T) {
 			}
 
 			firstInstanceDesc, ok := desc.Ingesters[firstInstanceID]
-			if ok && firstInstanceDesc.State == ACTIVE && len(firstInstanceDesc.Tokens) != 0 {
+			if ok && firstInstanceDesc.State == InstanceState_ACTIVE && len(firstInstanceDesc.Tokens) != 0 {
 				if firstInstanceRegistered.CompareAndSwap(false, true) {
 					firstInstanceRegistrationTimestamp = time.Now()
 				}
 			}
 
 			secondInstanceDesc, ok := desc.Ingesters[secondInstanceID]
-			if ok && secondInstanceDesc.State == ACTIVE && len(secondInstanceDesc.Tokens) != 0 {
+			if ok && secondInstanceDesc.State == InstanceState_ACTIVE && len(secondInstanceDesc.Tokens) != 0 {
 				if secondInstanceRegistered.CompareAndSwap(false, true) {
 					secondInstanceRegistrationTimestamp = time.Now()
 				}
@@ -1740,7 +1740,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 		r := &Desc{
 			Ingesters: map[string]InstanceDesc{
 				"ing1": {
-					State:  ACTIVE,
+					State:  InstanceState_ACTIVE,
 					Addr:   "0.0.0.0",
 					Tokens: []uint32{1, 4},
 				},

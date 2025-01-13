@@ -69,7 +69,7 @@ func benchmarkBatch(b *testing.B, numInstances, numKeys int) {
 	for i := 0; i < numInstances; i++ {
 		tokens := gen.GenerateTokens(numTokens, takenTokens)
 		takenTokens = append(takenTokens, tokens...)
-		desc.AddIngester(fmt.Sprintf("%d", i), fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(fmt.Sprintf("%d", i), fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, InstanceState_ACTIVE, time.Now(), false, time.Time{})
 	}
 
 	cfg := Config{}
@@ -162,13 +162,13 @@ func benchmarkUpdateRingState(b *testing.B, numInstances, numTokens int, updateT
 		now := time.Now()
 		zeroTime := time.Time{}
 		id := fmt.Sprintf("%d", i)
-		desc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, ACTIVE, now, false, zeroTime)
+		desc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, InstanceState_ACTIVE, now, false, zeroTime)
 		if updateTokens {
 			otherTokens := gen.GenerateTokens(numTokens, otherTakenTokens)
 			otherTakenTokens = append(otherTakenTokens, otherTokens...)
-			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), otherTokens, ACTIVE, now, false, zeroTime)
+			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), otherTokens, InstanceState_ACTIVE, now, false, zeroTime)
 		} else {
-			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, JOINING, now, false, zeroTime)
+			otherDesc.AddIngester(id, fmt.Sprintf("instance-%d", i), strconv.Itoa(i), tokens, InstanceState_JOINING, now, false, zeroTime)
 		}
 	}
 
@@ -353,7 +353,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 	for address := 0; address < replicationFactor; address++ {
 		instTokens := gen.GenerateTokens(128, nil)
 		instanceID := fmt.Sprintf("%d", address)
-		desc.AddIngester(instanceID, instanceID, "", instTokens, ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(instanceID, instanceID, "", instTokens, InstanceState_ACTIVE, time.Now(), false, time.Time{})
 	}
 	ringConfig := Config{
 		HeartbeatTimeout:  time.Hour,
@@ -490,7 +490,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			updateState(testData.unavailableInstances, LEFT)
+			updateState(testData.unavailableInstances, InstanceState_LEFT)
 			for i := 0; i < numberOfOperations; i++ {
 				err := runDoBatch(testData.errors, testData.isClientError)
 				if testData.acceptableOutcomes == nil {
@@ -500,7 +500,7 @@ func TestDoBatch_QuorumError(t *testing.T) {
 				}
 			}
 			unfinishedDoBatchCalls.Wait()
-			updateState(testData.unavailableInstances, ACTIVE)
+			updateState(testData.unavailableInstances, InstanceState_ACTIVE)
 		})
 	}
 }
@@ -513,7 +513,7 @@ func TestAddIngester(t *testing.T) {
 	now := time.Now()
 	ing1Tokens := initTokenGenerator(t).GenerateTokens(128, nil)
 
-	r.AddIngester(ingName, "addr", "1", ing1Tokens, ACTIVE, now, false, time.Time{})
+	r.AddIngester(ingName, "addr", "1", ing1Tokens, InstanceState_ACTIVE, now, false, time.Time{})
 
 	assert.Equal(t, "addr", r.Ingesters[ingName].Addr)
 	assert.Equal(t, ing1Tokens, Tokens(r.Ingesters[ingName].Tokens))
@@ -535,7 +535,7 @@ func TestAddIngesterReplacesExistingTokens(t *testing.T) {
 
 	newTokens := initTokenGenerator(t).GenerateTokens(128, nil)
 
-	r.AddIngester(ing1Name, "addr", "1", newTokens, ACTIVE, time.Now(), false, time.Time{})
+	r.AddIngester(ing1Name, "addr", "1", newTokens, InstanceState_ACTIVE, time.Now(), false, time.Time{})
 
 	require.Equal(t, newTokens, Tokens(r.Ingesters[ing1Name].Tokens))
 }
@@ -566,12 +566,12 @@ func TestRing_Get_ZoneAwarenessWithIngesterLeaving(t *testing.T) {
 
 			r := NewDesc()
 			instances := map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: ACTIVE},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: ACTIVE},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", State: LEAVING},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", State: ACTIVE},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: InstanceState_ACTIVE},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: InstanceState_ACTIVE},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: InstanceState_ACTIVE},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: InstanceState_ACTIVE},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", State: InstanceState_LEAVING},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", State: InstanceState_ACTIVE},
 			}
 			var prevTokens []uint32
 			for id, instance := range instances {
@@ -665,7 +665,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 				name := fmt.Sprintf("ing%v", i)
 				ingTokens := gen.GenerateTokens(128, prevTokens)
 
-				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i%testData.numZones), ingTokens, ACTIVE, time.Now(), false, time.Time{})
+				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i%testData.numZones), ingTokens, InstanceState_ACTIVE, time.Now(), false, time.Time{})
 
 				prevTokens = append(prevTokens, ingTokens...)
 			}
@@ -742,11 +742,11 @@ func TestRing_GetAllHealthy(t *testing.T) {
 		},
 		"should return all healthy instances for the given operation": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix()},
-				"instance-2": {Addr: "127.0.0.2", State: PENDING, Timestamp: now.Add(-10 * time.Second).Unix()},
-				"instance-3": {Addr: "127.0.0.3", State: JOINING, Timestamp: now.Add(-20 * time.Second).Unix()},
-				"instance-4": {Addr: "127.0.0.4", State: LEAVING, Timestamp: now.Add(-30 * time.Second).Unix()},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix()},
+				"instance-1": {Addr: "127.0.0.1", State: InstanceState_ACTIVE, Timestamp: now.Unix()},
+				"instance-2": {Addr: "127.0.0.2", State: InstanceState_PENDING, Timestamp: now.Add(-10 * time.Second).Unix()},
+				"instance-3": {Addr: "127.0.0.3", State: InstanceState_JOINING, Timestamp: now.Add(-20 * time.Second).Unix()},
+				"instance-4": {Addr: "127.0.0.4", State: InstanceState_LEAVING, Timestamp: now.Add(-30 * time.Second).Unix()},
+				"instance-5": {Addr: "127.0.0.5", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix()},
 			},
 			expectedSetForRead:      []string{"127.0.0.1", "127.0.0.2", "127.0.0.4"},
 			expectedSetForWrite:     []string{"127.0.0.1"},
@@ -805,11 +805,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should succeed on all healthy instances and RF=1": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-40 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: InstanceState_ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: InstanceState_ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: InstanceState_ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: InstanceState_ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: InstanceState_ACTIVE, Timestamp: now.Add(-40 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    time.Minute,
 			ringReplicationFactor:   1,
@@ -819,11 +819,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should succeed on instances with old timestamps but heartbeat timeout disabled": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    0,
 			ringReplicationFactor:   1,
@@ -833,11 +833,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should fail on 1 unhealthy instance and RF=1": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: InstanceState_ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: InstanceState_ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: InstanceState_ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: InstanceState_ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    time.Minute,
 			ringReplicationFactor:   1,
@@ -847,11 +847,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should succeed on 1 unhealthy instances and RF=3": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: InstanceState_ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: InstanceState_ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: InstanceState_ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: InstanceState_ACTIVE, Timestamp: now.Add(-30 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    time.Minute,
 			ringReplicationFactor:   3,
@@ -861,11 +861,11 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 		},
 		"should fail on 2 unhealthy instances and RF=3": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-3": {Addr: "127.0.0.3", State: ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
-				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-1": {Addr: "127.0.0.1", State: InstanceState_ACTIVE, Timestamp: now.Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", State: InstanceState_ACTIVE, Timestamp: now.Add(-10 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", State: InstanceState_ACTIVE, Timestamp: now.Add(-20 * time.Second).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", State: InstanceState_ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
 			ringHeartbeatTimeout:    time.Minute,
 			ringReplicationFactor:   3,
@@ -1188,7 +1188,7 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 			ringDesc := &Desc{Ingesters: testData.ringInstances}
 			for id, instance := range ringDesc.Ingesters {
 				instance.Timestamp = time.Now().Unix()
-				instance.State = ACTIVE
+				instance.State = InstanceState_ACTIVE
 				for _, instanceName := range testData.unhealthyInstances {
 					if instanceName == id {
 						instance.Timestamp = time.Now().Add(-time.Hour).Unix()
@@ -1244,38 +1244,38 @@ func TestRing_GetInstancesWithTokensCounts(t *testing.T) {
 		},
 		"single zone, no tokens": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: LEAVING, Tokens: []uint32{}},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: PENDING, Tokens: []uint32{}},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: JOINING, Tokens: []uint32{}},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: []uint32{}},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: InstanceState_LEAVING, Tokens: []uint32{}},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: InstanceState_PENDING, Tokens: []uint32{}},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: InstanceState_JOINING, Tokens: []uint32{}},
 			},
 			expectedInstancesWithTokensCount:       0,
 			expectedInstancesWithTokensInZoneCount: map[string]int{"zone-a": 0},
 		},
 		"single zone, some tokens": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: LEAVING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: LEAVING, Tokens: []uint32{}},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-a", State: PENDING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-a", State: PENDING, Tokens: []uint32{}},
-				"instance-7": {Addr: "127.0.0.7", Zone: "zone-a", State: JOINING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-8": {Addr: "127.0.0.8", Zone: "zone-a", State: JOINING, Tokens: []uint32{}},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: []uint32{}},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: InstanceState_LEAVING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: InstanceState_LEAVING, Tokens: []uint32{}},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-a", State: InstanceState_PENDING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-a", State: InstanceState_PENDING, Tokens: []uint32{}},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-a", State: InstanceState_JOINING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-a", State: InstanceState_JOINING, Tokens: []uint32{}},
 			},
 			expectedInstancesWithTokensCount:       4,
 			expectedInstancesWithTokensInZoneCount: map[string]int{"zone-a": 4},
 		},
 		"multiple zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: LEAVING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: LEAVING, Tokens: []uint32{}},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", State: PENDING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-d", State: PENDING, Tokens: []uint32{}},
-				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", State: JOINING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", State: JOINING, Tokens: []uint32{}},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: []uint32{}},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: InstanceState_LEAVING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: InstanceState_LEAVING, Tokens: []uint32{}},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", State: InstanceState_PENDING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-d", State: InstanceState_PENDING, Tokens: []uint32{}},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", State: InstanceState_JOINING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", State: InstanceState_JOINING, Tokens: []uint32{}},
 			},
 			expectedInstancesWithTokensCount:       4,
 			expectedInstancesWithTokensInZoneCount: map[string]int{"zone-a": 1, "zone-b": 1, "zone-c": 2, "zone-d": 0},
@@ -1320,38 +1320,38 @@ func TestRing_GetWritableInstancesWithTokensCounts(t *testing.T) {
 		},
 		"single zone, no tokens": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: LEAVING, Tokens: []uint32{}, ReadOnly: true},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: PENDING, Tokens: []uint32{}},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: JOINING, Tokens: []uint32{}},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: []uint32{}},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: InstanceState_LEAVING, Tokens: []uint32{}, ReadOnly: true},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: InstanceState_PENDING, Tokens: []uint32{}},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: InstanceState_JOINING, Tokens: []uint32{}},
 			},
 			expectedWritableInstancesWithTokensCount:        0,
 			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 0},
 		},
 		"single zone, some tokens": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: LEAVING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: LEAVING, Tokens: []uint32{}},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-a", State: PENDING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-a", State: PENDING, Tokens: []uint32{}, ReadOnly: true},
-				"instance-7": {Addr: "127.0.0.7", Zone: "zone-a", State: JOINING, Tokens: gen.GenerateTokens(128, nil), ReadOnly: true},
-				"instance-8": {Addr: "127.0.0.8", Zone: "zone-a", State: JOINING, Tokens: []uint32{}, ReadOnly: true},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: []uint32{}},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: InstanceState_LEAVING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-a", State: InstanceState_LEAVING, Tokens: []uint32{}},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-a", State: InstanceState_PENDING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-a", State: InstanceState_PENDING, Tokens: []uint32{}, ReadOnly: true},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-a", State: InstanceState_JOINING, Tokens: gen.GenerateTokens(128, nil), ReadOnly: true},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-a", State: InstanceState_JOINING, Tokens: []uint32{}, ReadOnly: true},
 			},
 			expectedWritableInstancesWithTokensCount:        3,
 			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 3},
 		},
 		"multiple zones": {
 			ringInstances: map[string]InstanceDesc{
-				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE, Tokens: []uint32{}, ReadOnly: true},
-				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: LEAVING, Tokens: gen.GenerateTokens(128, nil), ReadOnly: true},
-				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: LEAVING, Tokens: []uint32{}},
-				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", State: PENDING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-6": {Addr: "127.0.0.6", Zone: "zone-d", State: PENDING, Tokens: []uint32{}},
-				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", State: JOINING, Tokens: gen.GenerateTokens(128, nil)},
-				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", State: JOINING, Tokens: []uint32{}, ReadOnly: true},
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: InstanceState_ACTIVE, Tokens: []uint32{}, ReadOnly: true},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: InstanceState_LEAVING, Tokens: gen.GenerateTokens(128, nil), ReadOnly: true},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: InstanceState_LEAVING, Tokens: []uint32{}},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", State: InstanceState_PENDING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-d", State: InstanceState_PENDING, Tokens: []uint32{}},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", State: InstanceState_JOINING, Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", State: InstanceState_JOINING, Tokens: []uint32{}, ReadOnly: true},
 			},
 			expectedWritableInstancesWithTokensCount:        3,
 			expectedWritableInstancesWithTokensCountPerZone: map[string]int{"zone-a": 1, "zone-b": 0, "zone-c": 2, "zone-d": 0},
@@ -1643,7 +1643,7 @@ func TestRing_ShuffleShard(t *testing.T) {
 				ringDesc := &Desc{Ingesters: testData.ringInstances}
 				for id, instance := range ringDesc.Ingesters {
 					instance.Timestamp = time.Now().Unix()
-					instance.State = ACTIVE
+					instance.State = InstanceState_ACTIVE
 					ringDesc.Ingesters[id] = instance
 				}
 
@@ -1758,7 +1758,7 @@ func TestRing_ShuffleShard_Shuffling(t *testing.T) {
 			Addr:                fmt.Sprintf("127.0.0.%d", i),
 			Timestamp:           time.Now().Unix(),
 			RegisteredTimestamp: time.Now().Unix(),
-			State:               ACTIVE,
+			State:               InstanceState_ACTIVE,
 			Tokens:              generateTokensLinear(i, numInstances, 128),
 			Zone:                fmt.Sprintf("zone-%d", i%numZones),
 		}
@@ -3265,7 +3265,7 @@ func TestRing_ShuffleShardWithLookback_CachingAfterHeartbeatOrStateChange(t *tes
 	// Simulate an instance reporting that it's about to leave the ring.
 	updatedInstance3 := generateRingInstanceWithInfo("instance-3", "zone-b", []uint32{userToken(userID, "zone-b", 0) + 1}, now.Add(-2*time.Hour))
 	updatedInstance3.Timestamp = initialInstances["instance-3"].Timestamp
-	updatedInstance3.State = LEAVING
+	updatedInstance3.State = InstanceState_LEAVING
 
 	updatedInstances := map[string]InstanceDesc{
 		"instance-1": updatedInstance1,
@@ -3292,7 +3292,7 @@ func TestRing_ShuffleShardWithLookback_CachingAfterHeartbeatOrStateChange(t *tes
 		case "instance-1":
 			require.Equal(t, updatedInstance1Timestamp, instance.Timestamp)
 		case "instance-3":
-			require.Equal(t, LEAVING, instance.State)
+			require.Equal(t, InstanceState_LEAVING, instance.State)
 		}
 	}
 }
@@ -3547,7 +3547,7 @@ func generateRingInstanceWithInfo(addr, zone string, tokens []uint32, registered
 		Addr:                addr,
 		Timestamp:           time.Now().Unix(),
 		RegisteredTimestamp: regts,
-		State:               ACTIVE,
+		State:               InstanceState_ACTIVE,
 		Tokens:              tokens,
 		Zone:                zone,
 	}
@@ -3737,12 +3737,12 @@ func TestRing_ShuffleShard_Caching(t *testing.T) {
 		lcs = append(lcs, lc)
 	}
 
-	// Wait until all instances in the ring are ACTIVE.
+	// Wait until all instances in the ring are InstanceState_ACTIVE.
 	test.Poll(t, 5*time.Second, numLifecyclers, func() interface{} {
 		active := 0
 		rs, _ := ring.GetReplicationSetForOperation(Read)
 		for _, ing := range rs.Instances {
-			if ing.State == ACTIVE {
+			if ing.State == InstanceState_ACTIVE {
 				active++
 			}
 		}
@@ -3873,17 +3873,17 @@ func TestUpdateMetrics(t *testing.T) {
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
-		ring_members{name="test",state="ACTIVE"} 2
-		ring_members{name="test",state="JOINING"} 0
-		ring_members{name="test",state="LEAVING"} 0
-		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="InstanceState_ACTIVE"} 2
+		ring_members{name="test",state="InstanceState_JOINING"} 0
+		ring_members{name="test",state="InstanceState_LEAVING"} 0
+		ring_members{name="test",state="InstanceState_PENDING"} 0
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE"} 11
-		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
-		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
-		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_ACTIVE"} 11
+		ring_oldest_member_timestamp{name="test",state="InstanceState_JOINING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_LEAVING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_PENDING"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
@@ -3917,17 +3917,17 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
-		ring_members{name="test",state="ACTIVE"} 2
-		ring_members{name="test",state="JOINING"} 0
-		ring_members{name="test",state="LEAVING"} 0
-		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="InstanceState_ACTIVE"} 2
+		ring_members{name="test",state="InstanceState_JOINING"} 0
+		ring_members{name="test",state="InstanceState_LEAVING"} 0
+		ring_members{name="test",state="InstanceState_PENDING"} 0
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE"} 11
-		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
-		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
-		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_ACTIVE"} 11
+		ring_oldest_member_timestamp{name="test",state="InstanceState_JOINING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_LEAVING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_PENDING"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
@@ -3945,17 +3945,17 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
-		ring_members{name="test",state="ACTIVE"} 1
-		ring_members{name="test",state="JOINING"} 0
-		ring_members{name="test",state="LEAVING"} 0
-		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="InstanceState_ACTIVE"} 1
+		ring_members{name="test",state="InstanceState_JOINING"} 0
+		ring_members{name="test",state="InstanceState_LEAVING"} 0
+		ring_members{name="test",state="InstanceState_PENDING"} 0
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE"} 22
-		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
-		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
-		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_ACTIVE"} 22
+		ring_oldest_member_timestamp{name="test",state="InstanceState_JOINING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_LEAVING"} 0
+		ring_oldest_member_timestamp{name="test",state="InstanceState_PENDING"} 0
 		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge

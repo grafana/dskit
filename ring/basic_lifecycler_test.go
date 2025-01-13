@@ -55,64 +55,64 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 		registerTokens      Tokens
 	}{
 		"initial ring is empty": {
-			registerState:  ACTIVE,
+			registerState:  InstanceState_ACTIVE,
 			registerTokens: Tokens{1, 2, 3, 4, 5},
 		},
 		"initial ring non empty (containing another instance)": {
 			initialInstanceID: "instance-1",
 			initialInstanceDesc: &InstanceDesc{
 				Addr:                "1.1.1.1",
-				State:               ACTIVE,
+				State:               InstanceState_ACTIVE,
 				Tokens:              Tokens{6, 7, 8, 9, 10},
 				RegisteredTimestamp: time.Now().Add(-time.Hour).Unix(),
 			},
-			registerState:  ACTIVE,
+			registerState:  InstanceState_ACTIVE,
 			registerTokens: Tokens{1, 2, 3, 4, 5},
 		},
 		"initial ring contains the same instance with different state, tokens and address (new one is 127.0.0.1)": {
 			initialInstanceID: testInstanceID,
 			initialInstanceDesc: &InstanceDesc{
 				Addr:                "1.1.1.1",
-				State:               ACTIVE,
+				State:               InstanceState_ACTIVE,
 				Tokens:              Tokens{6, 7, 8, 9, 10},
 				RegisteredTimestamp: time.Now().Add(-time.Hour).Unix(),
 			},
-			registerState:  JOINING,
+			registerState:  InstanceState_JOINING,
 			registerTokens: Tokens{1, 2, 3, 4, 5},
 		},
 		"initial ring contains the same instance with different address (new one is 127.0.0.1)": {
 			initialInstanceID: testInstanceID,
 			initialInstanceDesc: &InstanceDesc{
 				Addr:                "1.1.1.1",
-				State:               ACTIVE,
+				State:               InstanceState_ACTIVE,
 				Tokens:              Tokens{1, 2, 3, 4, 5},
 				RegisteredTimestamp: time.Now().Add(-time.Hour).Unix(),
 			},
-			registerState:  ACTIVE,
+			registerState:  InstanceState_ACTIVE,
 			registerTokens: Tokens{1, 2, 3, 4, 5},
 		},
 		"initial ring contains the same instance with registered timestamp == 0": {
 			initialInstanceID: testInstanceID,
 			initialInstanceDesc: &InstanceDesc{
 				Addr:                "1.1.1.1",
-				State:               ACTIVE,
+				State:               InstanceState_ACTIVE,
 				Tokens:              Tokens{1, 2, 3, 4, 5},
 				RegisteredTimestamp: 0,
 			},
-			registerState:  ACTIVE,
+			registerState:  InstanceState_ACTIVE,
 			registerTokens: Tokens{1, 2, 3, 4, 5},
 		},
 		"initial ring contains read only instance": {
 			initialInstanceID: testInstanceID,
 			initialInstanceDesc: &InstanceDesc{
 				Addr:                     "1.1.1.1",
-				State:                    ACTIVE,
+				State:                    InstanceState_ACTIVE,
 				Tokens:                   Tokens{1, 2, 3, 4, 5},
 				RegisteredTimestamp:      time.Now().Add(-time.Hour).Unix(),
 				ReadOnly:                 true,
 				ReadOnlyUpdatedTimestamp: time.Now().Unix(),
 			},
-			registerState:  ACTIVE,
+			registerState:  InstanceState_ACTIVE,
 			registerTokens: Tokens{1, 2, 3, 4, 5},
 		},
 	}
@@ -162,7 +162,7 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 
 			assert.Equal(t, testInstanceID, lifecycler.GetInstanceID())
 			assert.Equal(t, services.New, lifecycler.State())
-			assert.Equal(t, PENDING, lifecycler.GetState())
+			assert.Equal(t, InstanceState_PENDING, lifecycler.GetState())
 			assert.Empty(t, lifecycler.GetTokens())
 			assert.False(t, lifecycler.IsRegistered())
 			assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
@@ -205,14 +205,14 @@ func TestBasicLifecycler_UnregisterOnStop(t *testing.T) {
 	require.NoError(t, err)
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
-		return ACTIVE, Tokens{1, 2, 3, 4, 5}
+		return InstanceState_ACTIVE, Tokens{1, 2, 3, 4, 5}
 	}
 	delegate.onStopping = func(_ *BasicLifecycler) {
 		assert.Equal(t, services.Stopping, lifecycler.State())
 	}
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-	assert.Equal(t, ACTIVE, lifecycler.GetState())
+	assert.Equal(t, InstanceState_ACTIVE, lifecycler.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
 	assert.True(t, lifecycler.IsRegistered())
 	assert.NotZero(t, lifecycler.GetRegisteredAt())
@@ -220,7 +220,7 @@ func TestBasicLifecycler_UnregisterOnStop(t *testing.T) {
 	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
 
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
-	assert.Equal(t, PENDING, lifecycler.GetState())
+	assert.Equal(t, InstanceState_PENDING, lifecycler.GetState())
 	assert.Equal(t, Tokens{}, lifecycler.GetTokens())
 	assert.False(t, lifecycler.IsRegistered())
 	assert.Zero(t, lifecycler.GetRegisteredAt())
@@ -242,14 +242,14 @@ func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 	require.Equal(t, cfg.KeepInstanceInTheRingOnShutdown, lifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
-		return ACTIVE, Tokens{1, 2, 3, 4, 5}
+		return InstanceState_ACTIVE, Tokens{1, 2, 3, 4, 5}
 	}
 	delegate.onStopping = func(lifecycler *BasicLifecycler) {
-		require.NoError(t, lifecycler.changeState(context.Background(), LEAVING))
+		require.NoError(t, lifecycler.changeState(context.Background(), InstanceState_LEAVING))
 	}
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-	assert.Equal(t, ACTIVE, lifecycler.GetState())
+	assert.Equal(t, InstanceState_ACTIVE, lifecycler.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
 	assert.True(t, lifecycler.IsRegistered())
 	assert.NotZero(t, lifecycler.GetRegisteredAt())
@@ -257,7 +257,7 @@ func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 	assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
 
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
-	assert.Equal(t, LEAVING, lifecycler.GetState())
+	assert.Equal(t, InstanceState_LEAVING, lifecycler.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
 	assert.True(t, lifecycler.IsRegistered())
 	assert.NotZero(t, lifecycler.GetRegisteredAt())
@@ -269,7 +269,7 @@ func TestBasicLifecycler_KeepInTheRingOnStop(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, cfg.ID, inst.GetId())
 	assert.Equal(t, cfg.Addr, inst.GetAddr())
-	assert.Equal(t, LEAVING, inst.GetState())
+	assert.Equal(t, InstanceState_LEAVING, inst.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, Tokens(inst.GetTokens()))
 	assert.Equal(t, cfg.Zone, inst.GetZone())
 }
@@ -284,15 +284,15 @@ func TestBasicLifecycler_UnregisterFromTheRingOnStop(t *testing.T) {
 	require.Equal(t, cfg.KeepInstanceInTheRingOnShutdown, lifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
-		return ACTIVE, Tokens{1, 2, 3, 4, 5}
+		return InstanceState_ACTIVE, Tokens{1, 2, 3, 4, 5}
 	}
 	delegate.onStopping = func(lifecycler *BasicLifecycler) {
-		require.NoError(t, lifecycler.changeState(context.Background(), LEAVING))
+		require.NoError(t, lifecycler.changeState(context.Background(), InstanceState_LEAVING))
 	}
 
 	// check that after StartAndAwaitRunning the instance is up and running
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-	assert.Equal(t, ACTIVE, lifecycler.GetState())
+	assert.Equal(t, InstanceState_ACTIVE, lifecycler.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
 	assert.True(t, lifecycler.IsRegistered())
 	assert.NotZero(t, lifecycler.GetRegisteredAt())
@@ -304,8 +304,8 @@ func TestBasicLifecycler_UnregisterFromTheRingOnStop(t *testing.T) {
 
 	// check that after StopAndAwaitTerminated the instance is unregistered
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
-	assert.NotEqual(t, ACTIVE, lifecycler.GetState())
-	assert.NotEqual(t, LEAVING, lifecycler.GetState())
+	assert.NotEqual(t, InstanceState_ACTIVE, lifecycler.GetState())
+	assert.NotEqual(t, InstanceState_LEAVING, lifecycler.GetState())
 	assert.Equal(t, Tokens{}, lifecycler.GetTokens())
 	assert.False(t, lifecycler.IsRegistered())
 	assert.Zero(t, lifecycler.GetRegisteredAt())
@@ -388,7 +388,7 @@ func TestBasicLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 
 	registerTokens := Tokens{1, 2, 3, 4, 5}
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (state InstanceState, tokens Tokens) {
-		return ACTIVE, registerTokens
+		return InstanceState_ACTIVE, registerTokens
 	}
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
@@ -410,7 +410,7 @@ func TestBasicLifecycler_HeartbeatAfterBackendReset(t *testing.T) {
 		desc, ok := getInstanceFromStore(t, store, testInstanceID)
 		return ok &&
 			desc.GetTimestamp() > 0 &&
-			desc.GetState() == ACTIVE &&
+			desc.GetState() == InstanceState_ACTIVE &&
 			Tokens(desc.GetTokens()).Equals(registerTokens) &&
 			desc.GetAddr() == cfg.Addr &&
 			desc.GetId() == cfg.ID
@@ -430,13 +430,13 @@ func TestBasicLifecycler_ChangeState(t *testing.T) {
 	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
-		return JOINING, Tokens{1, 2, 3, 4, 5}
+		return InstanceState_JOINING, Tokens{1, 2, 3, 4, 5}
 	}
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-	assert.Equal(t, JOINING, lifecycler.GetState())
+	assert.Equal(t, InstanceState_JOINING, lifecycler.GetState())
 
-	for _, state := range []InstanceState{ACTIVE, LEAVING} {
+	for _, state := range []InstanceState{InstanceState_ACTIVE, InstanceState_LEAVING} {
 		assert.NoError(t, lifecycler.ChangeState(ctx, state))
 		assert.Equal(t, state, lifecycler.GetState())
 
@@ -458,7 +458,7 @@ func TestBasicLifecycler_TokensObservePeriod(t *testing.T) {
 	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
-		return ACTIVE, Tokens{1, 2, 3, 4, 5}
+		return InstanceState_ACTIVE, Tokens{1, 2, 3, 4, 5}
 	}
 
 	require.NoError(t, lifecycler.StartAsync(ctx))
@@ -499,7 +499,7 @@ func TestBasicLifecycler_updateInstance_ShouldAddInstanceToTheRingIfDoesNotExist
 
 	registerTokens := Tokens{1, 2, 3, 4, 5}
 	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (state InstanceState, tokens Tokens) {
-		return ACTIVE, registerTokens
+		return InstanceState_ACTIVE, registerTokens
 	}
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
@@ -521,7 +521,7 @@ func TestBasicLifecycler_updateInstance_ShouldAddInstanceToTheRingIfDoesNotExist
 	desc, ok := getInstanceFromStore(t, store, testInstanceID)
 	require.True(t, ok)
 	assert.Equal(t, cfg.ID, desc.GetId())
-	assert.Equal(t, ACTIVE, desc.GetState())
+	assert.Equal(t, InstanceState_ACTIVE, desc.GetState())
 	assert.Equal(t, registerTokens, Tokens(desc.GetTokens()))
 	assert.Equal(t, cfg.Addr, desc.GetAddr())
 	assert.Equal(t, expectedRegisteredAt.Unix(), desc.RegisteredTimestamp)
@@ -564,7 +564,7 @@ type mockDelegate struct {
 
 func (m *mockDelegate) OnRingInstanceRegister(lifecycler *BasicLifecycler, ringDesc Desc, instanceExists bool, instanceID string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
 	if m.onRegister == nil {
-		return PENDING, Tokens{}
+		return InstanceState_PENDING, Tokens{}
 	}
 
 	return m.onRegister(lifecycler, ringDesc, instanceExists, instanceID, instanceDesc)

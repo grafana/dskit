@@ -147,7 +147,7 @@ func (l *BasicLifecycler) GetState() InstanceState {
 	defer l.currState.RUnlock()
 
 	if l.currInstanceDesc == nil {
-		return PENDING
+		return InstanceState_PENDING
 	}
 
 	return l.currInstanceDesc.GetState()
@@ -250,7 +250,7 @@ func (l *BasicLifecycler) stopping(runningError error) error {
 		return nil
 	}
 
-	// Let the delegate change the instance state (ie. to LEAVING) and handling any
+	// Let the delegate change the instance state (ie. to InstanceState_LEAVING) and handling any
 	// state transferring / flushing while we continue to heartbeat.
 	done := make(chan struct{})
 	go func() {

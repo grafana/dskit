@@ -30,7 +30,7 @@ const (
 	unhealthy = "Unhealthy"
 
 	// GetBufferSize is the suggested size of buffers passed to Ring.Get(). It's based on
-	// a typical replication factor 3, plus extra room for a JOINING + LEAVING instance.
+	// a typical replication factor 3, plus extra room for a InstanceState_JOINING + InstanceState_LEAVING instance.
 	GetBufferSize = 5
 )
 
@@ -99,23 +99,23 @@ type ReadRing interface {
 }
 
 var (
-	// Write operation that also extends replica set, if instance state is not ACTIVE.
-	Write = NewOp([]InstanceState{ACTIVE}, func(s InstanceState) bool {
-		// We do not want to Write to instances that are not ACTIVE, but we do want
+	// Write operation that also extends replica set, if instance state is not InstanceState_ACTIVE.
+	Write = NewOp([]InstanceState{InstanceState_ACTIVE}, func(s InstanceState) bool {
+		// We do not want to Write to instances that are not InstanceState_ACTIVE, but we do want
 		// to write the extra replica somewhere.  So we increase the size of the set
 		// of replicas for the key.
 		// NB unhealthy instances will be filtered later by defaultReplicationStrategy.Filter().
-		return s != ACTIVE
+		return s != InstanceState_ACTIVE
 	})
 
 	// WriteNoExtend is like Write, but with no replicaset extension.
-	WriteNoExtend = NewOp([]InstanceState{ACTIVE}, nil)
+	WriteNoExtend = NewOp([]InstanceState{InstanceState_ACTIVE}, nil)
 
-	// Read operation that extends the replica set if an instance is not ACTIVE or LEAVING
-	Read = NewOp([]InstanceState{ACTIVE, PENDING, LEAVING}, func(s InstanceState) bool {
+	// Read operation that extends the replica set if an instance is not InstanceState_ACTIVE or InstanceState_LEAVING
+	Read = NewOp([]InstanceState{InstanceState_ACTIVE, InstanceState_PENDING, InstanceState_LEAVING}, func(s InstanceState) bool {
 		// To match Write with extended replica set we have to also increase the
-		// size of the replica set for Read, but we can read from LEAVING ingesters.
-		return s != ACTIVE && s != LEAVING
+		// size of the replica set for Read, but we can read from InstanceState_LEAVING ingesters.
+		return s != InstanceState_ACTIVE && s != InstanceState_LEAVING
 	})
 
 	// Reporting is a special value for inquiring about health.
@@ -665,7 +665,7 @@ func (r *Ring) updateRingMetrics() {
 	oldestTimestampByState := map[string]int64{}
 
 	// Initialized to zero so we emit zero-metrics (instead of not emitting anything)
-	for _, s := range []string{unhealthy, ACTIVE.String(), LEAVING.String(), PENDING.String(), JOINING.String()} {
+	for _, s := range []string{unhealthy, InstanceState_ACTIVE.String(), InstanceState_LEAVING.String(), InstanceState_PENDING.String(), InstanceState_JOINING.String()} {
 		numByState[s] = 0
 		oldestTimestampByState[s] = 0
 	}
@@ -1040,7 +1040,7 @@ func (r *Ring) GetInstance(instanceID string) (doNotModify InstanceDesc, _ error
 func (r *Ring) GetInstanceState(instanceID string) (InstanceState, error) {
 	instance, err := r.GetInstance(instanceID)
 	if err != nil {
-		return PENDING, err
+		return InstanceState_PENDING, err
 	}
 
 	return instance.GetState(), nil
@@ -1311,7 +1311,7 @@ func NewOp(healthyStates []InstanceState, shouldExtendReplicaSet func(s Instance
 	}
 
 	if shouldExtendReplicaSet != nil {
-		for _, s := range []InstanceState{ACTIVE, LEAVING, PENDING, JOINING, LEFT} {
+		for _, s := range []InstanceState{InstanceState_ACTIVE, InstanceState_LEAVING, InstanceState_PENDING, InstanceState_JOINING, InstanceState_LEFT} {
 			if shouldExtendReplicaSet(s) {
 				op |= (0x10000 << s)
 			}

@@ -46,7 +46,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 		partition_ring_partitions{name="test",state="Inactive"} 0
 	`)))
 
-	// Add an ACTIVE partition to the ring.
+	// Add an InstanceState_ACTIVE partition to the ring.
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePartitionRingDesc(in)
 		desc.AddPartition(1, PartitionActive, time.Now())
@@ -84,7 +84,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 		partition_ring_partitions{name="test",state="Inactive"} 1
 	`)))
 
-	// Add a PENDING partition to the ring.
+	// Add a InstanceState_PENDING partition to the ring.
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePartitionRingDesc(in)
 		desc.AddPartition(3, PartitionPending, time.Now())

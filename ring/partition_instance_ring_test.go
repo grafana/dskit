@@ -12,7 +12,7 @@ import (
 
 func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 	now := time.Now()
-	op := NewOp([]InstanceState{ACTIVE}, nil)
+	op := NewOp([]InstanceState{InstanceState_ACTIVE}, nil)
 	heartbeatTimeout := time.Minute
 
 	type comparableReplicationSet struct {
@@ -29,8 +29,8 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 		"should return error on empty partitions ring": {
 			partitionsRing: PartitionRingDesc{},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-1": {Id: "instance-1", State: ACTIVE, Timestamp: now.Unix()},
-				"instance-2": {Id: "instance-2", State: ACTIVE, Timestamp: now.Unix()},
+				"instance-1": {Id: "instance-1", State: InstanceState_ACTIVE, Timestamp: now.Unix()},
+				"instance-2": {Id: "instance-2", State: InstanceState_ACTIVE, Timestamp: now.Unix()},
 			}},
 			expectedErr: ErrEmptyRing,
 		},
@@ -61,9 +61,9 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-zone-a-2": {Id: "instance-zone-a-2", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-a-2": {Id: "instance-zone-a-2", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-b-2": {Id: "instance-zone-b-2", State: InstanceState_ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
 				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
@@ -83,8 +83,8 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-zone-a-2": {Id: "instance-zone-a-2", State: ACTIVE, Zone: "a", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy.
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-a-2": {Id: "instance-zone-a-2", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy.
 			}},
 			expectedErr: ErrTooManyUnhealthyInstances,
 		},
@@ -102,10 +102,10 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-zone-b-1": {Id: "instance-zone-a-1", State: LEAVING, Zone: "a", Timestamp: now.Unix()}, // Unhealthy because of the state.
-				"instance-zone-a-2": {Id: "instance-zone-a-2", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy because of the heartbeat.
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-b-1": {Id: "instance-zone-a-1", State: InstanceState_LEAVING, Zone: "a", Timestamp: now.Unix()}, // Unhealthy because of the state.
+				"instance-zone-a-2": {Id: "instance-zone-a-2", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-b-2": {Id: "instance-zone-b-2", State: InstanceState_ACTIVE, Zone: "b", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy because of the heartbeat.
 			}},
 			expectedSets: []comparableReplicationSet{
 				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
@@ -126,8 +126,8 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
-				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
+				"instance-zone-b-2": {Id: "instance-zone-b-2", State: InstanceState_ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
 				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
@@ -148,10 +148,10 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				},
 			},
 			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
-				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
-				"instance-zone-b-1": {Id: "instance-zone-b-1", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
-				"instance-zone-a-2": {Id: "instance-zone-a-2", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
-				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
+				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
+				"instance-zone-b-1": {Id: "instance-zone-b-1", State: InstanceState_ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
+				"instance-zone-a-2": {Id: "instance-zone-a-2", State: InstanceState_ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
+				"instance-zone-b-2": {Id: "instance-zone-b-2", State: InstanceState_ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
 				{instances: []string{"instance-zone-a-1", "instance-zone-b-1"}, maxUnavailableZones: 0},
@@ -199,7 +199,7 @@ func BenchmarkPartitionInstanceRing_GetReplicationSetsForOperation(b *testing.B)
 
 		for _, zone := range zones {
 			instanceID := fmt.Sprintf("instance-zone-%s-%d", zone, partitionID)
-			instancesRing.ringDesc.AddIngester(instanceID, instanceID, zone, nil, ACTIVE, now, false, readOnlyUpdated)
+			instancesRing.ringDesc.AddIngester(instanceID, instanceID, zone, nil, InstanceState_ACTIVE, now, false, readOnlyUpdated)
 			partitionsRing.AddOrUpdateOwner(instanceID, OwnerActive, int32(partitionID), now)
 		}
 	}
@@ -231,9 +231,9 @@ func TestPartitionInstanceRing_ShuffleShard(t *testing.T) {
 	partitionsRing.AddOrUpdateOwner("instance-3", OwnerActive, 3, now.Add(-30*time.Minute))
 
 	instancesRing := &Desc{Ingesters: map[string]InstanceDesc{
-		"instance-1": {Id: "instance-1", State: ACTIVE, Timestamp: time.Now().Unix()},
-		"instance-2": {Id: "instance-2", State: ACTIVE, Timestamp: time.Now().Unix()},
-		"instance-3": {Id: "instance-3", State: ACTIVE, Timestamp: time.Now().Unix()},
+		"instance-1": {Id: "instance-1", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},
+		"instance-2": {Id: "instance-2", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},
+		"instance-3": {Id: "instance-3", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},
 	}}
 
 	r := NewPartitionInstanceRing(newStaticPartitionRingReader(NewPartitionRing(*partitionsRing)), &Ring{ringDesc: instancesRing}, 0)

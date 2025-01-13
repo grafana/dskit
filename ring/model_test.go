@@ -17,29 +17,29 @@ func TestInstanceDesc_IsHealthy_ForIngesterOperations(t *testing.T) {
 		readExpected   bool
 		reportExpected bool
 	}{
-		"ACTIVE ingester with last keepalive newer than timeout": {
-			ingester:       &InstanceDesc{State: ACTIVE, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
+		"InstanceState_ACTIVE ingester with last keepalive newer than timeout": {
+			ingester:       &InstanceDesc{State: InstanceState_ACTIVE, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
 			timeout:        time.Minute,
 			writeExpected:  true,
 			readExpected:   true,
 			reportExpected: true,
 		},
-		"ACTIVE ingester with last keepalive older than timeout": {
-			ingester:       &InstanceDesc{State: ACTIVE, Timestamp: time.Now().Add(-90 * time.Second).Unix()},
+		"InstanceState_ACTIVE ingester with last keepalive older than timeout": {
+			ingester:       &InstanceDesc{State: InstanceState_ACTIVE, Timestamp: time.Now().Add(-90 * time.Second).Unix()},
 			timeout:        time.Minute,
 			writeExpected:  false,
 			readExpected:   false,
 			reportExpected: false,
 		},
-		"JOINING ingester with last keepalive newer than timeout": {
-			ingester:       &InstanceDesc{State: JOINING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
+		"InstanceState_JOINING ingester with last keepalive newer than timeout": {
+			ingester:       &InstanceDesc{State: InstanceState_JOINING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
 			timeout:        time.Minute,
 			writeExpected:  false,
 			readExpected:   false,
 			reportExpected: true,
 		},
-		"LEAVING ingester with last keepalive newer than timeout": {
-			ingester:       &InstanceDesc{State: LEAVING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
+		"InstanceState_LEAVING ingester with last keepalive newer than timeout": {
+			ingester:       &InstanceDesc{State: InstanceState_LEAVING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
 			timeout:        time.Minute,
 			writeExpected:  false,
 			readExpected:   true,
@@ -156,7 +156,7 @@ func TestDesc_Ready(t *testing.T) {
 		Ingesters: map[string]InstanceDesc{
 			"ing1": {
 				Tokens:    []uint32{100, 200, 300},
-				State:     ACTIVE,
+				State:     InstanceState_ACTIVE,
 				Timestamp: now.Unix(),
 			},
 		},
@@ -181,7 +181,7 @@ func TestDesc_Ready(t *testing.T) {
 	r = &Desc{
 		Ingesters: map[string]InstanceDesc{
 			"ing1": {
-				State:     ACTIVE,
+				State:     InstanceState_ACTIVE,
 				Timestamp: now.Unix(),
 			},
 		},
@@ -311,13 +311,13 @@ func TestDesc_RingsCompare(t *testing.T) {
 			expected: EqualButStatesAndTimestamps,
 		},
 		"same single instance, different state": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: ACTIVE}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: JOINING}}},
+			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: InstanceState_ACTIVE}}},
+			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: InstanceState_JOINING}}},
 			expected: EqualButStatesAndTimestamps,
 		},
 		"same single instance, different registered timestamp": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: ACTIVE, RegisteredTimestamp: 1}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: ACTIVE, RegisteredTimestamp: 2}}},
+			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: InstanceState_ACTIVE, RegisteredTimestamp: 1}}},
+			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: InstanceState_ACTIVE, RegisteredTimestamp: 2}}},
 			expected: Different,
 		},
 		"same single instance, different read only flag": {

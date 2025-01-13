@@ -41,7 +41,7 @@ func GetCodec() codec.Codec {
 // NewDesc returns an empty ring.Desc
 func NewDesc() *Desc {
 	return &Desc{
-		Ingesters: map[string]InstanceDesc{},
+		Ingesters: map[string]*InstanceDesc{},
 	}
 }
 
@@ -52,14 +52,57 @@ func timeToUnixSecons(t time.Time) int64 {
 	return t.Unix()
 }
 
+func (x *Desc) GetIngester(id string) *InstanceDesc {
+	if x != nil {
+		if x.Ingesters != nil {
+			return x.Ingesters[id]
+		}
+	}
+	return nil
+}
+
+func (x *Desc) GetIngesterVal(id string) (InstanceDesc, bool) {
+	if x != nil {
+		if x.Ingesters != nil {
+			if ptr, ok := x.Ingesters[id]; ok {
+				return *ptr, true
+			}
+		}
+	}
+	return InstanceDesc{}, false
+}
+
+func (x *Desc) GetIngesterVals() map[string]InstanceDesc {
+	if x != nil {
+		valMap := make(map[string]InstanceDesc, len(x.Ingesters))
+		for k, v := range x.Ingesters {
+			if v != nil {
+				valMap[k] = *v
+			} else {
+				valMap[k] = InstanceDesc{}
+			}
+		}
+		return valMap
+	}
+	return nil
+}
+
+func (d *Desc) SetIngesterVal(id string, ingester InstanceDesc) InstanceDesc {
+	if d.Ingesters == nil {
+		d.Ingesters = map[string]*InstanceDesc{}
+	}
+	d.Ingesters[id] = &ingester
+	return ingester
+}
+
 // AddIngester adds the given ingester to the ring. Ingester will only use supplied tokens,
 // any other tokens are removed.
 func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state InstanceState, registeredAt time.Time, readOnly bool, readOnlyUpdated time.Time) InstanceDesc {
 	if d.Ingesters == nil {
-		d.Ingesters = map[string]InstanceDesc{}
+		d.Ingesters = map[string]*InstanceDesc{}
 	}
 
-	ingester := InstanceDesc{
+	return d.SetIngesterVal(id, InstanceDesc{
 		Id:                       id,
 		Addr:                     addr,
 		Timestamp:                time.Now().Unix(),
@@ -69,10 +112,7 @@ func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state Instanc
 		RegisteredTimestamp:      timeToUnixSecons(registeredAt),
 		ReadOnly:                 readOnly,
 		ReadOnlyUpdatedTimestamp: timeToUnixSecons(readOnlyUpdated),
-	}
-
-	d.Ingesters[id] = ingester
-	return ingester
+	})
 }
 
 // RemoveIngester removes the given ingester and all its tokens.
@@ -103,7 +143,7 @@ func (d *Desc) ClaimTokens(from, to string) Tokens {
 // FindIngestersByState returns the list of ingesters in the given state
 func (d *Desc) FindIngestersByState(state InstanceState) []InstanceDesc {
 	var result []InstanceDesc
-	for _, ing := range d.Ingesters {
+	for _, ing := range d.GetIngesterVals() {
 		if ing.State == state {
 			result = append(result, ing)
 		}
@@ -363,7 +403,7 @@ func tokensEqual(lhs, rhs []uint32) bool {
 
 var tokenMapPool = sync.Pool{New: func() interface{} { return make(map[uint32]struct{}) }}
 
-func conflictingTokensExist(normalizedIngesters map[string]InstanceDesc) bool {
+func conflictingTokensExist(normalizedIngesters map[string]*InstanceDesc) bool {
 	tokensMap := tokenMapPool.Get().(map[uint32]struct{})
 	defer func() {
 		for k := range tokensMap {
@@ -389,7 +429,7 @@ func conflictingTokensExist(normalizedIngesters map[string]InstanceDesc) bool {
 // 2) otherwise node names are compared, and node with "lower" name wins the token
 //
 // Modifies ingesters map with updated tokens.
-func resolveConflicts(normalizedIngesters map[string]InstanceDesc) {
+func resolveConflicts(normalizedIngesters map[string]*InstanceDesc) {
 	size := 0
 	for _, ing := range normalizedIngesters {
 		size += len(ing.Tokens)

@@ -670,7 +670,7 @@ func TestLifecycler_IncreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	})
 
 	// Verify ingester joined, is active, and has 128 tokens
-	var ingDesc InstanceDesc
+	var ingDesc *InstanceDesc
 	test.Poll(t, time.Second, true, func() interface{} {
 		d, err := r.KVClient.Get(ctx, ringKey)
 		require.NoError(t, err)
@@ -848,7 +848,7 @@ func TestLifecycler_DecreasingTokensLeavingInstanceInTheRing(t *testing.T) {
 	})
 
 	// Verify ingester joined, is active, and has 64 tokens
-	var ingDesc InstanceDesc
+	var ingDesc *InstanceDesc
 	test.Poll(t, time.Second, true, func() interface{} {
 		d, err := r.KVClient.Get(ctx, ringKey)
 		require.NoError(t, err)
@@ -1008,7 +1008,7 @@ func TestCheckReady_MinReadyDuration(t *testing.T) {
 			startTime := time.Now()
 
 			// Wait until the instance is InstanceState_ACTIVE and healthy in the ring.
-			waitRingInstance(t, 3*time.Second, l, func(instance InstanceDesc) error {
+			waitRingInstance(t, 3*time.Second, l, func(instance *InstanceDesc) error {
 				return instance.IsReady(time.Now(), cfg.RingConfig.HeartbeatTimeout)
 			})
 
@@ -1096,8 +1096,8 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 
 			// Wait until both instances are registered in the ring. We expect them to be registered
 			// immediately and then switch to InstanceState_ACTIVE after the configured auto join delay.
-			waitRingInstance(t, 3*time.Second, l1, func(InstanceDesc) error { return nil })
-			waitRingInstance(t, 3*time.Second, l2, func(InstanceDesc) error { return nil })
+			waitRingInstance(t, 3*time.Second, l1, func(*InstanceDesc) error { return nil })
+			waitRingInstance(t, 3*time.Second, l2, func(*InstanceDesc) error { return nil })
 
 			// Poll the readiness check until ready and measure how much time it takes.
 			test.Poll(t, 5*time.Second, nil, func() interface{} {
@@ -1130,8 +1130,8 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
 	// poll function waits for a condition and returning actual state of the ingesters after the condition succeed.
-	poll := func(condition func(*Desc) bool) map[string]InstanceDesc {
-		var ingesters map[string]InstanceDesc
+	poll := func(condition func(*Desc) bool) map[string]*InstanceDesc {
+		var ingesters map[string]*InstanceDesc
 		test.Poll(t, 5*time.Second, true, func() interface{} {
 			d, err := r.KVClient.Get(context.Background(), ringKey)
 			require.NoError(t, err)
@@ -1157,7 +1157,10 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), lifecycler))
 		poll(func(desc *Desc) bool {
-			return desc.Ingesters[ingId].State == InstanceState_ACTIVE
+			if ing := desc.GetIngester(ingId); ing != nil {
+				return ing.State == InstanceState_ACTIVE
+			}
+			return false
 		})
 		return lifecycler
 	}
@@ -1332,7 +1335,9 @@ func TestTokensOnDisk(t *testing.T) {
 		require.NoError(t, err)
 		desc, ok := d.(*Desc)
 		if ok {
-			actTokens = desc.Ingesters["ing2"].Tokens
+			if ing := desc.GetIngester("ing2"); ing != nil {
+				actTokens = ing.Tokens
+			}
 		}
 		return ok &&
 			len(desc.Ingesters) == 1 &&
@@ -1416,7 +1421,7 @@ func TestJoinInLeavingState(t *testing.T) {
 	// Set state as InstanceState_LEAVING
 	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
-			Ingesters: map[string]InstanceDesc{
+			Ingesters: map[string]*InstanceDesc{
 				"ing1": {
 					State:  InstanceState_LEAVING,
 					Tokens: []uint32{1, 4},
@@ -1473,7 +1478,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	// Set state as InstanceState_JOINING
 	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
-			Ingesters: map[string]InstanceDesc{
+			Ingesters: map[string]*InstanceDesc{
 				"ing1": {
 					State:               InstanceState_JOINING,
 					Tokens:              []uint32{1, 4},
@@ -1528,7 +1533,7 @@ func TestWaitBeforeJoining(t *testing.T) {
 
 	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
-			Ingesters: map[string]InstanceDesc{
+			Ingesters: map[string]*InstanceDesc{
 				instanceName(0, 1): {
 					State:  InstanceState_ACTIVE,
 					Tokens: []uint32{1, 2, 3},
@@ -1738,7 +1743,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	// Set ing1 to not have a zone
 	err = r.KVClient.CAS(context.Background(), ringKey, func(interface{}) (interface{}, bool, error) {
 		r := &Desc{
-			Ingesters: map[string]InstanceDesc{
+			Ingesters: map[string]*InstanceDesc{
 				"ing1": {
 					State:  InstanceState_ACTIVE,
 					Addr:   "0.0.0.0",
@@ -1772,7 +1777,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	})
 }
 
-func waitRingInstance(t *testing.T, timeout time.Duration, l *Lifecycler, check func(instance InstanceDesc) error) {
+func waitRingInstance(t *testing.T, timeout time.Duration, l *Lifecycler, check func(instance *InstanceDesc) error) {
 	test.Poll(t, timeout, nil, func() interface{} {
 		desc, err := l.KVStore.Get(context.Background(), l.RingKey)
 		if err != nil {

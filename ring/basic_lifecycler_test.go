@@ -588,16 +588,16 @@ func (m *mockDelegate) OnRingInstanceHeartbeat(lifecycler *BasicLifecycler, ring
 	}
 }
 
-func getInstanceFromStore(t *testing.T, store kv.Client, instanceID string) (InstanceDesc, bool) {
+func getInstanceFromStore(t *testing.T, store kv.Client, instanceID string) (*InstanceDesc, bool) {
 	out, err := store.Get(context.Background(), testRingKey)
 	require.NoError(t, err)
 
 	if out == nil {
-		return InstanceDesc{}, false
+		return nil, false
 	}
 
 	ringDesc := out.(*Desc)
-	instanceDesc, ok := ringDesc.GetIngesterVal(instanceID)
+	instanceDesc := ringDesc.GetIngester(instanceID)
 
-	return instanceDesc, ok
+	return instanceDesc, instanceDesc != nil
 }

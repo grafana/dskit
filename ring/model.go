@@ -285,6 +285,10 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 
 	for name, oing := range otherIngesterMap {
 		ting := thisIngesterMap[name]
+		if ting == nil {
+			ting = &InstanceDesc{}
+		}
+
 		// ting.Timestamp will be 0, if there was no such ingester in our version
 		if oing.Timestamp > ting.Timestamp {
 			if !tokensEqual(ting.Tokens, oing.Tokens) {

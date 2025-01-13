@@ -707,6 +707,11 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			return ringDesc, true, nil
 		}
 
+		// instanceDesc is a pointer to the value in the ringDesc.Ingesters map,
+		// so updates to it will be reflected in ringDesc.Ingesters[i.ID];
+		// hold a copy of the original state so we can determine if we need to update the ring's backing store
+		originalInstanceDesc := *instanceDesc
+
 		// The instance already exists in the ring, so we can't change the registered timestamp (even if it's zero)
 		// but we need to update the local state accordingly.
 		i.setRegisteredAt(instanceDesc.GetRegisteredAt())
@@ -765,7 +770,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 
 		// Update the ring if the instance has been changed. We don't want to rely on heartbeat update, as heartbeat
 		// can be configured to long time, and until then lifecycler would not report this instance as ready in CheckReady.
-		if !instanceDesc.Equal(ringDesc.Ingesters[i.ID]) {
+		if !instanceDesc.Equal(originalInstanceDesc) {
 			// Update timestamp to give gossiping client a chance register ring change.
 			instanceDesc.Timestamp = time.Now().Unix()
 			ringDesc.Ingesters[i.ID] = instanceDesc

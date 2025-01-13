@@ -65,6 +65,18 @@ clean-protos: ## Removes the proto files
 .PHONY: protos
 protos: .tools/bin/protoc .tools/bin/protoc-gen-gogoslick .tools/bin/protoc-gen-go $(PROTO_GOS) ## Creates proto files
 
+PROTO_DEFS_CSPROTO := ./ring/ring.proto
+.PHONY: protos-csproto
+protos-csproto:
+	@for name in $(PROTO_DEFS_CSPROTO); do \
+        .tools/protoc/bin/protoc \
+        -I . \
+        --go_out=paths=source_relative:. \
+        --fastmarshal_out=apiversion=v2,paths=source_relative:. \
+        --go-grpc_out=require_unimplemented_servers=false,paths=source_relative:. \
+       $${name}; \
+    done
+
 %.pb.go:
 	.tools/protoc/bin/protoc -I $(GOPATH):./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
@@ -99,3 +111,6 @@ endif
 
 .tools/bin/protoc-gen-go-grpc: .tools
 	GOPATH=$(CURDIR)/.tools go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+
+.tools/bin/protoc-gen-fastmarshal: .tools
+	GOPATH=$(CURDIR)/.tools go install github.com/CrowdStrike/csproto/cmd/protoc-gen-fastmarshal@v0.33.0

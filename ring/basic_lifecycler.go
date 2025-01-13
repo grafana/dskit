@@ -294,7 +294,7 @@ func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 		ringDesc := GetOrCreateRingDesc(in)
 
 		var exists bool
-		instanceDesc, exists = ringDesc.Ingesters[l.cfg.ID]
+		instanceDesc, exists = ringDesc.GetIngesterVal(l.cfg.ID)
 		if exists {
 			level.Info(l.logger).Log("msg", "instance found in the ring", "instance", l.cfg.ID, "ring", l.ringName, "state", instanceDesc.GetState(), "tokens", len(instanceDesc.GetTokens()), "registered_at", instanceDesc.GetRegisteredAt().String(), "last_heartbeat_at", instanceDesc.GetLastHeartbeatAt().String())
 		} else {
@@ -436,7 +436,7 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 		ringDesc := GetOrCreateRingDesc(in)
 
 		var ok bool
-		instanceDesc, ok = ringDesc.Ingesters[l.cfg.ID]
+		instanceDesc, ok = ringDesc.GetIngesterVal(l.cfg.ID)
 
 		// This could happen if the backend store restarted (and content deleted)
 		// or the instance has been forgotten. In this case, we do re-insert it.
@@ -462,7 +462,7 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 			instanceDesc.Timestamp = time.Now().Unix()
 		}
 
-		ringDesc.Ingesters[l.cfg.ID] = instanceDesc
+		ringDesc.SetIngesterVal(l.cfg.ID, instanceDesc)
 		return ringDesc, true, nil
 	})
 

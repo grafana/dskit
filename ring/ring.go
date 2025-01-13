@@ -489,7 +489,7 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		}
 
 		distinctHosts = append(distinctHosts, info.InstanceID)
-		instance := r.ringDesc.Ingesters[info.InstanceID]
+		instance, _ := r.ringDesc.GetIngesterVal(info.InstanceID)
 
 		// Check whether the replica set should be extended given we're including
 		// this instance.
@@ -526,7 +526,7 @@ func (r *Ring) GetAllHealthy(op Operation) (ReplicationSet, error) {
 
 	now := time.Now()
 	instances := make([]InstanceDesc, 0, len(r.ringDesc.Ingesters))
-	for _, instance := range r.ringDesc.Ingesters {
+	for _, instance := range r.ringDesc.GetIngesterVals() {
 		if r.IsHealthy(&instance, op, now) {
 			instances = append(instances, instance)
 		}
@@ -552,7 +552,7 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	zoneFailures := make(map[string]struct{})
 	now := time.Now()
 
-	for _, instance := range r.ringDesc.Ingesters {
+	for _, instance := range r.ringDesc.GetIngesterVals() {
 		if r.IsHealthy(&instance, op, now) {
 			healthyInstances = append(healthyInstances, instance)
 		} else {
@@ -670,7 +670,7 @@ func (r *Ring) updateRingMetrics() {
 		oldestTimestampByState[s] = 0
 	}
 
-	for _, instance := range r.ringDesc.Ingesters {
+	for _, instance := range r.ringDesc.GetIngesterVals() {
 		s := instance.State.String()
 		if !r.IsHealthy(&instance, Reporting, time.Now()) {
 			s = unhealthy
@@ -791,7 +791,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		actualZones = []string{""}
 	}
 
-	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
+	shard := make(map[string]*InstanceDesc, min(len(r.ringDesc.Ingesters), size))
 
 	// We need to iterate zones always in the same order to guarantee stability.
 	for _, zone := range actualZones {
@@ -890,7 +890,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 }
 
 // shouldIncludeReadonlyInstanceInTheShard returns true if instance is not read-only, or when it is read-only and should be included in the shuffle shard.
-func shouldIncludeReadonlyInstanceInTheShard(instance InstanceDesc, lookbackPeriod time.Duration, lookbackUntil int64) bool {
+func shouldIncludeReadonlyInstanceInTheShard(instance *InstanceDesc, lookbackPeriod time.Duration, lookbackUntil int64) bool {
 	if !instance.ReadOnly {
 		return true
 	}
@@ -923,7 +923,7 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 		return r
 	}
 
-	shard := make(map[string]InstanceDesc, len(r.ringDesc.Ingesters))
+	shard := make(map[string]*InstanceDesc, len(r.ringDesc.Ingesters))
 
 	for id, inst := range r.ringDesc.Ingesters {
 		if shouldIncludeReadonlyInstanceInTheShard(inst, lookbackPeriod, lookbackUntil) {
@@ -935,7 +935,7 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 }
 
 // buildRingForTheShard builds read-only ring for the shard (this ring won't be updated in the future).
-func (r *Ring) buildRingForTheShard(shard map[string]InstanceDesc) *Ring {
+func (r *Ring) buildRingForTheShard(shard map[string]*InstanceDesc) *Ring {
 	shardDesc := &Desc{Ingesters: shard}
 	shardTokensByZone := shardDesc.getTokensByZone()
 	shardTokens := mergeTokenGroups(shardTokensByZone)
@@ -1022,17 +1022,12 @@ func (r *Ring) GetInstance(instanceID string) (doNotModify InstanceDesc, _ error
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
-	instances := r.ringDesc.GetIngesters()
-	if instances == nil {
-		return InstanceDesc{}, ErrInstanceNotFound
-	}
-
-	instance, ok := instances[instanceID]
+	var err error
+	instance, ok := r.ringDesc.GetIngesterVal(instanceID)
 	if !ok {
-		return InstanceDesc{}, ErrInstanceNotFound
+		err = ErrInstanceNotFound
 	}
-
-	return instance, nil
+	return instance, err
 }
 
 // GetInstanceState returns the current state of an instance or an error if the
@@ -1288,7 +1283,7 @@ func (r *Ring) ZonesCount() int {
 func (r *Ring) readOnlyInstanceCount() int {
 	r.mtx.RLock()
 	c := 0
-	for _, i := range r.ringDesc.Ingesters {
+	for _, i := range r.ringDesc.GetIngesterVals() {
 		if i.ReadOnly {
 			c++
 		}

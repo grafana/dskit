@@ -78,8 +78,6 @@ func (x *Desc) GetIngesterVals() map[string]InstanceDesc {
 		for k, v := range x.Ingesters {
 			if v != nil {
 				valMap[k] = *v
-			} else {
-				valMap[k] = InstanceDesc{}
 			}
 		}
 		return valMap

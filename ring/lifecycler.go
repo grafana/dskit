@@ -874,7 +874,7 @@ func (i *Lifecycler) waitBeforeJoining(ctx context.Context) error {
 			lastError = fmt.Errorf("no ring returned from the KV store")
 			continue
 		}
-		lastError = i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
+		lastError = i.tokenGenerator.CanJoin(ringDesc.GetIngesterVals())
 		if lastError == nil {
 			level.Info(i.logger).Log("msg", "it is now possible to join the ring", "ring", i.RingName, "id", i.cfg.ID, "retries", retries.NumRetries())
 			return nil

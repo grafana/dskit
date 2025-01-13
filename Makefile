@@ -8,12 +8,12 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 # Download the proper protoc version for Darwin (osx) and Linux.
 # If you need windows for some reason it's at https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/protoc-3.6.1-win32.zip
 UNAME_S := $(shell uname -s)
-PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/
+PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v29.3/
 ifeq ($(UNAME_S), Linux)
-	PROTO_ZIP=protoc-3.6.1-linux-x86_64.zip
+	PROTO_ZIP=protoc-29.3-linux-x86_64.zip
 endif
 ifeq ($(UNAME_S), Darwin)
-	PROTO_ZIP=protoc-3.6.1-osx-x86_64.zip
+	PROTO_ZIP=protoc-v29.3-osx-x86_64.zip
 endif
 GO_MODS=$(shell find . $(DONT_FIND) -type f -name 'go.mod' -print)
 
@@ -92,7 +92,10 @@ ifeq ("$(wildcard .tools/protoc/bin/protoc)","")
 endif
 
 .tools/bin/protoc-gen-gogoslick: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0
+	GOPATH=$(CURDIR)/.tools go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2
 
 .tools/bin/protoc-gen-go: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/golang/protobuf/protoc-gen-go@v1.3.1
+	GOPATH=$(CURDIR)/.tools go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.2
+
+.tools/bin/protoc-gen-go-grpc: .tools
+	GOPATH=$(CURDIR)/.tools go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1

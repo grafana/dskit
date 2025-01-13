@@ -250,7 +250,7 @@ func TestAutoForgetDelegate(t *testing.T) {
 			setup: func(ringDesc *Desc) {
 				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, InstanceState_ACTIVE, registeredAt, false, readOnlyUpdated)
 				i.Timestamp = time.Now().Add(-forgetPeriod).Add(5 * time.Second).Unix()
-				ringDesc.Ingesters["instance-1"] = i
+				ringDesc.SetIngesterVal("instance-1", i)
 			},
 			expectedInstances: []string{testInstanceID, "instance-1"},
 		},
@@ -258,7 +258,7 @@ func TestAutoForgetDelegate(t *testing.T) {
 			setup: func(ringDesc *Desc) {
 				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, InstanceState_ACTIVE, registeredAt, false, readOnlyUpdated)
 				i.Timestamp = time.Now().Add(-forgetPeriod).Add(-5 * time.Second).Unix()
-				ringDesc.Ingesters["instance-1"] = i
+				ringDesc.SetIngesterVal("instance-1", i)
 			},
 			expectedInstances: []string{testInstanceID},
 		},
@@ -347,7 +347,7 @@ func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
 		prevTokens := []uint32{10, 20, 30}
 		desc.AddIngester("test-instance", "test-addr", "zone", prevTokens, InstanceState_JOINING, time.Now(), false, time.Time{})
 
-		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, true, "test-instance", desc.GetIngesters()["test-instance"])
+		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, true, "test-instance", desc.GetIngesterVals()["test-instance"])
 		require.Equal(t, InstanceState_ACTIVE, state)
 		require.Equal(t, tokenCount, len(tokens))
 

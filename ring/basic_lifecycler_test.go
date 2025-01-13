@@ -597,7 +597,7 @@ func getInstanceFromStore(t *testing.T, store kv.Client, instanceID string) (Ins
 	}
 
 	ringDesc := out.(*Desc)
-	instanceDesc, ok := ringDesc.GetIngesters()[instanceID]
+	instanceDesc, ok := ringDesc.GetIngesterVal(instanceID)
 
 	return instanceDesc, ok
 }

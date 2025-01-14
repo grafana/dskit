@@ -55,13 +55,13 @@ message InstanceDesc {
 }
 
 enum InstanceState {
-	InstanceState_ACTIVE = 0;
-	InstanceState_LEAVING = 1;
+	ACTIVE = 0;
+	LEAVING = 1;
 
-	InstanceState_PENDING = 2;
-	InstanceState_JOINING = 3;
+	PENDING = 2;
+	JOINING = 3;
 
 	// This state is only used by gossiping code to distribute information about
 	// instances that have been removed from the ring. Ring users should not use it directly.
-	InstanceState_LEFT = 4;
+	LEFT = 4;
 }

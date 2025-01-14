@@ -28,7 +28,7 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 	}{
 		"should return error on empty partitions ring": {
 			partitionsRing: PartitionRingDesc{},
-			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
+			instancesRing: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-1": {Id: "instance-1", State: InstanceState_ACTIVE, Timestamp: now.Unix()},
 				"instance-2": {Id: "instance-2", State: InstanceState_ACTIVE, Timestamp: now.Unix()},
 			}},
@@ -60,7 +60,7 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
-			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
+			instancesRing: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
 				"instance-zone-a-2": {Id: "instance-zone-a-2", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: InstanceState_ACTIVE, Zone: "b", Timestamp: now.Unix()},
@@ -82,7 +82,7 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
-			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
+			instancesRing: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
 				"instance-zone-a-2": {Id: "instance-zone-a-2", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy.
 			}},
@@ -101,7 +101,7 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
-			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
+			instancesRing: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
 				"instance-zone-b-1": {Id: "instance-zone-a-1", State: InstanceState_LEAVING, Zone: "a", Timestamp: now.Unix()}, // Unhealthy because of the state.
 				"instance-zone-a-2": {Id: "instance-zone-a-2", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
@@ -125,7 +125,7 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
-			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
+			instancesRing: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "a", Timestamp: now.Unix()},
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: InstanceState_ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
@@ -147,7 +147,7 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 					"instance-zone-b-2": {OwnedPartition: 2},
 				},
 			},
-			instancesRing: &Desc{Ingesters: map[string]InstanceDesc{
+			instancesRing: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-zone-a-1": {Id: "instance-zone-a-1", State: InstanceState_ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
 				"instance-zone-b-1": {Id: "instance-zone-b-1", State: InstanceState_ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
 				"instance-zone-a-2": {Id: "instance-zone-a-2", State: InstanceState_ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
@@ -230,7 +230,7 @@ func TestPartitionInstanceRing_ShuffleShard(t *testing.T) {
 	partitionsRing.AddOrUpdateOwner("instance-2", OwnerActive, 2, now.Add(-30*time.Minute))
 	partitionsRing.AddOrUpdateOwner("instance-3", OwnerActive, 3, now.Add(-30*time.Minute))
 
-	instancesRing := &Desc{Ingesters: map[string]InstanceDesc{
+	instancesRing := &Desc{Ingesters: map[string]*InstanceDesc{
 		"instance-1": {Id: "instance-1", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},
 		"instance-2": {Id: "instance-2", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},
 		"instance-3": {Id: "instance-3", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},

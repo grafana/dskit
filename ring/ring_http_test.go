@@ -17,7 +17,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 	now := time.Now()
 	ring := fakeRingAccess{
 		desc: &Desc{
-			Ingesters: map[string]InstanceDesc{
+			Ingesters: map[string]*InstanceDesc{
 				"1": {
 					Zone:      "zone-a",
 					State:     InstanceState_ACTIVE,
@@ -47,7 +47,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
 			"<td>", "1", "</td>",
 			"<td>", "zone-a", "</td>",
-			"<td>", "InstanceState_ACTIVE", "</td>",
+			"<td>", "ACTIVE", "</td>",
 			"<td>", "addr-a", "</td>",
 		}, `\s*`))), recorder.Body.String())
 
@@ -59,7 +59,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
 			"<td>", "2", "</td>",
 			"<td>", "zone-b", "</td>",
-			"<td>", "InstanceState_ACTIVE", "</td>",
+			"<td>", "ACTIVE", "</td>",
 			"<td>", "addr-b", "</td>",
 		}, `\s*`))), recorder.Body.String())
 

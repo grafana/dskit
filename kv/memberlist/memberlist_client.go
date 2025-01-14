@@ -1280,9 +1280,11 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 				Time: time.Now(),
 				Size: update.messageSize,
 				Pair: KeyValuePair{
-					Key:   key,
-					Value: update.value,
-					Codec: update.codec.CodecID(),
+					Key:              key,
+					Value:            update.value,
+					Codec:            update.codec.CodecID(),
+					Deleted:          update.deleted,
+					UpdateTimeMillis: update.updateTime.UnixMilli(),
 				},
 				Version: version,
 				Changes: changes,
@@ -1596,6 +1598,7 @@ func (m *KV) storeCopy() map[string]ValueDesc {
 	}
 	return result
 }
+
 func (m *KV) addReceivedMessage(msg Message) {
 	if m.cfg.MessageHistoryBufferBytes == 0 {
 		return

@@ -170,7 +170,9 @@ func (d *Desc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
 // Returned tokens are guaranteed to be sorted.
 func (d *Desc) TokensFor(id string) (myTokens, allTokens Tokens) {
 	allTokens = d.GetTokens()
-	myTokens = d.Ingesters[id].Tokens
+	if ing := d.GetIngester(id); ing != nil {
+		myTokens = ing.Tokens
+	}
 	return
 }
 

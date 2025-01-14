@@ -206,7 +206,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	client := NewFakeServerClient(conn)
 	res, err := client.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
-	require.EqualValues(t, &empty, res)
+	require.EqualExportedValues(t, &empty, res)
 
 	res, err = client.FailWithError(context.Background(), &empty)
 	require.Nil(t, res)
@@ -618,7 +618,7 @@ func TestTLSServer(t *testing.T) {
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
-	require.EqualValues(t, &empty, grpcRes)
+	require.EqualExportedValues(t, &empty, grpcRes)
 }
 
 func TestTLSServerWithInlineCerts(t *testing.T) {
@@ -709,7 +709,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
-	require.EqualValues(t, &empty, grpcRes)
+	require.EqualExportedValues(t, &empty, grpcRes)
 }
 
 type FakeLogger struct {

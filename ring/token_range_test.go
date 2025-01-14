@@ -93,7 +93,7 @@ func TestGetTokenRangesForInstance(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			instances := map[string]InstanceDesc{}
+			instances := map[string]*InstanceDesc{}
 			allTokens := []uint32{}
 
 			// generate test zone

@@ -97,7 +97,7 @@ func (r *RingMock) ZonesCount() int {
 
 func createStartingRing() *Ring {
 	// Init the ring.
-	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{
+	ringDesc := &Desc{Ingesters: map[string]*InstanceDesc{
 		"instance-1": {Id: "instance-1", Addr: "127.0.0.1", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},
 		"instance-2": {Id: "instance-2", Addr: "127.0.0.2", State: InstanceState_PENDING, Timestamp: time.Now().Unix()},
 		"instance-3": {Id: "instance-3", Addr: "127.0.0.3", State: InstanceState_JOINING, Timestamp: time.Now().Unix()},
@@ -162,7 +162,7 @@ func addInstanceAfterSomeTime(ring *Ring, addInstanceAfter time.Duration) {
 		defer ring.mtx.Unlock()
 		ringDesc := ring.ringDesc
 		instanceID := fmt.Sprintf("127.0.0.%d", len(ringDesc.Ingesters)+1)
-		ringDesc.Ingesters[instanceID] = InstanceDesc{Addr: instanceID, State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()}
+		ringDesc.Ingesters[instanceID] = &InstanceDesc{Addr: instanceID, State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()}
 		ring.ringDesc = ringDesc
 		ring.ringTokens = ringDesc.GetTokens()
 		ring.ringTokensByZone = ringDesc.getTokensByZone()
@@ -228,7 +228,7 @@ func addInstancesPeriodically(ring *Ring) chan struct{} {
 				ring.mtx.Lock()
 				ringDesc := ring.ringDesc
 				instanceID := fmt.Sprintf("127.0.0.%d", len(ringDesc.Ingesters)+1)
-				ringDesc.Ingesters[instanceID] = InstanceDesc{Id: instanceID, Addr: instanceID, State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()}
+				ringDesc.Ingesters[instanceID] = &InstanceDesc{Id: instanceID, Addr: instanceID, State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()}
 				ring.ringDesc = ringDesc
 				ring.ringTokens = ringDesc.GetTokens()
 				ring.ringTokensByZone = ringDesc.getTokensByZone()

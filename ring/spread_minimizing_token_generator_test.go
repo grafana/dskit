@@ -496,12 +496,12 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 
 	// if canJoinEnabled is false, the check is skipped
 	tokenGenerator.canJoinEnabled = false
-	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesterVals())
 	require.NoError(t, err)
 
 	// if canJoinEnabled is true, the check returns an error because not all previous instances have tokens
 	tokenGenerator.canJoinEnabled = true
-	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesterVals())
 	require.Error(t, err)
 	require.Equal(t, errorMissingPreviousInstance(pendingInstance), err)
 
@@ -510,7 +510,7 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 	pendingInstanceDesc.State = InstanceState_ACTIVE
 	pendingInstanceDesc.Tokens = allTokens[pendingInstanceID]
 	ringDesc.Ingesters[pendingInstance] = pendingInstanceDesc
-	err = tokenGenerator.CanJoin(ringDesc.GetIngesters())
+	err = tokenGenerator.CanJoin(ringDesc.GetIngesterVals())
 	require.NoError(t, err)
 }
 

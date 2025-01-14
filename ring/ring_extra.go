@@ -1,5 +1,11 @@
 package ring
 
+const ACTIVE = InstanceState_ACTIVE
+const LEAVING = InstanceState_LEAVING
+const PENDING = InstanceState_PENDING
+const JOINING = InstanceState_JOINING
+const LEFT = InstanceState_LEFT
+
 func (this *InstanceDesc) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil

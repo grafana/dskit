@@ -1034,7 +1034,6 @@ func (m *KV) notifyWatchersSync(key string) {
 
 func (m *KV) Delete(key string) {
 	m.storeMu.Lock()
-	defer m.storeMu.Unlock()
 
 	val, ok := m.store[key]
 	if !ok || val.Deleted {
@@ -1044,10 +1043,24 @@ func (m *KV) Delete(key string) {
 	val.Deleted = true
 	val.UpdateTime = time.Now()
 	m.store[key] = val
+	m.storeMu.Unlock()
 
-	level.Debug(m.logger).Log("msg", "marked key for deletion", "key", key)
-	m.notifyWatchers(key)
-	m.broadcastNewValue(key, val.value, val.Version, m.GetCodec(val.CodecID), true, true, val.UpdateTime)
+	c := m.GetCodec(val.CodecID)
+	if c == nil {
+		level.Warn(m.logger).Log("msg", "invalid codec", "codec_id", val.CodecID)
+	}
+
+	change, newver, err := m.mergeValueForKey(key, nil, false, 0, c, true, val.UpdateTime)
+	if err != nil {
+		level.Warn(m.logger).Log("msg", "failed to delete key", "key", key, "err", err)
+		return
+	}
+
+	if newver > 0 {
+		level.Debug(m.logger).Log("msg", "broadcasting key deletion", "key", key, "version", newver)
+		m.notifyWatchers(key)
+		m.broadcastNewValue(key, change, newver, c, false, true, val.UpdateTime)
+	}
 }
 
 // CAS implements Compare-And-Set/Swap operation.

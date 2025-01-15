@@ -65,7 +65,7 @@ clean-protos: ## Removes the proto files
 .PHONY: protos
 protos: .tools/bin/protoc .tools/bin/protoc-gen-gogoslick .tools/bin/protoc-gen-go $(PROTO_GOS) ## Creates proto files
 
-PROTO_DEFS_CSPROTO := ./ring/ring.proto
+PROTO_DEFS_CSPROTO := ./ring/ring.proto ./ring/partition_ring_desc.proto ./kv/mock.proto ./kv/memberlist/kv.proto
 .PHONY: protos-csproto
 protos-csproto:
 	@for name in $(PROTO_DEFS_CSPROTO); do \

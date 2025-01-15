@@ -36,11 +36,11 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 		},
 		"should return error on empty instances ring": {
 			partitionsRing: PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{
+				Partitions: map[int32]*PartitionDesc{
 					1: {State: PartitionActive},
 					2: {State: PartitionInactive},
 				},
-				Owners: map[string]OwnerDesc{
+				Owners: map[string]*OwnerDesc{
 					"instance-1": {OwnedPartition: 1},
 					"instance-2": {OwnedPartition: 2},
 				},
@@ -50,11 +50,11 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 		},
 		"should return replication sets with at least 1 instance per partition, if every partition has at least 1 healthy instance": {
 			partitionsRing: PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{
+				Partitions: map[int32]*PartitionDesc{
 					1: {State: PartitionActive},
 					2: {State: PartitionInactive},
 				},
-				Owners: map[string]OwnerDesc{
+				Owners: map[string]*OwnerDesc{
 					"instance-zone-a-1": {OwnedPartition: 1},
 					"instance-zone-a-2": {OwnedPartition: 2},
 					"instance-zone-b-2": {OwnedPartition: 2},
@@ -72,11 +72,11 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 		},
 		"should return error if there are no healthy instances for a partition": {
 			partitionsRing: PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{
+				Partitions: map[int32]*PartitionDesc{
 					1: {State: PartitionActive},
 					2: {State: PartitionInactive},
 				},
-				Owners: map[string]OwnerDesc{
+				Owners: map[string]*OwnerDesc{
 					"instance-zone-a-1": {OwnedPartition: 1},
 					"instance-zone-a-2": {OwnedPartition: 2},
 					"instance-zone-b-2": {OwnedPartition: 2},
@@ -90,11 +90,11 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 		},
 		"should return replication sets excluding unhealthy instances as long as there's at least 1 healthy instance per partition": {
 			partitionsRing: PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{
+				Partitions: map[int32]*PartitionDesc{
 					1: {State: PartitionActive},
 					2: {State: PartitionInactive},
 				},
-				Owners: map[string]OwnerDesc{
+				Owners: map[string]*OwnerDesc{
 					"instance-zone-a-1": {OwnedPartition: 1},
 					"instance-zone-b-1": {OwnedPartition: 1},
 					"instance-zone-a-2": {OwnedPartition: 2},
@@ -114,11 +114,11 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 		},
 		"should NOT return error if an instance is missing in the instances ring but there's another healthy instance for the partition": {
 			partitionsRing: PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{
+				Partitions: map[int32]*PartitionDesc{
 					1: {State: PartitionActive},
 					2: {State: PartitionInactive},
 				},
-				Owners: map[string]OwnerDesc{
+				Owners: map[string]*OwnerDesc{
 					"instance-zone-a-1": {OwnedPartition: 1},
 					"instance-zone-b-1": {OwnedPartition: 1}, // Missing in the instances ring.
 					"instance-zone-a-2": {OwnedPartition: 2}, // Missing in the instances ring.
@@ -136,11 +136,11 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 		},
 		"should return replication sets with MaxUnavailableZones=0 if there are multiple instances per zone but all instances belong to the same zone": {
 			partitionsRing: PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{
+				Partitions: map[int32]*PartitionDesc{
 					1: {State: PartitionActive},
 					2: {State: PartitionInactive},
 				},
-				Owners: map[string]OwnerDesc{
+				Owners: map[string]*OwnerDesc{
 					"instance-zone-a-1": {OwnedPartition: 1},
 					"instance-zone-b-1": {OwnedPartition: 1},
 					"instance-zone-a-2": {OwnedPartition: 2},
@@ -200,7 +200,7 @@ func BenchmarkPartitionInstanceRing_GetReplicationSetsForOperation(b *testing.B)
 		for _, zone := range zones {
 			instanceID := fmt.Sprintf("instance-zone-%s-%d", zone, partitionID)
 			instancesRing.ringDesc.AddIngester(instanceID, instanceID, zone, nil, InstanceState_ACTIVE, now, false, readOnlyUpdated)
-			partitionsRing.AddOrUpdateOwner(instanceID, OwnerActive, int32(partitionID), now)
+			partitionsRing.AddOrUpdateOwner(instanceID, OwnerState_OwnerActive, int32(partitionID), now)
 		}
 	}
 
@@ -226,9 +226,9 @@ func TestPartitionInstanceRing_ShuffleShard(t *testing.T) {
 	partitionsRing.AddPartition(1, PartitionActive, now.Add(-120*time.Minute))
 	partitionsRing.AddPartition(2, PartitionActive, now.Add(-30*time.Minute))
 	partitionsRing.AddPartition(3, PartitionActive, now.Add(-30*time.Minute))
-	partitionsRing.AddOrUpdateOwner("instance-1", OwnerActive, 1, now.Add(-30*time.Minute))
-	partitionsRing.AddOrUpdateOwner("instance-2", OwnerActive, 2, now.Add(-30*time.Minute))
-	partitionsRing.AddOrUpdateOwner("instance-3", OwnerActive, 3, now.Add(-30*time.Minute))
+	partitionsRing.AddOrUpdateOwner("instance-1", OwnerState_OwnerActive, 1, now.Add(-30*time.Minute))
+	partitionsRing.AddOrUpdateOwner("instance-2", OwnerState_OwnerActive, 2, now.Add(-30*time.Minute))
+	partitionsRing.AddOrUpdateOwner("instance-3", OwnerState_OwnerActive, 3, now.Add(-30*time.Minute))
 
 	instancesRing := &Desc{Ingesters: map[string]*InstanceDesc{
 		"instance-1": {Id: "instance-1", State: InstanceState_ACTIVE, Timestamp: time.Now().Unix()},

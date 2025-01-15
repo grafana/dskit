@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
@@ -624,7 +625,7 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 					var ok bool
 					event.partitionDesc.Tokens, ok = testData.partitionTokens[event.partitionID]
 					require.True(t, ok, "no tokens for partition %d", event.partitionID)
-					ringDesc.Partitions[event.partitionID] = event.partitionDesc
+					ringDesc.Partitions[event.partitionID] = proto.Clone(&event.partitionDesc).(*PartitionDesc)
 				case remove:
 					delete(ringDesc.Partitions, event.partitionID)
 				case test:
@@ -1048,11 +1049,11 @@ func TestPartitionRingGetTokenRangesForPartition(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			ringDesc := PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{},
+				Partitions: map[int32]*PartitionDesc{},
 			}
 
 			for p, t := range testData.partitionTokens {
-				ringDesc.Partitions[int32(p)] = PartitionDesc{
+				ringDesc.Partitions[int32(p)] = &PartitionDesc{
 					Tokens: t,
 				}
 			}

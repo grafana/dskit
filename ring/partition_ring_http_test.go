@@ -24,7 +24,7 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 	handler := NewPartitionRingPageHandler(
 		newStaticPartitionRingReader(
 			NewPartitionRing(PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{
+				Partitions: map[int32]*PartitionDesc{
 					1: {
 						State:          PartitionActive,
 						StateTimestamp: time.Now().Unix(),
@@ -36,7 +36,7 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 						Tokens:         []uint32{2000000, 4000000, 5000000, 7000000},
 					},
 				},
-				Owners: map[string]OwnerDesc{
+				Owners: map[string]*OwnerDesc{
 					"ingester-zone-a-0": {
 						OwnedPartition: 1,
 					},

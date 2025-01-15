@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/dskit/kv/codec"
@@ -68,7 +68,7 @@ func Test_createClient_singleBackend_mustContainRoleAndTypeLabels(t *testing.T) 
 	client, err := createClient("mock", "/test1", storeCfg, testCodec, Primary, reg, testLogger{})
 	require.NoError(t, err)
 	require.NoError(t, client.CAS(context.Background(), "/test", func(_ interface{}) (out interface{}, retry bool, err error) {
-		out = &mockMessage{id: "inCAS"}
+		out = &MockMessage{Id: "inCAS"}
 		retry = false
 		return
 	}))
@@ -86,7 +86,7 @@ func Test_createClient_multiBackend_mustContainRoleAndTypeLabels(t *testing.T) {
 	client, err := createClient("multi", "/test1", storeCfg, testCodec, Primary, reg, testLogger{})
 	require.NoError(t, err)
 	require.NoError(t, client.CAS(context.Background(), "/test", func(_ interface{}) (out interface{}, retry bool, err error) {
-		out = &mockMessage{id: "inCAS"}
+		out = &MockMessage{Id: "inCAS"}
 		retry = false
 		return
 	}))
@@ -133,26 +133,26 @@ func newConfigsForTest() (cfg StoreConfig, c codec.Codec) {
 		},
 	}
 	c = codec.NewProtoCodec("test", func() proto.Message {
-		return &mockMessage{id: "inCodec"}
+		return &MockMessage{Id: "inCodec"}
 	})
 	return
 }
 
-type mockMessage struct {
-	id string
-}
-
-func (m *mockMessage) Reset() {
-	panic("do not use")
-}
-
-func (m *mockMessage) String() string {
-	panic("do not use")
-}
-
-func (m *mockMessage) ProtoMessage() {
-	panic("do not use")
-}
+//type mockMessage struct {
+//	id string
+//}
+//
+//func (m *mockMessage) Reset() {
+//	panic("do not use")
+//}
+//
+//func (m *mockMessage) String() string {
+//	panic("do not use")
+//}
+//
+//func (m *mockMessage) ProtoMessage() {
+//	panic("do not use")
+//}
 
 type testLogger struct{}
 

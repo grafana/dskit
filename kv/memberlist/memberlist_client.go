@@ -1557,9 +1557,11 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 		// Note that "result" and "change" may actually be the same Mergeable. That is why we
 		// call RemoveTombstones on "result" first, so that we get the correct metrics. Calling
 		// RemoveTombstones twice with same limit should be noop.
-		change.RemoveTombstones(limit)
-		if len(change.MergeContent()) == 0 {
-			return nil, 0, curr.Deleted, curr.UpdateTime, nil
+		if change != nil {
+			change.RemoveTombstones(limit)
+			if len(change.MergeContent()) == 0 {
+				return nil, 0, curr.Deleted, curr.UpdateTime, nil
+			}
 		}
 	}
 
@@ -1573,8 +1575,9 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 
 	// The "changes" returned by Merge() can contain references to the "result"
 	// state. Therefore, make sure we clone it before releasing the lock.
-	change = change.Clone()
-
+	if change != nil {
+		change = change.Clone()
+	}
 	return change, newVersion, newDeleted, newUpdated, nil
 }
 

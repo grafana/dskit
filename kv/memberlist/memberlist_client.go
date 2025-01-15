@@ -1039,8 +1039,6 @@ func (m *KV) Delete(key string) error {
 		return nil
 	}
 
-	val.Deleted = true
-	val.UpdateTime = time.Now()
 	m.store[key] = val
 	m.storeMu.Unlock()
 
@@ -1049,7 +1047,7 @@ func (m *KV) Delete(key string) error {
 		return fmt.Errorf("invalid codec: %s", val.CodecID)
 	}
 
-	change, newver, deleted, updated, err := m.mergeValueForKey(key, nil, false, 0, val.CodecID, true, time.Now())
+	change, newver, deleted, updated, err := m.mergeValueForKey(key, val.value, false, 0, val.CodecID, true, time.Now())
 	if err != nil {
 		return err
 	}
@@ -1173,7 +1171,7 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 		return
 	}
 
-	data, err := codec.Encode(change)
+	data, err := handlePossibleNilEncode(codec, change)
 	if err != nil {
 		level.Error(m.logger).Log("msg", "failed to encode change", "key", key, "version", version, "err", err)
 		m.numberOfBroadcastMessagesDropped.Inc()
@@ -1188,18 +1186,19 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 		return
 	}
 
+	mergedChanges := handlePossibleNilMergeContent(change)
 	m.addSentMessage(Message{
 		Time:    time.Now(),
 		Size:    len(pairData),
 		Pair:    kvPair,
 		Version: version,
-		Changes: change.MergeContent(),
+		Changes: mergedChanges,
 	})
 
 	l := len(pairData)
 	b := ringBroadcast{
 		key:     key,
-		content: change.MergeContent(),
+		content: mergedChanges,
 		version: version,
 		msg:     pairData,
 		finished: func(ringBroadcast) {
@@ -1693,4 +1692,20 @@ func updateTimeMillis(ts time.Time) int64 {
 		return 0
 	}
 	return ts.UnixMilli()
+}
+
+func handlePossibleNilEncode(codec codec.Codec, change Mergeable) ([]byte, error) {
+	if change == nil {
+		return []byte{}, nil
+	}
+
+	return codec.Encode(change)
+}
+
+func handlePossibleNilMergeContent(change Mergeable) []string {
+	if change == nil {
+		return []string{}
+	}
+
+	return change.MergeContent()
 }

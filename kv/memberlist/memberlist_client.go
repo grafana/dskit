@@ -1043,6 +1043,9 @@ func (m *KV) Delete(key string) {
 	val.Deleted = true
 	val.UpdateTime = time.Now()
 	m.store[key] = val
+
+	m.notifyWatchers(key)
+	m.broadcastNewValue(key, val.value, val.Version, m.GetCodec(val.CodecID), true, true, val.UpdateTime)
 }
 
 // CAS implements Compare-And-Set/Swap operation.

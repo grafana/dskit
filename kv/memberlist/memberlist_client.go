@@ -545,6 +545,7 @@ func (m *KV) running(ctx context.Context) error {
 		case <-obsoleteEntriesTickerChan:
 			// cleanupObsoleteEntries is normally called during push/pull, but if there are no other
 			// nodes to push/pull with, we can call it periodically to make sure we remove unused entries from memory.
+			level.Debug(m.logger).Log("msg", "initiating cleanup of obsolete entries")
 			m.cleanupObsoleteEntries()
 
 		case <-ctx.Done():
@@ -1044,6 +1045,7 @@ func (m *KV) Delete(key string) {
 	val.UpdateTime = time.Now()
 	m.store[key] = val
 
+	level.Debug(m.logger).Log("msg", "marked key for deletion", "key", key)
 	m.notifyWatchers(key)
 	m.broadcastNewValue(key, val.value, val.Version, m.GetCodec(val.CodecID), true, true, val.UpdateTime)
 }
@@ -1554,6 +1556,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	newDeleted := curr.Deleted
 
 	if !updateTime.IsZero() && updateTime.After(newUpdateTime) {
+		level.Debug(m.logger).Log("msg", "setting new update time and delete value", "key", key, "updateTime", updateTime, "deleted", deleted)
 		newUpdateTime = updateTime
 		newDeleted = deleted
 	}
@@ -1654,6 +1657,7 @@ func (m *KV) cleanupObsoleteEntries() {
 
 	for k, v := range m.store {
 		if v.Deleted && time.Since(v.UpdateTime) > m.cfg.ObsoleteEntriesTimeout {
+			level.Debug(m.logger).Log("msg", "deleting entry from KV store", "key", k)
 			delete(m.store, k)
 		}
 	}

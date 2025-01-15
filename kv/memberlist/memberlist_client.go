@@ -78,8 +78,7 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 		return err
 	}
 
-	c.kv.Delete(key)
-	return nil
+	return c.kv.Delete(key)
 }
 
 // CAS is part of kv.Client interface
@@ -1032,12 +1031,12 @@ func (m *KV) notifyWatchersSync(key string) {
 	}
 }
 
-func (m *KV) Delete(key string) {
+func (m *KV) Delete(key string) error {
 	m.storeMu.Lock()
 
 	val, ok := m.store[key]
 	if !ok || val.Deleted {
-		return
+		return nil
 	}
 
 	val.Deleted = true
@@ -1047,20 +1046,20 @@ func (m *KV) Delete(key string) {
 
 	c := m.GetCodec(val.CodecID)
 	if c == nil {
-		level.Warn(m.logger).Log("msg", "invalid codec", "codec_id", val.CodecID)
+		return fmt.Errorf("invalid codec: %s", val.CodecID)
 	}
 
-	change, newver, err := m.mergeValueForKey(key, nil, false, 0, c, true, val.UpdateTime)
+	change, newver, deleted, updated, err := m.mergeValueForKey(key, nil, false, 0, val.CodecID, true, time.Now())
 	if err != nil {
-		level.Warn(m.logger).Log("msg", "failed to delete key", "key", key, "err", err)
-		return
+		return err
 	}
 
 	if newver > 0 {
-		level.Debug(m.logger).Log("msg", "broadcasting key deletion", "key", key, "version", newver)
 		m.notifyWatchers(key)
-		m.broadcastNewValue(key, change, newver, c, false, true, val.UpdateTime)
+		m.broadcastNewValue(key, change, newver, c, false, deleted, updated)
 	}
+
+	return nil
 }
 
 // CAS implements Compare-And-Set/Swap operation.
@@ -1093,7 +1092,7 @@ outer:
 			}
 		}
 
-		change, newver, retry, updateTime, err := m.trySingleCas(key, codec, f)
+		change, newver, retry, deleted, updated, err := m.trySingleCas(key, codec, f)
 		if err != nil {
 			level.Debug(m.logger).Log("msg", "CAS attempt failed", "err", err, "retry", retry)
 
@@ -1108,13 +1107,13 @@ outer:
 			m.casSuccesses.Inc()
 			m.notifyWatchers(key)
 
-			m.broadcastNewValue(key, change, newver, codec, true, false, updateTime)
+			m.broadcastNewValue(key, change, newver, codec, true, deleted, updated)
 		}
 
 		return nil
 	}
 
-	if lastError == errVersionMismatch {
+	if errors.Is(lastError, errVersionMismatch) {
 		// this is more likely error than version mismatch.
 		lastError = errTooManyRetries
 	}
@@ -1125,49 +1124,47 @@ outer:
 
 // returns change, error (or nil, if CAS succeeded), and whether to retry or not.
 // returns errNoChangeDetected if merge failed to detect change in f's output.
-func (m *KV) trySingleCas(key string, codec codec.Codec, f func(in interface{}) (out interface{}, retry bool, err error)) (Mergeable, uint, bool, time.Time, error) {
+func (m *KV) trySingleCas(key string, codec codec.Codec, f func(in interface{}) (out interface{}, retry bool, err error)) (Mergeable, uint, bool, bool, time.Time, error) {
 	val, ver, err := m.get(key, codec)
 	if err != nil {
-		return nil, 0, false, time.Time{}, fmt.Errorf("failed to get value: %v", err)
+		return nil, 0, false, false, time.Time{}, fmt.Errorf("failed to get value: %v", err)
 	}
 
 	out, retry, err := f(val)
 	if err != nil {
-		return nil, 0, retry, time.Time{}, fmt.Errorf("fn returned error: %v", err)
+		return nil, 0, retry, false, time.Time{}, fmt.Errorf("fn returned error: %v", err)
 	}
 
 	if out == nil {
 		// no change to be done
-		return nil, 0, false, time.Time{}, nil
+		return nil, 0, false, false, time.Time{}, nil
 	}
 
 	// Don't even try
 	incomingValue, ok := out.(Mergeable)
 	if !ok || incomingValue == nil {
-		return nil, 0, retry, time.Time{}, fmt.Errorf("invalid type: %T, expected Mergeable", out)
+		return nil, 0, retry, false, time.Time{}, fmt.Errorf("invalid type: %T, expected Mergeable", out)
 	}
 
 	// To support detection of removed items from value, we will only allow CAS operation to
 	// succeed if version hasn't changed, i.e. state hasn't changed since running 'f'.
 	// Supplied function may have kept a reference to the returned "incoming value".
 	// If KV store will keep this value as well, it needs to make a clone.
-	ut := time.Now()
-
-	change, newver, err := m.mergeValueForKey(key, incomingValue, true, ver, codec, false, ut)
+	change, newver, deleted, updated, err := m.mergeValueForKey(key, incomingValue, true, ver, codec.CodecID(), false, time.Now())
 	if err == errVersionMismatch {
-		return nil, 0, retry, time.Time{}, err
+		return nil, 0, retry, false, time.Time{}, err
 	}
 
 	if err != nil {
-		return nil, 0, retry, time.Time{}, fmt.Errorf("merge failed: %v", err)
+		return nil, 0, retry, false, time.Time{}, fmt.Errorf("merge failed: %v", err)
 	}
 
 	if newver == 0 {
 		// CAS method reacts on this error
-		return nil, 0, retry, time.Time{}, errNoChangeDetected
+		return nil, 0, retry, deleted, updated, errNoChangeDetected
 	}
 
-	return change, newver, retry, ut, nil
+	return change, newver, retry, deleted, updated, nil
 }
 
 func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec codec.Codec, locallyGenerated bool, deleted bool, updateTime time.Time) {
@@ -1287,7 +1284,7 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 		select {
 		case update := <-workerCh:
 			// we have a value update! Let's merge it with our current version for given key
-			mod, version, err := m.mergeBytesValueForKey(key, update.value, update.codec, update.deleted, update.updateTime)
+			mod, version, deleted, updated, err := m.mergeBytesValueForKey(key, update.value, update.codec, update.deleted, update.updateTime)
 
 			changes := []string(nil)
 			if mod != nil {
@@ -1298,11 +1295,9 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 				Time: time.Now(),
 				Size: update.messageSize,
 				Pair: KeyValuePair{
-					Key:              key,
-					Value:            update.value,
-					Codec:            update.codec.CodecID(),
-					Deleted:          update.deleted,
-					UpdateTimeMillis: update.updateTime.UnixMilli(),
+					Key:   key,
+					Value: update.value,
+					Codec: update.codec.CodecID(),
 				},
 				Version: version,
 				Changes: changes,
@@ -1313,8 +1308,8 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 			} else if version > 0 {
 				m.notifyWatchers(key)
 
-				// Don't resend original message, but only changes.
-				m.broadcastNewValue(key, mod, version, update.codec, false, update.deleted, update.updateTime)
+				// Don't resend original message, but only changes, if any.
+				m.broadcastNewValue(key, mod, version, update.codec, false, deleted, updated)
 			}
 
 		case <-m.shutdown:
@@ -1471,13 +1466,8 @@ func (m *KV) MergeRemoteState(data []byte, _ bool) {
 			continue
 		}
 
-		updateTime := updateTime(kvPair.UpdateTimeMillis)
-		if updateTime.IsZero() {
-			updateTime = time.Now()
-		}
-
 		// we have both key and value, try to merge it with our state
-		change, newver, err := m.mergeBytesValueForKey(kvPair.Key, kvPair.Value, codec, kvPair.Deleted, updateTime)
+		change, newver, deleted, updated, err := m.mergeBytesValueForKey(kvPair.Key, kvPair.Value, codec, kvPair.Deleted, updateTime(kvPair.UpdateTimeMillis))
 
 		changes := []string(nil)
 		if change != nil {
@@ -1496,7 +1486,7 @@ func (m *KV) MergeRemoteState(data []byte, _ bool) {
 			level.Error(m.logger).Log("msg", "failed to store received value", "key", kvPair.Key, "err", err)
 		} else if newver > 0 {
 			m.notifyWatchers(kvPair.Key)
-			m.broadcastNewValue(kvPair.Key, change, newver, codec, false, kvPair.Deleted, updateTime)
+			m.broadcastNewValue(kvPair.Key, change, newver, codec, false, deleted, updated)
 		}
 	}
 
@@ -1505,26 +1495,26 @@ func (m *KV) MergeRemoteState(data []byte, _ bool) {
 	}
 }
 
-func (m *KV) mergeBytesValueForKey(key string, incomingData []byte, codec codec.Codec, deleted bool, updateTime time.Time) (Mergeable, uint, error) {
+func (m *KV) mergeBytesValueForKey(key string, incomingData []byte, codec codec.Codec, deleted bool, updateTime time.Time) (Mergeable, uint, bool, time.Time, error) {
 	decodedValue, err := codec.Decode(incomingData)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to decode value: %v", err)
+		return nil, 0, false, time.Time{}, fmt.Errorf("failed to decode value: %v", err)
 	}
 
 	incomingValue, ok := decodedValue.(Mergeable)
 	if !ok {
-		return nil, 0, fmt.Errorf("expected Mergeable, got: %T", decodedValue)
+		return nil, 0, false, time.Time{}, fmt.Errorf("expected Mergeable, got: %T", decodedValue)
 	}
 
 	// No need to clone this "incomingValue", since we have just decoded it from bytes, and won't be using it.
-	return m.mergeValueForKey(key, incomingValue, false, 0, codec, deleted, updateTime)
+	return m.mergeValueForKey(key, incomingValue, false, 0, codec.CodecID(), deleted, updateTime)
 }
 
 // Merges incoming value with value we have in our store. Returns "a change" that can be sent to other
 // cluster members to update their state, and new version of the value.
 // If CAS version is specified, then merging will fail if state has changed already, and errVersionMismatch is reported.
 // If no modification occurred, new version is 0.
-func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValueRequiresClone bool, casVersion uint, codec codec.Codec, deleted bool, updateTime time.Time) (Mergeable, uint, error) {
+func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValueRequiresClone bool, casVersion uint, codecID string, deleted bool, updateTime time.Time) (change Mergeable, newVersion uint, newDeleted bool, newUpdated time.Time, err error) {
 	m.storeMu.Lock()
 	defer m.storeMu.Unlock()
 
@@ -1534,16 +1524,25 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	curr := m.store[key]
 	// if casVersion is 0, then there was no previous value, so we will just do normal merge, without localCAS flag set.
 	if casVersion > 0 && curr.Version != casVersion {
-		return nil, 0, errVersionMismatch
+		return nil, 0, false, time.Time{}, errVersionMismatch
 	}
 	result, change, err := computeNewValue(incomingValue, incomingValueRequiresClone, curr.value, casVersion > 0)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, time.Time{}, err
+	}
+
+	newVersion = curr.Version + 1
+	newUpdated = curr.UpdateTime
+	newDeleted = curr.Deleted
+
+	if !updateTime.IsZero() && updateTime.After(newUpdated) {
+		newUpdated = updateTime
+		newDeleted = deleted
 	}
 
 	// No change, don't store it.
-	if change == nil || len(change.MergeContent()) == 0 {
-		return nil, 0, nil
+	if (change == nil || len(change.MergeContent()) == 0) && curr.Deleted == newDeleted {
+		return nil, 0, curr.Deleted, curr.UpdateTime, nil
 	}
 
 	if m.cfg.LeftIngestersTimeout > 0 {
@@ -1560,32 +1559,23 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 		// RemoveTombstones twice with same limit should be noop.
 		change.RemoveTombstones(limit)
 		if len(change.MergeContent()) == 0 {
-			return nil, 0, nil
+			return nil, 0, curr.Deleted, curr.UpdateTime, nil
 		}
 	}
 
-	newVersion := curr.Version + 1
-	newUpdateTime := curr.UpdateTime
-	newDeleted := curr.Deleted
-
-	if !updateTime.IsZero() && updateTime.After(newUpdateTime) {
-		level.Debug(m.logger).Log("msg", "setting new update time and delete value", "key", key, "updateTime", updateTime, "deleted", deleted)
-		newUpdateTime = updateTime
-		newDeleted = deleted
-	}
 	m.store[key] = ValueDesc{
 		value:      result,
 		Version:    newVersion,
-		CodecID:    codec.CodecID(),
+		CodecID:    codecID,
 		Deleted:    newDeleted,
-		UpdateTime: newUpdateTime,
+		UpdateTime: newUpdated,
 	}
 
 	// The "changes" returned by Merge() can contain references to the "result"
 	// state. Therefore, make sure we clone it before releasing the lock.
 	change = change.Clone()
 
-	return change, newVersion, nil
+	return change, newVersion, newDeleted, newUpdated, nil
 }
 
 // returns [result, change, error]

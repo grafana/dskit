@@ -1,5 +1,7 @@
 ## Changelog
 
+* [CHANGE] Add new metric `slow_request_server_throughput` to track the throughput of slow queries. #619
+* [CHANGE] Log middleware updated to honor `logRequestHeaders` in all logging scenarios. #615
 * [CHANGE] Roll back the gRPC dependency to v1.65.0 to allow downstream projects to avoid a performance regression and maybe a bug in v1.66.0. #581
 * [CHANGE] Update the gRPC dependency to v1.66.0 and deprecate the `grpc_server_recv_buffer_pools_enabled` option that is no longer supported by it. #580
 * [CHANGE] `ring.DoBatchWithOptions` (and `ring.DoBatch`) reports the cancelation cause when the context is canceled instead of `context.Canceled`.
@@ -97,6 +99,8 @@
 * [FEATURE] Add methods `Increment`, `FlushAll`, `CompareAndSwap`, `Touch` to `cache.MemcachedClient` #477
 * [FEATURE] Add `concurrency.ForEachJobMergeResults()` utility function. #486
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
+* [ENHANCEMENT] Add option to hide token information in ring status page #633
+* [ENHANCEMENT] Display token information in partition ring status page #631
 * [ENHANCEMENT] Add ability to log all source hosts from http header instead of only the first one. #444
 * [ENHANCEMENT] Add configuration to customize backoff for the gRPC clients.
 * [ENHANCEMENT] Use `SecretReader` interface to fetch secrets when configuring TLS. #274
@@ -237,6 +241,7 @@
 * [ENHANCEMENT] Memberlist: Add concurrency to the transport's WriteTo method. #525
 * [ENHANCEMENT] Memberlist: Notifications can now be processed once per interval specified by `-memberlist.notify-interval` to reduce notify storms in large clusters. #592
 * [ENHANCEMENT] Memberlist: Implemented the `Delete` operation in the memberlist backed KV store. How frequently deleted entries are cleaned up is specified by the `-memberlist.obsolete-entries-timeout` flag. #612
+* [ENHANCEMENT] KV: Add `MockCountingClient`, which wraps the `kv.client` and can be used in order to count calls at specific functions of the interface. #618
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

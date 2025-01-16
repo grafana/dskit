@@ -161,7 +161,7 @@ type KVConfig struct {
 
 	// Remove LEFT ingesters from ring after this timeout.
 	LeftIngestersTimeout   time.Duration `yaml:"left_ingesters_timeout" category:"advanced"`
-	ObsoleteEntriesTimeout time.Duration `yaml:"obsolete_entries_timeout" category:"advanced"`
+	ObsoleteEntriesTimeout time.Duration `yaml:"obsolete_entries_timeout" category:"experimental"`
 
 	// Timeout used when leaving the memberlist cluster.
 	LeaveTimeout                              time.Duration `yaml:"leave_timeout" category:"advanced"`
@@ -338,7 +338,10 @@ type ValueDesc struct {
 	// ID of codec used to write this value. Only used when sending full state.
 	CodecID string
 
-	Deleted    bool
+	// Deleted is used to mark the value as deleted. The value is removed from the KV store after `ObsoleteEntriesTimeout`.
+	Deleted bool
+
+	// UpdateTime keeps track of the last time the value was updated.
 	UpdateTime time.Time
 }
 
@@ -1039,7 +1042,6 @@ func (m *KV) Delete(key string) error {
 		return nil
 	}
 
-	m.store[key] = val
 	m.storeMu.Unlock()
 
 	c := m.GetCodec(val.CodecID)

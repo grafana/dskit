@@ -225,28 +225,52 @@ func TestGrpcStatsStreaming(t *testing.T) {
 	err = testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 			# HELP received_payload_bytes Size of received gRPC messages
 			# TYPE received_payload_bytes histogram
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1024"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2048"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="4096"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="8192"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="16384"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="32768"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="65536"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="131072"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="262144"} 0
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="524288"} 0
 			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.048576e+06"} 0
-			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.62144e+06"} 2
-			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="5.24288e+06"} 4
-			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.048576e+07"} 5
-			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.62144e+07"} 5
-			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="5.24288e+07"} 5
-			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.048576e+08"} 5
-			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.62144e+08"} 5
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.097152e+06"} 1
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="4.194304e+06"} 3
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="8.388608e+06"} 5
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.6777216e+07"} 5
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="3.3554432e+07"} 5
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="6.7108864e+07"} 5
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.34217728e+08"} 5
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.68435456e+08"} 5
+			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="5.36870912e+08"} 5
 			received_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="+Inf"} 5
 			received_payload_bytes_sum{method="gRPC",route="/middleware.EchoServer/Process"} 1.5728689e+07
 			received_payload_bytes_count{method="gRPC",route="/middleware.EchoServer/Process"} 5
 
 			# HELP sent_payload_bytes Size of sent gRPC
 			# TYPE sent_payload_bytes histogram
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1024"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2048"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="4096"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="8192"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="16384"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="32768"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="65536"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="131072"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="262144"} 0
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="524288"} 0
 			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.048576e+06"} 1
-			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.62144e+06"} 4
-			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="5.24288e+06"} 5
-			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.048576e+07"} 5
-			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.62144e+07"} 5
-			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="5.24288e+07"} 5
-			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.048576e+08"} 5
-			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.62144e+08"} 5
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.097152e+06"} 3
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="4.194304e+06"} 5
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="8.388608e+06"} 5
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.6777216e+07"} 5
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="3.3554432e+07"} 5
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="6.7108864e+07"} 5
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="1.34217728e+08"} 5
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="2.68435456e+08"} 5
+			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="5.36870912e+08"} 5
 			sent_payload_bytes_bucket{method="gRPC",route="/middleware.EchoServer/Process",le="+Inf"} 5
 			sent_payload_bytes_sum{method="gRPC",route="/middleware.EchoServer/Process"} 7.864367e+06
 			sent_payload_bytes_count{method="gRPC",route="/middleware.EchoServer/Process"} 5

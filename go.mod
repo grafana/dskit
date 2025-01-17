@@ -5,7 +5,6 @@ go 1.21
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/alicebob/miniredis v2.5.0+incompatible
-	github.com/armon/go-metrics v0.3.10
 	github.com/aws/aws-sdk-go v1.44.321
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cristalhq/hedgedhttp v0.9.1
@@ -24,6 +23,7 @@ require (
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2
+	github.com/hashicorp/go-metrics v0.5.4
 	github.com/hashicorp/go-sockaddr v1.0.2
 	github.com/hashicorp/golang-lru/v2 v2.0.5
 	github.com/hashicorp/memberlist v0.3.1
@@ -39,7 +39,7 @@ require (
 	github.com/prometheus/common v0.44.0
 	github.com/prometheus/exporter-toolkit v0.10.1-0.20230714054209-2f4150c63f97
 	github.com/sercand/kuberesolver/v5 v5.1.1
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/uber/jaeger-client-go v2.28.0+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	go.etcd.io/etcd/api/v3 v3.5.0
@@ -58,6 +58,7 @@ require (
 
 require (
 	github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a // indirect
+	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
@@ -71,7 +72,7 @@ require (
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-hclog v0.14.1 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.0 // indirect
-	github.com/hashicorp/go-msgpack v0.5.5 // indirect
+	github.com/hashicorp/go-msgpack/v2 v2.1.1 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
@@ -106,4 +107,4 @@ replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.21.4
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet.
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20250117152346-967f825cf451

@@ -565,6 +565,7 @@ func defaultKVConfig(i int) KVConfig {
 	cfg.GossipInterval = 100 * time.Millisecond
 	cfg.GossipNodes = 10
 	cfg.PushPullInterval = 5 * time.Second
+	cfg.ObsoleteEntriesTimeout = 5 * time.Second
 
 	cfg.TCPTransport = TCPTransportConfig{
 		BindAddrs: getLocalhostAddrs(),
@@ -572,6 +573,53 @@ func defaultKVConfig(i int) KVConfig {
 	}
 
 	return cfg
+}
+
+func TestDelete(t *testing.T) {
+	t.Parallel()
+
+	c := dataCodec{}
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+		BindPort:  0, // randomize ports
+	}
+	cfg.GossipNodes = 1
+	cfg.GossipInterval = 100 * time.Millisecond
+	cfg.ObsoleteEntriesTimeout = 1 * time.Second
+	cfg.ClusterLabelVerificationDisabled = true
+	cfg.Codecs = []codec.Codec{c}
+
+	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
+
+	kv, err := NewClient(mkv, c)
+	require.NoError(t, err)
+
+	const key = "test"
+
+	val := get(t, kv, key)
+	if val != nil {
+		t.Error("Expected nil, got:", val)
+	}
+
+	err = cas(kv, key, updateFn("test"))
+	require.NoError(t, err)
+
+	err = kv.Delete(context.Background(), key)
+	if err != nil {
+		t.Fatalf("Failed to delete key %s: %v", key, err)
+	}
+
+	time.Sleep(2 * time.Second) // wait for obsolete entries to be removed
+	val = get(t, kv, key)
+
+	if val != nil {
+		t.Errorf("Expected nil, got: %v", val)
+	}
 }
 
 func TestMultipleClients(t *testing.T) {
@@ -653,7 +701,6 @@ func TestMultipleClientsWithSameLabelWithClusterLabelVerification(t *testing.T) 
 		cfg := defaultKVConfig(i)
 
 		cfg.ClusterLabel = label
-
 		return cfg
 	}
 
@@ -1686,11 +1733,11 @@ func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	require.Equal(t, 0, len(kv.GetBroadcasts(0, math.MaxInt32)))
 
 	// Check that locally-generated broadcast messages will be prioritized and sent out first, even if they are enqueued later or are smaller than other messages in the queue.
-	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false)
-	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false)
-	kv.broadcastNewValue("local", smallUpdate, 1, codec, true)
-	kv.broadcastNewValue("local", bigUpdate, 2, codec, true)
-	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true)
+	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false, false, time.Now())
+	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false, false, time.Now())
+	kv.broadcastNewValue("local", smallUpdate, 1, codec, true, false, time.Now())
+	kv.broadcastNewValue("local", bigUpdate, 2, codec, true, false, time.Now())
+	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true, false, time.Now())
 
 	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP memberlist_client_messages_in_broadcast_queue Number of user messages in the broadcast queue

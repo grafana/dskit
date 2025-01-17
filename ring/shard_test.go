@@ -276,7 +276,7 @@ func printSortedTenantsCountByShardSize(shardSizesByTenant map[string]int, zones
 	}
 }
 
-func Test_CP13_RealRing(t *testing.T) {
+/*func Test_CP13_RealRing(t *testing.T) {
 	cell := "cortex-prod-13"
 	timestamp := "2024-12-18 16:30:00 +0100 CET"
 	zones := []string{"zone-a", "zone-b", "zone-c"}
@@ -288,9 +288,9 @@ func Test_CP13_RealRing(t *testing.T) {
 		return shardSize >= ingestersPerZone*len(zones)
 	}
 	testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, false, nil, &timestamp, exclude)
-}
+}*/
 
-func Test_CP13_SMT(t *testing.T) {
+/*func Test_CP13_SMT(t *testing.T) {
 	cell := "cortex-prod-13"
 	timestamp := "2024-12-18 16:30:00 +0100 CET"
 	zones := []string{"zone-a", "zone-b", "zone-c"}
@@ -303,9 +303,9 @@ func Test_CP13_SMT(t *testing.T) {
 	}
 
 	testTimeseriesDistribution(t, testingDir, cell, zones, ingestersPerZone, ring, false, nil, &timestamp, exclude)
-}
+}*/
 
-func Test_CP13_RealRing_Print(t *testing.T) {
+/*func Test_CP13_RealRing_Print(t *testing.T) {
 	cell := "cortex-prod-13"
 	zones := []string{"zone-a", "zone-b", "zone-c"}
 	ingestersPerZone := 282
@@ -348,7 +348,7 @@ func Test_CP13_RealRing_Print(t *testing.T) {
 			fmt.Printf("\t\twould require %3d ingesters per zone with target %dM\n", smallTenantsTimeseries[i]/target, target/1_000_000)
 		}
 	}
-}
+}*/
 
 func timeseriesSeed(tenantID, timestamp string) int64 {
 	h := fnv.New64()

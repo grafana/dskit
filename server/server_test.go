@@ -206,6 +206,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	client := NewFakeServerClient(conn)
 	res, err := client.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
+	empty.Reset() // reset request to compare with the response, which will not have sizeCache=1
 	require.EqualValues(t, &empty, res)
 
 	res, err = client.FailWithError(context.Background(), &empty)
@@ -689,6 +690,7 @@ func TestTLSServer(t *testing.T) {
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
+	empty.Reset() // reset request to compare with the response, which will not have sizeCache=1
 	require.EqualValues(t, &empty, grpcRes)
 }
 
@@ -780,6 +782,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
+	empty.Reset() // reset request to compare with the response, which will not have sizeCache=1
 	require.EqualValues(t, &empty, grpcRes)
 }
 

@@ -24,7 +24,7 @@ func TestLeaveOnStoppingDelegate(t *testing.T) {
 
 	testDelegate := &mockDelegate{
 		onStopping: func(l *BasicLifecycler) {
-			assert.Equal(t, LEAVING, l.GetState())
+			assert.Equal(t, InstanceState_LEAVING, l.GetState())
 			onStoppingCalled = true
 		},
 	}
@@ -47,13 +47,13 @@ func TestTokensPersistencyDelegate_ShouldSkipTokensLoadingIfFileDoesNotExist(t *
 	testDelegate := &mockDelegate{
 		onRegister: func(_ *BasicLifecycler, _ Desc, instanceExists bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
 			assert.False(t, instanceExists)
-			return JOINING, Tokens{1, 2, 3, 4, 5}
+			return InstanceState_JOINING, Tokens{1, 2, 3, 4, 5}
 		},
 	}
 
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
-	persistencyDelegate := NewTokensPersistencyDelegate(tokensFile.Name(), ACTIVE, testDelegate, logger)
+	persistencyDelegate := NewTokensPersistencyDelegate(tokensFile.Name(), InstanceState_ACTIVE, testDelegate, logger)
 
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()
@@ -62,7 +62,7 @@ func TestTokensPersistencyDelegate_ShouldSkipTokensLoadingIfFileDoesNotExist(t *
 	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-	assert.Equal(t, JOINING, lifecycler.GetState())
+	assert.Equal(t, InstanceState_JOINING, lifecycler.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
 	assert.True(t, lifecycler.IsRegistered())
 
@@ -89,7 +89,7 @@ func TestTokensPersistencyDelegate_ShouldLoadTokensFromFileIfFileExist(t *testin
 	testDelegate := &mockDelegate{
 		onRegister: func(_ *BasicLifecycler, _ Desc, instanceExists bool, _ string, instanceDesc InstanceDesc) (InstanceState, Tokens) {
 			assert.True(t, instanceExists)
-			assert.Equal(t, ACTIVE, instanceDesc.GetState())
+			assert.Equal(t, InstanceState_ACTIVE, instanceDesc.GetState())
 			assert.Equal(t, storedTokens, Tokens(instanceDesc.GetTokens()))
 			assert.True(t, instanceDesc.GetRegisteredAt().IsZero())
 
@@ -97,7 +97,7 @@ func TestTokensPersistencyDelegate_ShouldLoadTokensFromFileIfFileExist(t *testin
 		},
 	}
 
-	persistencyDelegate := NewTokensPersistencyDelegate(tokensFile.Name(), ACTIVE, testDelegate, log.NewNopLogger())
+	persistencyDelegate := NewTokensPersistencyDelegate(tokensFile.Name(), InstanceState_ACTIVE, testDelegate, log.NewNopLogger())
 
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()
@@ -105,7 +105,7 @@ func TestTokensPersistencyDelegate_ShouldLoadTokensFromFileIfFileExist(t *testin
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-	assert.Equal(t, ACTIVE, lifecycler.GetState())
+	assert.Equal(t, InstanceState_ACTIVE, lifecycler.GetState())
 	assert.Equal(t, storedTokens, lifecycler.GetTokens())
 	assert.True(t, lifecycler.IsRegistered())
 	assert.InDelta(t, time.Now().Unix(), lifecycler.GetRegisteredAt().Unix(), 2)
@@ -130,15 +130,15 @@ func TestTokensPersistencyDelegate_ShouldHandleTheCaseTheInstanceIsAlreadyInTheR
 		expectedTokens Tokens
 	}{
 		"instance already registered in the ring without tokens": {
-			initialState:   PENDING,
+			initialState:   InstanceState_PENDING,
 			initialTokens:  nil,
-			expectedState:  ACTIVE,
+			expectedState:  InstanceState_ACTIVE,
 			expectedTokens: storedTokens,
 		},
 		"instance already registered in the ring with tokens": {
-			initialState:   JOINING,
+			initialState:   InstanceState_JOINING,
 			initialTokens:  differentTokens,
-			expectedState:  JOINING,
+			expectedState:  InstanceState_JOINING,
 			expectedTokens: differentTokens,
 		},
 	}
@@ -161,7 +161,7 @@ func TestTokensPersistencyDelegate_ShouldHandleTheCaseTheInstanceIsAlreadyInTheR
 				},
 			}
 
-			persistencyDelegate := NewTokensPersistencyDelegate(tokensFile.Name(), ACTIVE, testDelegate, log.NewNopLogger())
+			persistencyDelegate := NewTokensPersistencyDelegate(tokensFile.Name(), InstanceState_ACTIVE, testDelegate, log.NewNopLogger())
 
 			ctx := context.Background()
 			cfg := prepareBasicLifecyclerConfig()
@@ -199,15 +199,15 @@ func TestDelegatesChain(t *testing.T) {
 	chain = &mockDelegate{
 		onRegister: func(_ *BasicLifecycler, _ Desc, instanceExists bool, _ string, _ InstanceDesc) (InstanceState, Tokens) {
 			assert.False(t, instanceExists)
-			return JOINING, Tokens{1, 2, 3, 4, 5}
+			return InstanceState_JOINING, Tokens{1, 2, 3, 4, 5}
 		},
 		onStopping: func(l *BasicLifecycler) {
-			assert.Equal(t, LEAVING, l.GetState())
+			assert.Equal(t, InstanceState_LEAVING, l.GetState())
 			onStoppingCalled = true
 		},
 	}
 
-	chain = NewTokensPersistencyDelegate(tokensFile.Name(), ACTIVE, chain, log.NewNopLogger())
+	chain = NewTokensPersistencyDelegate(tokensFile.Name(), InstanceState_ACTIVE, chain, log.NewNopLogger())
 	chain = NewLeaveOnStoppingDelegate(chain, log.NewNopLogger())
 	chain = NewAutoForgetDelegate(time.Minute, chain, log.NewNopLogger())
 
@@ -218,7 +218,7 @@ func TestDelegatesChain(t *testing.T) {
 	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-	assert.Equal(t, JOINING, lifecycler.GetState())
+	assert.Equal(t, InstanceState_JOINING, lifecycler.GetState())
 	assert.Equal(t, Tokens{1, 2, 3, 4, 5}, lifecycler.GetTokens())
 	assert.True(t, lifecycler.IsRegistered())
 
@@ -242,23 +242,23 @@ func TestAutoForgetDelegate(t *testing.T) {
 	}{
 		"no unhealthy instance in the ring": {
 			setup: func(ringDesc *Desc) {
-				ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt, false, readOnlyUpdated)
+				ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, InstanceState_ACTIVE, registeredAt, false, readOnlyUpdated)
 			},
 			expectedInstances: []string{testInstanceID, "instance-1"},
 		},
 		"unhealthy instance in the ring that has NOTreached the forget period yet": {
 			setup: func(ringDesc *Desc) {
-				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt, false, readOnlyUpdated)
+				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, InstanceState_ACTIVE, registeredAt, false, readOnlyUpdated)
 				i.Timestamp = time.Now().Add(-forgetPeriod).Add(5 * time.Second).Unix()
-				ringDesc.Ingesters["instance-1"] = i
+				ringDesc.SetIngesterVal("instance-1", i)
 			},
 			expectedInstances: []string{testInstanceID, "instance-1"},
 		},
 		"unhealthy instance in the ring that has reached the forget period": {
 			setup: func(ringDesc *Desc) {
-				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, ACTIVE, registeredAt, false, readOnlyUpdated)
+				i := ringDesc.AddIngester("instance-1", "1.1.1.1", "", nil, InstanceState_ACTIVE, registeredAt, false, readOnlyUpdated)
 				i.Timestamp = time.Now().Add(-forgetPeriod).Add(-5 * time.Second).Unix()
-				ringDesc.Ingesters["instance-1"] = i
+				ringDesc.SetIngesterVal("instance-1", i)
 			},
 			expectedInstances: []string{testInstanceID},
 		},
@@ -310,8 +310,8 @@ func TestAutoForgetDelegate(t *testing.T) {
 func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
 	const tokenCount = 128
 
-	t.Run("no previous tokens, JOINING state", func(t *testing.T) {
-		delegate := NewInstanceRegisterDelegate(JOINING, 128)
+	t.Run("no previous tokens, InstanceState_JOINING state", func(t *testing.T) {
+		delegate := NewInstanceRegisterDelegate(InstanceState_JOINING, 128)
 
 		cfg := prepareBasicLifecyclerConfig()
 		cfg.HeartbeatPeriod = 100 * time.Millisecond
@@ -321,18 +321,18 @@ func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
 		otherIngesterTokens := []uint32{100, 200, 300, 400, 500}
 
 		desc := NewDesc()
-		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, InstanceState_ACTIVE, time.Now(), false, time.Time{})
 
 		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, false, "test-instance", InstanceDesc{})
-		require.Equal(t, JOINING, state)
+		require.Equal(t, InstanceState_JOINING, state)
 		require.Equal(t, tokenCount, len(tokens))
 		for _, tok := range otherIngesterTokens {
 			require.NotContains(t, tokens, tok)
 		}
 	})
 
-	t.Run("with previous tokens, ACTIVE state", func(t *testing.T) {
-		delegate := NewInstanceRegisterDelegate(ACTIVE, 128)
+	t.Run("with previous tokens, InstanceState_ACTIVE state", func(t *testing.T) {
+		delegate := NewInstanceRegisterDelegate(InstanceState_ACTIVE, 128)
 
 		cfg := prepareBasicLifecyclerConfig()
 		cfg.HeartbeatPeriod = 100 * time.Millisecond
@@ -342,13 +342,14 @@ func TestInstanceRegisterDelegate_OnRingInstanceRegister(t *testing.T) {
 		otherIngesterTokens := []uint32{100, 200, 300, 400, 500}
 
 		desc := NewDesc()
-		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester("other-instance", "addr", "zone", otherIngesterTokens, InstanceState_ACTIVE, time.Now(), false, time.Time{})
 
 		prevTokens := []uint32{10, 20, 30}
-		desc.AddIngester("test-instance", "test-addr", "zone", prevTokens, JOINING, time.Now(), false, time.Time{})
+		desc.AddIngester("test-instance", "test-addr", "zone", prevTokens, InstanceState_JOINING, time.Now(), false, time.Time{})
 
-		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, true, "test-instance", desc.GetIngesters()["test-instance"])
-		require.Equal(t, ACTIVE, state)
+		testIngester, _ := desc.GetIngesterVal("test-instance")
+		state, tokens := delegate.OnRingInstanceRegister(lifecycler, *desc, true, "test-instance", testIngester)
+		require.Equal(t, InstanceState_ACTIVE, state)
 		require.Equal(t, tokenCount, len(tokens))
 
 		for _, tok := range prevTokens {

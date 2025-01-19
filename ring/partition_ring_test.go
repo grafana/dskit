@@ -190,7 +190,7 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 		assert.Equal(t, subring.PartitionsCount(), ring.ShuffleShardSize(numActivePartitions+1))
 	})
 
-	t.Run("should never return INACTIVE or PENDING partitions", func(t *testing.T) {
+	t.Run("should never return INACTIVE or InstanceState_PENDING partitions", func(t *testing.T) {
 		const (
 			numActivePartitions   = 5
 			numInactivePartitions = 5
@@ -1169,7 +1169,7 @@ func TestActivePartitionBatchRing(t *testing.T) {
 }
 
 func TestActivePartitionBatchRing_InstancesCount(t *testing.T) {
-	t.Run("should return the number of ACTIVE partitions", func(t *testing.T) {
+	t.Run("should return the number of InstanceState_ACTIVE partitions", func(t *testing.T) {
 		activeRing := NewActivePartitionBatchRing(createPartitionRingWithPartitions(10, 3, 2))
 		assert.Equal(t, 10, activeRing.InstancesCount())
 	})
@@ -1230,13 +1230,13 @@ func BenchmarkActivePartitionBatchRing_Get(b *testing.B) {
 	benchCases := map[string]struct {
 		ring *ActivePartitionBatchRing
 	}{
-		"ACTIVE partitions only": {
+		"InstanceState_ACTIVE partitions only": {
 			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 0, 0)),
 		},
-		"ACTIVE and INACTIVE partitions": {
+		"InstanceState_ACTIVE and INACTIVE partitions": {
 			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 10, 0)),
 		},
-		"ACTIVE, INACTIVE and PENDING partitions": {
+		"InstanceState_ACTIVE, INACTIVE and InstanceState_PENDING partitions": {
 			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(100, 10, 10)),
 		},
 	}

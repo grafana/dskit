@@ -79,6 +79,8 @@ type Config struct {
 	// for details. A generally useful value is 1.1.
 	MetricsNativeHistogramFactor float64 `yaml:"-"`
 
+	CellID string `yaml:"cell_id"`
+
 	HTTPListenNetwork    string `yaml:"http_listen_network"`
 	HTTPListenAddress    string `yaml:"http_listen_address"`
 	HTTPListenPort       int    `yaml:"http_listen_port"`
@@ -166,6 +168,7 @@ var infinty = time.Duration(math.MaxInt64)
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&cfg.CellID, "server.cell-id", "", "Cell ID for the server. If set, validates that the cell ID is equal to the one in requests. If not set in either the server or requests, no validation is performed.")
 	f.StringVar(&cfg.HTTPListenAddress, "server.http-listen-address", "", "HTTP server listen address.")
 	f.StringVar(&cfg.HTTPListenNetwork, "server.http-listen-network", DefaultNetwork, "HTTP server listen network, default tcp")
 	f.StringVar(&cfg.CipherSuites, "server.tls-cipher-suites", "", "Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.")
@@ -395,6 +398,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
 		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
+		middleware.CellIDChecker{CellID: cfg.CellID}.UnaryServerInterceptor(),
 		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
 		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
@@ -522,6 +526,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
 
 	defaultHTTPMiddleware := []middleware.Interface{
+		middleware.CellIDChecker{CellID: cfg.CellID},
 		middleware.RouteInjector{
 			RouteMatcher: router,
 		},

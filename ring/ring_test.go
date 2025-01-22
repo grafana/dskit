@@ -3427,6 +3427,29 @@ func benchmarkShuffleSharding(b *testing.B, numInstances, numZones, numTokens, s
 	}
 }
 
+//func BenchmarkRing_Clone(b *testing.B) {
+//	for _, numInstances := range []int{50, 100, 1000} {
+//		for _, numZones := range []int{1, 3} {
+//			for _, shardSize := range []int{0, 3, 10, 30, 100, 1000} {
+//				b.Run(fmt.Sprintf("num instances = %d, num zones = %d, shard size = %d", numInstances, numZones, shardSize), func(b *testing.B) {
+//					benchmarkClone(b, numInstances, numZones, 128, shardSize, false)
+//				})
+//			}
+//		}
+//	}
+//}
+//
+//func benchmarkClone(b *testing.B, numInstances, numZones, numTokens, shardSize int, cache bool) {
+//	// Initialise the ring.
+//	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), numInstances, numZones, numTokens)}
+//
+//	b.ResetTimer()
+//
+//	for n := 0; n < b.N; n++ {
+//		ringDesc.Clone()
+//	}
+//}
+
 func BenchmarkRing_Get(b *testing.B) {
 	benchCases := map[string]struct {
 		numInstances      int

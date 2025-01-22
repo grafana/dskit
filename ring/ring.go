@@ -1075,11 +1075,10 @@ func (r *Ring) getCachedShuffledSubring(identifier string, size int) *Ring {
 
 	// Update instance states and timestamps. We know that the topology is the same,
 	// so zones and tokens are equal.
-	for name, cachedIng := range cached.ringDesc.GetIngesterVals() {
-		ing, _ := r.ringDesc.GetIngesterVal(name)
+	for name, cachedIng := range cached.ringDesc.GetIngesters() {
+		ing := r.ringDesc.GetIngester(name)
 		cachedIng.State = ing.State
 		cachedIng.Timestamp = ing.Timestamp
-		cached.ringDesc.SetIngesterVal(name, cachedIng)
 	}
 	return cached
 }

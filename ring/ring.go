@@ -528,7 +528,6 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		// to have low single-digit number of hosts.
 		distinctHosts = bufHosts[:0]
 
-		// TODO: Do we need to pass this in to avoid allocations?
 		hostsPerZone       = make(map[string]int)
 		targetHostsPerZone = max(1, replicationFactor/maxZones)
 	)

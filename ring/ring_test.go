@@ -618,7 +618,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 
 	tests := map[string]struct {
 		numInstances         int
-		numZones             int
+		zonesWithInstances   int
 		totalZones           int
 		replicationFactor    int
 		zoneAwarenessEnabled bool
@@ -627,7 +627,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 	}{
 		"should succeed if there are enough instances per zone on RF = 3": {
 			numInstances:         16,
-			numZones:             3,
+			zonesWithInstances:   3,
 			totalZones:           3,
 			replicationFactor:    3,
 			zoneAwarenessEnabled: true,
@@ -635,7 +635,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 		},
 		"should fail if there are instances in 1 zone only on RF = 3": {
 			numInstances:         16,
-			numZones:             1,
+			zonesWithInstances:   1,
 			totalZones:           3,
 			replicationFactor:    3,
 			zoneAwarenessEnabled: true,
@@ -643,7 +643,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 		},
 		"should succeed if there are instances in 2 zones on RF = 3": {
 			numInstances:         16,
-			numZones:             2,
+			zonesWithInstances:   2,
 			totalZones:           3,
 			replicationFactor:    3,
 			zoneAwarenessEnabled: true,
@@ -651,8 +651,8 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 		},
 		"should succeed if there are instances in 1 zone only on RF = 3 but zone-awareness is disabled": {
 			numInstances:         16,
-			numZones:             1,
-			totalZones:           3,
+			zonesWithInstances:   1,
+			totalZones:           1,
 			replicationFactor:    3,
 			zoneAwarenessEnabled: false,
 			expectedInstances:    3,
@@ -670,7 +670,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 				name := fmt.Sprintf("ing%v", i)
 				ingTokens := gen.GenerateTokens(128, prevTokens)
 
-				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i%testData.numZones), ingTokens, ACTIVE, time.Now(), false, time.Time{})
+				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i%testData.zonesWithInstances), ingTokens, ACTIVE, time.Now(), false, time.Time{})
 
 				prevTokens = append(prevTokens, ingTokens...)
 			}
@@ -678,7 +678,7 @@ func TestRing_Get_ZoneAwareness(t *testing.T) {
 			// Add instances to the ring that don't own any tokens so that the ring is aware of all zones.
 			for i := testData.numInstances; i < testData.numInstances+testData.totalZones; i++ {
 				name := fmt.Sprintf("ing%v", i)
-				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i), nil, ACTIVE, time.Now(), false, time.Time{})
+				r.AddIngester(name, fmt.Sprintf("127.0.0.%d", i), fmt.Sprintf("zone-%v", i%testData.totalZones), nil, ACTIVE, time.Now(), false, time.Time{})
 			}
 
 			// Create a ring with the instances

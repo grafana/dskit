@@ -821,6 +821,41 @@ func TestRing_GetWithOptions(t *testing.T) {
 			expectedSetSize: 0,
 			expectError:     true,
 		},
+		// Note that we're creating 3 instances per zone here to test a replication factor that is higher than
+		// the number of zones but lower than the total number of instances.
+		{
+			name: "slightly higher replication factor, ignore unhealthy strategy, all healthy",
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-a", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-b", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-b", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-c", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-c", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-9": {Addr: "127.0.0.9", Zone: "zone-c", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+			},
+			strategy:        NewIgnoreUnhealthyInstancesReplicationStrategy(),
+			options:         []Option{WithReplicationFactor(6)},
+			expectedSetSize: 6,
+			expectError:     false,
+		},
+		{
+			name: "higher replication factor, ignore unhealthy strategy, all healthy",
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", State: ACTIVE, Timestamp: healthyHeartbeat.Unix()},
+			},
+			strategy:        NewIgnoreUnhealthyInstancesReplicationStrategy(),
+			options:         []Option{WithReplicationFactor(6)},
+			expectedSetSize: 6,
+			expectError:     false,
+		},
 		{
 			name: "higher replication factor, ignore unhealthy strategy, some unhealthy",
 			ringInstances: map[string]InstanceDesc{
@@ -886,7 +921,7 @@ func TestRing_GetWithOptions(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, zoneAwarenessEnabled := range []bool{false, true} {
-				t.Run(fmt.Sprintf("zoneAwareness = %t", zoneAwarenessEnabled), func(t *testing.T) {
+				t.Run(fmt.Sprintf("zoneAwareness=%t", zoneAwarenessEnabled), func(t *testing.T) {
 					gen := initTokenGenerator(t)
 					var prevTokens []uint32
 

@@ -55,6 +55,9 @@ func WithBuffers(bufDescs []InstanceDesc, bufHosts, bufZones []string) Option {
 }
 
 // WithReplicationFactor creates an Option that overrides the default replication factor for a single call.
+// Note that the overridden replication factor must be a multiple of the number of zones. That is, there
+// should be an identical number of instances in each zone. E.g. if Zones = 3 and Default RF = 3, overridden
+// replication factor must be 6, 9, etc.
 func WithReplicationFactor(replication int) Option {
 	return func(opts *Options) {
 		opts.ReplicationFactor = replication

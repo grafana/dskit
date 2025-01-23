@@ -622,6 +622,70 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+func TestDeleteMultipleClients(t *testing.T) {
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+		BindPort:  0, // randomize
+	}
+
+	cfg.Codecs = []codec.Codec{
+		dataCodec{},
+	}
+
+	cfg.PushPullInterval = 1 * time.Second
+	cfg.ObsoleteEntriesTimeout = 1 * time.Second
+
+	mkv1 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
+
+	kv1, err := NewClient(mkv1, dataCodec{})
+	require.NoError(t, err)
+
+	const memberKey = "entry"
+
+	// Calling updateFn once creates single entry, in JOINING state.
+	err = cas(kv1, key, updateFn(memberKey))
+	require.NoError(t, err)
+
+	// We will read values from second KV, which will join the first one
+	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
+
+	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	go func() {
+		// Wait a bit, and then start mkv2.
+		time.Sleep(500 * time.Millisecond)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
+	}()
+
+	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
+
+	// While waiting for mkv2 to start, we can already create a client for it.
+	// Any client operations will block until mkv2 transitioned to Running state.
+	kv2, err := NewClient(mkv2, dataCodec{})
+	require.NoError(t, err)
+
+	val, err := kv2.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.NotNil(t, val)
+
+	err = kv1.Delete(context.Background(), key)
+	if err != nil {
+		t.Fatalf("Failed to delete key %s: %v", key, err)
+	}
+
+	time.Sleep(5 * time.Second) // wait for obsolete entries to be removed
+
+	val, err = kv1.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.NotNil(t, val)
+	val, err = kv2.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.NotNil(t, val)
+}
+
 func TestMultipleClients(t *testing.T) {
 	t.Parallel()
 

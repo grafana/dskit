@@ -141,9 +141,9 @@ func (d *Desc) ClaimTokens(from, to string) Tokens {
 // FindIngestersByState returns the list of ingesters in the given state
 func (d *Desc) FindIngestersByState(state InstanceState) []InstanceDesc {
 	var result []InstanceDesc
-	for _, ing := range d.GetIngesterVals() {
+	for _, ing := range d.GetIngesters() {
 		if ing.State == state {
-			result = append(result, ing)
+			result = append(result, *ing)
 		}
 	}
 	return result

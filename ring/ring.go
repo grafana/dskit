@@ -526,9 +526,9 @@ func (r *Ring) GetAllHealthy(op Operation) (ReplicationSet, error) {
 
 	now := time.Now()
 	instances := make([]InstanceDesc, 0, len(r.ringDesc.Ingesters))
-	for _, instance := range r.ringDesc.GetIngesterVals() {
-		if r.IsHealthy(&instance, op, now) {
-			instances = append(instances, instance)
+	for _, instance := range r.ringDesc.GetIngesters() {
+		if r.IsHealthy(instance, op, now) {
+			instances = append(instances, *instance)
 		}
 	}
 
@@ -552,9 +552,9 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	zoneFailures := make(map[string]struct{})
 	now := time.Now()
 
-	for _, instance := range r.ringDesc.GetIngesterVals() {
-		if r.IsHealthy(&instance, op, now) {
-			healthyInstances = append(healthyInstances, instance)
+	for _, instance := range r.ringDesc.GetIngesters() {
+		if r.IsHealthy(instance, op, now) {
+			healthyInstances = append(healthyInstances, *instance)
 		} else {
 			zoneFailures[instance.Zone] = struct{}{}
 		}
@@ -670,9 +670,9 @@ func (r *Ring) updateRingMetrics() {
 		oldestTimestampByState[s] = 0
 	}
 
-	for _, instance := range r.ringDesc.GetIngesterVals() {
+	for _, instance := range r.ringDesc.GetIngesters() {
 		s := instance.State.String()
-		if !r.IsHealthy(&instance, Reporting, time.Now()) {
+		if !r.IsHealthy(instance, Reporting, time.Now()) {
 			s = unhealthy
 		}
 		numByState[s]++
@@ -1056,8 +1056,8 @@ func (r *Ring) getCachedShuffledSubring(identifier string, size int) *Ring {
 		return nil
 	}
 
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 
 	// if shuffledSubringCache map is nil, reading it returns default value (nil pointer).
 	cached := r.shuffledSubringCache[subringCacheKey{identifier: identifier, shardSize: size}]
@@ -1104,8 +1104,8 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 		return nil
 	}
 
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 
 	cached, ok := r.shuffledSubringWithLookbackCache[subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}]
 	if !ok {
@@ -1130,11 +1130,10 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 
 	// Update instance states and timestamps. We know that the topology is the same,
 	// so zones and tokens are equal.
-	for name, cachedIng := range cachedSubring.ringDesc.GetIngesterVals() {
-		ing, _ := r.ringDesc.GetIngesterVal(name)
+	for name, cachedIng := range cachedSubring.ringDesc.GetIngesters() {
+		ing := r.ringDesc.GetIngester(name)
 		cachedIng.State = ing.State
 		cachedIng.Timestamp = ing.Timestamp
-		cachedSubring.ringDesc.SetIngesterVal(name, cachedIng)
 	}
 
 	return cachedSubring
@@ -1282,7 +1281,7 @@ func (r *Ring) ZonesCount() int {
 func (r *Ring) readOnlyInstanceCount() int {
 	r.mtx.RLock()
 	c := 0
-	for _, i := range r.ringDesc.GetIngesterVals() {
+	for _, i := range r.ringDesc.GetIngesters() {
 		if i.ReadOnly {
 			c++
 		}

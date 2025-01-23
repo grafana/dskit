@@ -9,13 +9,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
-
-	"github.com/grafana/dskit/httpgrpc"
-
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/grafana/dskit/clusterutil"
+	"github.com/grafana/dskit/httpgrpc"
 )
 
 func TestClusterUnaryClientInterceptor(t *testing.T) {
@@ -35,7 +35,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 	verify := func(ctx context.Context, expectedCluster string) {
 		md, ok := metadata.FromOutgoingContext(ctx)
 		require.True(t, ok)
-		clusterIDs, ok := md[MetadataClusterKey]
+		clusterIDs, ok := md[clusterutil.MetadataClusterVerificationLabelKey]
 		require.True(t, ok)
 		require.Len(t, clusterIDs, 1)
 		require.Equal(t, expectedCluster, clusterIDs[0])
@@ -125,7 +125,7 @@ func createIncomingContext(containsRequestCluster bool, requestCluster string) c
 		return ctx
 	}
 	md := map[string][]string{
-		MetadataClusterKey: {requestCluster},
+		clusterutil.MetadataClusterVerificationLabelKey: {requestCluster},
 	}
 	return metadata.NewIncomingContext(ctx, md)
 }

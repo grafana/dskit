@@ -10,17 +10,15 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-)
 
-const (
-	MetadataClusterKey = "x-cluster"
+	"github.com/grafana/dskit/clusterutil"
 )
 
 // ClusterUnaryClientInterceptor propagates the given cluster info to gRPC metadata.
 func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if cluster != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, MetadataClusterKey, cluster)
+			ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
 		}
 
 		return invoker(ctx, method, req, reply, cc, opts...)
@@ -43,9 +41,9 @@ func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.Unary
 }
 
 func getClusterFromIncomingContext(ctx context.Context, logger log.Logger) string {
-	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterKey)
+	clusterIDs := metadata.ValueFromIncomingContext(ctx, clusterutil.MetadataClusterVerificationLabelKey)
 	if len(clusterIDs) != 1 {
-		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key \"%s\", but the current set of values is %v. Returning an empty string.", MetadataClusterKey, clusterIDs)
+		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key \"%s\", but the current set of values is %v. Returning an empty string.", clusterutil.MetadataClusterVerificationLabelKey, clusterIDs)
 		level.Warn(logger).Log("msg", msg)
 		return ""
 	}

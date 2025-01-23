@@ -17,29 +17,29 @@ func TestInstanceDesc_IsHealthy_ForIngesterOperations(t *testing.T) {
 		readExpected   bool
 		reportExpected bool
 	}{
-		"ACTIVE ingester with last keepalive newer than timeout": {
-			ingester:       &InstanceDesc{State: ACTIVE, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
+		"InstanceState_ACTIVE ingester with last keepalive newer than timeout": {
+			ingester:       &InstanceDesc{State: InstanceState_ACTIVE, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
 			timeout:        time.Minute,
 			writeExpected:  true,
 			readExpected:   true,
 			reportExpected: true,
 		},
-		"ACTIVE ingester with last keepalive older than timeout": {
-			ingester:       &InstanceDesc{State: ACTIVE, Timestamp: time.Now().Add(-90 * time.Second).Unix()},
+		"InstanceState_ACTIVE ingester with last keepalive older than timeout": {
+			ingester:       &InstanceDesc{State: InstanceState_ACTIVE, Timestamp: time.Now().Add(-90 * time.Second).Unix()},
 			timeout:        time.Minute,
 			writeExpected:  false,
 			readExpected:   false,
 			reportExpected: false,
 		},
-		"JOINING ingester with last keepalive newer than timeout": {
-			ingester:       &InstanceDesc{State: JOINING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
+		"InstanceState_JOINING ingester with last keepalive newer than timeout": {
+			ingester:       &InstanceDesc{State: InstanceState_JOINING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
 			timeout:        time.Minute,
 			writeExpected:  false,
 			readExpected:   false,
 			reportExpected: true,
 		},
-		"LEAVING ingester with last keepalive newer than timeout": {
-			ingester:       &InstanceDesc{State: LEAVING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
+		"InstanceState_LEAVING ingester with last keepalive newer than timeout": {
+			ingester:       &InstanceDesc{State: InstanceState_LEAVING, Timestamp: time.Now().Add(-30 * time.Second).Unix()},
 			timeout:        time.Minute,
 			writeExpected:  false,
 			readExpected:   true,
@@ -125,16 +125,16 @@ func TestInstanceDesc_GetLastHeartbeatAt(t *testing.T) {
 
 func normalizedSource() *Desc {
 	r := NewDesc()
-	r.Ingesters["first"] = InstanceDesc{
+	r.Ingesters["first"] = &InstanceDesc{
 		Tokens: []uint32{100, 200, 300},
 	}
-	r.Ingesters["second"] = InstanceDesc{}
+	r.Ingesters["second"] = &InstanceDesc{}
 	return r
 }
 
 func normalizedOutput() *Desc {
 	return &Desc{
-		Ingesters: map[string]InstanceDesc{
+		Ingesters: map[string]*InstanceDesc{
 			"first":  {},
 			"second": {Tokens: []uint32{100, 200, 300}},
 		},
@@ -153,10 +153,10 @@ func TestDesc_Ready(t *testing.T) {
 	now := time.Now()
 
 	r := &Desc{
-		Ingesters: map[string]InstanceDesc{
+		Ingesters: map[string]*InstanceDesc{
 			"ing1": {
 				Tokens:    []uint32{100, 200, 300},
-				State:     ACTIVE,
+				State:     InstanceState_ACTIVE,
 				Timestamp: now.Unix(),
 			},
 		},
@@ -179,9 +179,9 @@ func TestDesc_Ready(t *testing.T) {
 	}
 
 	r = &Desc{
-		Ingesters: map[string]InstanceDesc{
+		Ingesters: map[string]*InstanceDesc{
 			"ing1": {
-				State:     ACTIVE,
+				State:     InstanceState_ACTIVE,
 				Timestamp: now.Unix(),
 			},
 		},
@@ -191,7 +191,7 @@ func TestDesc_Ready(t *testing.T) {
 		t.Fatal("expected !ready (no tokens), but got no error")
 	}
 
-	r.Ingesters["some ingester"] = InstanceDesc{
+	r.Ingesters["some ingester"] = &InstanceDesc{
 		Tokens:    []uint32{12345},
 		Timestamp: now.Unix(),
 	}
@@ -207,11 +207,11 @@ func TestDesc_getTokensByZone(t *testing.T) {
 		expected map[string][]uint32
 	}{
 		"empty ring": {
-			desc:     &Desc{Ingesters: map[string]InstanceDesc{}},
+			desc:     &Desc{Ingesters: map[string]*InstanceDesc{}},
 			expected: map[string][]uint32{},
 		},
 		"single zone": {
-			desc: &Desc{Ingesters: map[string]InstanceDesc{
+			desc: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-1": {Addr: "127.0.0.1", Tokens: []uint32{1, 5}, Zone: ""},
 				"instance-2": {Addr: "127.0.0.1", Tokens: []uint32{2, 4}, Zone: ""},
 				"instance-3": {Addr: "127.0.0.1", Tokens: []uint32{3, 6}, Zone: ""},
@@ -221,7 +221,7 @@ func TestDesc_getTokensByZone(t *testing.T) {
 			},
 		},
 		"multiple zones": {
-			desc: &Desc{Ingesters: map[string]InstanceDesc{
+			desc: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-1": {Addr: "127.0.0.1", Tokens: []uint32{1, 5}, Zone: "zone-1"},
 				"instance-2": {Addr: "127.0.0.1", Tokens: []uint32{2, 4}, Zone: "zone-1"},
 				"instance-3": {Addr: "127.0.0.1", Tokens: []uint32{3, 6}, Zone: "zone-2"},
@@ -247,12 +247,12 @@ func TestDesc_TokensFor(t *testing.T) {
 		expectedAll  Tokens
 	}{
 		"empty ring": {
-			desc:         &Desc{Ingesters: map[string]InstanceDesc{}},
+			desc:         &Desc{Ingesters: map[string]*InstanceDesc{}},
 			expectedMine: Tokens(nil),
 			expectedAll:  Tokens{},
 		},
 		"single zone": {
-			desc: &Desc{Ingesters: map[string]InstanceDesc{
+			desc: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-1": {Addr: "127.0.0.1", Tokens: []uint32{1, 5}, Zone: ""},
 				"instance-2": {Addr: "127.0.0.1", Tokens: []uint32{2, 4}, Zone: ""},
 				"instance-3": {Addr: "127.0.0.1", Tokens: []uint32{3, 6}, Zone: ""},
@@ -261,7 +261,7 @@ func TestDesc_TokensFor(t *testing.T) {
 			expectedAll:  Tokens{1, 2, 3, 4, 5, 6},
 		},
 		"multiple zones": {
-			desc: &Desc{Ingesters: map[string]InstanceDesc{
+			desc: &Desc{Ingesters: map[string]*InstanceDesc{
 				"instance-1": {Addr: "127.0.0.1", Tokens: []uint32{1, 5}, Zone: "zone-1"},
 				"instance-2": {Addr: "127.0.0.1", Tokens: []uint32{2, 4}, Zone: "zone-1"},
 				"instance-3": {Addr: "127.0.0.1", Tokens: []uint32{3, 6}, Zone: "zone-2"},
@@ -292,67 +292,67 @@ func TestDesc_RingsCompare(t *testing.T) {
 		},
 		"one nil, one empty ring": {
 			r1:       nil,
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{}},
 			expected: Equal,
 		},
 		"two empty rings": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{}},
 			expected: Equal,
 		},
 		"same single instance": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1"}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1"}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1"}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1"}}},
 			expected: Equal,
 		},
 		"same single instance, different timestamp": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Timestamp: 123456}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Timestamp: 789012}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", Timestamp: 123456}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", Timestamp: 789012}}},
 			expected: EqualButStatesAndTimestamps,
 		},
 		"same single instance, different state": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: ACTIVE}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: JOINING}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", State: InstanceState_ACTIVE}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", State: InstanceState_JOINING}}},
 			expected: EqualButStatesAndTimestamps,
 		},
 		"same single instance, different registered timestamp": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: ACTIVE, RegisteredTimestamp: 1}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", State: ACTIVE, RegisteredTimestamp: 2}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", State: InstanceState_ACTIVE, RegisteredTimestamp: 1}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", State: InstanceState_ACTIVE, RegisteredTimestamp: 2}}},
 			expected: Different,
 		},
 		"same single instance, different read only flag": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1"}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", ReadOnly: true}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1"}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", ReadOnly: true}}},
 			expected: Different,
 		},
 		"same single instance, different read only timestamp": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", ReadOnlyUpdatedTimestamp: time.Time{}.Unix()}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", ReadOnlyUpdatedTimestamp: time.Now().Unix()}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", ReadOnlyUpdatedTimestamp: time.Time{}.Unix()}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", ReadOnlyUpdatedTimestamp: time.Now().Unix()}}},
 			expected: Different,
 		},
 		"instance in different zone": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Zone: "one"}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Zone: "two"}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", Zone: "one"}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", Zone: "two"}}},
 			expected: Different,
 		},
 		"same instance, different address": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1"}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr2"}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1"}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr2"}}},
 			expected: Different,
 		},
 		"more instances in one ring": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1"}, "ing2": {Addr: "ing2"}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1"}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1"}, "ing2": {Addr: "ing2"}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1"}}},
 			expected: Different,
 		},
 		"different tokens": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 3}}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1"}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 3}}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1"}}},
 			expected: Different,
 		},
 		"different tokens 2": {
-			r1:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 3}}}},
-			r2:       &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 4}}}},
+			r1:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 3}}}},
+			r2:       &Desc{Ingesters: map[string]*InstanceDesc{"ing1": {Addr: "addr1", Tokens: []uint32{1, 2, 4}}}},
 			expected: Different,
 		},
 	}

@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
@@ -1036,6 +1038,41 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	require.Equal(t, fakeSourceIP, res.IP)
+}
+
+func TestClusterMiddleware(t *testing.T) {
+	var level log.Level
+	require.NoError(t, level.Set("info"))
+	cfg := Config{
+		Cluster:          "test",
+		MetricsNamespace: "testing_cluster",
+		LogLevel:         level,
+		Router:           &mux.Router{},
+	}
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	server.HTTP.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	go func() {
+		require.NoError(t, server.Run())
+	}()
+	t.Cleanup(server.Shutdown)
+
+	req, err := http.NewRequest(http.MethodGet, httpTarget(server, "/"), nil)
+	require.NoError(t, err)
+	req.Header.Set(clusterutil.ClusterHeader, "prod")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, `request intended for cluster "prod" - this is cluster "test"`, strings.TrimSpace(string(body)))
 }
 
 type dummyHandler struct {

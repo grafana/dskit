@@ -520,10 +520,20 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		logSourceIPs = nil
 	}
 
+	if cfg.DoNotAddDefaultHTTPMiddleware {
+		return cfg.HTTPMiddleware, nil
+	}
+
 	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, logSourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
 	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
 
-	defaultHTTPMiddleware := []middleware.Interface{
+	var httpMiddleware []middleware.Interface
+	if cfg.Cluster != "" {
+		httpMiddleware = []middleware.Interface{
+			middleware.ClusterValidationMiddleware(cfg.Cluster, logger),
+		}
+	}
+	httpMiddleware = append(httpMiddleware,
 		middleware.RouteInjector{
 			RouteMatcher: router,
 		},
@@ -542,15 +552,8 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 			ThroughputUnit:    cfg.Throughput.Unit,
 			RequestThroughput: metrics.RequestThroughput,
 		},
-	}
-	var httpMiddleware []middleware.Interface
-	if cfg.DoNotAddDefaultHTTPMiddleware {
-		httpMiddleware = cfg.HTTPMiddleware
-	} else {
-		httpMiddleware = append(defaultHTTPMiddleware, cfg.HTTPMiddleware...)
-	}
-
-	return httpMiddleware, nil
+	)
+	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }
 
 // Run the server; blocks until SIGTERM (if signal handling is enabled), an error is received, or Stop() is called.

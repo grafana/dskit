@@ -527,13 +527,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, logSourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
 	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
 
-	var httpMiddleware []middleware.Interface
-	if cfg.Cluster != "" {
-		httpMiddleware = []middleware.Interface{
-			middleware.ClusterValidationMiddleware(cfg.Cluster, logger),
-		}
-	}
-	httpMiddleware = append(httpMiddleware,
+	httpMiddleware := []middleware.Interface{
 		middleware.RouteInjector{
 			RouteMatcher: router,
 		},
@@ -552,7 +546,10 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 			ThroughputUnit:    cfg.Throughput.Unit,
 			RequestThroughput: metrics.RequestThroughput,
 		},
-	)
+	}
+	if cfg.Cluster != "" {
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.Cluster, logger))
+	}
 	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }
 

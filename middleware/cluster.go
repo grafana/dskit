@@ -16,7 +16,8 @@ func ClusterValidationMiddleware(cluster string, logger log.Logger) Interface {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			reqCluster := r.Header.Get(clusterutil.ClusterHeader)
 			if reqCluster != cluster {
-				level.Warn(logger).Log("msg", "rejecting request intended for wrong cluster", "cluster", cluster, "request_cluster", reqCluster)
+				level.Warn(logger).Log("msg", "rejecting request intended for wrong cluster",
+					"cluster", cluster, "request_cluster", reqCluster, "header", clusterutil.ClusterHeader)
 				http.Error(w, fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster),
 					http.StatusBadRequest)
 				return

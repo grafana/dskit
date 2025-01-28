@@ -99,6 +99,8 @@
 * [FEATURE] Add methods `Increment`, `FlushAll`, `CompareAndSwap`, `Touch` to `cache.MemcachedClient` #477
 * [FEATURE] Add `concurrency.ForEachJobMergeResults()` utility function. #486
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
+* [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates a cluster info to the outgoing gRPC metadata. #640
+* [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster info, and returns an error if it is not the case. #640
 * [FEATURE] Add `ring.GetWithOptions()` method to support additional features at a per-call level. #632
 * [ENHANCEMENT] Add option to hide token information in ring status page #633
 * [ENHANCEMENT] Display token information in partition ring status page #631

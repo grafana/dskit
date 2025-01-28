@@ -31,7 +31,7 @@ func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 // checks if the latter corresponds to the given info. If it is the case, the request is further propagated.
 // Otherwise, an error is returned.
 func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		reqCluster, ok := getClusterFromIncomingContext(ctx)
 		if ok {
 			if reqCluster != cluster {

@@ -41,14 +41,15 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			interceptor := ClusterUnaryClientInterceptor(testCase.cluster)
-			invoker := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			invoker := func(ctx context.Context, _ string, req, _ any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 				if testCase.expectedClusterFromContext != "" {
 					verify(ctx, testCase.expectedClusterFromContext)
 				}
 				return nil
 			}
 
-			interceptor(context.Background(), "GET", createRequest(t), nil, nil, invoker)
+			err := interceptor(context.Background(), "GET", createRequest(t), nil, nil, invoker)
+			require.NoError(t, err)
 		})
 	}
 }

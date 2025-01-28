@@ -58,19 +58,46 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 
 func TestClusterUnaryServerInterceptor(t *testing.T) {
 	testCases := map[string]struct {
-		requestCluster string
-		serverCluster  string
-		expectedError  error
+		incomingContext context.Context
+		requestCluster  string
+		serverCluster   string
+		expectedError   error
 	}{
 		"equal request and server clusters give no error": {
-			requestCluster: "cluster",
-			serverCluster:  "cluster",
-			expectedError:  nil,
+			incomingContext: createIncomingContext(true, "cluster"),
+			requestCluster:  "cluster",
+			serverCluster:   "cluster",
+			expectedError:   nil,
 		},
 		"different request and server clusters give rise to an error": {
-			requestCluster: "wrong-cluster",
-			serverCluster:  "cluster",
-			expectedError:  status.Error(codes.FailedPrecondition, "request intended for cluster \"wrong-cluster\" - this is cluster \"cluster\""),
+			incomingContext: createIncomingContext(true, "wrong-cluster"),
+			requestCluster:  "wrong-cluster",
+			serverCluster:   "cluster",
+			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"wrong-cluster\" - this is cluster \"cluster\""),
+		},
+		"empty request cluster and non-empty server custer give rise to an error": {
+			incomingContext: createIncomingContext(true, ""),
+			requestCluster:  "",
+			serverCluster:   "cluster",
+			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\""),
+		},
+		"no request cluster and non-empty server custer give rise to an error": {
+			incomingContext: createIncomingContext(false, ""),
+			requestCluster:  "",
+			serverCluster:   "cluster",
+			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\""),
+		},
+		"empty request cluster and empty server custer give no error": {
+			incomingContext: createIncomingContext(true, ""),
+			requestCluster:  "",
+			serverCluster:   "",
+			expectedError:   nil,
+		},
+		"no request cluster and empty server custer give no error": {
+			incomingContext: createIncomingContext(false, ""),
+			requestCluster:  "",
+			serverCluster:   "",
+			expectedError:   nil,
 		},
 	}
 	for testName, testCase := range testCases {
@@ -80,14 +107,9 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, nil
 			}
-
-			md := map[string][]string{
-				MetadataClusterKey: {testCase.requestCluster},
-			}
-			ctx := metadata.NewIncomingContext(context.Background(), md)
 			info := &grpc.UnaryServerInfo{FullMethod: "/Test/Me"}
 			req := createRequest(t)
-			_, err := interceptor(ctx, req, info, handler)
+			_, err := interceptor(testCase.incomingContext, req, info, handler)
 			if testCase.expectedError == nil {
 				require.NoError(t, err)
 			} else {
@@ -95,6 +117,17 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			}
 		})
 	}
+}
+
+func createIncomingContext(containsRequestCluster bool, requestCluster string) context.Context {
+	ctx := context.Background()
+	if !containsRequestCluster {
+		return ctx
+	}
+	md := map[string][]string{
+		MetadataClusterKey: {requestCluster},
+	}
+	return metadata.NewIncomingContext(ctx, md)
 }
 
 func createRequest(t *testing.T) *httpgrpc.HTTPRequest {

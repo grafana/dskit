@@ -27,16 +27,17 @@ func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 	}
 }
 
-// ClusterUnaryServerInterceptor checks if the incoming gRPC metadata contain any cluster information and if so,
-// checks if the latter corresponds to the given info. If it is the case, the request is further propagated.
+// ClusterUnaryServerInterceptor checks if the incoming gRPC metadata contains any cluster information and if so,
+// checks if the latter corresponds to the given cluster. If it is the case, the request is further propagated.
 // Otherwise, an error is returned.
 func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		reqCluster, ok := getClusterFromIncomingContext(ctx)
-		if ok {
+		reqCluster, requestClusterFound := getClusterFromIncomingContext(ctx)
+		clustersConsistent := (cluster == "" && !requestClusterFound) || cluster == reqCluster
+		if !clustersConsistent {
 			if reqCluster != cluster {
 				msg := fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster)
-				level.Error(logger).Log("msg", msg)
+				level.Warn(logger).Log("msg", msg)
 				return nil, status.Error(codes.FailedPrecondition, msg)
 			}
 		}

@@ -75,25 +75,25 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			serverCluster:   "cluster",
 			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"wrong-cluster\" - this is cluster \"cluster\""),
 		},
-		"empty request cluster and non-empty server custer give rise to an error": {
+		"empty request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: createIncomingContext(true, ""),
 			requestCluster:  "",
 			serverCluster:   "cluster",
 			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\""),
 		},
-		"no request cluster and non-empty server custer give rise to an error": {
+		"no request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: createIncomingContext(false, ""),
 			requestCluster:  "",
 			serverCluster:   "cluster",
 			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\""),
 		},
-		"empty request cluster and empty server custer give no error": {
+		"empty request cluster and empty server cluster give no error": {
 			incomingContext: createIncomingContext(true, ""),
 			requestCluster:  "",
 			serverCluster:   "",
 			expectedError:   nil,
 		},
-		"no request cluster and empty server custer give no error": {
+		"no request cluster and empty server cluster give no error": {
 			incomingContext: createIncomingContext(false, ""),
 			requestCluster:  "",
 			serverCluster:   "",

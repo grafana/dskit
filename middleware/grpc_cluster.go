@@ -32,21 +32,21 @@ func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 // Otherwise, an error is returned.
 func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		reqCluster := getClusterFromIncomingContext(ctx)
+		reqCluster := getClusterFromIncomingContext(ctx, logger)
 		if cluster != reqCluster {
-			if reqCluster != cluster {
-				msg := fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster)
-				level.Warn(logger).Log("msg", msg)
-				return nil, status.Error(codes.FailedPrecondition, msg)
-			}
+			msg := fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster)
+			level.Warn(logger).Log("msg", msg)
+			return nil, status.Error(codes.FailedPrecondition, msg)
 		}
 		return handler(ctx, req)
 	}
 }
 
-func getClusterFromIncomingContext(ctx context.Context) string {
+func getClusterFromIncomingContext(ctx context.Context, logger log.Logger) string {
 	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterKey)
 	if len(clusterIDs) != 1 {
+		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key \"%s\", but the current set of values is %v. Returning an empty string.", MetadataClusterKey, clusterIDs)
+		level.Warn(logger).Log("msg", msg)
 		return ""
 	}
 	return clusterIDs[0]

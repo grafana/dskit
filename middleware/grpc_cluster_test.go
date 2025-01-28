@@ -9,7 +9,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+
 	"github.com/grafana/dskit/httpgrpc"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -41,7 +43,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			interceptor := ClusterUnaryClientInterceptor(testCase.cluster)
-			invoker := func(ctx context.Context, _ string, req, _ any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
 				if testCase.expectedClusterFromContext != "" {
 					verify(ctx, testCase.expectedClusterFromContext)
 				}

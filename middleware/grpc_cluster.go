@@ -32,9 +32,8 @@ func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 // Otherwise, an error is returned.
 func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		reqCluster, requestClusterFound := getClusterFromIncomingContext(ctx)
-		clustersConsistent := (cluster == "" && !requestClusterFound) || cluster == reqCluster
-		if !clustersConsistent {
+		reqCluster := getClusterFromIncomingContext(ctx)
+		if cluster != reqCluster {
 			if reqCluster != cluster {
 				msg := fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster)
 				level.Warn(logger).Log("msg", msg)
@@ -45,10 +44,10 @@ func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.Unary
 	}
 }
 
-func getClusterFromIncomingContext(ctx context.Context) (string, bool) {
+func getClusterFromIncomingContext(ctx context.Context) string {
 	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterKey)
 	if len(clusterIDs) != 1 {
-		return "", false
+		return ""
 	}
-	return clusterIDs[0], true
+	return clusterIDs[0]
 }

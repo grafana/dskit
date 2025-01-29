@@ -634,6 +634,8 @@ func TestDeleteMultipleClients(t *testing.T) {
 		dataCodec{},
 	}
 
+	cfg.GossipNodes = 1
+	cfg.GossipInterval = 100 * time.Millisecond
 	cfg.PushPullInterval = 1 * time.Second
 	cfg.ObsoleteEntriesTimeout = 1 * time.Second
 
@@ -656,7 +658,7 @@ func TestDeleteMultipleClients(t *testing.T) {
 	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 	go func() {
 		// Wait a bit, and then start mkv2.
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(2000 * time.Millisecond)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	}()
 
@@ -680,10 +682,10 @@ func TestDeleteMultipleClients(t *testing.T) {
 
 	val, err = kv1.Get(context.Background(), key)
 	require.NoError(t, err)
-	require.NotNil(t, val)
+	require.Nil(t, val)
 	val, err = kv2.Get(context.Background(), key)
 	require.NoError(t, err)
-	require.NotNil(t, val)
+	require.Nil(t, val)
 }
 
 func TestMultipleClients(t *testing.T) {

@@ -623,6 +623,9 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDeleteMultipleClients(t *testing.T) {
+
+	const deleteTime = 1 * time.Second
+
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{
@@ -636,8 +639,8 @@ func TestDeleteMultipleClients(t *testing.T) {
 
 	cfg.GossipNodes = 1
 	cfg.GossipInterval = 100 * time.Millisecond
-	cfg.PushPullInterval = 1 * time.Second
-	cfg.ObsoleteEntriesTimeout = 1 * time.Second
+	cfg.PushPullInterval = deleteTime
+	cfg.ObsoleteEntriesTimeout = deleteTime
 
 	mkv1 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
@@ -656,12 +659,7 @@ func TestDeleteMultipleClients(t *testing.T) {
 	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
 
 	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
-	go func() {
-		// Wait a bit, and then start mkv2.
-		time.Sleep(2000 * time.Millisecond)
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
-	}()
-
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
 	// While waiting for mkv2 to start, we can already create a client for it.
@@ -678,7 +676,7 @@ func TestDeleteMultipleClients(t *testing.T) {
 		t.Fatalf("Failed to delete key %s: %v", key, err)
 	}
 
-	time.Sleep(5 * time.Second) // wait for obsolete entries to be removed
+	time.Sleep(5 * deleteTime) // wait for obsolete entries to be removed
 
 	val, err = kv1.Get(context.Background(), key)
 	require.NoError(t, err)

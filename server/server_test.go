@@ -317,7 +317,7 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 	prometheus.DefaultGatherer = reg
 
 	var cfg Config
-	cfg.PerTenantInstrumentation = func(ctx context.Context) *middleware.PerTenantConfig {
+	cfg.PerTenantInstrumentation = func(_ context.Context) *middleware.PerTenantConfig {
 		return &middleware.PerTenantConfig{
 			TenantID:     "test",
 			TotalCounter: true,

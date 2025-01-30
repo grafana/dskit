@@ -317,6 +317,12 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 	prometheus.DefaultGatherer = reg
 
 	var cfg Config
+	cfg.PerTenantInstrumentation = func(ctx context.Context) *middleware.PerTenantConfig {
+		return &middleware.PerTenantConfig{
+			TenantID:     "test",
+			TotalCounter: true,
+		}
+	}
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
@@ -506,7 +512,13 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 		# TYPE tcp_connections gauge
 		tcp_connections{protocol="http"} 0
 		tcp_connections{protocol="grpc"} 0
-	`), "request_message_bytes", "response_message_bytes", "inflight_requests", "tcp_connections"))
+
+		# HELP per_tenant_request_total Total count of requests for a particular tenant.
+        # TYPE per_tenant_request_total counter
+        per_tenant_request_total{method="GET",route="error500",status_code="500",tenant="test",ws="false"} 1
+        per_tenant_request_total{method="GET",route="succeed",status_code="200",tenant="test",ws="false"} 1
+        per_tenant_request_total{method="POST",route="sleep10",status_code="200",tenant="test",ws="false"} 1
+	`), "request_message_bytes", "response_message_bytes", "inflight_requests", "tcp_connections", "per_tenant_request_duration_seconds", "per_tenant_request_total"))
 }
 
 func TestRunReturnsError(t *testing.T) {

@@ -1036,13 +1036,12 @@ func (m *KV) notifyWatchersSync(key string) {
 
 func (m *KV) Delete(key string) error {
 	m.storeMu.Lock()
-
 	val, ok := m.store[key]
+	m.storeMu.Unlock()
+
 	if !ok || val.Deleted {
 		return nil
 	}
-
-	m.storeMu.Unlock()
 
 	c := m.GetCodec(val.CodecID)
 	if c == nil {
@@ -1536,6 +1535,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	newUpdated = curr.UpdateTime
 	newDeleted = curr.Deleted
 
+	// If incoming value is newer, use its timestamp and deleted value
 	if !updateTime.IsZero() && updateTime.After(newUpdated) {
 		newUpdated = updateTime
 		newDeleted = deleted

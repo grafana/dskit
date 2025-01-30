@@ -565,6 +565,7 @@ func defaultKVConfig(i int) KVConfig {
 	cfg.GossipInterval = 100 * time.Millisecond
 	cfg.GossipNodes = 10
 	cfg.PushPullInterval = 5 * time.Second
+	cfg.ObsoleteEntriesTimeout = 5 * time.Second
 
 	cfg.TCPTransport = TCPTransportConfig{
 		BindAddrs: getLocalhostAddrs(),
@@ -572,6 +573,117 @@ func defaultKVConfig(i int) KVConfig {
 	}
 
 	return cfg
+}
+
+func TestDelete(t *testing.T) {
+	t.Parallel()
+
+	c := dataCodec{}
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+		BindPort:  0, // randomize ports
+	}
+	cfg.GossipNodes = 1
+	cfg.GossipInterval = 100 * time.Millisecond
+	cfg.ObsoleteEntriesTimeout = 1 * time.Second
+	cfg.ClusterLabelVerificationDisabled = true
+	cfg.Codecs = []codec.Codec{c}
+
+	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
+
+	kv, err := NewClient(mkv, c)
+	require.NoError(t, err)
+
+	const key = "test"
+
+	val := get(t, kv, key)
+	if val != nil {
+		t.Error("Expected nil, got:", val)
+	}
+
+	err = cas(kv, key, updateFn("test"))
+	require.NoError(t, err)
+
+	err = kv.Delete(context.Background(), key)
+	if err != nil {
+		t.Fatalf("Failed to delete key %s: %v", key, err)
+	}
+
+	time.Sleep(2 * time.Second) // wait for obsolete entries to be removed
+	val = get(t, kv, key)
+
+	if val != nil {
+		t.Errorf("Expected nil, got: %v", val)
+	}
+}
+
+func TestDeleteMultipleClients(t *testing.T) {
+
+	const deleteTime = 1 * time.Second
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+		BindPort:  0, // randomize
+	}
+
+	cfg.Codecs = []codec.Codec{
+		dataCodec{},
+	}
+
+	cfg.GossipNodes = 1
+	cfg.GossipInterval = 100 * time.Millisecond
+	cfg.PushPullInterval = deleteTime
+	cfg.ObsoleteEntriesTimeout = deleteTime
+
+	mkv1 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
+
+	kv1, err := NewClient(mkv1, dataCodec{})
+	require.NoError(t, err)
+
+	const memberKey = "entry"
+
+	// Calling updateFn once creates single entry, in JOINING state.
+	err = cas(kv1, key, updateFn(memberKey))
+	require.NoError(t, err)
+
+	// We will read values from second KV, which will join the first one
+	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
+
+	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
+
+	// While waiting for mkv2 to start, we can already create a client for it.
+	// Any client operations will block until mkv2 transitioned to Running state.
+	kv2, err := NewClient(mkv2, dataCodec{})
+	require.NoError(t, err)
+
+	val, err := kv2.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.NotNil(t, val)
+
+	err = kv1.Delete(context.Background(), key)
+	if err != nil {
+		t.Fatalf("Failed to delete key %s: %v", key, err)
+	}
+
+	time.Sleep(5 * deleteTime) // wait for obsolete entries to be removed
+
+	val, err = kv1.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.Nil(t, val)
+	val, err = kv2.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.Nil(t, val)
 }
 
 func TestMultipleClients(t *testing.T) {
@@ -653,7 +765,6 @@ func TestMultipleClientsWithSameLabelWithClusterLabelVerification(t *testing.T) 
 		cfg := defaultKVConfig(i)
 
 		cfg.ClusterLabel = label
-
 		return cfg
 	}
 
@@ -1686,11 +1797,11 @@ func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	require.Equal(t, 0, len(kv.GetBroadcasts(0, math.MaxInt32)))
 
 	// Check that locally-generated broadcast messages will be prioritized and sent out first, even if they are enqueued later or are smaller than other messages in the queue.
-	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false)
-	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false)
-	kv.broadcastNewValue("local", smallUpdate, 1, codec, true)
-	kv.broadcastNewValue("local", bigUpdate, 2, codec, true)
-	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true)
+	kv.broadcastNewValue("non-local", smallUpdate, 1, codec, false, false, time.Now())
+	kv.broadcastNewValue("non-local", bigUpdate, 2, codec, false, false, time.Now())
+	kv.broadcastNewValue("local", smallUpdate, 1, codec, true, false, time.Now())
+	kv.broadcastNewValue("local", bigUpdate, 2, codec, true, false, time.Now())
+	kv.broadcastNewValue("local", mediumUpdate, 3, codec, true, false, time.Now())
 
 	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP memberlist_client_messages_in_broadcast_queue Number of user messages in the broadcast queue

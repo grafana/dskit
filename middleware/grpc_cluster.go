@@ -6,7 +6,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
+
+	"github.com/grafana/dskit/grpcutil"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -41,7 +43,8 @@ func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.C
 				invalidClusters.WithLabelValues("grpc", info.FullMethod, reqCluster).Inc()
 			}
 			msg := fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster)
-			return nil, status.Error(codes.FailedPrecondition, msg)
+			stat := grpcutil.Status(codes.FailedPrecondition, msg, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME})
+			return nil, stat.Err()
 		}
 		return handler(ctx, req)
 	}

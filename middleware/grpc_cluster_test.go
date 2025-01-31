@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/status"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 
 	"github.com/stretchr/testify/require"
@@ -73,19 +73,19 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			incomingContext: createIncomingContext(true, "wrong-cluster"),
 			requestCluster:  "wrong-cluster",
 			serverCluster:   "cluster",
-			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"wrong-cluster\" - this is cluster \"cluster\""),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"wrong-cluster\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
 		},
 		"empty request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: createIncomingContext(true, ""),
 			requestCluster:  "",
 			serverCluster:   "cluster",
-			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\""),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
 		},
 		"no request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: createIncomingContext(false, ""),
 			requestCluster:  "",
 			serverCluster:   "cluster",
-			expectedError:   status.Error(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\""),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
 		},
 		"empty request cluster and empty server cluster give no error": {
 			incomingContext: createIncomingContext(true, ""),

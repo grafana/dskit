@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gogo/googleapis/google/rpc"
+	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -112,6 +113,25 @@ func TestErrorToStatusCode(t *testing.T) {
 			statusCode := ErrorToStatusCode(testData.err)
 			require.Equal(t, testData.expectedStatusCode, statusCode)
 		})
+	}
+}
+
+func TestStatus(t *testing.T) {
+	stat := Status(codes.FailedPrecondition, "bad data")
+	require.Equal(t, codes.FailedPrecondition, stat.Code())
+	require.Equal(t, "bad data", stat.Message())
+	require.Len(t, stat.Details(), 0)
+
+	originalDetails := []proto.Message{&ErrorDetails{Cause: WRONG_CLUSTER_NAME}, &ErrorDetails{Cause: UNKNOWN_CAUSE}}
+	stat = Status(codes.FailedPrecondition, "bad data", originalDetails...)
+	require.Equal(t, codes.FailedPrecondition, stat.Code())
+	require.Equal(t, "bad data", stat.Message())
+	details := stat.Details()
+	require.Len(t, details, 2)
+	for i := range details {
+		det, ok := details[i].(*ErrorDetails)
+		require.True(t, ok)
+		require.Equal(t, originalDetails[i], det)
 	}
 }
 

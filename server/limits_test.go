@@ -322,6 +322,10 @@ func (m *methodLimiter) RPCCallStarting(ctx context.Context, methodName string, 
 	return context.WithValue(ctx, ctxMethodName, methodName), nil
 }
 
+func (m *methodLimiter) RPCCallProcessing(_ context.Context, _ string) (func(error), error) {
+	return nil, nil
+}
+
 func (m *methodLimiter) RPCCallFinished(ctx context.Context) {
 	m.allInflight.Dec()
 

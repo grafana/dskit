@@ -245,6 +245,7 @@
 * [ENHANCEMENT] Memberlist: Notifications can now be processed once per interval specified by `-memberlist.notify-interval` to reduce notify storms in large clusters. #592
 * [ENHANCEMENT] Memberlist: Implemented the `Delete` operation in the memberlist backed KV store. How frequently deleted entries are cleaned up is specified by the `-memberlist.obsolete-entries-timeout` flag. #612
 * [ENHANCEMENT] KV: Add `MockCountingClient`, which wraps the `kv.client` and can be used in order to count calls at specific functions of the interface. #618
+* [ENHANCEMENT] Server: Add interceptor support to `GrpcInflightMethodLimiter`. #643
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

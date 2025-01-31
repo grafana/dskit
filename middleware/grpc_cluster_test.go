@@ -103,7 +103,7 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			logger := log.NewLogfmtLogger(os.Stdin)
-			interceptor := ClusterUnaryServerInterceptor(testCase.serverCluster, logger)
+			interceptor := ClusterUnaryServerInterceptor(testCase.serverCluster, nil, logger)
 			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, nil
 			}

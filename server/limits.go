@@ -20,8 +20,9 @@ type GrpcInflightMethodLimiter interface {
 	// otherwise gRPC-server implementation-specific error will be returned to the client (codes.PermissionDenied in grpc@v1.55.0).
 	RPCCallStarting(ctx context.Context, methodName string, md metadata.MD) (context.Context, error)
 
-	// RPCCallProcessing is called by a server interceptor, allowing request pre-processing or blocking to be performed.
-	// handler should propagate the req.
+	// RPCCallProcessing is called by a server interceptor, allowing request pre-processing or request blocking to be
+	// performed. The returned function will be applied after the request is handled, providing any error that occurred while
+	// handling the request.
 	RPCCallProcessing(ctx context.Context, methodName string) (func(error), error)
 
 	// RPCCallFinished is called when an RPC call is finished being handled.

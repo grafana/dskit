@@ -31,11 +31,12 @@ func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 // checks if the latter corresponds to the given cluster. If it is the case, the request is further propagated.
 // Otherwise, an error is returned.
 func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		reqCluster := getClusterFromIncomingContext(ctx, logger)
 		if cluster != reqCluster {
+			level.Warn(logger).Log("msg", "rejecting request intended for wrong cluster",
+				"cluster", cluster, "request_cluster", reqCluster, "method", info.FullMethod)
 			msg := fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster)
-			level.Warn(logger).Log("msg", msg)
 			return nil, status.Error(codes.FailedPrecondition, msg)
 		}
 		return handler(ctx, req)

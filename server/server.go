@@ -101,7 +101,7 @@ type Config struct {
 	ExcludeRequestInLog                      bool `yaml:"-"`
 	DisableRequestSuccessLog                 bool `yaml:"-"`
 
-	PerTenantDurationInstrumentation middleware.PerTenantCallback `yaml:"-"`
+	PerTenantInstrumentation middleware.PerTenantCallback `yaml:"-"`
 
 	ServerGracefulShutdownTimeout time.Duration `yaml:"graceful_shutdown_timeout"`
 	HTTPServerReadTimeout         time.Duration `yaml:"http_server_read_timeout"`
@@ -387,11 +387,12 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	if cfg.ReportGRPCCodesInInstrumentationLabel {
 		grpcInstrumentationOptions = append(grpcInstrumentationOptions, middleware.ReportGRPCStatusOption)
 	}
-	if cfg.PerTenantDurationInstrumentation != nil {
+	if cfg.PerTenantInstrumentation != nil {
 		grpcInstrumentationOptions = append(grpcInstrumentationOptions,
 			middleware.WithPerTenantInstrumentation(
+				metrics.PerTenantRequestTotal,
 				metrics.PerTenantRequestDuration,
-				cfg.PerTenantDurationInstrumentation,
+				cfg.PerTenantInstrumentation,
 			))
 	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
@@ -425,6 +426,13 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		PermitWithoutStream: cfg.GRPCServerPingWithoutStreamAllowed,
 	}
 
+	var grpcServerLimit *grpcInflightLimitCheck
+	if cfg.GrpcMethodLimiter != nil {
+		grpcServerLimit = newGrpcInflightLimitCheck(cfg.GrpcMethodLimiter)
+		grpcMiddleware = append(grpcMiddleware, grpcServerLimit.UnaryServerInterceptor)
+		grpcStreamMiddleware = append(grpcStreamMiddleware, grpcServerLimit.StreamServerInterceptor)
+	}
+
 	grpcOptions := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(grpcMiddleware...),
 		grpc.ChainStreamInterceptor(grpcStreamMiddleware...),
@@ -436,9 +444,11 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		grpc.NumStreamWorkers(uint32(cfg.GRPCServerNumWorkers)),
 	}
 
-	if cfg.GrpcMethodLimiter != nil {
-		grpcServerLimit := newGrpcInflightLimitCheck(cfg.GrpcMethodLimiter)
-		grpcOptions = append(grpcOptions, grpc.InTapHandle(grpcServerLimit.TapHandle), grpc.StatsHandler(grpcServerLimit))
+	if grpcServerLimit != nil {
+		grpcOptions = append(grpcOptions,
+			grpc.StatsHandler(grpcServerLimit),
+			grpc.InTapHandle(grpcServerLimit.TapHandle),
+		)
 	}
 
 	if cfg.GRPCServerStatsTrackingEnabled {
@@ -541,7 +551,8 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		middleware.Instrument{
 			Duration:          metrics.RequestDuration,
 			PerTenantDuration: metrics.PerTenantRequestDuration,
-			PerTenantCallback: cfg.PerTenantDurationInstrumentation,
+			PerTenantTotal:    metrics.PerTenantRequestTotal,
+			PerTenantCallback: cfg.PerTenantInstrumentation,
 			RequestBodySize:   metrics.ReceivedMessageSize,
 			ResponseBodySize:  metrics.SentMessageSize,
 			InflightRequests:  metrics.InflightRequests,

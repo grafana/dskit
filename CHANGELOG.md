@@ -87,6 +87,7 @@
 * [CHANGE] memberlist: Failure to fast-join a cluster via contacting a node is now logged at `info` instead of `debug`. #585
 * [CHANGE] `Service.AddListener` and `Manager.AddListener` now return function for stopping the listener. #564
 * [CHANGE] ring: Add `InstanceRingReader` interface to `ring` package. #597
+* [CHANGE] Server: The `PerTenantDurationInstrumentation` config option was renamed to `PerTenantInstrumentation` and now allows specifying whether a full histogram should be recorded or only a counter #642
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
@@ -246,6 +247,7 @@
 * [ENHANCEMENT] Memberlist: Notifications can now be processed once per interval specified by `-memberlist.notify-interval` to reduce notify storms in large clusters. #592
 * [ENHANCEMENT] Memberlist: Implemented the `Delete` operation in the memberlist backed KV store. How frequently deleted entries are cleaned up is specified by the `-memberlist.obsolete-entries-timeout` flag. #612
 * [ENHANCEMENT] KV: Add `MockCountingClient`, which wraps the `kv.client` and can be used in order to count calls at specific functions of the interface. #618
+* [ENHANCEMENT] Server: Add interceptor support to `GrpcInflightMethodLimiter`. #643
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

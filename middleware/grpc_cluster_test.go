@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"google.golang.org/grpc/health"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -59,43 +60,36 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 func TestClusterUnaryServerInterceptor(t *testing.T) {
 	testCases := map[string]struct {
 		incomingContext context.Context
-		requestCluster  string
 		serverCluster   string
 		expectedError   error
 	}{
 		"equal request and server clusters give no error": {
 			incomingContext: createIncomingContext(true, "cluster"),
-			requestCluster:  "cluster",
 			serverCluster:   "cluster",
 			expectedError:   nil,
 		},
 		"different request and server clusters give rise to an error": {
 			incomingContext: createIncomingContext(true, "wrong-cluster"),
-			requestCluster:  "wrong-cluster",
 			serverCluster:   "cluster",
 			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"wrong-cluster\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
 		},
 		"empty request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: createIncomingContext(true, ""),
-			requestCluster:  "",
 			serverCluster:   "cluster",
 			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
 		},
 		"no request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: createIncomingContext(false, ""),
-			requestCluster:  "",
 			serverCluster:   "cluster",
 			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
 		},
 		"empty request cluster and empty server cluster give no error": {
 			incomingContext: createIncomingContext(true, ""),
-			requestCluster:  "",
 			serverCluster:   "",
 			expectedError:   nil,
 		},
 		"no request cluster and empty server cluster give no error": {
 			incomingContext: createIncomingContext(false, ""),
-			requestCluster:  "",
 			serverCluster:   "",
 			expectedError:   nil,
 		},
@@ -110,6 +104,50 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			info := &grpc.UnaryServerInfo{FullMethod: "/Test/Me"}
 			req := createRequest(t)
 			_, err := interceptor(testCase.incomingContext, req, info, handler)
+			if testCase.expectedError == nil {
+				require.NoError(t, err)
+			} else {
+				require.Equal(t, testCase.expectedError, err)
+			}
+		})
+	}
+}
+
+func TestHeTestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
+	goodCluster := "good-cluster"
+	badCluster := "bad-cluster"
+
+	testCases := map[string]struct {
+		serverInfo      *grpc.UnaryServerInfo
+		incomingContext context.Context
+		expectedError   error
+	}{
+		"UnaryServerInfo with healthpb.HealthServer does no cluster check": {
+			// We create a UnaryServerInfo with grpc health server.
+			serverInfo: &grpc.UnaryServerInfo{Server: health.NewServer(), FullMethod: "/Test/Me"},
+			// We create a context with a bad cluster.
+			incomingContext: createIncomingContext(true, badCluster),
+			// Since UnaryServerInfo contains the grpc health server, no check is done, and we expect no errors.
+			expectedError: nil,
+		},
+		"UnaryServerInfo without healthpb.HealthServer does cluster check": {
+			// We create a UnaryServerInfo with grpc health server.
+			serverInfo: &grpc.UnaryServerInfo{Server: nil, FullMethod: "/Test/Me"},
+			// We create a context with a bad cluster.
+			incomingContext: createIncomingContext(true, badCluster),
+			// Since UnaryServerInfo doesn't contain the grpc health server, the check is done, and we expect an error.
+			expectedError: grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"bad-cluster\" - this is cluster \"good-cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			logger := log.NewLogfmtLogger(os.Stdin)
+			interceptor := ClusterUnaryServerInterceptor(goodCluster, nil, logger)
+			handler := func(context.Context, interface{}) (interface{}, error) {
+				return nil, nil
+			}
+			req := createRequest(t)
+			_, err := interceptor(testCase.incomingContext, req, testCase.serverInfo, handler)
 			if testCase.expectedError == nil {
 				require.NoError(t, err)
 			} else {

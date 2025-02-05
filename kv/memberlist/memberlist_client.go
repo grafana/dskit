@@ -547,7 +547,7 @@ func (m *KV) running(ctx context.Context) error {
 		case <-obsoleteEntriesTickerChan:
 			// cleanupObsoleteEntries is normally called during push/pull, but if there are no other
 			// nodes to push/pull with, we can call it periodically to make sure we remove unused entries from memory.
-			level.Info(m.logger).Log("msg", "initiating cleanup of obsolete entries")
+			level.Debug(m.logger).Log("msg", "initiating cleanup of obsolete entries")
 			m.cleanupObsoleteEntries()
 
 		case <-ctx.Done():
@@ -1039,7 +1039,7 @@ func (m *KV) Delete(key string) error {
 	val, ok := m.store[key]
 	m.storeMu.Unlock()
 
-	if !ok {
+	if !ok || val.Deleted {
 		return nil
 	}
 
@@ -1048,15 +1048,15 @@ func (m *KV) Delete(key string) error {
 		return fmt.Errorf("invalid codec: %s", val.CodecID)
 	}
 	level.Info(m.logger).Log("msg", "[memberlist_client]Delete", "key", key, "codec", val.CodecID, "Version", val.Version)
-	_, _, _, _, err := m.mergeValueForKey(key, val.value, false, 0, val.CodecID, true, time.Now())
+	change, newver, deleted, updated, err := m.mergeValueForKey(key, val.value, false, 0, val.CodecID, true, time.Now())
 	if err != nil {
 		return err
 	}
 
-	//if newver > 0 {
-	//	//m.notifyWatchers(key)
-	//	m.broadcastNewValue(key, change, newver, c, false, deleted, updated)
-	//}
+	if newver > 0 {
+		//m.notifyWatchers(key)
+		m.broadcastNewValue(key, change, newver, c, false, deleted, updated)
+	}
 
 	return nil
 }
@@ -1105,9 +1105,6 @@ outer:
 		if change != nil {
 			m.casSuccesses.Inc()
 			m.notifyWatchers(key)
-			if change == nil {
-				level.Info(m.logger).Log("CAS", "change is nil") // This is not possible
-			}
 			m.broadcastNewValue(key, change, newver, codec, true, deleted, updated)
 		}
 
@@ -1309,9 +1306,6 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 				level.Error(m.logger).Log("msg", "failed to store received value", "key", key, "err", err)
 			} else if version > 0 {
 				m.notifyWatchers(key)
-				if update.value == nil {
-					level.Info(m.logger).Log("processValueUpdate", "change is nil")
-				}
 				// Don't resend original message, but only changes, if any.
 				m.broadcastNewValue(key, mod, version, update.codec, false, deleted, updated)
 			}
@@ -1490,9 +1484,6 @@ func (m *KV) MergeRemoteState(data []byte, _ bool) {
 			level.Error(m.logger).Log("msg", "[]failed to store received value", "key", kvPair.Key, "err", err)
 		} else if newver > 0 {
 			m.notifyWatchers(kvPair.Key)
-			if change == nil {
-				level.Info(m.logger).Log("MergeRemoteState", "change is nil")
-			}
 			m.broadcastNewValue(kvPair.Key, change, newver, codec, false, deleted, updated)
 		}
 	}
@@ -1529,6 +1520,11 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	// This is safe because the entire function runs under the store lock; we do not return
 	// the full state anywhere as is done elsewhere (i.e. Get/WatchKey/CAS).
 	curr := m.store[key]
+
+	// if current entry is nil but the incoming for that key is deleted then we return no change, as we do not want to revive the entry.
+	if curr.value == nil && deleted {
+		return nil, 0, false, time.Time{}, err
+	}
 	// if casVersion is 0, then there was no previous value, so we will just do normal merge, without localCAS flag set.
 	if casVersion > 0 && curr.Version != casVersion {
 		return nil, 0, false, time.Time{}, errVersionMismatch
@@ -1537,27 +1533,13 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	if err != nil {
 		return nil, 0, false, time.Time{}, err
 	}
-	//result = not nill
-	//change = nil
-	// what happens with the UpdateTime ?\
 	newUpdated = curr.UpdateTime
 	newDeleted = curr.Deleted
 
-	if curr.Deleted && !deleted {
-		level.Info(m.logger).Log("msg", "Incoming is false but the one in the kvStore is true", "key", key)
-		level.Info(m.logger).Log("msg", "UpdateTime KV", curr.UpdateTime.Unix())
-		level.Info(m.logger).Log("msg", "UpdateTime Incoming ", updateTime.Unix())
-		level.Info(m.logger).Log("msg", "#####################################################")
-	}
 	// If incoming value is newer, use its timestamp and deleted value
 	if !updateTime.IsZero() && updateTime.After(newUpdated) {
 		newUpdated = updateTime
 		newDeleted = deleted
-	}
-
-	if curr.Deleted && !deleted {
-		level.Info(m.logger).Log("msg", "Curr Deleted ", curr.UpdateTime.Unix())
-		level.Info(m.logger).Log("msg", "Upcoming Deleted  ", updateTime.Unix())
 	}
 
 	// No change, don't store it.
@@ -1586,7 +1568,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	}
 
 	if change == nil && curr.Deleted != newDeleted {
-		// dummy create a change to avoid pushing a nil value
+		// return result as change if the only thing that changes is the Delete state of the entry.
 		change = result
 	}
 	newVersion = curr.Version + 1

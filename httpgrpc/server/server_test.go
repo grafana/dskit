@@ -37,10 +37,10 @@ func TestClusterCheckOption(t *testing.T) {
 				return server.return4XXErrors
 			},
 		},
-		"clusterCheck option": {
-			option: WithClusterCheck,
+		"clusterHeader option": {
+			option: WithClusterHeader,
 			check: func(server *Server) bool {
-				return server.clusterCheck
+				return server.clusterHeader
 			},
 		},
 	}

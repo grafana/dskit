@@ -49,8 +49,8 @@ func WithReturn4XXErrors(s *Server) {
 	s.return4XXErrors = true
 }
 
-func WithClusterCheck(s *Server) {
-	s.clusterCheck = true
+func WithClusterHeader(s *Server) {
+	s.clusterHeader = true
 }
 
 func applyServerOptions(s *Server, opts ...Option) *Server {
@@ -65,7 +65,7 @@ func applyServerOptions(s *Server, opts ...Option) *Server {
 type Server struct {
 	handler         http.Handler
 	return4XXErrors bool
-	clusterCheck    bool
+	clusterHeader   bool
 }
 
 // NewServer makes a new Server.
@@ -81,7 +81,7 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 	if err != nil {
 		return nil, err
 	}
-	if s.clusterCheck {
+	if s.clusterHeader {
 		if err := clusterutil.InjectClusterIntoHTTPRequest(ctx, req); err != nil {
 			return nil, err
 		}

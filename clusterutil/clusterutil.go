@@ -35,8 +35,10 @@ func PutClusterIntoOutgoingContext(ctx context.Context, cluster string) context.
 func GetClusterFromIncomingContext(ctx context.Context, logger log.Logger) string {
 	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterKey)
 	if len(clusterIDs) != 1 {
-		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key \"%s\", but the current set of values is %v. Returning an empty string.", MetadataClusterKey, clusterIDs)
-		level.Warn(logger).Log("msg", msg)
+		if logger != nil {
+			msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key \"%s\", but the current set of values is %v. Returning an empty string.", MetadataClusterKey, clusterIDs)
+			level.Warn(logger).Log("msg", msg)
+		}
 		return ""
 	}
 	return clusterIDs[0]
@@ -58,14 +60,11 @@ func ExtractCluster(ctx context.Context) (string, error) {
 
 // InjectClusterIntoHTTPRequest injects the cluster from the context into the request headers.
 func InjectClusterIntoHTTPRequest(ctx context.Context, r *http.Request) error {
-	userID, err := ExtractCluster(ctx)
-	if err != nil {
-		return err
-	}
-	existingID := r.Header.Get(ClusterHeader)
-	if existingID != "" && existingID != userID {
+	cluster := GetClusterFromIncomingContext(ctx, nil)
+	existingCluster := r.Header.Get(ClusterHeader)
+	if existingCluster != "" && existingCluster != cluster {
 		return ErrDifferentClusterPresent
 	}
-	r.Header.Set(ClusterHeader, userID)
+	r.Header.Set(ClusterHeader, cluster)
 	return nil
 }

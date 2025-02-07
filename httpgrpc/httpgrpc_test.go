@@ -131,7 +131,8 @@ func TestFromHTTPRequestWithCluster(t *testing.T) {
 		r, err := http.NewRequest(http.MethodGet, "http://server", io.NopCloser(bytes.NewBuffer(nil)))
 		require.NoError(t, err)
 		r.Header.Set(clusterutil.ClusterHeader, "test")
-		gr, err := FromHTTPRequestWithCluster(r, "test")
+		// TODO: Test with metric.
+		gr, err := FromHTTPRequestWithCluster(r, "test", nil)
 		require.NoError(t, err)
 		require.Equal(t, []*Header{
 			{
@@ -143,15 +144,17 @@ func TestFromHTTPRequestWithCluster(t *testing.T) {
 	t.Run("without header", func(t *testing.T) {
 		r, err := http.NewRequest(http.MethodGet, "http://server", nil)
 		require.NoError(t, err)
-		_, err = FromHTTPRequestWithCluster(r, "test")
-		require.EqualError(t, err, `httpgrpc.FromHTTPRequest: "X-Cluster" header should be "test", but is ""`)
+		// TODO: Test with metric.
+		_, err = FromHTTPRequestWithCluster(r, "test", nil)
+		require.EqualError(t, err, `httpgrpc.FromHTTPRequestWithCluster: "X-Cluster" header should be "test", but is ""`)
 	})
 	t.Run("with mismatched header", func(t *testing.T) {
 		r, err := http.NewRequest(http.MethodGet, "http://server", nil)
 		require.NoError(t, err)
 		r.Header.Set(clusterutil.ClusterHeader, "prod")
-		_, err = FromHTTPRequestWithCluster(r, "test")
-		require.EqualError(t, err, `httpgrpc.FromHTTPRequest: "X-Cluster" header should be "test", but is "prod"`)
+		// TODO: Test with metric.
+		_, err = FromHTTPRequestWithCluster(r, "test", nil)
+		require.EqualError(t, err, `httpgrpc.FromHTTPRequestWithCluster: "X-Cluster" header should be "test", but is "prod"`)
 	})
 }
 

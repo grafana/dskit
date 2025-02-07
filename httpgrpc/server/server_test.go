@@ -26,41 +26,20 @@ import (
 	"github.com/grafana/dskit/user"
 )
 
-func TestClusterCheckOption(t *testing.T) {
-	testCases := map[string]struct {
-		option Option
-		check  func(*Server) bool
-	}{
-		"return4XXXErrors option": {
-			option: WithReturn4XXErrors,
-			check: func(server *Server) bool {
-				return server.return4XXErrors
-			},
-		},
-		"clusterHeader option": {
-			option: WithClusterHeader,
-			check: func(server *Server) bool {
-				return server.clusterHeader
-			},
-		},
-	}
-	for testName, testCase := range testCases {
-		t.Run(testName, func(t *testing.T) {
-			handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, err := fmt.Fprint(w, "test")
-				require.NoError(t, err)
-			})
-			serverOptions := make([]Option, 0, 1)
-			server := NewServer(handler, serverOptions...)
-			require.NotNil(t, server)
-			require.False(t, testCase.check(server))
+func TestReturn4XXErrorsOption(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, err := fmt.Fprint(w, "test")
+		require.NoError(t, err)
+	})
+	serverOptions := make([]Option, 0, 1)
+	server := NewServer(handler, serverOptions...)
+	require.NotNil(t, server)
+	require.False(t, server.return4XXErrors)
 
-			serverOptions = append(serverOptions, testCase.option)
-			server = NewServer(handler, serverOptions...)
-			require.NotNil(t, server)
-			require.True(t, testCase.check(server))
-		})
-	}
+	serverOptions = append(serverOptions, WithReturn4XXErrors)
+	server = NewServer(handler, serverOptions...)
+	require.NotNil(t, server)
+	require.True(t, server.return4XXErrors)
 }
 
 type testServer struct {

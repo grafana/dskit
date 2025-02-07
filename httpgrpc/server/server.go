@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/clusterutil"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/sercand/kuberesolver/v5"
@@ -49,10 +48,6 @@ func WithReturn4XXErrors(s *Server) {
 	s.return4XXErrors = true
 }
 
-func WithClusterHeader(s *Server) {
-	s.clusterHeader = true
-}
-
 func applyServerOptions(s *Server, opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(s)
@@ -65,7 +60,6 @@ func applyServerOptions(s *Server, opts ...Option) *Server {
 type Server struct {
 	handler         http.Handler
 	return4XXErrors bool
-	clusterHeader   bool
 }
 
 // NewServer makes a new Server.
@@ -80,11 +74,6 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 	req, err := httpgrpc.ToHTTPRequest(ctx, r)
 	if err != nil {
 		return nil, err
-	}
-	if s.clusterHeader {
-		if err := clusterutil.InjectClusterIntoHTTPRequest(ctx, req); err != nil {
-			return nil, err
-		}
 	}
 
 	recorder := httptest.NewRecorder()

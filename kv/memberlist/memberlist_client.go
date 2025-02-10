@@ -1306,6 +1306,7 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 				level.Error(m.logger).Log("msg", "failed to store received value", "key", key, "err", err)
 			} else if version > 0 {
 				m.notifyWatchers(key)
+
 				// Don't resend original message, but only changes, if any.
 				m.broadcastNewValue(key, mod, version, update.codec, false, deleted, updated)
 			}
@@ -1481,7 +1482,7 @@ func (m *KV) MergeRemoteState(data []byte, _ bool) {
 		})
 
 		if err != nil {
-			level.Error(m.logger).Log("msg", "[]failed to store received value", "key", kvPair.Key, "err", err)
+			level.Error(m.logger).Log("msg", "failed to store received value", "key", kvPair.Key, "err", err)
 		} else if newver > 0 {
 			m.notifyWatchers(kvPair.Key)
 			m.broadcastNewValue(kvPair.Key, change, newver, codec, false, deleted, updated)
@@ -1525,6 +1526,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	if curr.value == nil && deleted {
 		return nil, 0, false, time.Time{}, err
 	}
+
 	// if casVersion is 0, then there was no previous value, so we will just do normal merge, without localCAS flag set.
 	if casVersion > 0 && curr.Version != casVersion {
 		return nil, 0, false, time.Time{}, errVersionMismatch
@@ -1669,9 +1671,8 @@ func (m *KV) cleanupObsoleteEntries() {
 	defer m.storeMu.Unlock()
 
 	for k, v := range m.store {
-		level.Info(m.logger).Log("key", k, "Deleted", v.Deleted, "UpdatTime", v.UpdateTime)
 		if v.Deleted && time.Since(v.UpdateTime) > m.cfg.ObsoleteEntriesTimeout {
-			level.Info(m.logger).Log("msg", "deleting entry from KV store", "key", k, " time.Since(UpdateTime)", time.Since(v.UpdateTime))
+			level.Debug(m.logger).Log("msg", "deleting entry from KV store", "key", k)
 			delete(m.store, k)
 		}
 	}

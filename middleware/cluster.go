@@ -23,8 +23,6 @@ func ClusterValidationMiddleware(cluster string, auxPaths []string, invalidClust
 	}
 	reB.WriteString(")")
 	reAuxPath := regexp.MustCompile(reB.String())
-	// TODO: Remove me.
-	// reAuxPath := regexp.MustCompile(".*/(metrics|debug/pprof.*|ready|backlog_replay_complete|admission/no-downscale|admission/prepare-downscale)")
 
 	return Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

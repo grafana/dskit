@@ -51,8 +51,8 @@ func InjectCluster(ctx context.Context, cluster string) context.Context {
 
 // ExtractCluster gets the cluster from the context.
 func ExtractCluster(ctx context.Context) (string, error) {
-	userID, ok := ctx.Value(clusterContextKey(MetadataClusterVerificationLabelKey)).(string)
-	if !ok {
+	userID := ctx.Value(clusterContextKey(MetadataClusterVerificationLabelKey)).(string)
+	if userID == "" {
 		return "", ErrNoClusterVerificationLabel
 	}
 	return userID, nil

@@ -1074,6 +1074,7 @@ func TestClusterMiddleware(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		require.NoError(t, server.Run())
 	}()
 	t.Cleanup(wg.Wait)

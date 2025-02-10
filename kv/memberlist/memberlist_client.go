@@ -1045,11 +1045,13 @@ func (m *KV) Delete(key string) error {
 
 	c := m.GetCodec(val.CodecID)
 	if c == nil {
+		level.Error(m.logger).Log("msg", "could not mark key for deletion due to an invalid codec", "key", key, "codec", val.CodecID)
 		return fmt.Errorf("invalid codec: %s", val.CodecID)
 	}
 
 	change, newver, deleted, updated, err := m.mergeValueForKey(key, val.value, false, 0, val.CodecID, true, time.Now())
 	if err != nil {
+		level.Error(m.logger).Log("msg", "could not mark key for deletion due to error while trying to merge new value", "key", key, "err", err)
 		return err
 	}
 
@@ -1057,6 +1059,8 @@ func (m *KV) Delete(key string) error {
 		m.notifyWatchers(key)
 		m.broadcastNewValue(key, change, newver, c, false, deleted, updated)
 	}
+
+	level.Info(m.logger).Log("msg", "successfully marked key for deletion", "key", key)
 
 	return nil
 }
@@ -1536,7 +1540,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	newDeleted = curr.Deleted
 
 	// If incoming value is newer, use its timestamp and deleted value
-	if !updateTime.IsZero() && updateTime.After(newUpdated) {
+	if !updateTime.IsZero() && updateTime.After(newUpdated) && deleted {
 		newUpdated = updateTime
 		newDeleted = deleted
 	}

@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/dskit/clusterutil"
 )
 
-// ClusterValidationMiddleware validates that requests are for the correct cluster.
+// ClusterValidationMiddleware validates that requests have the correct cluster verification label.
 func ClusterValidationMiddleware(cluster string, auxPaths []string, invalidClusters *prometheus.CounterVec, logger log.Logger) Interface {
 	var reB strings.Builder
 	// Allow for a potential path prefix being configured.

@@ -1056,41 +1056,80 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 func TestClusterMiddleware(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
-	cfg := Config{
-		ClusterVerificationLabel:      "test",
-		ClusterVerificationLabelCheck: ClusterCheckEnum("all"),
-		MetricsNamespace:              "testing_cluster",
-		LogLevel:                      level,
-		Router:                        &mux.Router{},
+	type testCase struct {
+		name           string
+		enableChecking bool
+		correctLabel   bool
 	}
-	setAutoAssignedPorts(DefaultNetwork, &cfg)
+	for _, tc := range []testCase{
+		{
+			name:           "cluster label verification enabled and request has the right label",
+			enableChecking: true,
+			correctLabel:   true,
+		},
+		{
+			name:           "cluster label verification enabled and request has the wrong label",
+			enableChecking: true,
+			correctLabel:   false,
+		},
+		{
+			name:           "cluster label verification disabled and request has the wrong label",
+			enableChecking: false,
+			correctLabel:   false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mode := "none"
+			if tc.enableChecking {
+				mode = "all"
+			}
+			const serverLabel = "test"
+			cfg := Config{
+				Registerer:                    prometheus.NewPedanticRegistry(),
+				ClusterVerificationLabel:      serverLabel,
+				ClusterVerificationLabelCheck: ClusterCheckEnum(mode),
+				MetricsNamespace:              "testing_cluster",
+				LogLevel:                      level,
+				Router:                        &mux.Router{},
+			}
+			setAutoAssignedPorts(DefaultNetwork, &cfg)
 
-	server, err := New(cfg)
-	require.NoError(t, err)
+			server, err := New(cfg)
+			require.NoError(t, err)
 
-	server.HTTP.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+			server.HTTP.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		require.NoError(t, server.Run())
-	}()
-	t.Cleanup(wg.Wait)
-	t.Cleanup(server.Shutdown)
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				require.NoError(t, server.Run())
+			}()
+			t.Cleanup(wg.Wait)
+			t.Cleanup(server.Shutdown)
 
-	req, err := http.NewRequest(http.MethodGet, httpTarget(server, "/"), nil)
-	require.NoError(t, err)
-	req.Header.Set(clusterutil.ClusterVerificationLabelHeader, "prod")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.Equal(t, `request has cluster verification label "prod" - it should be "test"`, strings.TrimSpace(string(body)))
+			req, err := http.NewRequest(http.MethodGet, httpTarget(server, "/"), nil)
+			require.NoError(t, err)
+			reqLabel := serverLabel
+			if !tc.correctLabel {
+				reqLabel = "prod"
+			}
+			req.Header.Set(clusterutil.ClusterVerificationLabelHeader, reqLabel)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			if tc.enableChecking && !tc.correctLabel {
+				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.Equal(t, `request has cluster verification label "prod" - it should be "test"`, strings.TrimSpace(string(body)))
+			} else {
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+			}
+		})
+	}
 }
 
 type dummyHandler struct {

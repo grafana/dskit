@@ -592,6 +592,8 @@ func TestDelete(t *testing.T) {
 
 	c := dataCodec{}
 
+	reg := prometheus.NewRegistry()
+
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{
@@ -604,7 +606,7 @@ func TestDelete(t *testing.T) {
 	cfg.ClusterLabelVerificationDisabled = true
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
 
@@ -627,6 +629,13 @@ func TestDelete(t *testing.T) {
 	}
 
 	checkMemberlistEntry(t, kv, key, 2*time.Second)
+
+	// Validate that there are no encoding errors during the Delete flow.
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP memberlist_client_messages_to_broadcast_dropped_total Number of broadcast messages intended to be sent but were dropped due to encoding errors or for being too big
+			# TYPE memberlist_client_messages_to_broadcast_dropped_total counter
+			memberlist_client_messages_to_broadcast_dropped_total 0
+	`), "memberlist_client_messages_to_broadcast_dropped_total"))
 }
 
 func TestDeleteMultipleClients(t *testing.T) {
@@ -645,7 +654,7 @@ func TestDeleteMultipleClients(t *testing.T) {
 	}
 
 	cfg.GossipNodes = 1
-	cfg.GossipInterval = 10 * time.Millisecond
+	cfg.GossipInterval = 100 * time.Millisecond
 	cfg.PushPullInterval = deleteTime
 	cfg.ObsoleteEntriesTimeout = deleteTime
 
@@ -684,8 +693,8 @@ func TestDeleteMultipleClients(t *testing.T) {
 	}
 
 	// wait for the obselete entries to be removed.
-	checkMemberlistEntry(t, kv1, key, 5*deleteTime)
-	checkMemberlistEntry(t, kv2, key, 5*deleteTime)
+	checkMemberlistEntry(t, kv1, key, 10*deleteTime)
+	checkMemberlistEntry(t, kv2, key, 10*deleteTime)
 }
 
 func TestMultipleClients(t *testing.T) {

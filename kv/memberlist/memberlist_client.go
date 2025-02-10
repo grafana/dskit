@@ -1052,7 +1052,6 @@ func (m *KV) Delete(key string) error {
 	if err != nil {
 		return err
 	}
-
 	if newver > 0 {
 		m.notifyWatchers(key)
 		m.broadcastNewValue(key, change, newver, c, false, deleted, updated)
@@ -1172,6 +1171,7 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 		return
 	}
 	data, err := codec.Encode(change)
+
 	if err != nil {
 		level.Error(m.logger).Log("msg", "failed to encode change", "key", key, "version", version, "err", err)
 		m.numberOfBroadcastMessagesDropped.Inc()

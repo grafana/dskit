@@ -35,7 +35,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 	verify := func(ctx context.Context, expectedCluster string) {
 		md, ok := metadata.FromOutgoingContext(ctx)
 		require.True(t, ok)
-		clusterIDs, ok := md[clusterutil.MetadataClusterKey]
+		clusterIDs, ok := md[clusterutil.MetadataClusterVerificationLabelKey]
 		require.True(t, ok)
 		require.Len(t, clusterIDs, 1)
 		require.Equal(t, expectedCluster, clusterIDs[0])
@@ -160,7 +160,7 @@ func createIncomingContext(containsRequestCluster bool, requestCluster string) c
 		return ctx
 	}
 	md := map[string][]string{
-		clusterutil.MetadataClusterKey: {requestCluster},
+		clusterutil.MetadataClusterVerificationLabelKey: {requestCluster},
 	}
 	return metadata.NewIncomingContext(ctx, md)
 }

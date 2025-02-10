@@ -1081,7 +1081,7 @@ func TestClusterMiddleware(t *testing.T) {
 
 	req, err := http.NewRequest(http.MethodGet, httpTarget(server, "/"), nil)
 	require.NoError(t, err)
-	req.Header.Set(clusterutil.ClusterHeader, "prod")
+	req.Header.Set(clusterutil.ClusterVerificationLabelHeader, "prod")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)

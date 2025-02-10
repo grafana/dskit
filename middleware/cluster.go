@@ -28,11 +28,11 @@ func ClusterValidationMiddleware(cluster string, auxPaths []string, invalidClust
 
 	return Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			reqCluster := r.Header.Get(clusterutil.ClusterHeader)
+			reqCluster := r.Header.Get(clusterutil.ClusterVerificationLabelHeader)
 			if !reAuxPath.MatchString(r.URL.Path) && reqCluster != cluster {
 				level.Warn(logger).Log("msg", "rejecting request with wrong cluster verification label",
 					"cluster_verification_label", cluster, "request_cluster_verification_label", reqCluster,
-					"header", clusterutil.ClusterHeader, "url", r.URL, "path", r.URL.Path)
+					"header", clusterutil.ClusterVerificationLabelHeader, "url", r.URL, "path", r.URL.Path)
 				if invalidClusters != nil {
 					invalidClusters.WithLabelValues("http", r.URL.Path, reqCluster).Inc()
 				}

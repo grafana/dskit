@@ -1057,10 +1057,11 @@ func TestClusterMiddleware(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
 	cfg := Config{
-		ClusterVerificationLabel: "test",
-		MetricsNamespace:         "testing_cluster",
-		LogLevel:                 level,
-		Router:                   &mux.Router{},
+		ClusterVerificationLabel:      "test",
+		ClusterVerificationLabelCheck: ClusterCheckEnum("all"),
+		MetricsNamespace:              "testing_cluster",
+		LogLevel:                      level,
+		Router:                        &mux.Router{},
 	}
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
@@ -1089,7 +1090,7 @@ func TestClusterMiddleware(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	require.Equal(t, `request intended for cluster "prod" - this is cluster "test"`, strings.TrimSpace(string(body)))
+	require.Equal(t, `request has cluster verification label "prod" - it should be "test"`, strings.TrimSpace(string(body)))
 }
 
 type dummyHandler struct {

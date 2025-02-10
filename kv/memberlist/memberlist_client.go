@@ -1047,13 +1047,14 @@ func (m *KV) Delete(key string) error {
 	if c == nil {
 		return fmt.Errorf("invalid codec: %s", val.CodecID)
 	}
+
 	change, newver, deleted, updated, err := m.mergeValueForKey(key, val.value, false, 0, val.CodecID, true, time.Now())
 	if err != nil {
 		return err
 	}
 
 	if newver > 0 {
-		//m.notifyWatchers(key)
+		m.notifyWatchers(key)
 		m.broadcastNewValue(key, change, newver, c, false, deleted, updated)
 	}
 
@@ -1104,6 +1105,7 @@ outer:
 		if change != nil {
 			m.casSuccesses.Inc()
 			m.notifyWatchers(key)
+
 			m.broadcastNewValue(key, change, newver, codec, true, deleted, updated)
 		}
 

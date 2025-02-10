@@ -7,6 +7,10 @@ import (
 
 type clusterCheckEnum string
 
+func (v *clusterCheckEnum) Alternatives() string {
+	return "none,all,grpc,http"
+}
+
 func (v *clusterCheckEnum) HTTPEnabled() bool {
 	switch v.String() {
 	case "all", "http":

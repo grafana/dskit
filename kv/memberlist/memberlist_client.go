@@ -1047,7 +1047,6 @@ func (m *KV) Delete(key string) error {
 	if c == nil {
 		return fmt.Errorf("invalid codec: %s", val.CodecID)
 	}
-	level.Info(m.logger).Log("msg", "[memberlist_client]Delete", "key", key, "codec", val.CodecID, "Version", val.Version)
 	change, newver, deleted, updated, err := m.mergeValueForKey(key, val.value, false, 0, val.CodecID, true, time.Now())
 	if err != nil {
 		return err

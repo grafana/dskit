@@ -1171,14 +1171,12 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 		level.Warn(m.logger).Log("msg", "skipped broadcasting of locally-generated update because memberlist KV is shutting down", "key", key)
 		return
 	}
-
-	data, err := handlePossibleNilEncode(codec, change)
+	data, err := codec.Encode(change)
 	if err != nil {
 		level.Error(m.logger).Log("msg", "failed to encode change", "key", key, "version", version, "err", err)
 		m.numberOfBroadcastMessagesDropped.Inc()
 		return
 	}
-
 	kvPair := KeyValuePair{Key: key, Value: data, Codec: codec.CodecID(), Deleted: deleted, UpdateTimeMillis: updateTimeMillis(updateTime)}
 	pairData, err := kvPair.Marshal()
 	if err != nil {
@@ -1187,7 +1185,7 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 		return
 	}
 
-	mergedChanges := handlePossibleNilMergeContent(change)
+	mergedChanges := change.MergeContent()
 	m.addSentMessage(Message{
 		Time:    time.Now(),
 		Size:    len(pairData),
@@ -1285,7 +1283,6 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 		case update := <-workerCh:
 			// we have a value update! Let's merge it with our current version for given key
 			mod, version, deleted, updated, err := m.mergeBytesValueForKey(key, update.value, update.codec, update.deleted, update.updateTime)
-
 			changes := []string(nil)
 			if mod != nil {
 				changes = mod.MergeContent()
@@ -1574,6 +1571,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 		// return result as change if the only thing that changes is the Delete state of the entry.
 		change = result
 	}
+
 	newVersion = curr.Version + 1
 	m.store[key] = ValueDesc{
 		value:      result,
@@ -1703,20 +1701,4 @@ func updateTimeMillis(ts time.Time) int64 {
 		return 0
 	}
 	return ts.UnixMilli()
-}
-
-func handlePossibleNilEncode(codec codec.Codec, change Mergeable) ([]byte, error) {
-	if change == nil {
-		return []byte{}, nil
-	}
-
-	return codec.Encode(change)
-}
-
-func handlePossibleNilMergeContent(change Mergeable) []string {
-	if change == nil {
-		return []string{}
-	}
-
-	return change.MergeContent()
 }

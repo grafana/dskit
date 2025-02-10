@@ -7,7 +7,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"github.com/grafana/dskit/test"
 	"math"
 	"math/rand"
 	"net"
@@ -17,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/grafana/dskit/test"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -644,7 +645,7 @@ func TestDeleteMultipleClients(t *testing.T) {
 	}
 
 	cfg.GossipNodes = 1
-	cfg.GossipInterval = 100 * time.Millisecond
+	cfg.GossipInterval = 10 * time.Millisecond
 	cfg.PushPullInterval = deleteTime
 	cfg.ObsoleteEntriesTimeout = deleteTime
 

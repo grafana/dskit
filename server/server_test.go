@@ -1070,9 +1070,12 @@ func TestClusterMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
 		require.NoError(t, server.Run())
 	}()
+	t.Cleanup(wg.Wait)
 	t.Cleanup(server.Shutdown)
 
 	req, err := http.NewRequest(http.MethodGet, httpTarget(server, "/"), nil)

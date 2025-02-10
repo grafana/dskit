@@ -122,7 +122,7 @@ func TestStatus(t *testing.T) {
 	require.Equal(t, "bad data", stat.Message())
 	require.Len(t, stat.Details(), 0)
 
-	originalDetails := []proto.Message{&ErrorDetails{Cause: WRONG_CLUSTER_NAME}, &ErrorDetails{Cause: UNKNOWN_CAUSE}}
+	originalDetails := []proto.Message{&ErrorDetails{Cause: WRONG_CLUSTER_VERIFICATION_LABEL}, &ErrorDetails{Cause: UNKNOWN_CAUSE}}
 	stat = Status(codes.FailedPrecondition, "bad data", originalDetails...)
 	require.Equal(t, codes.FailedPrecondition, stat.Code())
 	require.Equal(t, "bad data", stat.Message())

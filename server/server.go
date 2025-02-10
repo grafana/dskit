@@ -88,7 +88,7 @@ type Config struct {
 	GRPCListenPort          int    `yaml:"grpc_listen_port"`
 	GRPCConnLimit           int    `yaml:"grpc_listen_conn_limit"`
 	ProxyProtocolEnabled    bool   `yaml:"proxy_protocol_enabled"`
-	Cluster                 string `yaml:"cluster"`
+	ClusterVerificationLabel                 string `yaml:"cluster_verification_label"`
 	HTTPClusterCheckEnabled bool   `yaml:"http_cluster_check_enabled"`
 	GRPCClusterCheckEnabled bool   `yaml:"grpc_cluster_check_enabled"`
 
@@ -219,7 +219,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.LogRequestExcludeHeadersList, "server.log-request-headers-exclude-list", "", "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.")
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
-	f.StringVar(&cfg.Cluster, "server.cluster", "", "Optionally define the server's cluster, and enable validation that requests are for the same cluster.")
+	f.StringVar(&cfg.ClusterVerificationLabel, "server.cluster-verification-label", "", "Optionally define the server's cluster verification label, which are sent with requests.")
 	f.BoolVar(&cfg.HTTPClusterCheckEnabled, "server.http-cluster-check-enabled", false, "Enable validation that HTTP requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.")
 	f.BoolVar(&cfg.GRPCClusterCheckEnabled, "server.grpc-cluster-check-enabled", false, "Enable validation that gRPC requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.")
 	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
@@ -405,8 +405,8 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
 		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
-	if cfg.Cluster != "" && cfg.GRPCClusterCheckEnabled {
-		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.Cluster, metrics.InvalidClusters, logger))
+	if cfg.ClusterVerificationLabel != "" && cfg.GRPCClusterCheckEnabled {
+		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.ClusterVerificationLabel, metrics.InvalidClusters, logger))
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 
@@ -565,8 +565,8 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 			RequestThroughput: metrics.RequestThroughput,
 		},
 	}
-	if cfg.Cluster != "" && cfg.HTTPClusterCheckEnabled {
-		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.Cluster, metrics.InvalidClusters, logger))
+	if cfg.ClusterVerificationLabel != "" && cfg.HTTPClusterCheckEnabled {
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.ClusterVerificationLabel, metrics.InvalidClusters, logger))
 	}
 	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }
@@ -629,9 +629,9 @@ func handleGRPCError(err error, errChan chan error) {
 	}
 }
 
-// Cluster returns the configured server cluster.
-func (s *Server) Cluster() string {
-	return s.cfg.Cluster
+// Cluster returns the configured server cluster verification label.
+func (s *Server) ClusterVerificationLabel() string {
+	return s.cfg.ClusterVerificationLabel
 }
 
 // HTTPListenAddr exposes `net.Addr` that `Server` is listening to for HTTP connections.

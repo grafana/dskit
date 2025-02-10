@@ -3,20 +3,18 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
-	"google.golang.org/grpc/health"
-
-	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/httpgrpc"
-
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/httpgrpc"
 )
 
 func TestClusterUnaryClientInterceptor(t *testing.T) {
@@ -71,17 +69,17 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 		"different request and server clusters give rise to an error": {
 			incomingContext: createIncomingContext(true, "wrong-cluster"),
 			serverCluster:   "cluster",
-			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"wrong-cluster\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"wrong-cluster\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
 		"empty request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: createIncomingContext(true, ""),
 			serverCluster:   "cluster",
-			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
 		"no request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: createIncomingContext(false, ""),
 			serverCluster:   "cluster",
-			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"\" - this is cluster \"cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
 		"empty request cluster and empty server cluster give no error": {
 			incomingContext: createIncomingContext(true, ""),
@@ -96,8 +94,7 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			logger := log.NewLogfmtLogger(os.Stdin)
-			interceptor := ClusterUnaryServerInterceptor(testCase.serverCluster, nil, logger)
+			interceptor := ClusterUnaryServerInterceptor(testCase.serverCluster, nil, log.NewNopLogger())
 			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, nil
 			}
@@ -113,9 +110,9 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 	}
 }
 
-func TestHeTestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
-	goodCluster := "good-cluster"
-	badCluster := "bad-cluster"
+func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
+	const goodCluster = "good-cluster"
+	const badCluster = "bad-cluster"
 
 	testCases := map[string]struct {
 		serverInfo      *grpc.UnaryServerInfo
@@ -136,13 +133,12 @@ func TestHeTestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 			// We create a context with a bad cluster.
 			incomingContext: createIncomingContext(true, badCluster),
 			// Since UnaryServerInfo doesn't contain the grpc health server, the check is done, and we expect an error.
-			expectedError: grpcutil.Status(codes.FailedPrecondition, "request intended for cluster \"bad-cluster\" - this is cluster \"good-cluster\"", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
+			expectedError: grpcutil.Status(codes.FailedPrecondition, `request intended for cluster "bad-cluster" - this is cluster "good-cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			logger := log.NewLogfmtLogger(os.Stdin)
-			interceptor := ClusterUnaryServerInterceptor(goodCluster, nil, logger)
+			interceptor := ClusterUnaryServerInterceptor(goodCluster, nil, log.NewNopLogger())
 			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, nil
 			}

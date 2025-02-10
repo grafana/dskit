@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"github.com/grafana/dskit/test"
 	"math"
 	"math/rand"
 	"net"
@@ -250,6 +251,16 @@ func getLocalhostAddrs() []string {
 		localhostIP = ip.String()
 	})
 	return []string{localhostIP}
+}
+
+func checkMemberlistEntry(t *testing.T, kv *Client, key string, duration time.Duration) {
+	test.Poll(t, duration, nil, func() interface{} {
+		val := get(t, kv, key)
+		if val != nil {
+			return fmt.Errorf("expected nil, got: %v", val)
+		}
+		return nil
+	})
 }
 
 func TestBasicGetAndCas(t *testing.T) {
@@ -588,7 +599,7 @@ func TestDelete(t *testing.T) {
 	}
 	cfg.GossipNodes = 1
 	cfg.GossipInterval = 100 * time.Millisecond
-	cfg.ObsoleteEntriesTimeout = 1 * time.Second
+	cfg.ObsoleteEntriesTimeout = 500 * time.Millisecond
 	cfg.ClusterLabelVerificationDisabled = true
 	cfg.Codecs = []codec.Codec{c}
 
@@ -614,12 +625,7 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("Failed to delete key %s: %v", key, err)
 	}
 
-	time.Sleep(2 * time.Second) // wait for obsolete entries to be removed
-	val = get(t, kv, key)
-
-	if val != nil {
-		t.Errorf("Expected nil, got: %v", val)
-	}
+	checkMemberlistEntry(t, kv, key, 2*time.Second)
 }
 
 func TestDeleteMultipleClients(t *testing.T) {
@@ -676,14 +682,9 @@ func TestDeleteMultipleClients(t *testing.T) {
 		t.Fatalf("Failed to delete key %s: %v", key, err)
 	}
 
-	time.Sleep(5 * deleteTime) // wait for obsolete entries to be removed
-
-	val, err = kv1.Get(context.Background(), key)
-	require.NoError(t, err)
-	require.Nil(t, val)
-	val, err = kv2.Get(context.Background(), key)
-	require.NoError(t, err)
-	require.Nil(t, val)
+	// wait for the obselete entries to be removed.
+	checkMemberlistEntry(t, kv1, key, 5*deleteTime)
+	checkMemberlistEntry(t, kv2, key, 5*deleteTime)
 }
 
 func TestMultipleClients(t *testing.T) {

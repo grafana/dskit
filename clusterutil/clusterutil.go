@@ -24,6 +24,8 @@ var (
 	ErrDifferentClusterPresent = errors.New("different cluster verification label already present in header")
 )
 
+type clusterContextKey string
+
 // PutClusterIntoOutgoingContext returns a new context with the provided value
 // for MetadataClusterKey merged with any existing metadata in the context.
 func PutClusterIntoOutgoingContext(ctx context.Context, cluster string) context.Context {
@@ -44,12 +46,12 @@ func GetClusterFromIncomingContext(ctx context.Context, logger log.Logger) strin
 
 // InjectCluster returns a derived context containing the cluster.
 func InjectCluster(ctx context.Context, cluster string) context.Context {
-	return context.WithValue(ctx, interface{}(MetadataClusterKey), cluster)
+	return context.WithValue(ctx, clusterContextKey(MetadataClusterKey), cluster)
 }
 
 // ExtractCluster gets the cluster from the context.
 func ExtractCluster(ctx context.Context) (string, error) {
-	userID, ok := ctx.Value(MetadataClusterKey).(string)
+	userID, ok := ctx.Value(clusterContextKey(MetadataClusterKey)).(string)
 	if !ok {
 		return "", ErrNoCluster
 	}

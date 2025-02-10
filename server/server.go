@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/log"
@@ -79,18 +80,19 @@ type Config struct {
 	// for details. A generally useful value is 1.1.
 	MetricsNativeHistogramFactor float64 `yaml:"-"`
 
-	HTTPListenNetwork       string `yaml:"http_listen_network"`
-	HTTPListenAddress       string `yaml:"http_listen_address"`
-	HTTPListenPort          int    `yaml:"http_listen_port"`
-	HTTPConnLimit           int    `yaml:"http_listen_conn_limit"`
-	GRPCListenNetwork       string `yaml:"grpc_listen_network"`
-	GRPCListenAddress       string `yaml:"grpc_listen_address"`
-	GRPCListenPort          int    `yaml:"grpc_listen_port"`
-	GRPCConnLimit           int    `yaml:"grpc_listen_conn_limit"`
-	ProxyProtocolEnabled    bool   `yaml:"proxy_protocol_enabled"`
-	ClusterVerificationLabel                 string `yaml:"cluster_verification_label"`
-	HTTPClusterCheckEnabled bool   `yaml:"http_cluster_check_enabled"`
-	GRPCClusterCheckEnabled bool   `yaml:"grpc_cluster_check_enabled"`
+	HTTPListenNetwork        string                 `yaml:"http_listen_network"`
+	HTTPListenAddress        string                 `yaml:"http_listen_address"`
+	HTTPListenPort           int                    `yaml:"http_listen_port"`
+	HTTPConnLimit            int                    `yaml:"http_listen_conn_limit"`
+	GRPCListenNetwork        string                 `yaml:"grpc_listen_network"`
+	GRPCListenAddress        string                 `yaml:"grpc_listen_address"`
+	GRPCListenPort           int                    `yaml:"grpc_listen_port"`
+	GRPCConnLimit            int                    `yaml:"grpc_listen_conn_limit"`
+	ProxyProtocolEnabled     bool                   `yaml:"proxy_protocol_enabled"`
+	ClusterVerificationLabel string                 `yaml:"cluster_verification_label"`
+	HTTPClusterCheckEnabled  bool                   `yaml:"http_cluster_check_enabled"`
+	GRPCClusterCheckEnabled  bool                   `yaml:"grpc_cluster_check_enabled"`
+	AuxiliaryURLPaths        flagext.StringSliceCSV `yaml:"auxiliary_url_paths"`
 
 	CipherSuites  string    `yaml:"tls_cipher_suites"`
 	MinVersion    string    `yaml:"tls_min_version"`
@@ -222,6 +224,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ClusterVerificationLabel, "server.cluster-verification-label", "", "Optionally define the server's cluster verification label, which are sent with requests.")
 	f.BoolVar(&cfg.HTTPClusterCheckEnabled, "server.http-cluster-check-enabled", false, "Enable validation that HTTP requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.")
 	f.BoolVar(&cfg.GRPCClusterCheckEnabled, "server.grpc-cluster-check-enabled", false, "Enable validation that gRPC requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.")
+	f.Var(&cfg.AuxiliaryURLPaths, "server.auxiliary-url-paths", "Optionally define auxiliary URL paths, that should not be validated wrt. cluster verification label.")
 	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
 	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "samples_processed", "Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
 }
@@ -566,7 +569,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		},
 	}
 	if cfg.ClusterVerificationLabel != "" && cfg.HTTPClusterCheckEnabled {
-		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.ClusterVerificationLabel, metrics.InvalidClusters, logger))
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.ClusterVerificationLabel, cfg.AuxiliaryURLPaths, metrics.InvalidClusters, logger))
 	}
 	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }

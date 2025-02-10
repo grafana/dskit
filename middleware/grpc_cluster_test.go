@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 )
@@ -34,7 +35,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 	verify := func(ctx context.Context, expectedCluster string) {
 		md, ok := metadata.FromOutgoingContext(ctx)
 		require.True(t, ok)
-		clusterIDs, ok := md[MetadataClusterKey]
+		clusterIDs, ok := md[clusterutil.MetadataClusterKey]
 		require.True(t, ok)
 		require.Len(t, clusterIDs, 1)
 		require.Equal(t, expectedCluster, clusterIDs[0])
@@ -159,7 +160,7 @@ func createIncomingContext(containsRequestCluster bool, requestCluster string) c
 		return ctx
 	}
 	md := map[string][]string{
-		MetadataClusterKey: {requestCluster},
+		clusterutil.MetadataClusterKey: {requestCluster},
 	}
 	return metadata.NewIncomingContext(ctx, md)
 }

@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1056,10 +1057,10 @@ func TestClusterMiddleware(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
 	cfg := Config{
-		Cluster:          "test",
-		MetricsNamespace: "testing_cluster",
-		LogLevel:         level,
-		Router:           &mux.Router{},
+		ClusterVerificationLabel: "test",
+		MetricsNamespace:         "testing_cluster",
+		LogLevel:                 level,
+		Router:                   &mux.Router{},
 	}
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
 

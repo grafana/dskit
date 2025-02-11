@@ -1175,8 +1175,8 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 		level.Warn(m.logger).Log("msg", "skipped broadcasting of locally-generated update because memberlist KV is shutting down", "key", key)
 		return
 	}
+	data, err := codec.Encode(change)
 
-	data, err := handlePossibleNilEncode(codec, change)
 	if err != nil {
 		level.Error(m.logger).Log("msg", "failed to encode change", "key", key, "version", version, "err", err)
 		m.numberOfBroadcastMessagesDropped.Inc()
@@ -1191,7 +1191,7 @@ func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec
 		return
 	}
 
-	mergedChanges := handlePossibleNilMergeContent(change)
+	mergedChanges := change.MergeContent()
 	m.addSentMessage(Message{
 		Time:    time.Now(),
 		Size:    len(pairData),
@@ -1528,6 +1528,12 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	// This is safe because the entire function runs under the store lock; we do not return
 	// the full state anywhere as is done elsewhere (i.e. Get/WatchKey/CAS).
 	curr := m.store[key]
+
+	// if current entry is nil but the incoming for that key is deleted then we return no change, as we do not want to revive the entry.
+	if curr.value == nil && deleted {
+		return nil, 0, false, time.Time{}, err
+	}
+
 	// if casVersion is 0, then there was no previous value, so we will just do normal merge, without localCAS flag set.
 	if casVersion > 0 && curr.Version != casVersion {
 		return nil, 0, false, time.Time{}, errVersionMismatch
@@ -1536,8 +1542,6 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 	if err != nil {
 		return nil, 0, false, time.Time{}, err
 	}
-
-	newVersion = curr.Version + 1
 	newUpdated = curr.UpdateTime
 	newDeleted = curr.Deleted
 
@@ -1572,6 +1576,12 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 		}
 	}
 
+	if change == nil && curr.Deleted != newDeleted {
+		// return result as change if the only thing that changes is the Delete state of the entry.
+		change = result
+	}
+
+	newVersion = curr.Version + 1
 	m.store[key] = ValueDesc{
 		value:      result,
 		Version:    newVersion,
@@ -1700,20 +1710,4 @@ func updateTimeMillis(ts time.Time) int64 {
 		return 0
 	}
 	return ts.UnixMilli()
-}
-
-func handlePossibleNilEncode(codec codec.Codec, change Mergeable) ([]byte, error) {
-	if change == nil {
-		return []byte{}, nil
-	}
-
-	return codec.Encode(change)
-}
-
-func handlePossibleNilMergeContent(change Mergeable) []string {
-	if change == nil {
-		return []string{}
-	}
-
-	return change.MergeContent()
 }

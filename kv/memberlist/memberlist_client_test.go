@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 )
 
 const ACTIVE = 1

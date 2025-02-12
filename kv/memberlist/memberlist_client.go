@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/golang/snappy"
 	"math"
 	math_rand "math/rand"
 	"strings"
@@ -367,9 +368,10 @@ func (v ValueDesc) String() string {
 
 var (
 	// if merge fails because of CAS version mismatch, this error is returned. CAS operation reacts on it
-	errVersionMismatch  = errors.New("version mismatch")
-	errNoChangeDetected = errors.New("no change detected")
-	errTooManyRetries   = errors.New("too many retries")
+	errVersionMismatch     = errors.New("version mismatch")
+	errNoChangeDetected    = errors.New("no change detected")
+	errTooManyRetries      = errors.New("too many retries")
+	emptySnappyEncodedData = snappy.Encode(nil, []byte{})
 )
 
 // NewKV creates new gossip-based KV service. Note that service needs to be started, until then it doesn't initialize
@@ -1311,6 +1313,7 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 
 			if err != nil {
 				level.Error(m.logger).Log("msg", "failed to store received value", "key", key, "err", err)
+				level.Debug(m.logger).Log("msg", "context from previous failed to store received value message", "update.value", update.value, "codec", update.codec.CodecID(), "deleted", update.deleted, "updateTime", update.updateTime, "version", version, "changes", changes)
 			} else if version > 0 {
 				m.notifyWatchers(key)
 
@@ -1502,6 +1505,9 @@ func (m *KV) MergeRemoteState(data []byte, _ bool) {
 }
 
 func (m *KV) mergeBytesValueForKey(key string, incomingData []byte, codec codec.Codec, deleted bool, updateTime time.Time) (Mergeable, uint, bool, time.Time, error) {
+	if len(incomingData) == 0 {
+		incomingData = emptySnappyEncodedData
+	}
 	decodedValue, err := codec.Decode(incomingData)
 	if err != nil {
 		return nil, 0, false, time.Time{}, fmt.Errorf("failed to decode value: %v", err)

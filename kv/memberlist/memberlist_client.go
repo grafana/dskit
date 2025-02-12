@@ -1505,6 +1505,7 @@ func (m *KV) MergeRemoteState(data []byte, _ bool) {
 }
 
 func (m *KV) mergeBytesValueForKey(key string, incomingData []byte, codec codec.Codec, deleted bool, updateTime time.Time) (Mergeable, uint, bool, time.Time, error) {
+	// Even if there is no change to the Mergeable, we still may need to update the timestamp and deleted state.
 	if len(incomingData) == 0 {
 		incomingData = emptySnappyEncodedData
 	}

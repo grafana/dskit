@@ -1053,7 +1053,7 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 	require.Equal(t, fakeSourceIP, res.IP)
 }
 
-func TestClusterMiddleware(t *testing.T) {
+func TestClusterValidationMiddleware(t *testing.T) {
 	var level log.Level
 	require.NoError(t, level.Set("info"))
 	type testCase struct {

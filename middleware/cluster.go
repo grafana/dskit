@@ -35,7 +35,7 @@ func ClusterValidationMiddleware(cluster string, auxPaths []string, invalidClust
 					invalidClusters.WithLabelValues("http", r.URL.Path, reqCluster).Inc()
 				}
 				http.Error(w, fmt.Sprintf("request has cluster verification label %q - it should be %q", reqCluster, cluster),
-					http.StatusBadRequest)
+					http.StatusNetworkAuthenticationRequired)
 				return
 			}
 

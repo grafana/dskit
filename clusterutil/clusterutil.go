@@ -3,7 +3,6 @@ package clusterutil
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -26,6 +25,17 @@ var (
 
 type clusterContextKey string
 
+func NewIncomingContext(containsRequestCluster bool, requestCluster string) context.Context {
+	ctx := context.Background()
+	if !containsRequestCluster {
+		return ctx
+	}
+	md := map[string][]string{
+		MetadataClusterVerificationLabelKey: {requestCluster},
+	}
+	return metadata.NewIncomingContext(ctx, md)
+}
+
 // PutClusterIntoOutgoingContext returns a new context with the provided value
 // for MetadataClusterVerificationLabelKey merged with any existing metadata in the context.
 func PutClusterIntoOutgoingContext(ctx context.Context, cluster string) context.Context {
@@ -34,40 +44,14 @@ func PutClusterIntoOutgoingContext(ctx context.Context, cluster string) context.
 
 // GetClusterFromIncomingContext returns the metadata value corresponding to the metadata
 // key MetadataClusterVerificationLabelKey from the incoming metadata if it exists.
-func GetClusterFromIncomingContext(ctx context.Context, logger log.Logger) string {
+func GetClusterFromIncomingContext(ctx context.Context, logger log.Logger) (string, bool) {
 	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterVerificationLabelKey)
 	if len(clusterIDs) != 1 {
-		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key %q, but the current set of values is %v. Returning an empty string.", MetadataClusterVerificationLabelKey, clusterIDs)
-		level.Warn(logger).Log("msg", msg)
-		return ""
+		if logger != nil {
+			msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key %q, but the current set of values is %v. Returning an empty string.", MetadataClusterVerificationLabelKey, clusterIDs)
+			level.Warn(logger).Log("msg", msg)
+		}
+		return "", false
 	}
-	return clusterIDs[0]
-}
-
-// InjectCluster returns a derived context containing the cluster.
-func InjectCluster(ctx context.Context, cluster string) context.Context {
-	return context.WithValue(ctx, clusterContextKey(MetadataClusterVerificationLabelKey), cluster)
-}
-
-// ExtractCluster gets the cluster from the context.
-func ExtractCluster(ctx context.Context) (string, error) {
-	userID := ctx.Value(clusterContextKey(MetadataClusterVerificationLabelKey)).(string)
-	if userID == "" {
-		return "", ErrNoClusterVerificationLabel
-	}
-	return userID, nil
-}
-
-// InjectClusterIntoHTTPRequest injects the cluster from the context into the request headers.
-func InjectClusterIntoHTTPRequest(ctx context.Context, r *http.Request) error {
-	userID, err := ExtractCluster(ctx)
-	if err != nil {
-		return err
-	}
-	existingID := r.Header.Get(ClusterVerificationLabelHeader)
-	if existingID != "" && existingID != userID {
-		return ErrDifferentClusterVerificationLabelPresent
-	}
-	r.Header.Set(ClusterVerificationLabelHeader, userID)
-	return nil
+	return clusterIDs[0], true
 }

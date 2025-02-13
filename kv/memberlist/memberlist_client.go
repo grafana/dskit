@@ -549,7 +549,7 @@ func (m *KV) running(ctx context.Context) error {
 		case <-obsoleteEntriesTickerChan:
 			// cleanupObsoleteEntries is normally called during push/pull, but if there are no other
 			// nodes to push/pull with, we can call it periodically to make sure we remove unused entries from memory.
-			level.Debug(m.logger).Log("msg", "initiating cleanup of obsolete entries")
+			level.Info(m.logger).Log("msg", "initiating cleanup of obsolete entries")
 			m.cleanupObsoleteEntries()
 
 		case <-ctx.Done():
@@ -1313,7 +1313,6 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 
 			if err != nil {
 				level.Error(m.logger).Log("msg", "failed to store received value", "key", key, "err", err)
-				level.Debug(m.logger).Log("msg", "context from previous failed to store received value message", "update.value", update.value, "codec", update.codec.CodecID(), "deleted", update.deleted, "updateTime", update.updateTime, "version", version, "changes", changes)
 			} else if version > 0 {
 				m.notifyWatchers(key)
 
@@ -1687,7 +1686,7 @@ func (m *KV) cleanupObsoleteEntries() {
 
 	for k, v := range m.store {
 		if v.Deleted && time.Since(v.UpdateTime) > m.cfg.ObsoleteEntriesTimeout {
-			level.Debug(m.logger).Log("msg", "deleting entry from KV store", "key", k)
+			level.Info(m.logger).Log("msg", "deleting entry from KV store", "key", k)
 			delete(m.store, k)
 		}
 	}

@@ -23,8 +23,6 @@ var (
 	ErrDifferentClusterVerificationLabelPresent = errors.New("different cluster verification label already present in header")
 )
 
-type clusterContextKey string
-
 func NewIncomingContext(containsRequestCluster bool, requestCluster string) context.Context {
 	ctx := context.Background()
 	if !containsRequestCluster {
@@ -38,20 +36,28 @@ func NewIncomingContext(containsRequestCluster bool, requestCluster string) cont
 
 // PutClusterIntoOutgoingContext returns a new context with the provided value
 // for MetadataClusterVerificationLabelKey merged with any existing metadata in the context.
+// Empty values are ignored.
 func PutClusterIntoOutgoingContext(ctx context.Context, cluster string) context.Context {
+	if cluster == "" {
+		return ctx
+	}
 	return metadata.AppendToOutgoingContext(ctx, MetadataClusterVerificationLabelKey, cluster)
 }
 
-// GetClusterFromIncomingContext returns the metadata value corresponding to the metadata
-// key MetadataClusterVerificationLabelKey from the incoming metadata if it exists.
-func GetClusterFromIncomingContext(ctx context.Context, logger log.Logger) (string, bool) {
+// GetClusterFromIncomingContext returns a single metadata value corresponding to the
+// key MetadataClusterVerificationLabelKey from the incoming context if it exists. In all other cases
+// an error is returned.
+func GetClusterFromIncomingContext(ctx context.Context, logger log.Logger) (string, error) {
 	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterVerificationLabelKey)
-	if len(clusterIDs) != 1 {
+	if len(clusterIDs) == 0 {
+		return "", ErrNoClusterVerificationLabel
+	}
+	if len(clusterIDs) > 1 {
 		if logger != nil {
-			msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key %q, but the current set of values is %v. Returning an empty string.", MetadataClusterVerificationLabelKey, clusterIDs)
+			msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key %q, but the current set of values is %v.", MetadataClusterVerificationLabelKey, clusterIDs)
 			level.Warn(logger).Log("msg", msg)
 		}
-		return "", false
+		return "", ErrDifferentClusterVerificationLabelPresent
 	}
-	return clusterIDs[0], true
+	return clusterIDs[0], nil
 }

@@ -13,37 +13,45 @@ func TestPutClusterIntoOutgoingContext(t *testing.T) {
 	ctx := context.Background()
 	checkSingleClusterInOutgoingCtx(t, ctx, false, "")
 
-	ctx = PutClusterIntoOutgoingContext(ctx, "my-cluster")
-	checkSingleClusterInOutgoingCtx(t, ctx, true, "my-cluster")
+	newCtx := PutClusterIntoOutgoingContext(ctx, "")
+	checkSingleClusterInOutgoingCtx(t, newCtx, false, "")
+	require.Equal(t, ctx, newCtx)
+
+	newCtx = PutClusterIntoOutgoingContext(ctx, "my-cluster")
+	checkSingleClusterInOutgoingCtx(t, newCtx, true, "my-cluster")
 }
 
 func TestGetClusterFromIncomingContext(t *testing.T) {
 	testCases := map[string]struct {
 		incomingContext context.Context
 		expectedValue   string
-		expectedOutcome bool
+		expectedError   error
 	}{
-		"no cluster in incoming context gives a false outcome": {
+		"no cluster in incoming context gives an ErrNoClusterVerificationLabel error": {
 			incomingContext: NewIncomingContext(false, ""),
-			expectedOutcome: false,
+			expectedError:   ErrNoClusterVerificationLabel,
 			expectedValue:   "",
 		},
-		"non-empty cluster in incoming context gives non-empty string with a true outcome": {
+		"single cluster in incoming context returns that cluster and no errors": {
 			incomingContext: NewIncomingContext(true, "my-cluster"),
-			expectedOutcome: true,
+			expectedError:   nil,
 			expectedValue:   "my-cluster",
 		},
-		"more clusters in incoming context give a false outcome": {
+		"more clusters in incoming context give an ErrDifferentClusterVerificationLabelPresent error": {
 			incomingContext: createContext([]string{"cluster-1", "cluster-2"}),
-			expectedOutcome: false,
+			expectedError:   ErrDifferentClusterVerificationLabelPresent,
 			expectedValue:   "",
 		},
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			value, ok := GetClusterFromIncomingContext(testCase.incomingContext, log.NewNopLogger())
-			require.Equal(t, testCase.expectedOutcome, ok)
-			require.Equal(t, testCase.expectedValue, value)
+			value, err := GetClusterFromIncomingContext(testCase.incomingContext, log.NewNopLogger())
+			if testCase.expectedError != nil {
+				require.ErrorIs(t, err, testCase.expectedError)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, testCase.expectedValue, value)
+			}
 		})
 	}
 }

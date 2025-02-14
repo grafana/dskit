@@ -15,6 +15,11 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 )
 
+const (
+	failureClient = "client"
+	failureServer = "server"
+)
+
 // ClusterUnaryClientInterceptor propagates the given cluster info to gRPC metadata.
 func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.CounterVec, logger log.Logger) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
@@ -28,7 +33,7 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 				level.Warn(logger).Log("msg", msg, "clusterVerificationLabel", cluster, "requestClusterVerificationLabel", reqCluster)
 			}
 			if invalidCluster != nil {
-				invalidCluster.WithLabelValues("grpc", method, cluster).Inc()
+				invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
 			}
 			return grpcutil.Status(codes.InvalidArgument, msg).Err()
 		}
@@ -38,39 +43,33 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 			ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
 		}
 
-		err := invoker(ctx, method, req, reply, cc, opts...)
-		wrongClusterErr := wrongClusterErrorMessage(err)
-		if wrongClusterErr == "" {
-			return err
-		}
-		// If the error returned by invoker is a wrong cluster error,
-		// we increase the metrics and propagate the error with a
-		// message explaining the reason for the rejection.
-		msg := fmt.Sprintf("request rejected by the server: %s", wrongClusterErr)
-		if logger != nil {
-			level.Warn(logger).Log("msg", msg, "cluster", cluster, "method", method)
-		}
-		if invalidCluster != nil {
-			invalidCluster.WithLabelValues("grpc", method, cluster).Inc()
-		}
-		return grpcutil.Status(codes.InvalidArgument, msg).Err()
+		return handleError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, invalidCluster, logger)
 	}
 }
 
-// wrongClusterErrorMessage checks whether the given error is a gRPC error with cause grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL,
-// and if it is the case, it returns the error message. Otherwise, it returns an empty string.
-func wrongClusterErrorMessage(err error) string {
+func handleError(err error, cluster string, method string, invalidCluster *prometheus.CounterVec, logger log.Logger) error {
+	if err == nil {
+		return nil
+	}
 	if stat, ok := grpcutil.ErrorToStatus(err); ok {
 		details := stat.Details()
 		if len(details) == 1 {
 			if errDetails, ok := details[0].(*grpcutil.ErrorDetails); ok {
 				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
-					return stat.Message()
+					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
+					if logger != nil {
+						level.Warn(logger).Log("msg", msg, "cluster", cluster, "method", method)
+					}
+					if invalidCluster != nil {
+						invalidCluster.WithLabelValues("grpc", method, cluster, failureServer).Inc()
+					}
+					return grpcutil.Status(codes.InvalidArgument, msg).Err()
 				}
 			}
 		}
 	}
-	return ""
+	return err
+
 }
 
 // ClusterUnaryServerInterceptor checks if the incoming gRPC metadata contains any cluster information and if so,

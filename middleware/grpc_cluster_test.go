@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/dskit/clusterutil"
@@ -31,7 +32,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 		"if no cluster label is set, an errNoClusterProvided error is returned": {
 			incomingContext: context.Background(),
 			cluster:         "",
-			expectedError:   grpcutil.Status(codes.InvalidArgument, "no cluster provided").Err(),
+			expectedError:   grpcutil.Status(codes.Internal, "no cluster provided").Err(),
 		},
 		"if cluster label is set, and the incoming context contains no cluster label, the former should be propagated to invoker": {
 			incomingContext:            context.Background(),
@@ -42,7 +43,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 		"if the incoming context contains cluster label different from the set cluster label, an error is returned": {
 			incomingContext: clusterutil.NewIncomingContext(true, "cached-cluster"),
 			cluster:         "cluster",
-			expectedError:   grpcutil.Status(codes.InvalidArgument, "wrong cluster verification label in the incoming context: cached-cluster, expected: cluster").Err(),
+			expectedError:   grpcutil.Status(codes.Internal, "wrong cluster verification label in the incoming context: \"cached-cluster\", expected: \"cluster\"").Err(),
 		},
 		"if the incoming context contains cluster label, it must be equal to the set cluster label": {
 			incomingContext:            clusterutil.NewIncomingContext(true, "cluster"),
@@ -59,7 +60,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 			incomingContext: context.Background(),
 			cluster:         "cluster",
 			invokerError:    grpcutil.Status(codes.FailedPrecondition, "request intended for cluster cluster - this is cluster another-cluster", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
-			expectedError:   grpcutil.Status(codes.InvalidArgument, "request rejected by the server: request intended for cluster cluster - this is cluster another-cluster").Err(),
+			expectedError:   grpcutil.Status(codes.Internal, "request rejected by the server: request intended for cluster cluster - this is cluster another-cluster").Err(),
 		},
 		"if invoker returns a generic error, the error is propagated": {
 			incomingContext: context.Background(),
@@ -87,6 +88,43 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 			}
 
 			err := interceptor(testCase.incomingContext, "GET", createRequest(t), nil, nil, invoker)
+			if testCase.expectedError == nil {
+				require.NoError(t, err)
+			} else {
+				require.Equal(t, testCase.expectedError, err)
+			}
+		})
+	}
+}
+
+func TestClusterUnaryClientInterceptorWithHealthServer(t *testing.T) {
+	testCases := map[string]struct {
+		incomingContext context.Context
+		method          string
+		expectedError   error
+	}{
+		"calls to healthpb.Health_Check_FullMethodName are ignored": {
+			// We create a context with no cluster label.
+			incomingContext: context.Background(),
+			method:          healthpb.Health_Check_FullMethodName,
+			// Since we call healthpb.Health_Check_FullMethodName, no check is done, and we expect no errors.
+			expectedError: nil,
+		},
+		"calls to endpoints different from healthpb.Health_Check_FullMethodName are executed": {
+			// We create a context with no cluster label.
+			incomingContext: context.Background(),
+			method:          "/Test/Me",
+			// Since we call healthpb.Health_Check_FullMethodName, the interceptor detects the empty cluster and fails.
+			expectedError: grpcutil.Status(codes.Internal, "no cluster provided").Err(),
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+				return nil
+			}
+			interceptor := ClusterUnaryClientInterceptor("", nil, nil)
+			err := interceptor(testCase.incomingContext, testCase.method, createRequest(t), nil, nil, invoker)
 			if testCase.expectedError == nil {
 				require.NoError(t, err)
 			} else {

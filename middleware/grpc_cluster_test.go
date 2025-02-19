@@ -44,7 +44,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 		"if the incoming context contains cluster label different from the set cluster label, an error is returned": {
 			incomingContext: clusterutil.NewIncomingContext(true, "cached-cluster"),
 			cluster:         "cluster",
-			expectedError:   grpcutil.Status(codes.Internal, `rejected request with wrong cluster verification label "cached-cluster"`).Err(),
+			expectedError:   grpcutil.Status(codes.Internal, `rejected request with wrong cluster verification label "cached-cluster" - it should be "cluster"`).Err(),
 		},
 		"if the incoming context contains cluster label, it must be equal to the set cluster label": {
 			incomingContext:            clusterutil.NewIncomingContext(true, "cluster"),
@@ -154,17 +154,17 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 		"different request and server clusters give rise to an error": {
 			incomingContext: clusterutil.NewIncomingContext(true, "wrong-cluster"),
 			serverCluster:   "cluster",
-			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label "wrong-cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label "wrong-cluster" - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
 		"empty request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: clusterutil.NewIncomingContext(true, ""),
 			serverCluster:   "cluster",
-			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label ""`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label "" - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
 		"no request cluster and non-empty server cluster give rise to an error": {
 			incomingContext: clusterutil.NewIncomingContext(false, ""),
 			serverCluster:   "cluster",
-			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster verification label`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
+			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster verification label - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
 		"if the incoming context contains more than one cluster labels, ErrDifferentClusterVerificationLabelPresent error is returned": {
 			incomingContext: metadata.NewIncomingContext(context.Background(), map[string][]string{clusterutil.MetadataClusterVerificationLabelKey: {"cluster", "another-cluster"}}),
@@ -213,7 +213,7 @@ func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 			// We create a context with a bad cluster.
 			incomingContext: clusterutil.NewIncomingContext(true, badCluster),
 			// Since UnaryServerInfo doesn't contain the grpc health server, the check is done, and we expect an error.
-			expectedError: grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label "bad-cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
+			expectedError: grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label "bad-cluster" - it should be "good-cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
 	}
 	for testName, testCase := range testCases {

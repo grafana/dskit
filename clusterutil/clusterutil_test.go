@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
@@ -24,30 +23,31 @@ func TestPutClusterIntoOutgoingContext(t *testing.T) {
 func TestGetClusterFromIncomingContext(t *testing.T) {
 	testCases := map[string]struct {
 		incomingContext context.Context
+		failOnEmpty     bool
 		expectedValue   string
 		expectedError   error
 	}{
 		"no cluster in incoming context gives an ErrNoClusterVerificationLabel error": {
 			incomingContext: NewIncomingContext(false, ""),
+			failOnEmpty:     true,
 			expectedError:   ErrNoClusterVerificationLabel,
-			expectedValue:   "",
 		},
 		"single cluster in incoming context returns that cluster and no errors": {
 			incomingContext: NewIncomingContext(true, "my-cluster"),
 			expectedError:   nil,
 			expectedValue:   "my-cluster",
 		},
-		"more clusters in incoming context give an ErrDifferentClusterVerificationLabelPresent error": {
+		"more clusters in incoming context give an errDifferentClusterVerificationLabels error": {
 			incomingContext: createContext([]string{"cluster-1", "cluster-2"}),
-			expectedError:   ErrDifferentClusterVerificationLabelPresent,
+			expectedError:   NewErrDifferentClusterVerificationLabels([]string{"cluster-1", "cluster-2"}),
 			expectedValue:   "",
 		},
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			value, err := GetClusterFromIncomingContext(testCase.incomingContext, log.NewNopLogger())
+			value, err := GetClusterFromIncomingContext(testCase.incomingContext)
 			if testCase.expectedError != nil {
-				require.ErrorIs(t, err, testCase.expectedError)
+				require.Equal(t, testCase.expectedError, err)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, testCase.expectedValue, value)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -80,7 +81,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, NewRequestInvalidClusterVerficationLabelsTotalCounter(prometheus.NewRegistry(), "a"), log.NewNopLogger())
+			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, newRequestInvalidClusterVerficationLabelsTotalCounter(prometheus.NewRegistry()), log.NewNopLogger())
 			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
 				if testCase.expectedClusterFromContext != "" {
 					verify(ctx, testCase.expectedClusterFromContext)
@@ -124,7 +125,7 @@ func TestClusterUnaryClientInterceptorWithHealthServer(t *testing.T) {
 			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
 				return nil
 			}
-			interceptor := ClusterUnaryClientInterceptor("", NewRequestInvalidClusterVerficationLabelsTotalCounter(prometheus.NewRegistry(), "b"), log.NewNopLogger())
+			interceptor := ClusterUnaryClientInterceptor("", newRequestInvalidClusterVerficationLabelsTotalCounter(prometheus.NewRegistry()), log.NewNopLogger())
 			err := interceptor(testCase.incomingContext, testCase.method, createRequest(t), nil, nil, invoker)
 			if testCase.expectedError == nil {
 				require.NoError(t, err)
@@ -239,4 +240,12 @@ func createRequest(t *testing.T) *httpgrpc.HTTPRequest {
 	req, err := httpgrpc.FromHTTPRequest(r)
 	require.NoError(t, err)
 	return req
+}
+
+func newRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Registerer) *prometheus.CounterVec {
+	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name:        "test_request_invalid_cluster_verification_labels_total",
+		Help:        "Number of requests with invalid cluster verification label.",
+		ConstLabels: nil,
+	}, []string{"method", "request_cluster_label", "failing_component"})
 }

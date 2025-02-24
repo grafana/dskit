@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -332,6 +333,35 @@ func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		client.sortKeysByServer(keys)
 	}
+}
+
+func TestMemcachedClient_NoServerDependency(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.NewLogfmtLogger(&buf)
+
+	cfg := MemcachedClientConfig{
+		Addresses:           []string{},
+		MaxAsyncConcurrency: 1,
+		MaxAsyncBufferSize:  10,
+		Timeout:             100 * time.Millisecond,
+	}
+
+	client, err := newMemcachedClient(
+		logger,
+		memcache.New(cfg.Addresses...),
+		&memcache.ServerList{},
+		cfg,
+		prometheus.NewPedanticRegistry(),
+		t.Name(),
+	)
+
+	require.NotNil(t, client)
+	require.NoError(t, err)
+
+	require.Contains(t, buf.String(), "no memcached server addresses were resolved")
+
+	res := client.GetMulti(context.Background(), []string{"some-key"})
+	require.Empty(t, res)
 }
 
 func setupDefaultMemcachedClient() (*MemcachedClient, *mockMemcachedClientBackend, error) {

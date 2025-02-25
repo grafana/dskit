@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -58,6 +59,19 @@ func ErrorToStatusCode(err error) codes.Code {
 		}
 	}
 	return codes.Unknown
+}
+
+// Status creates a new a *github.com/gogo/status.Status with the
+// given error code, error message and error details.
+func Status(errCode codes.Code, errMessage string, details ...proto.Message) *status.Status {
+	stat := status.New(errCode, errMessage)
+	if len(details) > 0 {
+		statWithDetails, err := stat.WithDetails(details...)
+		if err == nil {
+			return statWithDetails
+		}
+	}
+	return stat
 }
 
 // IsCanceled checks whether an error comes from an operation being canceled.

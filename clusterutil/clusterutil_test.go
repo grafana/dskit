@@ -23,13 +23,15 @@ func TestPutClusterIntoOutgoingContext(t *testing.T) {
 func TestGetClusterFromIncomingContext(t *testing.T) {
 	testCases := map[string]struct {
 		incomingContext context.Context
-		failOnEmpty     bool
 		expectedValue   string
 		expectedError   error
 	}{
 		"no cluster in incoming context gives an ErrNoClusterVerificationLabel error": {
 			incomingContext: NewIncomingContext(false, ""),
-			failOnEmpty:     true,
+			expectedError:   ErrNoClusterVerificationLabel,
+		},
+		"empty cluster in incoming context gives an ErrNoClusterVerificationLabel error": {
+			incomingContext: NewIncomingContext(true, ""),
 			expectedError:   ErrNoClusterVerificationLabel,
 		},
 		"single cluster in incoming context returns that cluster and no errors": {
@@ -39,7 +41,7 @@ func TestGetClusterFromIncomingContext(t *testing.T) {
 		},
 		"more clusters in incoming context give an errDifferentClusterVerificationLabels error": {
 			incomingContext: createContext([]string{"cluster-1", "cluster-2"}),
-			expectedError:   NewErrDifferentClusterVerificationLabels([]string{"cluster-1", "cluster-2"}),
+			expectedError:   errDifferentClusterVerificationLabels([]string{"cluster-1", "cluster-2"}),
 			expectedValue:   "",
 		},
 	}
@@ -58,10 +60,7 @@ func TestGetClusterFromIncomingContext(t *testing.T) {
 
 func checkSingleClusterInOutgoingCtx(ctx context.Context, t *testing.T, shouldExist bool, expectedValue string) {
 	md, ok := metadata.FromOutgoingContext(ctx)
-	if !ok {
-		require.False(t, ok)
-
-	}
+	require.Equal(t, shouldExist, ok)
 	checkSingleClusterFromMetadata(t, md, shouldExist, expectedValue)
 }
 

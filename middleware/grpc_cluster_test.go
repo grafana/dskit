@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -22,6 +24,7 @@ import (
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	dskitlog "github.com/grafana/dskit/log"
 )
 
 func TestClusterUnaryClientInterceptor(t *testing.T) {
@@ -33,16 +36,13 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 		expectedClusterFromContext string
 		expectedError              error
 		expectedMetrics            string
+		expectedLogs               string
+		shouldPanic                bool
 	}{
-		"if no cluster label is set, an errNoClusterProvided error is returned": {
+		"if no cluster label is set, ClusterUnaryClientInterceptor panics": {
 			incomingContext: context.Background(),
 			cluster:         "",
-			expectedError:   grpcutil.Status(codes.Internal, "no cluster provided").Err(),
-			expectedMetrics: `
-				# HELP test_request_invalid_cluster_verification_labels_total Number of requests with invalid cluster verification label.
-				# TYPE test_request_invalid_cluster_verification_labels_total counter
-				test_request_invalid_cluster_verification_labels_total{method="GET",reason="empty_cluster_label"} 1
-			`,
+			shouldPanic:     true,
 		},
 		"if cluster label is set, and the incoming context contains no cluster label, the former should be propagated to invoker": {
 			incomingContext:            context.Background(),
@@ -59,6 +59,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 				# TYPE test_request_invalid_cluster_verification_labels_total counter
 				test_request_invalid_cluster_verification_labels_total{method="GET",reason="client_check_failed"} 1
 			`,
+			expectedLogs: `level=warn msg="rejecting request with wrong cluster verification label" method=GET clusterVerificationLabel=cluster requestClusterVerificationLabel=cached-cluster`,
 		},
 		"if the incoming context contains cluster label, it must be equal to the set cluster label": {
 			incomingContext:            clusterutil.NewIncomingContext(true, "cluster"),
@@ -75,17 +76,19 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 				# TYPE test_request_invalid_cluster_verification_labels_total counter
 				test_request_invalid_cluster_verification_labels_total{method="GET",reason="client_check_failed"} 1
 			`,
+			expectedLogs: `level=warn msg="rejecting request due to an error during cluster verification label extraction" method=GET clusterVerificationLabel=cluster err="gRPC metadata should contain exactly 1 value for key \"x-cluster\", but it contains [cluster another-cluster]"`,
 		},
 		"if invoker returns a wrong cluster error, it is handled by the interceptor": {
 			incomingContext: context.Background(),
 			cluster:         "cluster",
-			invokerError:    grpcutil.Status(codes.FailedPrecondition, "request intended for cluster cluster - this is cluster another-cluster", &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
-			expectedError:   grpcutil.Status(codes.Internal, "request rejected by the server: request intended for cluster cluster - this is cluster another-cluster").Err(),
+			invokerError:    grpcutil.Status(codes.FailedPrecondition, `request intended for cluster "cluster" - this is cluster "another-cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
+			expectedError:   grpcutil.Status(codes.Internal, `request rejected by the server: request intended for cluster "cluster" - this is cluster "another-cluster"`).Err(),
 			expectedMetrics: `
 				# HELP test_request_invalid_cluster_verification_labels_total Number of requests with invalid cluster verification label.
 				# TYPE test_request_invalid_cluster_verification_labels_total counter
 				test_request_invalid_cluster_verification_labels_total{method="GET",reason="server_check_failed"} 1
 			`,
+			expectedLogs: `level=warn msg="request rejected by the server: request intended for cluster \"cluster\" - this is cluster \"another-cluster\"" method=GET clusterVerificationLabel=cluster`,
 		},
 		"if invoker returns a generic error, the error is propagated": {
 			incomingContext: context.Background(),
@@ -104,8 +107,14 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				require.Equal(t, testCase.shouldPanic, r != nil)
+			}()
+			buf := bytes.NewBuffer(nil)
+			logger := createLogger(t, buf)
 			reg := prometheus.NewRegistry()
-			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, newRequestInvalidClusterVerficationLabelsTotalCounter(reg), log.NewNopLogger())
+			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, newRequestInvalidClusterVerficationLabelsTotalCounter(reg), logger)
 			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
 				if testCase.expectedClusterFromContext != "" {
 					verify(ctx, testCase.expectedClusterFromContext)
@@ -122,11 +131,23 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 			// Check tracked Prometheus metrics
 			err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "test_request_invalid_cluster_verification_labels_total")
 			assert.NoError(t, err)
+			if testCase.expectedLogs == "" {
+				require.Empty(t, buf.Bytes())
+			} else {
+				require.True(t, bytes.Contains(buf.Bytes(), []byte(testCase.expectedLogs)))
+			}
 		})
 	}
 }
 
 func TestClusterUnaryClientInterceptorWithHealthServer(t *testing.T) {
+	err := fmt.Errorf("this is an error")
+	failingInvoker := func(_ context.Context, method string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+		if method != healthpb.Health_Check_FullMethodName {
+			return err
+		}
+		return nil
+	}
 	testCases := map[string]struct {
 		incomingContext context.Context
 		method          string
@@ -136,24 +157,21 @@ func TestClusterUnaryClientInterceptorWithHealthServer(t *testing.T) {
 			// We create a context with no cluster label.
 			incomingContext: context.Background(),
 			method:          healthpb.Health_Check_FullMethodName,
-			// Since we call healthpb.Health_Check_FullMethodName, no check is done, and we expect no errors.
+			// Since we call healthpb.Health_Check_FullMethodName, the failing invoker doesn't fail, and we expect no errors.
 			expectedError: nil,
 		},
 		"calls to endpoints different from healthpb.Health_Check_FullMethodName are executed": {
 			// We create a context with no cluster label.
 			incomingContext: context.Background(),
 			method:          "/Test/Me",
-			// Since we call healthpb.Health_Check_FullMethodName, the interceptor detects the empty cluster and fails.
-			expectedError: grpcutil.Status(codes.Internal, "no cluster provided").Err(),
+			// Since we don't call healthpb.Health_Check_FullMethodName, the failing invoker fails, and we expect an error.
+			expectedError: err,
 		},
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			invoker := func(_ context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
-				return nil
-			}
-			interceptor := ClusterUnaryClientInterceptor("", newRequestInvalidClusterVerficationLabelsTotalCounter(prometheus.NewRegistry()), log.NewNopLogger())
-			err := interceptor(testCase.incomingContext, testCase.method, createRequest(t), nil, nil, invoker)
+			interceptor := ClusterUnaryClientInterceptor("cluster", newRequestInvalidClusterVerficationLabelsTotalCounter(prometheus.NewRegistry()), log.NewNopLogger())
+			err := interceptor(testCase.incomingContext, testCase.method, createRequest(t), nil, nil, failingInvoker)
 			if testCase.expectedError == nil {
 				require.NoError(t, err)
 			} else {
@@ -168,11 +186,13 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 		incomingContext context.Context
 		serverCluster   string
 		expectedError   error
+		expectedLogs    string
+		shouldPanic     bool
 	}{
-		"empty server cluster gives an errNoClusterProvided error": {
+		"empty server cluster make ClusterUnaryServerInterceptor panic": {
 			incomingContext: clusterutil.NewIncomingContext(false, ""),
 			serverCluster:   "",
-			expectedError:   errNoClusterProvided,
+			shouldPanic:     true,
 		},
 		"equal request and server clusters give no error": {
 			incomingContext: clusterutil.NewIncomingContext(true, "cluster"),
@@ -182,27 +202,35 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 		"different request and server clusters give rise to an error with grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL cause": {
 			incomingContext: clusterutil.NewIncomingContext(true, "wrong-cluster"),
 			serverCluster:   "cluster",
+			expectedLogs:    "level=warn msg=\"rejecting request with wrong cluster verification label\" method=/Test/Me clusterVerificationLabel=cluster requestClusterVerificationLabel=wrong-cluster",
 			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label "wrong-cluster" - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
-		"empty request cluster and non-empty server cluster give rise to an error": {
+		"empty request cluster and non-empty server cluster give no error": {
 			incomingContext: clusterutil.NewIncomingContext(true, ""),
 			serverCluster:   "cluster",
-			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label "" - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
+			expectedLogs:    "level=warn msg=\"processing request with no cluster verification label\" method=/Test/Me clusterVerificationLabel=cluster",
 		},
-		"no request cluster and non-empty server cluster give rise to an error": {
+		"no request cluster and non-empty server cluster give no error": {
 			incomingContext: clusterutil.NewIncomingContext(false, ""),
 			serverCluster:   "cluster",
-			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster verification label - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
+			expectedLogs:    "level=warn msg=\"processing request with no cluster verification label\" method=/Test/Me clusterVerificationLabel=cluster",
 		},
 		"if the incoming context contains more than one cluster labels, an error is returned": {
 			incomingContext: metadata.NewIncomingContext(context.Background(), map[string][]string{clusterutil.MetadataClusterVerificationLabelKey: {"cluster", "another-cluster"}}),
 			serverCluster:   "cluster",
 			expectedError:   grpcutil.Status(codes.FailedPrecondition, `rejected request: gRPC metadata should contain exactly 1 value for key "x-cluster", but it contains [cluster another-cluster]`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
+			expectedLogs:    "level=warn msg=\"rejecting request due to an error during cluster verification label extraction\" method=/Test/Me clusterVerificationLabel=cluster err=\"gRPC metadata should contain exactly 1 value for key \\\"x-cluster\\\", but it contains [cluster another-cluster]\"",
 		},
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			interceptor := ClusterUnaryServerInterceptor(testCase.serverCluster, log.NewNopLogger())
+			defer func() {
+				r := recover()
+				require.Equal(t, testCase.shouldPanic, r != nil)
+			}()
+			buf := bytes.NewBuffer(nil)
+			logger := createLogger(t, buf)
+			interceptor := ClusterUnaryServerInterceptor(testCase.serverCluster, logger)
 			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, nil
 			}
@@ -213,6 +241,11 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.Equal(t, testCase.expectedError, err)
+			}
+			if testCase.expectedLogs == "" {
+				require.Empty(t, buf.Bytes())
+			} else {
+				require.True(t, bytes.Contains(buf.Bytes(), []byte(testCase.expectedLogs)))
 			}
 		})
 	}
@@ -259,6 +292,12 @@ func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 			}
 		})
 	}
+}
+
+func createLogger(t *testing.T, buf *bytes.Buffer) log.Logger {
+	var lvl dskitlog.Level
+	require.NoError(t, lvl.Set("warn"))
+	return dskitlog.NewGoKitWithWriter(dskitlog.LogfmtFormat, buf)
 }
 
 func createRequest(t *testing.T) *httpgrpc.HTTPRequest {

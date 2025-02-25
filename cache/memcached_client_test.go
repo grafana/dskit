@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -336,8 +335,6 @@ func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 }
 
 func TestMemcachedClient_NoServerDependency(t *testing.T) {
-	var buf bytes.Buffer
-	logger := log.NewLogfmtLogger(&buf)
 
 	cfg := MemcachedClientConfig{
 		Addresses:           []string{},
@@ -347,7 +344,7 @@ func TestMemcachedClient_NoServerDependency(t *testing.T) {
 	}
 
 	client, err := newMemcachedClient(
-		logger,
+		log.NewNopLogger(),
 		memcache.New(cfg.Addresses...),
 		&memcache.ServerList{},
 		cfg,
@@ -356,9 +353,7 @@ func TestMemcachedClient_NoServerDependency(t *testing.T) {
 	)
 
 	require.NotNil(t, client)
-	require.NoError(t, err)
-
-	require.Contains(t, buf.String(), "no memcached server addresses were resolved")
+	require.Contains(t, err.Error(), "no memcached server addresses were resolved")
 
 	res := client.GetMulti(context.Background(), []string{"some-key"})
 	require.Empty(t, res)

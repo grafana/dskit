@@ -291,14 +291,10 @@ func newMemcachedClient(
 		func() float64 { return 1 },
 	)
 
-	// Resolve Memcached addresses on startup.
-	if err := c.resolveAddrs(); err != nil {
-		return nil, err
-	}
-	// Additionally, resolve addresses periodically.
+	// Resolve addresses periodically.
 	go c.resolveAddrsLoop()
-
-	return c, nil
+	// Also resolve Memcached addresses on startup.
+	return c, c.resolveAddrs()
 }
 
 func (c *MemcachedClient) Stop() {
@@ -739,10 +735,10 @@ func (c *MemcachedClient) resolveAddrs() error {
 	if err := c.addressProvider.Resolve(ctx, c.config.Addresses); err != nil {
 		level.Error(c.logger).Log("msg", "failed to resolve addresses for memcached", "addresses", strings.Join(c.config.Addresses, ","), "err", err)
 	}
-	// Don't fail in case no server address is resolved as it might just be temporarily unavailable.
+	// Return error in case no server address is resolved.
 	servers := c.addressProvider.Addresses()
 	if len(servers) == 0 {
-		level.Warn(c.logger).Log("msg", "no memcached server addresses were resolved")
+		return fmt.Errorf("no memcached server addresses were resolved")
 	}
 
 	return c.selector.SetServers(servers...)

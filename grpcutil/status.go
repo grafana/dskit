@@ -3,6 +3,7 @@ package grpcutil
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
@@ -70,6 +71,8 @@ func Status(errCode codes.Code, errMessage string, details ...proto.Message) *st
 		if err == nil {
 			return statWithDetails
 		}
+		statusErr := fmt.Errorf("error while creating details for a Status with code %s and error message %q: %w", errCode, errMessage, err)
+		return status.New(codes.InvalidArgument, statusErr.Error())
 	}
 	return stat
 }

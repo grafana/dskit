@@ -133,6 +133,11 @@ func TestStatus(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, originalDetails[i], det)
 	}
+
+	badDetails := []proto.Message{nil}
+	stat = Status(codes.Internal, "bad details", badDetails...)
+	require.Equal(t, codes.InvalidArgument, stat.Code())
+	require.Equal(t, `error while creating details for a Status with code Internal and error message "bad details": proto: Marshal called with nil`, stat.Message())
 }
 
 func TestIsCanceled(t *testing.T) {

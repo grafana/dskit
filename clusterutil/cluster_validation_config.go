@@ -22,7 +22,7 @@ func (cfg *ClusterValidationConfig) Validate() error {
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	clusterValidationPrefix := prefix + ".cluster-validation"
 	f.StringVar(&cfg.Label, clusterValidationPrefix+".label", "", "Optionally define server's cluster validation label.")
-	cfg.GRPC.RegisterFlagsWithPrefix(clusterValidationPrefix, f)
+	cfg.GRPC.RegisterFlagsWithPrefix(clusterValidationPrefix+".grpc", f)
 }
 
 func (cfg *ClusterValidationConfig) GRPCValidationEnabled() bool {
@@ -47,5 +47,5 @@ func (cfg *ClusterValidationProtocolConfig) RegisterFlagsWithPrefix(prefix strin
 	softValidationFlag := prefix + ".soft-validation"
 	enabledFlag := prefix + ".enabled"
 	f.BoolVar(&cfg.SoftValidation, softValidationFlag, false, fmt.Sprintf("When enabled, soft cluster label validation will be executed. Cannot be enabled together with %s", enabledFlag))
-	f.BoolVar(&cfg.Enabled, softValidationFlag, false, fmt.Sprintf("When enabled, cluster label validation will be executed. Cannot be enabled together with %s", softValidationFlag))
+	f.BoolVar(&cfg.Enabled, enabledFlag, false, fmt.Sprintf("When enabled, cluster label validation will be executed. Cannot be enabled together with %s", softValidationFlag))
 }

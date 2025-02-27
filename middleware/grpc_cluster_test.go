@@ -54,7 +54,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 			expectedMetrics: `
 				# HELP test_request_invalid_cluster_verification_labels_total Number of requests with invalid cluster verification label.
 				# TYPE test_request_invalid_cluster_verification_labels_total counter
-				test_request_invalid_cluster_verification_labels_total{method="GET",reason="server_check_failed"} 1
+				test_request_invalid_cluster_verification_labels_total{method="GET"} 1
 			`,
 			expectedLogs: `level=warn msg="request rejected by the server: request intended for cluster \"cluster\" - this is cluster \"another-cluster\"" method=GET clusterVerificationLabel=cluster`,
 		},
@@ -255,7 +255,7 @@ func newRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Regist
 		Name:        "test_request_invalid_cluster_verification_labels_total",
 		Help:        "Number of requests with invalid cluster verification label.",
 		ConstLabels: nil,
-	}, []string{"method", "reason"})
+	}, []string{"method"})
 }
 
 func newIncomingContext(containsRequestCluster bool, requestCluster string) context.Context {

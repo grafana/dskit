@@ -51,7 +51,7 @@ func handleClusterValidationError(err error, cluster string, method string, inva
 				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
 					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
 					level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster)
-					invalidCluster.WithLabelValues(method, clusterutil.ReasonServer).Inc()
+					invalidCluster.WithLabelValues(method).Inc()
 					return grpcutil.Status(codes.Internal, msg).Err()
 				}
 			}

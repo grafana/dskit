@@ -408,7 +408,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
-	if cfg.ClusterValidation.GRPCValidationEnabled() {
+	if cfg.ClusterValidation.GRPC.Enabled {
 		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.ClusterValidation.Label, cfg.ClusterValidation.GRPC.SoftValidation, logger))
 	}
 

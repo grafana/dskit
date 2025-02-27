@@ -16,37 +16,37 @@ func TestClusterValidationProtocolConfigValidate(t *testing.T) {
 	}{
 		"soft validation cannot be done if cluster validation label is not set": {
 			softValidation: true,
-			expectedErr:    fmt.Errorf("testProtocol: no validation can be enabled if cluster validation label is not configured"),
+			expectedErr:    fmt.Errorf("testProtocol: validation cannot be enabled if cluster validation label is not configured"),
 		},
-		"hard validation cannot be done if cluster validation label is not set": {
+		"cluster validation cannot be done if cluster validation label is not set": {
 			enabled:     true,
-			expectedErr: fmt.Errorf("testProtocol: no validation can be enabled if cluster validation label is not configured"),
+			expectedErr: fmt.Errorf("testProtocol: validation cannot be enabled if cluster validation label is not configured"),
 		},
-		"soft and hard validation can be disabled if cluster validation label is not set": {
+		"cluster validation and soft validation can be disabled if cluster validation label is not set": {
 			label:          "",
 			enabled:        false,
 			softValidation: false,
 		},
-		"soft and hard validation can be disabled if cluster validation label is set": {
+		"cluster validation and soft validation can be disabled if cluster validation label is set": {
 			label:          "my-cluster",
 			enabled:        false,
 			softValidation: false,
 		},
-		"only soft validation can be enabled if cluster validation label is set": {
+		"soft validation cannot be enabled if cluster validation is disabled": {
 			label:          "my-cluster",
 			enabled:        false,
 			softValidation: true,
+			expectedErr:    fmt.Errorf("testProtocol: soft validation can be enabled only if cluster validation is enabled"),
 		},
-		"only hard validation can be enabled if cluster validation label is set": {
+		"soft validation can be disabled if cluster validation is enabled": {
 			label:          "my-cluster",
 			enabled:        true,
 			softValidation: false,
 		},
-		"soft and hard validation cannot be enabled at the same time": {
+		"cluster validation and soft validation can be enabled at the same time": {
 			label:          "my-cluster",
 			enabled:        true,
 			softValidation: true,
-			expectedErr:    fmt.Errorf("testProtocol: hard validation and soft validation cannot be enabled at the same time"),
 		},
 	}
 	for testName, testCase := range testCases {

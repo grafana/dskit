@@ -353,7 +353,7 @@ func TestMemcachedClient_ServerDependency(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &MemcachedClientConfig{}
 			memcachedClientConfigDefaultValues(cfg)
-			cfg.Addresses = flagext.StringSliceCSV{"dns+test:11211"}
+			cfg.Addresses = flagext.StringSliceCSV{"dns+invalid.:11211"}
 			cfg.DNSInitializationEnabled = tc.dnsInitializationEnabled
 
 			client, err := NewMemcachedClientWithConfig(

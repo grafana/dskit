@@ -311,6 +311,7 @@ func newMemcachedClient(
 }
 
 // Initialize will start the background DNS resolution periodically and do an initial DNS resolution.
+// The background resolution goroutine is started even if the initial resolution fails.
 func (c *MemcachedClient) Initialize() error {
 	// Start the background DNS resolution
 	go c.resolveAddrsLoop()

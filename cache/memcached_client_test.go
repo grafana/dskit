@@ -334,29 +334,57 @@ func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 	}
 }
 
-func TestMemcachedClient_NoServerDependency(t *testing.T) {
-
-	cfg := MemcachedClientConfig{
-		Addresses:           []string{},
-		MaxAsyncConcurrency: 1,
-		MaxAsyncBufferSize:  10,
-		Timeout:             100 * time.Millisecond,
+func TestMemcachedClient_ServerDependency(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		dnsInitializationEnabled bool
+	}{
+		{
+			name:                     "with DNS initialization enabled",
+			dnsInitializationEnabled: true,
+		},
+		{
+			name:                     "with DNS initialization disabled",
+			dnsInitializationEnabled: false,
+		},
 	}
 
-	client, err := newMemcachedClient(
-		log.NewNopLogger(),
-		memcache.New(cfg.Addresses...),
-		&memcache.ServerList{},
-		cfg,
-		prometheus.NewPedanticRegistry(),
-		t.Name(),
-	)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &MemcachedClientConfig{}
+			memcachedClientConfigDefaultValues(cfg)
+			cfg.Addresses = flagext.StringSliceCSV{"dns+test:11211"}
+			cfg.DNSInitializationEnabled = tc.dnsInitializationEnabled
 
-	require.NotNil(t, client)
-	require.Contains(t, err.Error(), "no memcached server addresses were resolved")
+			client, err := NewMemcachedClientWithConfig(
+				log.NewNopLogger(),
+				t.Name(),
+				*cfg,
+				prometheus.NewPedanticRegistry(),
+			)
 
-	res := client.GetMulti(context.Background(), []string{"some-key"})
-	require.Empty(t, res)
+			if tc.dnsInitializationEnabled {
+				require.Nil(t, client)
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "no memcached server addresses were resolved")
+				return
+			}
+
+			if !tc.dnsInitializationEnabled {
+				require.NoError(t, err)
+				require.NotNil(t, client)
+
+				// Manually initialize the client but fail
+				err = client.Initialize()
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "no memcached server addresses were resolved")
+
+				// Verify that the client is still usable, even if initialization failed
+				res := client.GetMulti(context.Background(), []string{"some-key"})
+				require.Empty(t, res)
+			}
+		})
+	}
 }
 
 func setupDefaultMemcachedClient() (*MemcachedClient, *mockMemcachedClientBackend, error) {

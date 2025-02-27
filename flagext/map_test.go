@@ -281,74 +281,98 @@ func TestLimitsMap_MarshalYAML(t *testing.T) {
 }
 
 func TestLimitsMap_Equal(t *testing.T) {
-	t.Run("numeric", func(t *testing.T) {
+	t.Run("numeric, equal", func(t *testing.T) {
 		tc := map[string]struct {
-			map1     LimitsMap[float64]
-			map2     LimitsMap[float64]
-			expected bool
+			map1 LimitsMap[float64]
+			map2 LimitsMap[float64]
 		}{
 			"Equal maps with same key-value pairs": {
-				map1:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
-				map2:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
-				expected: true,
-			},
-			"Different maps with different lengths": {
-				map1:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1}},
-				map2:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
-				expected: false,
-			},
-			"Different maps with same keys but different values": {
-				map1:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1}},
-				map2:     LimitsMap[float64]{data: map[string]float64{"key1": 1.2}},
-				expected: false,
+				map1: LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
+				map2: LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
 			},
 			"Equal empty maps": {
-				map1:     LimitsMap[float64]{data: map[string]float64{}},
-				map2:     LimitsMap[float64]{data: map[string]float64{}},
-				expected: true,
+				map1: LimitsMap[float64]{data: map[string]float64{}},
+				map2: LimitsMap[float64]{data: map[string]float64{}},
 			},
 		}
 
 		for name, tt := range tc {
 			t.Run(name, func(t *testing.T) {
-				require.Equal(t, tt.expected, tt.map1.Equal(LimitsMap[float64]{data: tt.map2.data}))
-				require.Equal(t, tt.expected, cmp.Equal(tt.map1, tt.map2))
+				require.Equal(t, tt.map1, tt.map2)
+				require.True(t, tt.map1.Equal(tt.map2))
+				require.True(t, cmp.Equal(tt.map1, tt.map2))
 			})
 		}
 	})
 
-	t.Run("string", func(t *testing.T) {
+	t.Run("numeric, not equal", func(t *testing.T) {
 		tc := map[string]struct {
-			map1     LimitsMap[string]
-			map2     LimitsMap[string]
-			expected bool
+			map1 LimitsMap[float64]
+			map2 LimitsMap[float64]
 		}{
-			"Equal maps with same key-value pairs": {
-				map1:     LimitsMap[string]{data: map[string]string{"key1": "abc", "key2": "def"}},
-				map2:     LimitsMap[string]{data: map[string]string{"key1": "abc", "key2": "def"}},
-				expected: true,
-			},
 			"Different maps with different lengths": {
-				map1:     LimitsMap[string]{data: map[string]string{"key1": "abc"}},
-				map2:     LimitsMap[string]{data: map[string]string{"key1": "abc", "key2": "def"}},
-				expected: false,
+				map1: LimitsMap[float64]{data: map[string]float64{"key1": 1.1}},
+				map2: LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
 			},
 			"Different maps with same keys but different values": {
-				map1:     LimitsMap[string]{data: map[string]string{"key1": "abc"}},
-				map2:     LimitsMap[string]{data: map[string]string{"key1": "def"}},
-				expected: false,
-			},
-			"Equal empty maps": {
-				map1:     LimitsMap[string]{data: map[string]string{}},
-				map2:     LimitsMap[string]{data: map[string]string{}},
-				expected: true,
+				map1: LimitsMap[float64]{data: map[string]float64{"key1": 1.1}},
+				map2: LimitsMap[float64]{data: map[string]float64{"key1": 1.2}},
 			},
 		}
 
 		for name, tt := range tc {
 			t.Run(name, func(t *testing.T) {
-				require.Equal(t, tt.expected, tt.map1.Equal(LimitsMap[string]{data: tt.map2.data}))
-				require.Equal(t, tt.expected, cmp.Equal(tt.map1, tt.map2))
+				require.NotEqual(t, tt.map1, tt.map2)
+				require.False(t, tt.map1.Equal(tt.map2))
+				require.False(t, cmp.Equal(tt.map1, tt.map2))
+			})
+		}
+	})
+
+	t.Run("string, equal", func(t *testing.T) {
+		tc := map[string]struct {
+			map1 LimitsMap[string]
+			map2 LimitsMap[string]
+		}{
+			"Equal maps with same key-value pairs": {
+				map1: LimitsMap[string]{data: map[string]string{"key1": "abc", "key2": "def"}},
+				map2: LimitsMap[string]{data: map[string]string{"key1": "abc", "key2": "def"}},
+			},
+			"Equal empty maps": {
+				map1: LimitsMap[string]{data: map[string]string{}},
+				map2: LimitsMap[string]{data: map[string]string{}},
+			},
+		}
+
+		for name, tt := range tc {
+			t.Run(name, func(t *testing.T) {
+				require.Equal(t, tt.map1, tt.map2)
+				require.True(t, tt.map1.Equal(tt.map2))
+				require.True(t, cmp.Equal(tt.map1, tt.map2))
+			})
+		}
+	})
+
+	t.Run("string, not equal", func(t *testing.T) {
+		tc := map[string]struct {
+			map1 LimitsMap[string]
+			map2 LimitsMap[string]
+		}{
+			"Different maps with different lengths": {
+				map1: LimitsMap[string]{data: map[string]string{"key1": "abc"}},
+				map2: LimitsMap[string]{data: map[string]string{"key1": "abc", "key2": "def"}},
+			},
+			"Different maps with same keys but different values": {
+				map1: LimitsMap[string]{data: map[string]string{"key1": "abc"}},
+				map2: LimitsMap[string]{data: map[string]string{"key1": "def"}},
+			},
+		}
+
+		for name, tt := range tc {
+			t.Run(name, func(t *testing.T) {
+				require.NotEqual(t, tt.map1, tt.map2)
+				require.False(t, tt.map1.Equal(tt.map2))
+				require.False(t, cmp.Equal(tt.map1, tt.map2))
 			})
 		}
 	})

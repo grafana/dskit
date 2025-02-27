@@ -22,17 +22,6 @@ var (
 	}
 )
 
-func NewIncomingContext(containsRequestCluster bool, requestCluster string) context.Context {
-	ctx := context.Background()
-	if !containsRequestCluster {
-		return ctx
-	}
-	md := map[string][]string{
-		MetadataClusterVerificationLabelKey: {requestCluster},
-	}
-	return metadata.NewIncomingContext(ctx, md)
-}
-
 // PutClusterIntoOutgoingContext returns a new context with the provided value for
 // MetadataClusterVerificationLabelKey, merged with any existing metadata in the context.
 // Empty values are ignored.

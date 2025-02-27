@@ -27,20 +27,20 @@ func TestGetClusterFromIncomingContext(t *testing.T) {
 		expectedError   error
 	}{
 		"no cluster in incoming context gives an ErrNoClusterVerificationLabel error": {
-			incomingContext: NewIncomingContext(false, ""),
+			incomingContext: createContext(false, nil),
 			expectedError:   ErrNoClusterVerificationLabel,
 		},
 		"empty cluster in incoming context gives an ErrNoClusterVerificationLabel error": {
-			incomingContext: NewIncomingContext(true, ""),
+			incomingContext: createContext(true, []string{""}),
 			expectedError:   ErrNoClusterVerificationLabel,
 		},
 		"single cluster in incoming context returns that cluster and no errors": {
-			incomingContext: NewIncomingContext(true, "my-cluster"),
+			incomingContext: createContext(true, []string{"my-cluster"}),
 			expectedError:   nil,
 			expectedValue:   "my-cluster",
 		},
 		"more clusters in incoming context give an errDifferentClusterVerificationLabels error": {
-			incomingContext: createContext([]string{"cluster-1", "cluster-2"}),
+			incomingContext: createContext(true, []string{"cluster-1", "cluster-2"}),
 			expectedError:   errDifferentClusterVerificationLabels([]string{"cluster-1", "cluster-2"}),
 			expectedValue:   "",
 		},
@@ -75,7 +75,11 @@ func checkSingleClusterFromMetadata(t *testing.T, md metadata.MD, shouldExist bo
 	}
 }
 
-func createContext(clusters []string) context.Context {
+func createContext(containsRequestCluster bool, clusters []string) context.Context {
+	ctx := context.Background()
+	if !containsRequestCluster {
+		return ctx
+	}
 	if len(clusters) == 0 {
 		return context.Background()
 	}

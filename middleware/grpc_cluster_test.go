@@ -18,7 +18,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/dskit/clusterutil"
@@ -66,6 +65,14 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 			expectedErr:     genericErr,
 		},
 	}
+	verifyClusterPropagation := func(ctx context.Context, expectedCluster string) {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		clusterIDs, ok := md[clusterutil.MetadataClusterVerificationLabelKey]
+		require.True(t, ok)
+		require.Len(t, clusterIDs, 1)
+		require.Equal(t, expectedCluster, clusterIDs[0])
+	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			defer func() {
@@ -76,7 +83,8 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 			logger := createLogger(t, buf)
 			reg := prometheus.NewRegistry()
 			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, newRequestInvalidClusterVerficationLabelsTotalCounter(reg), logger)
-			invoker := func(_ context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+				verifyClusterPropagation(ctx, testCase.cluster)
 				return testCase.invokerError
 			}
 
@@ -98,47 +106,6 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 	}
 }
 
-func TestClusterUnaryClientInterceptorWithHealthServer(t *testing.T) {
-	err := fmt.Errorf("this is an error")
-	failingInvoker := func(_ context.Context, method string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
-		if method != healthpb.Health_Check_FullMethodName {
-			return err
-		}
-		return nil
-	}
-	testCases := map[string]struct {
-		incomingContext context.Context
-		method          string
-		expectedError   error
-	}{
-		"calls to healthpb.Health_Check_FullMethodName are ignored": {
-			// We create a context with no cluster label.
-			incomingContext: context.Background(),
-			method:          healthpb.Health_Check_FullMethodName,
-			// Since we call healthpb.Health_Check_FullMethodName, the failing invoker doesn't fail, and we expect no errors.
-			expectedError: nil,
-		},
-		"calls to endpoints different from healthpb.Health_Check_FullMethodName are executed": {
-			// We create a context with no cluster label.
-			incomingContext: context.Background(),
-			method:          "/Test/Me",
-			// Since we don't call healthpb.Health_Check_FullMethodName, the failing invoker fails, and we expect an error.
-			expectedError: err,
-		},
-	}
-	for testName, testCase := range testCases {
-		t.Run(testName, func(t *testing.T) {
-			interceptor := ClusterUnaryClientInterceptor("cluster", newRequestInvalidClusterVerficationLabelsTotalCounter(prometheus.NewRegistry()), log.NewNopLogger())
-			err := interceptor(testCase.incomingContext, testCase.method, createRequest(t), nil, nil, failingInvoker)
-			if testCase.expectedError == nil {
-				require.NoError(t, err)
-			} else {
-				require.Equal(t, testCase.expectedError, err)
-			}
-		})
-	}
-}
-
 func TestClusterUnaryServerInterceptor(t *testing.T) {
 	testCases := map[string]struct {
 		incomingContext context.Context
@@ -148,16 +115,16 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 		shouldPanic     bool
 	}{
 		"empty server cluster make ClusterUnaryServerInterceptor panic": {
-			incomingContext: clusterutil.NewIncomingContext(false, ""),
+			incomingContext: newIncomingContext(false, ""),
 			serverCluster:   "",
 			shouldPanic:     true,
 		},
 		"equal request and server clusters give no error": {
-			incomingContext: clusterutil.NewIncomingContext(true, "cluster"),
+			incomingContext: newIncomingContext(true, "cluster"),
 			serverCluster:   "cluster",
 		},
 		"different request and server clusters give rise to an error with grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL cause if soft validation disabled": {
-			incomingContext: clusterutil.NewIncomingContext(true, "wrong-cluster"),
+			incomingContext: newIncomingContext(true, "wrong-cluster"),
 			serverCluster:   "cluster",
 			expectedLogs:    `level=warn msg="request with wrong cluster verification label" method=/Test/Me clusterVerificationLabel=cluster requestClusterVerificationLabel=wrong-cluster softValidation=%v`,
 			verifyErr: func(err error, softValidation bool) {
@@ -167,7 +134,7 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			},
 		},
 		"empty request cluster and non-empty server cluster give an error with grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL cause if soft validation disabled": {
-			incomingContext: clusterutil.NewIncomingContext(true, ""),
+			incomingContext: newIncomingContext(true, ""),
 			serverCluster:   "cluster",
 			expectedLogs:    `level=warn msg="request with no cluster verification label" method=/Test/Me clusterVerificationLabel=cluster softValidation=%v`,
 			verifyErr: func(err error, softValidation bool) {
@@ -177,7 +144,7 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			},
 		},
 		"no request cluster and non-empty server cluster give an error with grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL cause if soft validation disabled": {
-			incomingContext: clusterutil.NewIncomingContext(false, ""),
+			incomingContext: newIncomingContext(false, ""),
 			serverCluster:   "cluster",
 			expectedLogs:    `level=warn msg="request with no cluster verification label" method=/Test/Me clusterVerificationLabel=cluster softValidation=%v`,
 			verifyErr: func(err error, softValidation bool) {
@@ -239,7 +206,7 @@ func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 			// We create a UnaryServerInfo with grpc health server.
 			serverInfo: &grpc.UnaryServerInfo{Server: health.NewServer(), FullMethod: "/Test/Me"},
 			// We create a context with a bad cluster.
-			incomingContext: clusterutil.NewIncomingContext(true, badCluster),
+			incomingContext: newIncomingContext(true, badCluster),
 			// Since UnaryServerInfo contains the grpc health server, no check is done, and we expect no errors.
 			expectedError: nil,
 		},
@@ -247,7 +214,7 @@ func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 			// We create a UnaryServerInfo with grpc health server.
 			serverInfo: &grpc.UnaryServerInfo{Server: nil, FullMethod: "/Test/Me"},
 			// We create a context with a bad cluster.
-			incomingContext: clusterutil.NewIncomingContext(true, badCluster),
+			incomingContext: newIncomingContext(true, badCluster),
 			// Since UnaryServerInfo doesn't contain the grpc health server, the check is done, and we expect an error.
 			expectedError: grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster verification label "bad-cluster" - it should be "good-cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL}).Err(),
 		},
@@ -289,4 +256,15 @@ func newRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Regist
 		Help:        "Number of requests with invalid cluster verification label.",
 		ConstLabels: nil,
 	}, []string{"method", "reason"})
+}
+
+func newIncomingContext(containsRequestCluster bool, requestCluster string) context.Context {
+	ctx := context.Background()
+	if !containsRequestCluster {
+		return ctx
+	}
+	md := map[string][]string{
+		clusterutil.MetadataClusterVerificationLabelKey: {requestCluster},
+	}
+	return metadata.NewIncomingContext(ctx, md)
 }

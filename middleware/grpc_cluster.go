@@ -23,13 +23,8 @@ import (
 func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.CounterVec, logger log.Logger) grpc.UnaryClientInterceptor {
 	validateClusterClientInterceptorInputParameters(cluster, invalidCluster, logger)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		// We skip the gRPC health check.
-		if method == healthpb.Health_Check_FullMethodName {
-			return invoker(ctx, method, req, reply, cc, opts...)
-		}
-
 		ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
-		return handleError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, invalidCluster, logger)
+		return handleClusterValidationError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, invalidCluster, logger)
 	}
 }
 
@@ -45,7 +40,7 @@ func validateClusterClientInterceptorInputParameters(cluster string, invalidClus
 	}
 }
 
-func handleError(err error, cluster string, method string, invalidCluster *prometheus.CounterVec, logger log.Logger) error {
+func handleClusterValidationError(err error, cluster string, method string, invalidCluster *prometheus.CounterVec, logger log.Logger) error {
 	if err == nil {
 		return nil
 	}
@@ -82,11 +77,11 @@ func ClusterUnaryServerInterceptor(cluster string, softValidation bool, logger l
 		if len(msgs) > 0 {
 			level.Warn(logger).Log(msgs...)
 		}
-		if err == nil {
-			return handler(ctx, req)
+		if err != nil {
+			stat := grpcutil.Status(codes.FailedPrecondition, err.Error(), &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL})
+			return nil, stat.Err()
 		}
-		stat := grpcutil.Status(codes.FailedPrecondition, err.Error(), &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL})
-		return nil, stat.Err()
+		return handler(ctx, req)
 	}
 }
 

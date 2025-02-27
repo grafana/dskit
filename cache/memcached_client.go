@@ -127,7 +127,7 @@ type MemcachedClientConfig struct {
 
 	// DNSInitializationEnabled enables initial DNS lookup and background resolution on client creation.
 	// When false, Initialize() must be called manually.
-	DNSInitializationEnabled bool `yaml:"dns_initialization_enabled" category:"advanced"`
+	DNSInitializationEnabled bool `yaml:"dns_initialization_enabled" category:"experimental"`
 }
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {

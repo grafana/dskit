@@ -1,6 +1,5 @@
 ## Changelog
 
-* [CHANGE] Make Memcached soft-dependency on startup. Memcached addresses will be resolved periodically. #647
 * [CHANGE] Add new metric `slow_request_server_throughput` to track the throughput of slow queries. #619
 * [CHANGE] Log middleware updated to honor `logRequestHeaders` in all logging scenarios. #615
 * [CHANGE] Roll back the gRPC dependency to v1.65.0 to allow downstream projects to avoid a performance regression and maybe a bug in v1.66.0. #581
@@ -104,6 +103,7 @@
 * [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates a cluster info to the outgoing gRPC metadata. #640
 * [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster info, and returns an error if it is not the case. #640
 * [FEATURE] Add `ring.GetWithOptions()` method to support additional features at a per-call level. #632
+* [ENHANCEMENT] Add feature flag to make Memcached soft-dependency on startup. If so, `Initialize()` will have to be called after client creation. #647
 * [ENHANCEMENT] Add option to hide token information in ring status page #633
 * [ENHANCEMENT] Display token information in partition ring status page #631
 * [ENHANCEMENT] Add ability to log all source hosts from http header instead of only the first one. #444

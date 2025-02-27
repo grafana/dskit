@@ -374,8 +374,7 @@ func TestLimitsMap_Clone(t *testing.T) {
 
 		// Modify the cloned LimitsMap and ensure the original map is not affected.
 		cloned.data["limit3"] = 3.0
-		_, exists := original.data["limit3"]
-		require.False(t, exists, "expected original LimitsMap to be unaffected by changes to cloned")
+		require.NotContains(t, original.data, "limit3", "expected original LimitsMap to be unaffected by changes to cloned")
 	})
 
 	t.Run("string", func(t *testing.T) {
@@ -396,8 +395,7 @@ func TestLimitsMap_Clone(t *testing.T) {
 
 		// Modify the cloned LimitsMap and ensure the original map is not affected.
 		cloned.data["limit3"] = "test"
-		_, exists := original.data["limit3"]
-		require.False(t, exists, "expected original LimitsMap to be unaffected by changes to cloned")
+		require.NotContains(t, original.data, "limit3", "expected original LimitsMap to be unaffected by changes to cloned")
 	})
 }
 

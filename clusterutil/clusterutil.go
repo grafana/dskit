@@ -10,9 +10,6 @@ import (
 const (
 	// MetadataClusterVerificationLabelKey is the key of the cluster verification label gRPC metadata.
 	MetadataClusterVerificationLabelKey = "x-cluster"
-
-	ReasonClient = "client_check_failed"
-	ReasonServer = "server_check_failed"
 )
 
 var (

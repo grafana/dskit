@@ -1,6 +1,6 @@
 module github.com/grafana/dskit
 
-go 1.21
+go 1.22
 
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
@@ -20,7 +20,7 @@ require (
 	github.com/golang/protobuf v1.5.4
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56
+	github.com/grafana/gomemcache v0.0.0-20250227213735-013a086cde2f
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2

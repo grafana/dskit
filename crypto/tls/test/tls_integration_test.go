@@ -34,7 +34,10 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 )
 
-const mismatchCAAndCerts = "remote error: tls: unknown certificate authority"
+const (
+	badCertificateErrorMessage = "remote error: tls: certificate required"
+	mismatchCAAndCerts         = "remote error: tls: unknown certificate authority"
+)
 
 type tcIntegrationClientServer struct {
 	name            string

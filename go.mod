@@ -1,6 +1,6 @@
 module github.com/grafana/dskit
 
-go 1.21
+go 1.22
 
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137

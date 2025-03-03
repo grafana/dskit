@@ -100,8 +100,8 @@
 * [FEATURE] Add methods `Increment`, `FlushAll`, `CompareAndSwap`, `Touch` to `cache.MemcachedClient` #477
 * [FEATURE] Add `concurrency.ForEachJobMergeResults()` utility function. #486
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
-* [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates a cluster info to the outgoing gRPC metadata. #640 #648 #649
-* [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster info, and returns an error if it is not the case. #640 #648 #649
+* [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates a cluster info to the outgoing gRPC metadata. #640 #648 #649 #655
+* [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster info, and returns an error if it is not the case. #640 #648 #649 #655
 * [FEATURE] Add support for adding `middleware.ClusterUnaryServerInterceptor` as `server.Server` unary interceptor via the following configuration options: #650 
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.grpc.soft-validation`

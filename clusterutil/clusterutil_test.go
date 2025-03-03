@@ -26,22 +26,22 @@ func TestGetClusterFromIncomingContext(t *testing.T) {
 		expectedValue   string
 		expectedError   error
 	}{
-		"no cluster in incoming context gives an ErrNoClusterVerificationLabel error": {
+		"no cluster in incoming context gives an ErrNoClusterValidationLabel error": {
 			incomingContext: createContext(false, nil),
-			expectedError:   ErrNoClusterVerificationLabel,
+			expectedError:   ErrNoClusterValidationLabel,
 		},
-		"empty cluster in incoming context gives an ErrNoClusterVerificationLabel error": {
+		"empty cluster in incoming context gives an ErrNoClusterValidationLabel error": {
 			incomingContext: createContext(true, []string{""}),
-			expectedError:   ErrNoClusterVerificationLabel,
+			expectedError:   ErrNoClusterValidationLabel,
 		},
 		"single cluster in incoming context returns that cluster and no errors": {
 			incomingContext: createContext(true, []string{"my-cluster"}),
 			expectedError:   nil,
 			expectedValue:   "my-cluster",
 		},
-		"more clusters in incoming context give an errDifferentClusterVerificationLabels error": {
+		"more clusters in incoming context give an errDifferentClusterValidationLabels error": {
 			incomingContext: createContext(true, []string{"cluster-1", "cluster-2"}),
-			expectedError:   errDifferentClusterVerificationLabels([]string{"cluster-1", "cluster-2"}),
+			expectedError:   errDifferentClusterValidationLabels([]string{"cluster-1", "cluster-2"}),
 			expectedValue:   "",
 		},
 	}
@@ -65,7 +65,7 @@ func checkSingleClusterInOutgoingCtx(ctx context.Context, t *testing.T, shouldEx
 }
 
 func checkSingleClusterFromMetadata(t *testing.T, md metadata.MD, shouldExist bool, expectedValue string) {
-	values, ok := md[MetadataClusterVerificationLabelKey]
+	values, ok := md[MetadataClusterValidationLabelKey]
 	if shouldExist {
 		require.True(t, ok)
 		require.Len(t, values, 1)
@@ -84,7 +84,7 @@ func createContext(containsRequestCluster bool, clusters []string) context.Conte
 		return context.Background()
 	}
 	md := map[string][]string{
-		MetadataClusterVerificationLabelKey: clusters,
+		MetadataClusterValidationLabelKey: clusters,
 	}
 	return metadata.NewIncomingContext(context.Background(), md)
 }

@@ -106,6 +106,7 @@
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.grpc.soft-validation`
   * `-server.cluster-validation.grpc.enabled`
+* [FEATURE] grpcclient: Add experimental configuration option `-cluster-validation-label` to `grpcclient.Config` used for setting the cluster validation label of gRPC clients. #657
 * [FEATURE] Add `ring.GetWithOptions()` method to support additional features at a per-call level. #632
 * [ENHANCEMENT] Add feature flag to make Memcached soft-dependency on startup. If so, `Initialize()` will have to be called after client creation. #647
 * [ENHANCEMENT] Add option to hide token information in ring status page #633

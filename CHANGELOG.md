@@ -87,6 +87,7 @@
 * [CHANGE] memberlist: Failure to fast-join a cluster via contacting a node is now logged at `info` instead of `debug`. #585
 * [CHANGE] `Service.AddListener` and `Manager.AddListener` now return function for stopping the listener. #564
 * [CHANGE] ring: Add `InstanceRingReader` interface to `ring` package. #597
+* [CHANGE] DNS: Introduce new `miekgdns2` resolver backend type with experimental DNS client. #660
 * [CHANGE] Server: The `PerTenantDurationInstrumentation` config option was renamed to `PerTenantInstrumentation` and now allows specifying whether a full histogram should be recorded or only a counter #642
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279

@@ -103,8 +103,6 @@ require (
 	google.golang.org/protobuf v1.34.1 // indirect
 )
 
-replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.21.4
-
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet.
 replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe

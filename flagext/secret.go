@@ -38,6 +38,7 @@ func (v Secret) MarshalYAML() (interface{}, error) {
 	return "********", nil
 }
 
+// Equal implements go-cmp equality.
 func (v Secret) Equal(other Secret) bool {
 	return v.value == other.value
 }

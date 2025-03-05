@@ -77,7 +77,7 @@ func TestSecretdYAML(t *testing.T) {
 	}
 }
 
-func TestSecretEquals(t *testing.T) {
+func TestSecret_Equals(t *testing.T) {
 	t.Run("equal", func(t *testing.T) {
 		tc := []struct {
 			name string

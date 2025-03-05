@@ -37,3 +37,7 @@ func (v Secret) MarshalYAML() (interface{}, error) {
 	}
 	return "********", nil
 }
+
+func (v Secret) Equal(other Secret) bool {
+	return v.value == other.value
+}

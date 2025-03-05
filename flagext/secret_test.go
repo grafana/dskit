@@ -3,6 +3,7 @@ package flagext
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -74,4 +75,59 @@ func TestSecretdYAML(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, testStruct, actualStruct)
 	}
+}
+
+func TestSecretEquals(t *testing.T) {
+	t.Run("equal", func(t *testing.T) {
+		tc := []struct {
+			name string
+			s1   Secret
+			s2   Secret
+		}{
+			{
+				name: "same value",
+				s1:   Secret{value: "somesecret"},
+				s2:   Secret{value: "somesecret"},
+			},
+			{
+				name: "empty value",
+				s1:   Secret{value: ""},
+				s2:   Secret{value: ""},
+			},
+		}
+
+		for _, tt := range tc {
+			require.True(t, tt.s1.Equal(tt.s2), cmp.Diff(tt.s1, tt.s2))
+			require.True(t, cmp.Equal(tt.s1, tt.s2), cmp.Diff(tt.s1, tt.s2))
+		}
+	})
+
+	t.Run("not equal", func(t *testing.T) {
+		tc := []struct {
+			name string
+			s1   Secret
+			s2   Secret
+		}{
+			{
+				name: "different value",
+				s1:   Secret{value: "somesecret"},
+				s2:   Secret{value: "anothersecret"},
+			},
+			{
+				name: "MarshalYAMLs to same value but different",
+				s1:   Secret{value: "secretone"},
+				s2:   Secret{value: "secrettwo"},
+			},
+			{
+				name: "one empty value",
+				s1:   Secret{value: "somesecret"},
+				s2:   Secret{value: ""},
+			},
+		}
+
+		for _, tt := range tc {
+			require.False(t, tt.s1.Equal(tt.s2), cmp.Diff(tt.s1, tt.s2))
+			require.False(t, cmp.Equal(tt.s1, tt.s2), cmp.Diff(tt.s1, tt.s2))
+		}
+	})
 }

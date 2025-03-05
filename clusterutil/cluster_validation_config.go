@@ -3,33 +3,57 @@ package clusterutil
 import (
 	"flag"
 	"fmt"
+
+	"github.com/grafana/dskit/flagext"
 )
 
 type ClientClusterValidationConfig struct {
-	Label string `yaml:"label" category:"experimental"`
+	Label           string                  `yaml:"label" category:"experimental"`
+	registeredFlags flagext.RegisteredFlags `yaml:"-"`
 }
 
 func (cfg *ClientClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define client's cluster validation label.")
 }
 
-type ClusterValidationConfig struct {
-	Label string                          `yaml:"label" category:"experimental"`
-	GRPC  ClusterValidationProtocolConfig `yaml:"grpc" category:"experimental"`
+func (cfg *ClientClusterValidationConfig) RegisterAndTrackFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+		cfg.RegisterFlagsWithPrefix(prefix, f)
+	})
 }
 
-type ClusterValidationProtocolConfig struct {
-	Enabled        bool `yaml:"enabled" category:"experimental"`
-	SoftValidation bool `yaml:"soft_validation" category:"experimental"`
+func (cfg *ClientClusterValidationConfig) GetRegisteredFlags() flagext.RegisteredFlags {
+	return cfg.registeredFlags
+}
+
+type ClusterValidationConfig struct {
+	Label           string                          `yaml:"label" category:"experimental"`
+	GRPC            ClusterValidationProtocolConfig `yaml:"grpc" category:"experimental"`
+	registeredFlags flagext.RegisteredFlags         `yaml:"-"`
 }
 
 func (cfg *ClusterValidationConfig) Validate() error {
 	return cfg.GRPC.Validate("grpc", cfg.Label)
 }
 
+func (cfg *ClusterValidationConfig) RegisterAndTrackFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+		cfg.RegisterFlagsWithPrefix(prefix, f)
+	})
+}
+
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define server's cluster validation label.")
 	cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
+}
+
+func (cfg *ClusterValidationConfig) GetRegisteredFlags() flagext.RegisteredFlags {
+	return cfg.registeredFlags
+}
+
+type ClusterValidationProtocolConfig struct {
+	Enabled        bool `yaml:"enabled" category:"experimental"`
+	SoftValidation bool `yaml:"soft_validation" category:"experimental"`
 }
 
 func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, label string) error {

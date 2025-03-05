@@ -91,7 +91,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 	cfg.BackoffConfig.RegisterFlagsWithPrefix(prefix, f)
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
-	cfg.ClusterValidation.RegisterFlagsWithPrefix(prefix+".cluster-validation.", f)
+	cfg.ClusterValidation.RegisterAndTrackFlagsWithPrefix(prefix+".cluster-validation.", f)
 }
 
 func (cfg *Config) Validate() error {

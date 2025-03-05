@@ -5,14 +5,22 @@ import (
 	"fmt"
 )
 
+type ClientClusterValidationConfig struct {
+	Label string `yaml:"label" category:"experimental"`
+}
+
+func (cfg *ClientClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define client's cluster validation label.")
+}
+
 type ClusterValidationConfig struct {
-	Label string
-	GRPC  ClusterValidationProtocolConfig
+	Label string                          `yaml:"label" category:"experimental"`
+	GRPC  ClusterValidationProtocolConfig `yaml:"grpc" category:"experimental"`
 }
 
 type ClusterValidationProtocolConfig struct {
-	Enabled        bool
-	SoftValidation bool
+	Enabled        bool `yaml:"enabled" category:"experimental"`
+	SoftValidation bool `yaml:"soft_validation" category:"experimental"`
 }
 
 func (cfg *ClusterValidationConfig) Validate() error {
@@ -20,9 +28,8 @@ func (cfg *ClusterValidationConfig) Validate() error {
 }
 
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	clusterValidationPrefix := prefix + ".cluster-validation"
-	f.StringVar(&cfg.Label, clusterValidationPrefix+".label", "", "Optionally define server's cluster validation label.")
-	cfg.GRPC.RegisterFlagsWithPrefix(clusterValidationPrefix+".grpc", f)
+	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define server's cluster validation label.")
+	cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
 }
 
 func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, label string) error {
@@ -40,8 +47,8 @@ func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, label string
 }
 
 func (cfg *ClusterValidationProtocolConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	softValidationFlag := prefix + ".soft-validation"
-	enabledFlag := prefix + ".enabled"
+	softValidationFlag := prefix + "soft-validation"
+	enabledFlag := prefix + "enabled"
 	f.BoolVar(&cfg.SoftValidation, softValidationFlag, false, fmt.Sprintf("When enabled, soft cluster label validation will be executed. Can be enabled only together with %s", enabledFlag))
 	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation will be executed.")
 }

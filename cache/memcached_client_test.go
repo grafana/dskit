@@ -337,15 +337,15 @@ func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 func TestMemcachedClient_ServerDependency(t *testing.T) {
 	testCases := []struct {
 		name                     string
-		dnsInitializationEnabled bool
+		dnsIgnoreStartupFailures bool
 	}{
 		{
-			name:                     "with DNS initialization enabled",
-			dnsInitializationEnabled: true,
+			name:                     "with DNS failures not ignored",
+			dnsIgnoreStartupFailures: false,
 		},
 		{
-			name:                     "with DNS initialization disabled",
-			dnsInitializationEnabled: false,
+			name:                     "with DNS failures ignored",
+			dnsIgnoreStartupFailures: true,
 		},
 	}
 
@@ -354,7 +354,7 @@ func TestMemcachedClient_ServerDependency(t *testing.T) {
 			cfg := &MemcachedClientConfig{}
 			memcachedClientConfigDefaultValues(cfg)
 			cfg.Addresses = flagext.StringSliceCSV{"dns+invalid.:11211"}
-			cfg.DNSInitializationEnabled = tc.dnsInitializationEnabled
+			cfg.DNSIgnoreStartupFailures = tc.dnsIgnoreStartupFailures
 
 			client, err := NewMemcachedClientWithConfig(
 				log.NewNopLogger(),
@@ -363,21 +363,16 @@ func TestMemcachedClient_ServerDependency(t *testing.T) {
 				prometheus.NewPedanticRegistry(),
 			)
 
-			if tc.dnsInitializationEnabled {
+			if !tc.dnsIgnoreStartupFailures {
 				require.Nil(t, client)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), "no memcached server addresses were resolved")
 				return
 			}
 
-			if !tc.dnsInitializationEnabled {
+			if tc.dnsIgnoreStartupFailures {
 				require.NoError(t, err)
 				require.NotNil(t, client)
-
-				// Manually initialize the client but fail
-				err = client.Initialize()
-				require.Error(t, err)
-				require.Contains(t, err.Error(), "no memcached server addresses were resolved")
 
 				// Verify that the client is still usable, even if initialization failed
 				res := client.GetMulti(context.Background(), []string{"some-key"})

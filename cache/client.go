@@ -191,7 +191,7 @@ func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f fun
 
 	if err != nil {
 		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "err", err, "size", c.asyncBuffSize)
+		level.Warn(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "err", err, "size", c.asyncBuffSize)
 	}
 }
 
@@ -206,7 +206,7 @@ func (c *baseClient) storeOperation(ctx context.Context, key string, value []byt
 
 	err := f(ctx, key, value, ttl)
 	if err != nil {
-		level.Debug(c.logger).Log(
+		level.Warn(c.logger).Log(
 			"msg", "failed to store item to cache",
 			"operation", operation,
 			"key", key,

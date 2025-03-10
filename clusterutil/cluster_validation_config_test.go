@@ -11,13 +11,13 @@ import (
 func TestClientClusterValidationConfig_GetRegisteredFlags(t *testing.T) {
 	cfg := ClientClusterValidationConfig{}
 	// Before we track registered flags, no registered flags is returned.
-	require.Empty(t, cfg.GetRegisteredFlags())
+	require.Empty(t, cfg.RegisteredFlags())
 
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterAndTrackFlagsWithPrefix("prefix", fs)
 
 	// After we track registered flags, the label flag is returned.
-	registeredFlags := cfg.GetRegisteredFlags()
+	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "prefix", registeredFlags.Prefix)
 	require.Len(t, registeredFlags.Flags, 1)
@@ -82,13 +82,13 @@ func TestClusterValidationProtocolConfig_Validate(t *testing.T) {
 func TestClusterValidationConfig_GetRegisteredFlags(t *testing.T) {
 	var cfg = ClusterValidationConfig{}
 	// Before we track registered flags, no registered flags is returned.
-	require.Empty(t, cfg.GetRegisteredFlags())
+	require.Empty(t, cfg.RegisteredFlags())
 
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterAndTrackFlagsWithPrefix("cluster-validation.", fs)
 
 	// After we track registered flags, label, grpc.enabled and grpc.soft-validation flags are returned.
-	registeredFlags := cfg.GetRegisteredFlags()
+	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "cluster-validation.", registeredFlags.Prefix)
 	require.Len(t, registeredFlags.Flags, 3)

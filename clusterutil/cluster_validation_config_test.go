@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClientClusterValidationConfig_GetRegisteredFlags(t *testing.T) {
-	cfg := ClientClusterValidationConfig{}
+func TestClusterValidationConfig_RegisteredFlags(t *testing.T) {
+	cfg := ClusterValidationConfig{}
 	// Before we track registered flags, no registered flags is returned.
 	require.Empty(t, cfg.RegisteredFlags())
 
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
-	cfg.RegisterAndTrackFlagsWithPrefix("prefix", fs)
+	cfg.RegisterFlagsWithPrefix("prefix", fs)
 
 	// After we track registered flags, the label flag is returned.
 	registeredFlags := cfg.RegisteredFlags()
@@ -79,18 +79,18 @@ func TestClusterValidationProtocolConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestClusterValidationConfig_GetRegisteredFlags(t *testing.T) {
-	var cfg = ClusterValidationConfig{}
+func TestServerClusterValidationConfig_RegisteredFlags(t *testing.T) {
+	var cfg = ServerClusterValidationConfig{}
 	// Before we track registered flags, no registered flags is returned.
 	require.Empty(t, cfg.RegisteredFlags())
 
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
-	cfg.RegisterAndTrackFlagsWithPrefix("cluster-validation.", fs)
+	cfg.RegisterFlagsWithPrefix("server.cluster-validation.", fs)
 
 	// After we track registered flags, label, grpc.enabled and grpc.soft-validation flags are returned.
 	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
-	require.Equal(t, "cluster-validation.", registeredFlags.Prefix)
+	require.Equal(t, "server.cluster-validation.", registeredFlags.Prefix)
 	require.Len(t, registeredFlags.Flags, 3)
 	expectedFlags := []string{"label", "grpc.enabled", "grpc.soft-validation"}
 	for _, flagName := range expectedFlags {

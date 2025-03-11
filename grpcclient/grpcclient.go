@@ -47,7 +47,7 @@ type Config struct {
 	// CustomCompressors allows configuring custom compressors.
 	CustomCompressors []string `yaml:"-"`
 
-	ClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
+	ClusterValidation clusterutil.ClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -88,7 +88,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 	cfg.BackoffConfig.RegisterFlagsWithPrefix(prefix, f)
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
-	cfg.ClusterValidation.RegisterAndTrackFlagsWithPrefix(prefix+".cluster-validation.", f)
+	cfg.ClusterValidation.RegisterFlagsWithPrefix(prefix+".cluster-validation.", f)
 }
 
 func (cfg *Config) Validate() error {

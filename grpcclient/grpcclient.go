@@ -115,9 +115,17 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 	return opts
 }
 
-// DialOption returns the config as a grpc.DialOptions. The passed inceptors
-// wrap around the configured middleware.
-func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, o Options) ([]grpc.DialOption, error) {
+// DialOption returns the config as a grpc.DialOptions. The passed interceptors wrap around the configured middleware.
+// invalidClusterValidation and logger are required to be non-nil, and they are used for reporting the results of the
+// cluster validation, when it is enabled.
+func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, invalidClusterValidations *prometheus.CounterVec, logger log.Logger) ([]grpc.DialOption, error) {
+	if invalidClusterValidations == nil {
+		return nil, fmt.Errorf("invalidClusterValidations must not be null")
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("logger must not be null")
+	}
+
 	var opts []grpc.DialOption
 	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
@@ -137,13 +145,7 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	}
 
 	if cfg.ClusterValidation.Label != "" {
-		if o.InvalidClusterValidations == nil {
-			return nil, fmt.Errorf("if cluster validation label is set, a non-nil invalid cluster counter must be provided")
-		}
-		if o.Logger == nil {
-			return nil, fmt.Errorf("if cluster validation label is set, a non-nil logger must be provided")
-		}
-		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, o.InvalidClusterValidations, o.Logger)}, unaryClientInterceptors...)
+		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, invalidClusterValidations, logger)}, unaryClientInterceptors...)
 	}
 
 	if cfg.ConnectTimeout > 0 {
@@ -187,10 +189,4 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 			PermitWithoutStream: true,
 		}),
 	), nil
-}
-
-// Options defines options for the DialOption call.
-type Options struct {
-	Logger                    log.Logger
-	InvalidClusterValidations *prometheus.CounterVec
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -73,6 +74,12 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 		require.Len(t, clusterIDs, 1)
 		require.Equal(t, expectedCluster, clusterIDs[0])
 	}
+	onInvalidCluster := func(logger log.Logger, invalidClusterValidations *prometheus.CounterVec) func(string, string, string) {
+		return func(msg string, cluster string, method string) {
+			level.Warn(logger).Log("msg", msg, "method", method, "clusterValidationLabel", cluster)
+			invalidClusterValidations.WithLabelValues(method).Inc()
+		}
+	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			defer func() {
@@ -82,7 +89,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
 			logger := createLogger(t, buf)
 			reg := prometheus.NewRegistry()
-			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, newRequestInvalidClusterValidationLabelsTotalCounter(reg), logger)
+			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, onInvalidCluster(logger, newRequestInvalidClusterValidationLabelsTotalCounter(reg)))
 			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
 				verifyClusterPropagation(ctx, testCase.cluster)
 				return testCase.invokerError

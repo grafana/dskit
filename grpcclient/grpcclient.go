@@ -7,9 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	grpcbackoff "google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/encoding/gzip"
@@ -116,16 +114,12 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 }
 
 // DialOption returns the config as a grpc.DialOptions. The passed interceptors wrap around the configured middleware.
-// invalidClusterValidation and logger are required to be non-nil, and they are used for reporting the results of the
-// cluster validation, when it is enabled.
-func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, invalidClusterValidations *prometheus.CounterVec, logger log.Logger) ([]grpc.DialOption, error) {
-	if invalidClusterValidations == nil {
-		return nil, fmt.Errorf("invalidClusterValidations must not be null")
+// onInvalidCluster function is required to be non-nil, and it is executed in case of an invalid cluster validation,
+// when the latter is enabled.
+func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, onInvalidCluster func(errorMsg string, cluster string, method string)) ([]grpc.DialOption, error) {
+	if onInvalidCluster == nil {
+		return nil, fmt.Errorf("onInvalidCluster must not be nil")
 	}
-	if logger == nil {
-		return nil, fmt.Errorf("logger must not be null")
-	}
-
 	var opts []grpc.DialOption
 	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
@@ -145,7 +139,7 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	}
 
 	if cfg.ClusterValidation.Label != "" {
-		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, invalidClusterValidations, logger)}, unaryClientInterceptors...)
+		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, onInvalidCluster)}, unaryClientInterceptors...)
 	}
 
 	if cfg.ConnectTimeout > 0 {

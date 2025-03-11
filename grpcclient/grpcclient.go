@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	grpcbackoff "google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/encoding/gzip"
@@ -17,6 +19,7 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcencoding/snappy"
+	"github.com/grafana/dskit/middleware"
 )
 
 // Config for a gRPC client.
@@ -113,7 +116,7 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 
 // DialOption returns the config as a grpc.DialOptions. The passed inceptors
 // wrap around the configured middleware.
-func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor) ([]grpc.DialOption, error) {
+func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, o Options) ([]grpc.DialOption, error) {
 	var opts []grpc.DialOption
 	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
@@ -130,6 +133,10 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 
 	if cfg.RateLimit > 0 {
 		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{NewRateLimiter(cfg)}, unaryClientInterceptors...)
+	}
+
+	if cfg.ClusterValidation.Label != "" {
+		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, o.InvalidClusterValidations, o.Logger)}, unaryClientInterceptors...)
 	}
 
 	if cfg.ConnectTimeout > 0 {
@@ -173,4 +180,10 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 			PermitWithoutStream: true,
 		}),
 	), nil
+}
+
+// Options defines options for the DialOption call.
+type Options struct {
+	Logger                    log.Logger
+	InvalidClusterValidations *prometheus.CounterVec
 }

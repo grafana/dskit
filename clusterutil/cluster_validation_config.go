@@ -14,7 +14,7 @@ type ClusterValidationConfig struct {
 
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
-		f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the cluster validation label to be sent together with the requests by the clients.")
+		f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the cluster validation label.")
 	})
 }
 
@@ -34,7 +34,7 @@ func (cfg *ServerClusterValidationConfig) Validate() error {
 
 func (cfg *ServerClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
-		f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the server's cluster validation label. When the validation is enabled, this value will be compared with the cluster validation label received through the requests.")
+		cfg.ClusterValidationConfig.RegisterFlagsWithPrefix(prefix, f)
 		cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
 	})
 }
@@ -66,5 +66,5 @@ func (cfg *ClusterValidationProtocolConfig) RegisterFlagsWithPrefix(prefix strin
 	softValidationFlag := prefix + "soft-validation"
 	enabledFlag := prefix + "enabled"
 	f.BoolVar(&cfg.SoftValidation, softValidationFlag, false, fmt.Sprintf("When enabled, soft cluster label validation will be executed. Can be enabled only together with %s", enabledFlag))
-	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation will be executed.")
+	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation will be executed: configured cluster validation label will be compared with the cluster validation label received through the requests.")
 }

@@ -2,6 +2,7 @@ package grpcclient
 
 import (
 	"flag"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -136,6 +137,12 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	}
 
 	if cfg.ClusterValidation.Label != "" {
+		if o.InvalidClusterValidations == nil {
+			return nil, fmt.Errorf("if cluster validation label is set, a non-nil invalid cluster counter must be provided")
+		}
+		if o.Logger == nil {
+			return nil, fmt.Errorf("if cluster validation label is set, a non-nil logger must be provided")
+		}
 		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, o.InvalidClusterValidations, o.Logger)}, unaryClientInterceptors...)
 	}
 

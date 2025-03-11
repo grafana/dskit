@@ -88,6 +88,7 @@
 * [CHANGE] `Service.AddListener` and `Manager.AddListener` now return function for stopping the listener. #564
 * [CHANGE] ring: Add `InstanceRingReader` interface to `ring` package. #597
 * [CHANGE] Server: The `PerTenantDurationInstrumentation` config option was renamed to `PerTenantInstrumentation` and now allows specifying whether a full histogram should be recorded or only a counter #642
+* [CHANGE] grpcclient: Signature of `grpcclient.Config.DialOption()` has changed. It now requires an additional parameter of type `middleware.InvalidClusterValidationReporter` used for reporting cluster validation issues back to the caller. #657 
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

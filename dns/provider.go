@@ -64,7 +64,7 @@ func (t ResolverType) toResolver(logger log.Logger) ipLookupResolver {
 	case MiekgdnsResolverType:
 		r = &miekgdns.Resolver{ResolvConf: miekgdns.DefaultResolvConfPath}
 	case MiekgdnsResolverType2:
-		r = miekgdns2.NewResolver(miekgdns2.DefaultResolvConfPath)
+		r = miekgdns2.NewResolver(miekgdns2.DefaultResolvConfPath, logger)
 	default:
 		level.Warn(logger).Log("msg", "no such resolver type, defaulting to golang", "type", t)
 		r = &godns.Resolver{Resolver: net.DefaultResolver}

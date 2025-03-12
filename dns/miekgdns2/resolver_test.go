@@ -9,50 +9,68 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 )
 
 var resolvConfContents = `
-nameserver 127.0.0.1
-nameserver 127.0.0.2
+nameserver 127.0.0.53
+nameserver 127.0.0.54
 option attempts:2
-option timeout:1
 `
 
-func TestResolver_LookupSRV(t *testing.T) {
-	t.Run("bad resolv.conf", func(t *testing.T) {
-		cfgPath := path.Join(t.TempDir(), "resolv.conf")
-		client := newMockClient()
+func TestResolver_ConfigParsing(t *testing.T) {
+	logger := log.NewNopLogger()
+	period := time.Hour // We don't want the periodic reload running in the test
+	tmpDir := t.TempDir()
 
-		resolver := NewResolverWithClient(cfgPath, client)
+	t.Run("missing resolv.conf", func(t *testing.T) {
+		cfgPath := path.Join(tmpDir, "resolv.conf")
+		client := newMockClient()
+		// NOTE: We are returning an error for the server used as a default when resolv.conf
+		// can't be read. This tests that we're using default configuration when we can't read
+		// or parse the actual configuration file.
+		client.err["127.0.0.1:53"] = errors.New("connection refused")
+
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		_, _, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
 
 		require.Error(t, err)
 	})
+}
+
+func TestResolver_LookupSRV(t *testing.T) {
+	logger := log.NewNopLogger()
+	period := time.Hour // We don't want the periodic reload running in the test
+	tmpDir := t.TempDir()
 
 	t.Run("multiple timeouts", func(t *testing.T) {
-		cfgPath := writeResovConf(t, resolvConfContents)
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
 		client := newMockClient()
-		client.err["127.0.0.1:53"] = errors.New("timeout 1 in test")
-		client.err["127.0.0.2:53"] = errors.New("timeout 2 in test")
+		client.err["127.0.0.53:53"] = errors.New("timeout 1 in test")
+		client.err["127.0.0.54:53"] = errors.New("timeout 2 in test")
 
-		resolver := NewResolverWithClient(cfgPath, client)
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		_, _, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
 
 		require.Error(t, err)
 	})
 
 	t.Run("one timeout and one success", func(t *testing.T) {
-		cfgPath := writeResovConf(t, resolvConfContents)
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
 		client := newMockClient()
-		client.err["127.0.0.1:53"] = errors.New("timeout 1 in test")
-		client.res["127.0.0.2:53"] = []*dns.Msg{newSrvDNSResponse("_cache._tcp.example.com.", "cache01.example.com.")}
+		client.err["127.0.0.53:53"] = errors.New("timeout 1 in test")
+		client.res["127.0.0.54:53"] = []*dns.Msg{newSrvDNSResponse("_cache._tcp.example.com.", "cache01.example.com.")}
 
-		resolver := NewResolverWithClient(cfgPath, client)
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		_, res, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
 
+		require.NoError(t, err)
 		require.Equal(t, []*net.SRV{
 			{
 				Target:   "cache01.example.com.",
@@ -61,7 +79,6 @@ func TestResolver_LookupSRV(t *testing.T) {
 				Weight:   100,
 			},
 		}, res)
-		require.NoError(t, err)
 	})
 
 	t.Run("name error", func(t *testing.T) {
@@ -69,70 +86,104 @@ func TestResolver_LookupSRV(t *testing.T) {
 		response.Rcode = dns.RcodeNameError
 		response.Response = true
 
-		cfgPath := writeResovConf(t, resolvConfContents)
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
 		client := newMockClient()
-		client.err["127.0.0.1:53"] = errors.New("timeout 1 in test")
-		client.res["127.0.0.2:53"] = []*dns.Msg{response}
+		client.err["127.0.0.53:53"] = errors.New("timeout 1 in test")
+		client.res["127.0.0.54:53"] = []*dns.Msg{response}
 
-		resolver := NewResolverWithClient(cfgPath, client)
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		_, res, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
 
-		require.Empty(t, res)
 		require.NoError(t, err)
+		require.Empty(t, res)
 	})
 
 	t.Run("truncated", func(t *testing.T) {
 		response := newSrvDNSResponse("_cache._tcp.example.com.", "cache01.example.com.")
 		response.Truncated = true
 
-		cfgPath := writeResovConf(t, resolvConfContents)
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
 		client := newMockClient()
 		// Include two responses, one for each attempt made since truncation triggers retries
-		client.res["127.0.0.1:53"] = []*dns.Msg{response, response}
-		client.err["127.0.0.2:53"] = errors.New("timeout 2 in test")
+		client.res["127.0.0.53:53"] = []*dns.Msg{response, response}
+		client.err["127.0.0.54:53"] = errors.New("timeout 2 in test")
 
-		resolver := NewResolverWithClient(cfgPath, client)
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		_, res, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
 
-		require.Nil(t, res)
 		require.Error(t, err)
+		require.Nil(t, res)
+	})
+
+	t.Run("resolv.conf changes", func(t *testing.T) {
+		client := newMockClient()
+		client.res["127.0.0.11:53"] = []*dns.Msg{newSrvDNSResponse("_cache._tcp.example.com.", "cache01.example.com.")}
+		client.res["127.0.0.22:53"] = []*dns.Msg{newSrvDNSResponse("_cache._tcp.example.com.", "cache02.example.com.")}
+
+		cfgPath := writeResovConf(t, tmpDir, "nameserver 127.0.0.11\n")
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
+
+		_, res, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
+		require.NoError(t, err)
+		require.Equal(t, []*net.SRV{
+			{
+				Target:   "cache01.example.com.",
+				Port:     11211,
+				Priority: 10,
+				Weight:   100,
+			},
+		}, res)
+
+		// Update the resolv.conf file to include a new server.
+		_ = writeResovConf(t, tmpDir, "nameserver 127.0.0.22\n")
+		require.NoError(t, resolver.loadConfig())
+
+		_, res, err = resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
+		require.NoError(t, err)
+		require.Equal(t, []*net.SRV{
+			{
+				Target:   "cache02.example.com.",
+				Port:     11211,
+				Priority: 10,
+				Weight:   100,
+			},
+		}, res)
 	})
 }
 
 func TestResolver_LookupIP(t *testing.T) {
-	t.Run("bad resolv.conf", func(t *testing.T) {
-		cfgPath := path.Join(t.TempDir(), "resolv.conf")
-		client := newMockClient()
-
-		resolver := NewResolverWithClient(cfgPath, client)
-		_, err := resolver.LookupIPAddr(context.Background(), "cache01.example.com.")
-
-		require.Error(t, err)
-	})
+	logger := log.NewNopLogger()
+	period := time.Hour // We don't want the periodic reload running in the test
+	tmpDir := t.TempDir()
 
 	t.Run("multiple timeouts", func(t *testing.T) {
-		cfgPath := writeResovConf(t, resolvConfContents)
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
 		client := newMockClient()
-		client.err["127.0.0.1:53"] = errors.New("timeout 1 in test")
-		client.err["127.0.0.2:53"] = errors.New("timeout 2 in test")
+		client.err["127.0.0.53:53"] = errors.New("timeout 1 in test")
+		client.err["127.0.0.54:53"] = errors.New("timeout 2 in test")
 
-		resolver := NewResolverWithClient(cfgPath, client)
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		_, err := resolver.LookupIPAddr(context.Background(), "cache01.example.com.")
 
 		require.Error(t, err)
 	})
 
 	t.Run("one timeout and one success", func(t *testing.T) {
-		cfgPath := writeResovConf(t, resolvConfContents)
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
 		client := newMockClient()
-		client.err["127.0.0.1:53"] = errors.New("timeout 1 in test")
-		client.res["127.0.0.2:53"] = []*dns.Msg{newIPDNSResponse("cache01.example.com.", net.IPv4(10, 0, 0, 1))}
+		client.err["127.0.0.53:53"] = errors.New("timeout 1 in test")
+		client.res["127.0.0.54:53"] = []*dns.Msg{newIPDNSResponse("cache01.example.com.", net.IPv4(10, 0, 0, 1))}
 
-		resolver := NewResolverWithClient(cfgPath, client)
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		res, err := resolver.LookupIPAddr(context.Background(), "cache01.example.com")
 
-		require.Equal(t, []net.IPAddr{{IP: net.IPv4(10, 0, 0, 1)}}, res)
 		require.NoError(t, err)
+		require.Equal(t, []net.IPAddr{{IP: net.IPv4(10, 0, 0, 1)}}, res)
 	})
 
 	t.Run("name error", func(t *testing.T) {
@@ -144,33 +195,35 @@ func TestResolver_LookupIP(t *testing.T) {
 		response2.Rcode = dns.RcodeNameError
 		response2.Response = true
 
-		cfgPath := writeResovConf(t, resolvConfContents)
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
 		client := newMockClient()
-		client.err["127.0.0.1:53"] = errors.New("timeout 1 in test")
+		client.err["127.0.0.53:53"] = errors.New("timeout 1 in test")
 		// Include two responses since a failed AAAA lookup will result in an A fallback
-		client.res["127.0.0.2:53"] = []*dns.Msg{response1, response2}
+		client.res["127.0.0.54:53"] = []*dns.Msg{response1, response2}
 
-		resolver := NewResolverWithClient(cfgPath, client)
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		res, err := resolver.LookupIPAddr(context.Background(), "cache01.example.com")
 
-		require.Empty(t, res)
 		require.NoError(t, err)
+		require.Empty(t, res)
 	})
 
 	t.Run("one level of CNAME", func(t *testing.T) {
-		cfgPath := writeResovConf(t, resolvConfContents)
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
 		client := newMockClient()
-		client.err["127.0.0.1:53"] = errors.New("timeout 1 in test")
-		client.res["127.0.0.2:53"] = []*dns.Msg{
+		client.err["127.0.0.53:53"] = errors.New("timeout 1 in test")
+		client.res["127.0.0.54:53"] = []*dns.Msg{
 			newCnameDNSResponse("cache01.example.com.", "cache01.east.example.com."),
 			newIPDNSResponse("cache01.east.example.com.", net.IPv4(10, 0, 0, 1)),
 		}
 
-		resolver := NewResolverWithClient(cfgPath, client)
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
 		res, err := resolver.LookupIPAddr(context.Background(), "cache01.example.com")
 
-		require.Equal(t, []net.IPAddr{{IP: net.IPv4(10, 0, 0, 1)}}, res)
 		require.NoError(t, err)
+		require.Equal(t, []net.IPAddr{{IP: net.IPv4(10, 0, 0, 1)}}, res)
 	})
 }
 
@@ -256,9 +309,9 @@ func (m *mockClient) Clean([]string) {
 	m.cleaned.Add(1)
 }
 
-func writeResovConf(t *testing.T, contents string) string {
-	p := path.Join(t.TempDir(), "resolv.conf")
-	require.NoError(t, os.WriteFile(p, []byte(contents), 0777))
+func writeResovConf(t *testing.T, dir string, contents string) string {
+	p := path.Join(dir, "resolv.conf")
+	require.NoError(t, os.WriteFile(p, []byte(contents), 0666))
 	return p
 }
 

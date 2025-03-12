@@ -12,14 +12,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/miekg/dns"
 
 	"github.com/grafana/dskit/multierror"
 )
 
 const (
-	DefaultResolvConfPath  = "/etc/resolv.conf"
-	defaultMaxConnsPerHost = 2
+	DefaultResolvConfPath   = "/etc/resolv.conf"
+	defaultResolvConfReload = time.Second * 5
+	defaultMaxConnsPerHost  = 2
 )
 
 type Client interface {
@@ -34,26 +37,61 @@ type Client interface {
 // * Does _not_ use search domains, all names are assumed to be fully qualified
 // * Only uses TCP connections to the nameservers
 // * Keeps several connections to each nameserver open
-// * Reads resolv.conf on every query
-// * Closes connections to unknown nameservers on every query
+// * Reads resolv.conf periodically, using stale configuration if this fails
+// * Closes connections to unknown nameservers periodically
+//
+// The following parts of resolv.conf are supported:
+// * `nameserver` setting
+// * `attempts` option
+//
+// The following parts of resolv.conf are NOT supported.
+// * `search` setting
+// * `timeout` option
+// * `ndots` option
 type Resolver struct {
-	confPath string
-	client   Client
+	client       Client
+	logger       log.Logger
+	confPath     string
+	reloadPeriod time.Duration
+	stop         chan struct{}
+
+	mtx  sync.RWMutex
+	conf *dns.ClientConfig
 }
 
 // NewResolver creates a new Resolver that uses the provided resolv.conf configuration
-// to perform DNS queries.
-func NewResolver(resolvConf string) *Resolver {
-	return NewResolverWithClient(resolvConf, NewPoolingClient(defaultMaxConnsPerHost))
+// to perform DNS queries. Configuration from resolv.conf will be periodically reloaded.
+func NewResolver(resolvConf string, logger log.Logger) *Resolver {
+	return NewResolverWithClient(resolvConf, logger, defaultResolvConfReload, NewPoolingClient(defaultMaxConnsPerHost))
 }
 
-// NewResolverWithClient creates a new Resolver that uses the provided resolv.conf configuration
-// and Client implementation to perform DNS queries.
-func NewResolverWithClient(resolvConf string, client Client) *Resolver {
-	return &Resolver{
-		confPath: resolvConf,
-		client:   client,
+// NewResolverWithClient creates a new Resolver that uses the provided resolv.conf configuration,
+// reload period, and Client implementation to perform DNS queries. Configuration from resolv.conf
+// will be periodically reloaded.
+func NewResolverWithClient(resolvConf string, logger log.Logger, reloadPeriod time.Duration, client Client) *Resolver {
+	r := &Resolver{
+		client:       client,
+		logger:       logger,
+		confPath:     resolvConf,
+		reloadPeriod: reloadPeriod,
+		stop:         make(chan struct{}),
 	}
+
+	// Attempt an initial load of the configuration but fallback to defaults if it fails. The file
+	// missing should not be fatal according to `man 5 resolv.conf`.
+	if err := r.loadConfig(); err != nil {
+		level.Warn(r.logger).Log("msg", "unable to load resolv.conf, using default values", "path", r.confPath, "err", err)
+		r.conf = defaultClientConfig()
+	}
+
+	// Attempt to reload configuration periodically. If the reloads fail, old values are used.
+	go r.loop()
+	return r
+}
+
+// Stop stops periodic tasks run by the Resolver. The resolver should not be used after it is stopped.
+func (r *Resolver) Stop() {
+	close(r.stop)
 }
 
 func (r *Resolver) IsNotFound(error) bool {
@@ -64,17 +102,10 @@ func (r *Resolver) IsNotFound(error) bool {
 }
 
 func (r *Resolver) LookupSRV(ctx context.Context, service, proto, name string) (cname string, addrs []*net.SRV, err error) {
-	servers, conf, err := r.loadConfiguration()
-	if err != nil {
-		return "", nil, err
-	}
-
-	// Close connections to nameservers no longer configured in resolv.conf
-	r.client.Clean(servers)
-	return r.lookupSRV(ctx, servers, conf, service, proto, name)
+	return r.lookupSRV(ctx, r.getConfig(), service, proto, name)
 }
 
-func (r *Resolver) lookupSRV(ctx context.Context, servers []string, conf *dns.ClientConfig, service, proto, name string) (cname string, addrs []*net.SRV, err error) {
+func (r *Resolver) lookupSRV(ctx context.Context, conf *dns.ClientConfig, service, proto, name string) (cname string, addrs []*net.SRV, err error) {
 	var target string
 	if service == "" && proto == "" {
 		target = name
@@ -82,7 +113,7 @@ func (r *Resolver) lookupSRV(ctx context.Context, servers []string, conf *dns.Cl
 		target = "_" + service + "._" + proto + "." + name
 	}
 
-	response, err := r.query(ctx, servers, conf.Attempts, target, dns.Type(dns.TypeSRV))
+	response, err := r.query(ctx, conf, target, dns.Type(dns.TypeSRV))
 	if err != nil {
 		return "", nil, err
 	}
@@ -105,26 +136,19 @@ func (r *Resolver) lookupSRV(ctx context.Context, servers []string, conf *dns.Cl
 }
 
 func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
-	servers, conf, err := r.loadConfiguration()
-	if err != nil {
-		return nil, err
-	}
-
-	// Close connections to nameservers no longer configured in resolv.conf
-	r.client.Clean(servers)
-	return r.lookupIPAddr(ctx, servers, conf, host, 1, 8)
+	return r.lookupIPAddr(ctx, r.getConfig(), host, 1, 8)
 }
 
-func (r *Resolver) lookupIPAddr(ctx context.Context, servers []string, conf *dns.ClientConfig, host string, currIteration, maxIterations int) ([]net.IPAddr, error) {
+func (r *Resolver) lookupIPAddr(ctx context.Context, conf *dns.ClientConfig, host string, currIteration, maxIterations int) ([]net.IPAddr, error) {
 	// We want to protect from infinite loops when resolving DNS records recursively.
 	if currIteration > maxIterations {
 		return nil, fmt.Errorf("maximum number of recursive iterations reached (%d)", maxIterations)
 	}
 
-	response, err := r.query(ctx, servers, conf.Attempts, host, dns.Type(dns.TypeAAAA))
+	response, err := r.query(ctx, conf, host, dns.Type(dns.TypeAAAA))
 	if err != nil || len(response.Answer) == 0 {
 		// Ugly fallback to A lookup.
-		response, err = r.query(ctx, servers, conf.Attempts, host, dns.Type(dns.TypeA))
+		response, err = r.query(ctx, conf, host, dns.Type(dns.TypeA))
 		if err != nil {
 			return nil, err
 		}
@@ -139,7 +163,7 @@ func (r *Resolver) lookupIPAddr(ctx context.Context, servers []string, conf *dns
 			resp = append(resp, net.IPAddr{IP: addr.AAAA})
 		case *dns.CNAME:
 			// Recursively resolve it.
-			addrs, err := r.lookupIPAddr(ctx, servers, conf, addr.Target, currIteration+1, maxIterations)
+			addrs, err := r.lookupIPAddr(ctx, conf, addr.Target, currIteration+1, maxIterations)
 			if err != nil {
 				return nil, fmt.Errorf("%w: recursively resolve %s", err, addr.Target)
 			}
@@ -151,7 +175,7 @@ func (r *Resolver) lookupIPAddr(ctx context.Context, servers []string, conf *dns
 	return resp, nil
 }
 
-func (r *Resolver) query(ctx context.Context, servers []string, attempts int, name string, qType dns.Type) (*dns.Msg, error) {
+func (r *Resolver) query(ctx context.Context, conf *dns.ClientConfig, name string, qType dns.Type) (*dns.Msg, error) {
 	// We don't support search domains, all names are assumed to be fully qualified already.
 	msg := new(dns.Msg).SetQuestion(dns.Fqdn(name), uint16(qType))
 
@@ -163,16 +187,17 @@ func (r *Resolver) query(ctx context.Context, servers []string, attempts int, na
 	// > (The algorithm used is to try a name server, and if the query times out, try the next,
 	// > until out of name servers, then repeat trying all the name servers until a maximum number
 	// > of retries are made.)
-	for i := 0; i < attempts; i++ {
-		for _, server := range servers {
+	for i := 0; i < conf.Attempts; i++ {
+		for _, ip := range conf.Servers {
+			server := net.JoinHostPort(ip, conf.Port)
 			response, _, err := r.client.Exchange(ctx, msg, server)
 			if err != nil {
-				merr.Add(fmt.Errorf("resolution against server %s for %s: %w", server, name, err))
+				merr.Add(fmt.Errorf("resolution against server %s: %w", server, err))
 				continue
 			}
 
 			if response.Truncated {
-				merr.Add(fmt.Errorf("resolution against server %s for %s: response truncated", server, name))
+				merr.Add(fmt.Errorf("resolution against server %s: response truncated", server))
 				continue
 			}
 
@@ -185,21 +210,71 @@ func (r *Resolver) query(ctx context.Context, servers []string, attempts int, na
 	return nil, fmt.Errorf("could not resolve %s: no servers returned a viable answer. Errs %s", name, merr.Err())
 }
 
-// loadConfiguration parses and returns a resolv.conf configuration and builds a list of
-// nameservers of the form "ip:port" for convenience. Returns an error if the file cannot
-// be loaded or is not syntactically valid.
-func (r *Resolver) loadConfiguration() ([]string, *dns.ClientConfig, error) {
+// loop periodically reloads configuration from resolv.conf until the resolver is stopped.
+func (r *Resolver) loop() {
+	ticker := time.NewTicker(r.reloadPeriod)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := r.loadConfig(); err != nil {
+				level.Warn(r.logger).Log("msg", "unable to reload resolv.conf, using old values", "path", r.confPath, "err", err)
+			}
+		case <-r.stop:
+			return
+		}
+	}
+}
+
+// loadConfig loads and updates configuration from the configured resolv.conf path,
+// closing connections to defunct servers that are no longer configured, and returning
+// an error if the configuration file couldn't be opened or parsed. If an error is
+// returned, connections are not closed and the stored configuration is not updated.
+func (r *Resolver) loadConfig() error {
 	conf, err := dns.ClientConfigFromFile(r.confPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not load resolv.conf: %w", err)
+		return fmt.Errorf("could not load %s: %w", r.confPath, err)
 	}
 
 	servers := make([]string, len(conf.Servers))
-	for i, nameserver := range conf.Servers {
-		servers[i] = net.JoinHostPort(nameserver, conf.Port)
+	for i, ip := range conf.Servers {
+		servers[i] = net.JoinHostPort(ip, conf.Port)
 	}
 
-	return servers, conf, nil
+	// Close connections to any servers that are no longer in resolv.conf.
+	r.client.Clean(servers)
+
+	r.mtx.Lock()
+	r.conf = conf
+	r.mtx.Unlock()
+	return nil
+}
+
+func (r *Resolver) getConfig() *dns.ClientConfig {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	return &dns.ClientConfig{
+		Servers:  r.conf.Servers,
+		Search:   r.conf.Search,
+		Port:     r.conf.Port,
+		Ndots:    r.conf.Ndots,
+		Timeout:  r.conf.Timeout,
+		Attempts: r.conf.Attempts,
+	}
+}
+
+// defaultClientConfig returns Default values if resolv.conf can't be loaded, picked based on values from `man 5 resolv.conf`
+func defaultClientConfig() *dns.ClientConfig {
+	return &dns.ClientConfig{
+		Servers:  []string{"127.0.0.1"},
+		Search:   []string{},
+		Port:     "53",
+		Ndots:    1,
+		Timeout:  5,
+		Attempts: 2,
+	}
 }
 
 // PoolingClient is a DNS client that pools TCP connections to each nameserver.

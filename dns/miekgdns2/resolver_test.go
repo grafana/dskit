@@ -78,7 +78,7 @@ func TestResolver_LookupSRV(t *testing.T) {
 		t.Cleanup(resolver.Stop)
 		_, _, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
 
-		require.Error(t, err)
+		require.ErrorContains(t, err, "timeout")
 	})
 
 	t.Run("one timeout and one success", func(t *testing.T) {

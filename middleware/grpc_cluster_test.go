@@ -74,8 +74,8 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 		require.Len(t, clusterIDs, 1)
 		require.Equal(t, expectedCluster, clusterIDs[0])
 	}
-	invalidClusterValidationReporter := func(logger log.Logger, invalidClusterValidations *prometheus.CounterVec) InvalidClusterValidationReporter {
-		return func(msg string, cluster string, method string) {
+	invalidClusterValidationReporter := func(cluster string, logger log.Logger, invalidClusterValidations *prometheus.CounterVec) InvalidClusterValidationReporter {
+		return func(msg string, method string) {
 			level.Warn(logger).Log("msg", msg, "method", method, "clusterValidationLabel", cluster)
 			invalidClusterValidations.WithLabelValues(method).Inc()
 		}
@@ -89,7 +89,7 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
 			logger := createLogger(t, buf)
 			reg := prometheus.NewRegistry()
-			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, invalidClusterValidationReporter(logger, newRequestInvalidClusterValidationLabelsTotalCounter(reg)))
+			interceptor := ClusterUnaryClientInterceptor(testCase.cluster, invalidClusterValidationReporter(testCase.cluster, logger, newRequestInvalidClusterValidationLabelsTotalCounter(reg)))
 			invoker := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
 				verifyClusterPropagation(ctx, testCase.cluster)
 				return testCase.invokerError

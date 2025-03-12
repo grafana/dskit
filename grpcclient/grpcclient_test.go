@@ -44,3 +44,7 @@ func TestConfig(t *testing.T) {
 		})
 	})
 }
+
+func TestDialOption(t *testing.T) {
+
+}

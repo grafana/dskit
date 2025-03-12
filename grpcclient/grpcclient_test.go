@@ -98,7 +98,9 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 			cfg := Config{}
 			cfg.ClusterValidation = testCase.clusterValidation
 			cfg.RateLimit = testCase.rateLimit
-			withChainUnaryInterceptor = func(unaryInterceptors ...grpc.UnaryClientInterceptor) grpc.DialOption {
+			withChainUnaryInterceptorCalled := false
+			grpcWithChainUnaryInterceptor = func(unaryInterceptors ...grpc.UnaryClientInterceptor) grpc.DialOption {
+				withChainUnaryInterceptorCalled = true
 				require.Len(t, unaryInterceptors, testCase.expectedUnaryInterceptors)
 				if cfg.ClusterValidation.Label == "" {
 					require.Nil(t, cfg.clusterUnaryClientInterceptor)
@@ -111,6 +113,7 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 			}
 			_, err := cfg.DialOption(testCase.inputUnaryInterceptors, nil, middleware.NoOpInvalidClusterValidationReporter)
 			require.NoError(t, err)
+			require.True(t, withChainUnaryInterceptorCalled, "Mocked withChainUnaryInterceptorCalled was not called")
 		})
 	}
 }

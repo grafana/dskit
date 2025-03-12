@@ -20,8 +20,8 @@ import (
 	"github.com/grafana/dskit/middleware"
 )
 
-// withChainUnaryInterceptor helps to ensure that the requested order of interceptors is preserved.
-var withChainUnaryInterceptor = grpc.WithChainUnaryInterceptor
+// grpcWithChainUnaryInterceptor helps to ensure that the requested order of interceptors is preserved.
+var grpcWithChainUnaryInterceptor = grpc.WithChainUnaryInterceptor
 
 // Config for a gRPC client.
 type Config struct {
@@ -184,7 +184,7 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	return append(
 		opts,
 		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
-		withChainUnaryInterceptor(unaryClientInterceptors...),
+		grpcWithChainUnaryInterceptor(unaryClientInterceptors...),
 		grpc.WithChainStreamInterceptor(streamClientInterceptors...),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                time.Second * 20,

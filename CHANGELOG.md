@@ -88,6 +88,7 @@
 * [CHANGE] `Service.AddListener` and `Manager.AddListener` now return function for stopping the listener. #564
 * [CHANGE] ring: Add `InstanceRingReader` interface to `ring` package. #597
 * [CHANGE] Server: The `PerTenantDurationInstrumentation` config option was renamed to `PerTenantInstrumentation` and now allows specifying whether a full histogram should be recorded or only a counter #642
+* [CHANGE] grpcclient: Signature of `grpcclient.Config.DialOption()` has changed. It now requires an additional parameter of type `middleware.InvalidClusterValidationReporter` used for reporting cluster validation issues back to the caller. #657 
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
@@ -102,10 +103,11 @@
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
 * [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates a cluster info to the outgoing gRPC metadata. #640 #648 #649 #655
 * [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster info, and returns an error if it is not the case. #640 #648 #649 #655
-* [FEATURE] Add support for adding `middleware.ClusterUnaryServerInterceptor` as `server.Server` unary interceptor via the following configuration options: #650 
+* [FEATURE] Server: Add support for adding `middleware.ClusterUnaryServerInterceptor` as `server.Server` unary interceptor via the following experimental configuration options: #650 #657
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.grpc.soft-validation`
   * `-server.cluster-validation.grpc.enabled`
+* [FEATURE] grpcclient: Add experimental configuration option `-cluster-validation.label` to `grpcclient.Config` used for setting the cluster validation label of gRPC clients. #657
 * [FEATURE] Add `ring.GetWithOptions()` method to support additional features at a per-call level. #632
 * [ENHANCEMENT] Add feature flag to make Memcached soft-dependency on startup. If so, DNS failures on startup will be ignored on client creation. #647, #658
 * [ENHANCEMENT] Add option to hide token information in ring status page #633

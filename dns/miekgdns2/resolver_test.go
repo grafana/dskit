@@ -18,7 +18,7 @@ import (
 var resolvConfContents = `
 nameserver 127.0.0.53
 nameserver 127.0.0.54
-option attempts:2
+options attempts:2
 `
 
 func TestResolver_ConfigParsing(t *testing.T) {
@@ -29,16 +29,37 @@ func TestResolver_ConfigParsing(t *testing.T) {
 	t.Run("missing resolv.conf", func(t *testing.T) {
 		cfgPath := path.Join(tmpDir, "resolv.conf")
 		client := newMockClient()
-		// NOTE: We are returning an error for the server used as a default when resolv.conf
-		// can't be read. This tests that we're using default configuration when we can't read
-		// or parse the actual configuration file.
-		client.err["127.0.0.1:53"] = errors.New("connection refused")
 
 		resolver := NewResolverWithClient(cfgPath, logger, period, client)
 		t.Cleanup(resolver.Stop)
-		_, _, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
 
-		require.Error(t, err)
+		conf := resolver.getConfig()
+		require.Equal(t, []string{"127.0.0.1"}, conf.Servers)
+		require.Equal(t, 2, conf.Attempts)
+	})
+
+	t.Run("attempts not included", func(t *testing.T) {
+		cfgPath := writeResovConf(t, tmpDir, "nameserver 127.0.0.53\n")
+		client := newMockClient()
+
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
+
+		conf := resolver.getConfig()
+		require.Equal(t, []string{"127.0.0.53"}, conf.Servers)
+		require.Equal(t, 2, conf.Attempts)
+	})
+
+	t.Run("attempts overridden", func(t *testing.T) {
+		cfgPath := writeResovConf(t, tmpDir, "nameserver 127.0.0.53\noptions attempts:3\n")
+		client := newMockClient()
+
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
+
+		conf := resolver.getConfig()
+		require.Equal(t, []string{"127.0.0.53"}, conf.Servers)
+		require.Equal(t, 3, conf.Attempts)
 	})
 }
 
@@ -113,7 +134,7 @@ func TestResolver_LookupSRV(t *testing.T) {
 		t.Cleanup(resolver.Stop)
 		_, res, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
 
-		require.Error(t, err)
+		require.ErrorContains(t, err, "truncated")
 		require.Nil(t, res)
 	})
 
@@ -169,7 +190,7 @@ func TestResolver_LookupIP(t *testing.T) {
 		t.Cleanup(resolver.Stop)
 		_, err := resolver.LookupIPAddr(context.Background(), "cache01.example.com.")
 
-		require.Error(t, err)
+		require.ErrorContains(t, err, "timeout")
 	})
 
 	t.Run("one timeout and one success", func(t *testing.T) {

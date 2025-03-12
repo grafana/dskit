@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/grafana/dskit/clusterutil"
-	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+
+	"github.com/grafana/dskit/clusterutil"
+	"github.com/grafana/dskit/middleware"
 )
 
 func TestConfig(t *testing.T) {
@@ -108,7 +109,8 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 				}
 				return grpc.WithChainUnaryInterceptor(unaryInterceptors...)
 			}
-			cfg.DialOption(testCase.inputUnaryInterceptors, nil, middleware.NoOpInvalidClusterValidationReporter)
+			_, err := cfg.DialOption(testCase.inputUnaryInterceptors, nil, middleware.NoOpInvalidClusterValidationReporter)
+			require.NoError(t, err)
 		})
 	}
 }

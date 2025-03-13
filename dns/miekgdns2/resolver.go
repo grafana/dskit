@@ -237,17 +237,21 @@ func (r *Resolver) loadConfig() error {
 		return fmt.Errorf("could not load %s: %w", r.confPath, err)
 	}
 
+	// Note that we're building the list of known servers for the r.client.Clean method
+	// below from the newly read configuration before updating r.conf so that we know
+	// that the configuration can't be modified by another thread.
 	servers := make([]string, len(conf.Servers))
 	for i, ip := range conf.Servers {
 		servers[i] = net.JoinHostPort(ip, conf.Port)
 	}
 
-	// Close connections to any servers that are no longer in resolv.conf.
-	r.client.Clean(servers)
-
 	r.mtx.Lock()
 	r.conf = conf
 	r.mtx.Unlock()
+
+	// Close connections to any servers that are no longer in resolv.conf.
+	r.client.Clean(servers)
+
 	return nil
 }
 

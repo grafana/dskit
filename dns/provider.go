@@ -47,9 +47,10 @@ func (t ResolverType) String() string {
 	return string(t)
 }
 
-func (t ResolverType) Set(v string) error {
+func (t *ResolverType) Set(v string) error {
 	switch ResolverType(v) {
 	case GolangResolverType, MiekgdnsResolverType, MiekgdnsResolverType2:
+		*t = ResolverType(v)
 		return nil
 	default:
 		return fmt.Errorf("unsupported resolver type %s", v)

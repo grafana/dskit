@@ -61,6 +61,18 @@ func TestResolver_ConfigParsing(t *testing.T) {
 		require.Equal(t, []string{"127.0.0.53"}, conf.Servers)
 		require.Equal(t, 3, conf.Attempts)
 	})
+
+	t.Run("unknown settings ignored", func(t *testing.T) {
+		cfgPath := writeResovConf(t, tmpDir, "nameserver 127.0.0.53\noptions attempts:3\nfoo bar\noptions whatever:4\noptions single-request\n")
+		client := newMockClient()
+
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
+
+		conf := resolver.getConfig()
+		require.Equal(t, []string{"127.0.0.53"}, conf.Servers)
+		require.Equal(t, 3, conf.Attempts)
+	})
 }
 
 func TestResolver_LookupSRV(t *testing.T) {

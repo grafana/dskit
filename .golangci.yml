@@ -20,6 +20,10 @@ linters-settings:
       - (github.com/opentracing/opentracing-go.Tracer).Inject
   goimports:
     local-prefixes: "github.com/grafana/dskit"
+  revive:
+    rules:
+      - name: redefines-builtin-id
+        disabled: true
 run:
   timeout: 5m
   # List of build tags, all linters use it.

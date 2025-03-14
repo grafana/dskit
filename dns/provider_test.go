@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProvider(t *testing.T) {
@@ -145,4 +146,21 @@ func TestIsDynamicNode(t *testing.T) {
 		isDynamic := IsDynamicNode(tcase.node)
 		assert.Equal(t, tcase.isDynamic, isDynamic, "mismatch between results")
 	}
+}
+
+func TestResolverType(t *testing.T) {
+	t.Run("set valid types", func(t *testing.T) {
+		for _, val := range []string{"golang", "miekgdns", "miekgdns2"} {
+			var rt ResolverType
+			require.NoError(t, rt.Set(val))
+			require.Equal(t, val, rt.String())
+		}
+	})
+
+	t.Run("set invalid types", func(t *testing.T) {
+		for _, val := range []string{"dns+golang", "invalid", "miekgdns27"} {
+			var rt ResolverType
+			require.Error(t, rt.Set(val))
+		}
+	})
 }

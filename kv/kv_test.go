@@ -99,13 +99,13 @@ func TestNilCAS(t *testing.T) {
 
 func TestWatchKey(t *testing.T) {
 	const key = "test"
-	const max = 100
+	const maxVals = 100
 	const sleep = 15 * time.Millisecond
-	const totalTestTimeout = 3 * max * sleep
+	const totalTestTimeout = 3 * maxVals * sleep
 	const expectedFactor = 0.75 // we may not see every single value
 
 	withFixtures(t, func(t *testing.T, client Client) {
-		observedValuesCh := make(chan string, max)
+		observedValuesCh := make(chan string, maxVals)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -121,7 +121,7 @@ func TestWatchKey(t *testing.T) {
 
 		// update value for the key
 		go func() {
-			for i := 0; i < max; i++ {
+			for i := 0; i < maxVals; i++ {
 				// Start with sleeping, so that watching client see empty KV store at the beginning.
 				time.Sleep(sleep)
 
@@ -157,14 +157,14 @@ func TestWatchKey(t *testing.T) {
 				lastObservedValue = val
 				observedCount++
 
-				if observedCount >= expectedFactor*max {
+				if observedCount >= expectedFactor*maxVals {
 					watching = false
 				}
 			}
 		}
 
-		if observedCount < expectedFactor*max {
-			t.Errorf("expected at least %.0f%% observed values, got %.0f%% (observed count: %d)", 100*expectedFactor, 100*float64(observedCount)/max, observedCount)
+		if observedCount < expectedFactor*maxVals {
+			t.Errorf("expected at least %.0f%% observed values, got %.0f%% (observed count: %d)", 100*expectedFactor, 100*float64(observedCount)/maxVals, observedCount)
 		}
 	})
 }
@@ -175,13 +175,13 @@ func TestWatchPrefix(t *testing.T) {
 		const prefix2 = "ignore/"
 
 		// We are going to generate this number of updates, sleeping between each update.
-		const max = 100
+		const maxKeys = 100
 		const sleep = time.Millisecond * 10
 		// etcd seems to be quite slow. If we finish faster, test will end sooner.
 		// (We regularly see generators taking up to 5 seconds to produce all messages on some platforms!)
 		const totalTestTimeout = 10 * time.Second
 
-		observedKeysCh := make(chan string, max)
+		observedKeysCh := make(chan string, maxKeys)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -203,7 +203,7 @@ func TestWatchPrefix(t *testing.T) {
 			defer wg.Done()
 
 			start := time.Now()
-			for i := 0; i < max && ctx.Err() == nil; i++ {
+			for i := 0; i < maxKeys && ctx.Err() == nil; i++ {
 				// Start with sleeping, so that watching client can see empty KV store at the beginning.
 				time.Sleep(sleep)
 
@@ -235,7 +235,7 @@ func TestWatchPrefix(t *testing.T) {
 				watching = false
 			case key := <-observedKeysCh:
 				observedKeys[key]++
-				if len(observedKeys) == max {
+				if len(observedKeys) == maxKeys {
 					watching = false
 				}
 			}
@@ -247,7 +247,7 @@ func TestWatchPrefix(t *testing.T) {
 		wg.Wait()
 
 		// verify that each key was reported once, and keys outside prefix were not reported
-		for i := 0; i < max; i++ {
+		for i := 0; i < maxKeys; i++ {
 			key := fmt.Sprintf("%s%d", prefix, i)
 
 			if observedKeys[key] != 1 {

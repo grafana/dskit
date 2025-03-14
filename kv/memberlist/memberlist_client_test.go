@@ -1135,22 +1135,22 @@ func getFreePorts(count int) ([]int, error) {
 	return ports, nil
 }
 
-func getTimestamps(members map[string]member) (min int64, max int64, avg int64) {
-	min = int64(math.MaxInt64)
+func getTimestamps(members map[string]member) (minTs int64, maxTs int64, avgTs int64) {
+	minTs = int64(math.MaxInt64)
 
 	for _, ing := range members {
-		if ing.Timestamp < min {
-			min = ing.Timestamp
+		if ing.Timestamp < minTs {
+			minTs = ing.Timestamp
 		}
 
-		if ing.Timestamp > max {
-			max = ing.Timestamp
+		if ing.Timestamp > maxTs {
+			maxTs = ing.Timestamp
 		}
 
-		avg += ing.Timestamp
+		avgTs += ing.Timestamp
 	}
 	if len(members) > 0 {
-		avg /= int64(len(members))
+		avgTs /= int64(len(members))
 	}
 	return
 }

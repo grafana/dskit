@@ -118,12 +118,12 @@ func (b *Backoff) NextDelay() time.Duration {
 	return sleepTime
 }
 
-func doubleDuration(value time.Duration, max time.Duration) time.Duration {
+func doubleDuration(value, maxVal time.Duration) time.Duration {
 	value = value * 2
 
-	if value <= max {
+	if value <= maxVal {
 		return value
 	}
 
-	return max
+	return maxVal
 }

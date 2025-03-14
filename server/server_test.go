@@ -206,6 +206,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	client := NewFakeServerClient(conn)
 	res, err := client.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
+	empty.Reset()
 	require.EqualValues(t, &empty, res)
 
 	res, err = client.FailWithError(context.Background(), &empty)
@@ -672,6 +673,7 @@ func TestTLSServer(t *testing.T) {
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
+	empty.Reset()
 	require.EqualValues(t, &empty, grpcRes)
 }
 
@@ -763,6 +765,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
+	empty.Reset()
 	require.EqualValues(t, &empty, grpcRes)
 }
 

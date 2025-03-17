@@ -6,7 +6,6 @@ require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/alicebob/miniredis v2.5.0+incompatible
 	github.com/armon/go-metrics v0.3.10
-	github.com/aws/aws-sdk-go v1.44.321
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cristalhq/hedgedhttp v0.9.1
 	github.com/davecgh/go-spew v1.1.1

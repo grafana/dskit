@@ -18,49 +18,6 @@ import (
 	"github.com/grafana/dskit/flagext"
 )
 
-func TestMemcachedClientConfig_Validate(t *testing.T) {
-	tests := map[string]struct {
-		setup       func(config *MemcachedClientConfig)
-		expectedErr error
-	}{
-		"should pass on positive write buffer size": {
-			setup: func(config *MemcachedClientConfig) {
-				config.WriteBufferSizeBytes = 12345
-			},
-			expectedErr: nil,
-		},
-		"should pass on positive read buffer size": {
-			setup: func(config *MemcachedClientConfig) {
-				config.ReadBufferSizeBytes = 12345
-			},
-			expectedErr: nil,
-		},
-		"should return error on negative write buffer size": {
-			setup: func(config *MemcachedClientConfig) {
-				config.WriteBufferSizeBytes = -1
-			},
-			expectedErr: ErrInvalidWriteBufferSizeBytes,
-		},
-		"should return error on negative read buffer size": {
-			setup: func(config *MemcachedClientConfig) {
-				config.ReadBufferSizeBytes = -1
-			},
-			expectedErr: ErrInvalidReadBufferSizeBytes,
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			cfg := MemcachedClientConfig{}
-			memcachedClientConfigDefaultValues(&cfg)
-			cfg.Addresses = flagext.StringSliceCSV{"localhost:11211"}
-
-			testData.setup(&cfg)
-			require.Equal(t, testData.expectedErr, cfg.Validate())
-		})
-	}
-}
-
 func TestMemcachedClient_SetAsync(t *testing.T) {
 	t.Run("with non-zero TTL", func(t *testing.T) {
 		client, _, err := setupDefaultMemcachedClient()

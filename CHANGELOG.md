@@ -90,7 +90,7 @@
 * [CHANGE] ring: Add `InstanceRingReader` interface to `ring` package. #597
 * [CHANGE] DNS: Introduce new `miekgdns2` resolver backend type with experimental DNS client. #660
 * [CHANGE] Server: The `PerTenantDurationInstrumentation` config option was renamed to `PerTenantInstrumentation` and now allows specifying whether a full histogram should be recorded or only a counter #642
-* [CHANGE] grpcclient: Signature of `grpcclient.Config.DialOption()` has changed. It now requires an additional parameter of type `middleware.InvalidClusterValidationReporter` used for reporting cluster validation issues back to the caller. #657 
+* [CHANGE] grpcclient: Signature of `grpcclient.Config.DialOption()` has changed. It now requires an additional parameter of type `middleware.InvalidClusterValidationReporter` used for reporting cluster validation issues back to the caller. #657
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338
@@ -111,6 +111,7 @@
   * `-server.cluster-validation.grpc.enabled`
 * [FEATURE] grpcclient: Add experimental configuration option `-cluster-validation.label` to `grpcclient.Config` used for setting the cluster validation label of gRPC clients. #657
 * [FEATURE] Add `ring.GetWithOptions()` method to support additional features at a per-call level. #632
+* [FEATURE] Add `-memberlist.watch-prefix-buffer-size` that controls the size of the buffered channel used by WatchPrefix. #669
 * [ENHANCEMENT] Add feature flag to make Memcached soft-dependency on startup. If so, DNS failures on startup will be ignored on client creation. #647, #658
 * [ENHANCEMENT] Add option to hide token information in ring status page #633
 * [ENHANCEMENT] Display token information in partition ring status page #631

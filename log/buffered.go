@@ -97,11 +97,11 @@ func WithPrellocatedBuffer(size uint32) BufferedLoggerOption {
 
 // NewBufferedLogger creates a new BufferedLogger with a configured capacity.
 // Lines are flushed when the context is done, the buffer is full, or the flush period is reached.
-func NewBufferedLogger(w io.Writer, cap uint32, opts ...BufferedLoggerOption) *BufferedLogger {
+func NewBufferedLogger(w io.Writer, capacity uint32, opts ...BufferedLoggerOption) *BufferedLogger {
 	l := &BufferedLogger{
 		w:   w,
 		buf: newThreadsafeBuffer(bytes.NewBuffer([]byte{})),
-		cap: cap,
+		cap: capacity,
 	}
 
 	for _, opt := range opts {

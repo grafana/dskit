@@ -53,14 +53,14 @@ func TestOwnershipPriorityQueue_EqualOwnershipOfRingTokens(t *testing.T) {
 	heap.Push(&pq, second)
 	heap.Push(&pq, third)
 
-	max := heap.Pop(&pq).(ownershipInfo[ringToken])
-	require.Equal(t, first, max)
+	maxInfo := heap.Pop(&pq).(ownershipInfo[ringToken])
+	require.Equal(t, first, maxInfo)
 
-	max = heap.Pop(&pq).(ownershipInfo[ringToken])
-	require.Equal(t, second, max)
+	maxInfo = heap.Pop(&pq).(ownershipInfo[ringToken])
+	require.Equal(t, second, maxInfo)
 
-	max = heap.Pop(&pq).(ownershipInfo[ringToken])
-	require.Equal(t, third, max)
+	maxInfo = heap.Pop(&pq).(ownershipInfo[ringToken])
+	require.Equal(t, third, maxInfo)
 }
 
 func TestOwnershipPriorityQueue_EqualOwnershipOfRingInstances(t *testing.T) {
@@ -79,14 +79,14 @@ func TestOwnershipPriorityQueue_EqualOwnershipOfRingInstances(t *testing.T) {
 	heap.Push(&pq, second)
 	heap.Push(&pq, third)
 
-	max := heap.Pop(&pq).(ownershipInfo[ringInstance])
-	require.Equal(t, first, max)
+	maxInfo := heap.Pop(&pq).(ownershipInfo[ringInstance])
+	require.Equal(t, first, maxInfo)
 
-	max = heap.Pop(&pq).(ownershipInfo[ringInstance])
-	require.Equal(t, second, max)
+	maxInfo = heap.Pop(&pq).(ownershipInfo[ringInstance])
+	require.Equal(t, second, maxInfo)
 
-	max = heap.Pop(&pq).(ownershipInfo[ringInstance])
-	require.Equal(t, third, max)
+	maxInfo = heap.Pop(&pq).(ownershipInfo[ringInstance])
+	require.Equal(t, third, maxInfo)
 }
 
 func TestOwnershipPriorityQueue_PushPopPeek(t *testing.T) {

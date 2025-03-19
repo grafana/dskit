@@ -40,9 +40,9 @@ func TestWatchKeyWithRateLimit(t *testing.T) {
 	})
 
 	const key = "test"
-	const max = 100
+	const end = 100
 
-	ch := writeValuesToKV(t, c, key, 0, max, 10*time.Millisecond)
+	ch := writeValuesToKV(t, c, key, 0, end, 10*time.Millisecond)
 
 	observed := observeValueForSomeTime(t, c, key, 1200*time.Millisecond) // little over 1 second
 
@@ -60,7 +60,7 @@ func TestWatchKeyWithRateLimit(t *testing.T) {
 	}
 	last := observed[len(observed)-1]
 	n, _ := strconv.Atoi(last)
-	if n < max/2 {
+	if n < end/2 {
 		t.Error("Expected to see high last observed value, got", observed)
 	}
 }
@@ -74,9 +74,9 @@ func TestWatchKeyNoRateLimit(t *testing.T) {
 	})
 
 	const key = "test"
-	const max = 100
+	const end = 100
 
-	ch := writeValuesToKV(t, c, key, 0, max, time.Millisecond)
+	ch := writeValuesToKV(t, c, key, 0, end, time.Millisecond)
 	observed := observeValueForSomeTime(t, c, key, 500*time.Millisecond)
 
 	// wait until updater finishes
@@ -84,7 +84,7 @@ func TestWatchKeyNoRateLimit(t *testing.T) {
 
 	// With no limit, we should see most written values (we can lose some values if watching
 	// code is busy while multiple new values are written)
-	if len(observed) < 3*max/4 {
+	if len(observed) < 3*end/4 {
 		t.Error("Expected at least 3/4 of all values, got", observed)
 	}
 }
@@ -96,12 +96,12 @@ func TestReset(t *testing.T) {
 	})
 
 	const key = "test"
-	const max = 5
+	const end = 5
 
 	ch := make(chan error)
 	go func() {
 		defer close(ch)
-		for i := 0; i <= max; i++ {
+		for i := 0; i <= end; i++ {
 			t.Log("ts", time.Now(), "msg", "writing value", "val", i)
 			_, _ = c.kv.Put(&consul.KVPair{Key: key, Value: []byte(fmt.Sprintf("%d", i))}, nil)
 			if i == 1 {
@@ -114,7 +114,7 @@ func TestReset(t *testing.T) {
 		}
 	}()
 
-	observed := observeValueForSomeTime(t, c, key, 25*max*time.Millisecond)
+	observed := observeValueForSomeTime(t, c, key, 25*end*time.Millisecond)
 
 	// wait until updater finishes
 	<-ch
@@ -123,9 +123,9 @@ func TestReset(t *testing.T) {
 	if testing.Verbose() {
 		t.Log(observed)
 	}
-	if len(observed) < max {
+	if len(observed) < end {
 		t.Error("Expected all values, got", observed)
-	} else if observed[len(observed)-1] != fmt.Sprintf("%d", max) {
+	} else if observed[len(observed)-1] != fmt.Sprintf("%d", end) {
 		t.Error("Expected to see last written value, got", observed)
 	}
 }

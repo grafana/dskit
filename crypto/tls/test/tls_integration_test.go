@@ -145,14 +145,14 @@ func newIntegrationClientServer(
 				if err == nil {
 					return false
 				}
-				return strings.Contains(err.Error(), "connection reset by peer") || strings.Contains(err.Error(), "broken pipe")
+				return strings.Contains(err.Error(), "connection reset by peer") ||
+					strings.Contains(err.Error(), "broken pipe") ||
+					strings.Contains(err.Error(), "client conn could not be established")
 			}
-			for i := 0; i < 3 && isRST(err) && tc.httpExpectError != nil; i++ {
+			for i := 0; i < 5 && isRST(err) && tc.httpExpectError != nil; i++ {
+				t.Logf("Sleeping before retry #%d, due to RST error: %s", i+1, err)
 				time.Sleep(100 * time.Millisecond)
 				resp, err = client.Do(req)
-				if err == nil {
-					defer resp.Body.Close()
-				}
 			}
 			if err == nil {
 				defer resp.Body.Close()

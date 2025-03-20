@@ -2086,7 +2086,7 @@ func TestWatchPrefix(t *testing.T) {
 
 		// Start watching prefix
 		go func() {
-			kv.WatchPrefix(ctx, prefix, codec, func(key string, val interface{}) bool {
+			kv.WatchPrefix(ctx, prefix, codec, func(key string, _ any) bool {
 				mu.Lock()
 				notifications = append(notifications, key)
 				count := len(notifications)

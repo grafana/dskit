@@ -387,10 +387,6 @@ var (
 func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer prometheus.Registerer) *KV {
 	cfg.TCPTransport.MetricsNamespace = cfg.MetricsNamespace
 
-	if cfg.WatchPrefixBufferSize <= 0 {
-		cfg.WatchPrefixBufferSize = watchPrefixBufferSize
-	}
-
 	mlkv := &KV{
 		cfg:              cfg,
 		logger:           logger,

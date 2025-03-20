@@ -3712,6 +3712,50 @@ func BenchmarkRing_Get(b *testing.B) {
 	}
 }
 
+func BenchmarkRing_Get_OneZoneLeaving(b *testing.B) {
+	// This benchmark tests a pathological case in the ring. If an entire zone is "LEAVING", we'll have to
+	// look at every instance in that zone, extending the replication set, to try to find one we can use for
+	// our operation. Previous versions of the ring would examine every single token in an attempt to find a
+	// usable host in the zone with all instances "LEAVING", resulting in poor performance.
+	const (
+		expectedInstances = 2
+		instances         = 90
+		zones             = 3
+	)
+
+	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), instances, zones, numTokens)}
+
+	// Go through the last zone and set the instances as leaving.
+	for id, inst := range ringDesc.Ingesters {
+		if inst.Zone == "zone-2" {
+			inst.State = LEAVING
+			ringDesc.Ingesters[id] = inst
+		}
+	}
+
+	ring := newRingForTesting(Config{
+		HeartbeatTimeout:     time.Hour,
+		ZoneAwarenessEnabled: true,
+		SubringCacheDisabled: true,
+		ReplicationFactor:    zones,
+	}, true)
+
+	ring.setRingStateFromDesc(ringDesc, false, false, false)
+	ring.strategy = NewIgnoreUnhealthyInstancesReplicationStrategy()
+
+	buf, bufHosts, bufZones := MakeBuffersForGet()
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		set, err := ring.Get(r.Uint32(), Write, buf, bufHosts, bufZones)
+		assert.NoError(b, err)
+		assert.Equal(b, expectedInstances, len(set.Instances))
+	}
+
+}
+
 func TestRing_Get_NoMemoryAllocations(t *testing.T) {
 	// Initialise the ring.
 	ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), 3, 3, 128)}

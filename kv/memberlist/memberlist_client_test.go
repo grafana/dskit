@@ -2040,3 +2040,97 @@ func TestNotificationDelay(t *testing.T) {
 		}
 	}, 20*time.Second, 100*time.Millisecond)
 }
+
+func TestWatchPrefix(t *testing.T) {
+	t.Run("buffer size configuration", func(t *testing.T) {
+		// Test custom buffer size
+		cfg := KVConfig{}
+		cfg.WatchPrefixBufferSize = 10
+		kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		require.Equal(t, 10, kv.cfg.WatchPrefixBufferSize)
+
+		// Test invalid buffer size is rejected
+		kvInit := NewKVInitService(&KVConfig{WatchPrefixBufferSize: -3}, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		_, err := kvInit.GetMemberlistKV()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid WatchPrefixBufferSize")
+
+		kvInit = NewKVInitService(&KVConfig{WatchPrefixBufferSize: 0}, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		_, err = kvInit.GetMemberlistKV()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid WatchPrefixBufferSize")
+	})
+
+	t.Run("buffering behavior", func(t *testing.T) {
+		// Create KV with small buffer and fast notification interval
+		cfg := KVConfig{}
+		cfg.WatchPrefixBufferSize = 2
+		// Disable notification batching to get immediate notifications
+		cfg.NotifyInterval = 0
+		kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
+		defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
+
+		// Setup test data
+		codec := dataCodec{}
+		prefix := "test_prefix_"
+		keys := []string{prefix + "1", prefix + "2", prefix + "3"}
+
+		// Create a channel to receive notifications
+		notifications := make([]string, 0)
+		mu := sync.Mutex{} // Protect notifications slice
+		done := make(chan struct{})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Start watching prefix
+		go func() {
+			kv.WatchPrefix(ctx, prefix, codec, func(key string, _ any) bool {
+				mu.Lock()
+				notifications = append(notifications, key)
+				count := len(notifications)
+				mu.Unlock()
+
+				if count == len(keys) {
+					close(done)
+				}
+				return true // keep watching
+			})
+		}()
+
+		// Give the watcher time to register
+		time.Sleep(100 * time.Millisecond)
+
+		// Update keys
+		for _, key := range keys {
+			err := kv.CAS(context.Background(), key, codec, func(in interface{}) (out interface{}, retry bool, err error) {
+				d := getOrCreateData(in)
+				d.Members["test"] = member{Timestamp: time.Now().Unix(), State: JOINING}
+				return d, true, nil
+			})
+			require.NoError(t, err)
+		}
+
+		// Wait for all notifications or timeout
+		select {
+		case <-done:
+			mu.Lock()
+			defer mu.Unlock()
+			require.Len(t, notifications, len(keys))
+			// Verify all keys were notified about
+			for _, k := range keys {
+				found := false
+				for _, n := range notifications {
+					if n == k {
+						found = true
+						break
+					}
+				}
+				require.True(t, found, "key %s should have generated a notification", k)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout waiting for notifications")
+		}
+	})
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +17,6 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/internal/slices"
 	"github.com/grafana/dskit/spanlogger"
 )
 

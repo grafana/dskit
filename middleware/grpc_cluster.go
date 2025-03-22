@@ -108,7 +108,7 @@ func checkClusterFromIncomingContext(ctx context.Context, method string, expecte
 		if !softValidationEnabled {
 			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster validation label %q - it should be %q", reqCluster, expectedCluster)
 		}
-		return []any{"msg", "request with wrong cluster validation label", "method", method, "clusterValidationLabel", expectedCluster, "requestClusterValidationLabel", reqCluster, "softValidation", softValidationEnabled}, wrongClusterErr
+		return []any{"msg", "request with wrong cluster validation label", "method", method, "cluster_validation_label", expectedCluster, "request_cluster_validation_label", reqCluster, "soft_validation", softValidationEnabled}, wrongClusterErr
 	}
 
 	if errors.Is(err, clusterutil.ErrNoClusterValidationLabel) {
@@ -116,11 +116,11 @@ func checkClusterFromIncomingContext(ctx context.Context, method string, expecte
 		if !softValidationEnabled {
 			emptyClusterErr = fmt.Errorf("rejected request with empty cluster validation label - it should be %q", expectedCluster)
 		}
-		return []any{"msg", "request with no cluster validation label", "method", method, "clusterValidationLabel", expectedCluster, "softValidation", softValidationEnabled}, emptyClusterErr
+		return []any{"msg", "request with no cluster validation label", "method", method, "cluster_validation_label", expectedCluster, "soft_validation", softValidationEnabled}, emptyClusterErr
 	}
 	var rejectedRequestErr error
 	if !softValidationEnabled {
 		rejectedRequestErr = fmt.Errorf("rejected request: %w", err)
 	}
-	return []any{"msg", "detected error during cluster validation label extraction", "method", method, "clusterValidationLabel", expectedCluster, "softValidation", softValidationEnabled, "err", err}, rejectedRequestErr
+	return []any{"msg", "detected error during cluster validation label extraction", "method", method, "cluster_validation_label", expectedCluster, "soft_validation", softValidationEnabled, "err", err}, rejectedRequestErr
 }

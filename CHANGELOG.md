@@ -103,12 +103,19 @@
 * [FEATURE] Add methods `Increment`, `FlushAll`, `CompareAndSwap`, `Touch` to `cache.MemcachedClient` #477
 * [FEATURE] Add `concurrency.ForEachJobMergeResults()` utility function. #486
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
-* [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates a cluster info to the outgoing gRPC metadata. #640 #648 #649 #655
-* [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster info, and returns an error if it is not the case. #640 #648 #649 #655
+* [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates cluster validation labels to the outgoing gRPC metadata. #640 #648 #649 #655
+* [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster validation label, and returns an error if it is not the case. #640 #648 #649 #655
 * [FEATURE] Server: Add support for adding `middleware.ClusterUnaryServerInterceptor` as `server.Server` unary interceptor via the following experimental configuration options: #650 #657
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.grpc.soft-validation`
   * `-server.cluster-validation.grpc.enabled`
+* [FEATURE] Add `middleware.ClusterValidationRoundTripper`, an `http.RoundTripper` that enriches HTTP request headers with the cluster validation labels. #671
+* [FEATURE] Add `middleware.ClusterValidationMiddleware`, an implementation of `middleware.Interface` that checks if HTTP requests contain a correct cluster validation label, and returns an error if it is not the case. #671
+* [FEATURE] Server: Add support for adding `middleware.ClusterValidationMiddleware` as `server.Server` HTTP middleware via the following experimental configuration options: #671
+  * `-server.cluster-validation.label`
+  * `-server.cluster-validation.http.soft-validation`
+  * `-server.cluster-validation.http.enabled`
+  * `-server.cluster-validation.http.excluded-paths`
 * [FEATURE] grpcclient: Add experimental configuration option `-cluster-validation.label` to `grpcclient.Config` used for setting the cluster validation label of gRPC clients. #657
 * [FEATURE] Add `ring.GetWithOptions()` method to support additional features at a per-call level. #632
 * [FEATURE] Add `-memberlist.watch-prefix-buffer-size` that controls the size of the buffered channel used by WatchPrefix. #669

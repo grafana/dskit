@@ -46,8 +46,9 @@ func ClusterValidationRoundTripper(cluster string, invalidClusterValidationRepor
 			return nil, err
 		}
 		body, err := io.ReadAll(resp.Body)
+		defer resp.Body.Close()
 		if err != nil {
-			return resp, err
+			return nil, err
 		}
 		var clusterValidationErr clusterValidationError
 		err = json.Unmarshal(body, &clusterValidationErr)
@@ -55,7 +56,6 @@ func ClusterValidationRoundTripper(cluster string, invalidClusterValidationRepor
 			resp.Body = io.NopCloser(bytes.NewReader(body))
 			return resp, nil
 		}
-		defer resp.Body.Close()
 		msg := fmt.Sprintf("request rejected by the server: %s", clusterValidationErr.ClusterValidationErrorMessage)
 		invalidClusterValidationReporter(msg, req.URL.Path)
 		return nil, httpgrpc.Error(http.StatusNetworkAuthenticationRequired, msg)

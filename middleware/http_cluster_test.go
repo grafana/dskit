@@ -46,7 +46,7 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 		"if the server returns a clusterValidationError it is handled by ClusterValidationRoundTripper": {
 			cluster: "cluster",
 			serverResponse: func(w http.ResponseWriter) {
-				err := clusterValidationError{Message: "this is a cluster validation error"}
+				err := clusterValidationError{ClusterValidationErrorMessage: "this is a cluster validation error"}
 				err.writeAsJSON(w)
 			},
 			expectedErr:        true,
@@ -112,9 +112,7 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 			defer server.Close()
 
 			req, err := http.NewRequest("GET", fmt.Sprintf("%s/Test/Me", server.URL), nil)
-			if err != nil {
-				t.Fatalf("%v", err)
-			}
+			require.NoError(t, err)
 
 			resp, err := client.Do(req)
 			if testCase.expectedErr {
@@ -122,6 +120,7 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 			} else {
 				body, err := io.ReadAll(resp.Body)
 				require.NoError(t, err)
+				resp.Body.Close()
 				require.Equal(t, testCase.expectedResponse, string(body))
 			}
 
@@ -146,20 +145,20 @@ func TestClusterValidationMiddleware(t *testing.T) {
 		expectedLogs       string
 		shouldPanic        bool
 	}{
-		"empty server cluster make ClusterUnaryServerInterceptor panic": {
+		"empty server cluster makes ClusterUnaryServerInterceptor panic": {
 			serverCluster: "",
 			shouldPanic:   true,
 		},
 		"equal request and server clusters give no error": {
 			header: func(r *http.Request) {
-				r.Header[clusterutil.ClusterVerificationLabelHeader] = []string{"cluster"}
+				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"cluster"}
 			},
 			serverCluster:      "cluster",
 			expectedStatusCode: http.StatusOK,
 		},
 		"different request and server clusters give rise to an error if soft validation disabled": {
 			header: func(r *http.Request) {
-				r.Header[clusterutil.ClusterVerificationLabelHeader] = []string{"wrong-cluster"}
+				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"wrong-cluster"}
 			},
 			serverCluster:      "cluster",
 			expectedLogs:       `level=warn msg="request with wrong cluster validation label" path=/Test/Me cluster_validation_label=cluster request_cluster_validation_label=wrong-cluster soft_validation=%v`,
@@ -168,7 +167,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 		},
 		"empty request cluster and non-empty server cluster give an error if soft validation disabled": {
 			header: func(r *http.Request) {
-				r.Header[clusterutil.ClusterVerificationLabelHeader] = []string{""}
+				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{""}
 			},
 			serverCluster:      "cluster",
 			expectedLogs:       `level=warn msg="request with no cluster validation label" path=/Test/Me cluster_validation_label=cluster soft_validation=%v`,
@@ -181,9 +180,9 @@ func TestClusterValidationMiddleware(t *testing.T) {
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request with empty cluster validation label - it should be "cluster"`,
 		},
-		"if the incoming context contains more than one cluster labels an error is returned if soft validation disabled": {
+		"if the incoming request contains more than one cluster labels and soft validation is disabled an error is returned": {
 			header: func(r *http.Request) {
-				r.Header[clusterutil.ClusterVerificationLabelHeader] = []string{"cluster", "another-cluster"}
+				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"cluster", "another-cluster"}
 			},
 			serverCluster:      "cluster",
 			expectedLogs:       `level=warn msg="detected error during cluster validation label extraction" path=/Test/Me cluster_validation_label=cluster soft_validation=%v err="request header should contain exactly 1 value for key \"X-Cluster\", but it contains [cluster another-cluster]"`,
@@ -217,10 +216,11 @@ func TestClusterValidationMiddleware(t *testing.T) {
 				} else {
 					require.Equal(t, testCase.expectedStatusCode, recorder.Code)
 					if recorder.Code != http.StatusOK {
+						require.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
 						var clusterValidationErr clusterValidationError
 						err = json.Unmarshal(recorder.Body.Bytes(), &clusterValidationErr)
 						require.NoError(t, err)
-						require.Equal(t, testCase.expectedErrorMsg, clusterValidationErr.Message)
+						require.Equal(t, testCase.expectedErrorMsg, clusterValidationErr.ClusterValidationErrorMessage)
 					}
 				}
 				if testCase.expectedLogs != "" {
@@ -285,7 +285,7 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:8080/%s", testCase.requestPath), nil)
 			require.NoError(t, err)
-			req.Header[clusterutil.ClusterVerificationLabelHeader] = []string{"client-cluster"}
+			req.Header[clusterutil.ClusterValidationLabelHeader] = []string{"client-cluster"}
 
 			handler.ServeHTTP(recorder, req)
 			require.Equal(t, testCase.expectedStatusCode, recorder.Code)
@@ -293,7 +293,7 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 				var clusterValidationErr clusterValidationError
 				err = json.Unmarshal(recorder.Body.Bytes(), &clusterValidationErr)
 				require.NoError(t, err)
-				require.Equal(t, testCase.expectedErrorMessage, clusterValidationErr.Message)
+				require.Equal(t, testCase.expectedErrorMessage, clusterValidationErr.ClusterValidationErrorMessage)
 			}
 		})
 	}

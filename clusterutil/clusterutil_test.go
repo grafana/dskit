@@ -65,12 +65,12 @@ func TestPutClusterIntoHeader(t *testing.T) {
 		PutClusterIntoHeader(req, "cluster")
 		require.Nil(t, req)
 	})
-	t.Run("ClusterVerificationLabelHeader header is added to a non-nil request", func(t *testing.T) {
+	t.Run("ClusterValidationLabelHeader header is added to a non-nil request", func(t *testing.T) {
 		req, err := http.NewRequest("GET", "http://localhost:8080/Test/Me", nil)
 		require.NoError(t, err)
 		require.NotNil(t, req)
 		PutClusterIntoHeader(req, "cluster")
-		require.Equal(t, "cluster", req.Header.Get(ClusterVerificationLabelHeader))
+		require.Equal(t, "cluster", req.Header.Get(ClusterValidationLabelHeader))
 	})
 }
 
@@ -88,7 +88,7 @@ func TestGetClusterFromRequest(t *testing.T) {
 			request:       createRequest(true, []string{""}),
 			expectedError: ErrNoClusterValidationLabelInHeader,
 		},
-		"single cluster in request header returns that cluster and no errors": {
+		"single cluster in request header returns that cluster and no error": {
 			request:       createRequest(true, []string{"my-cluster"}),
 			expectedError: nil,
 			expectedValue: "my-cluster",
@@ -148,7 +148,7 @@ func createRequest(containsCluster bool, clusters []string) *http.Request {
 		Header: make(http.Header),
 	}
 	if containsCluster {
-		req.Header[ClusterVerificationLabelHeader] = clusters
+		req.Header[ClusterValidationLabelHeader] = clusters
 	}
 	return req
 }

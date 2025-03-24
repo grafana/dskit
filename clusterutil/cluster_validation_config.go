@@ -80,12 +80,7 @@ type ClusterValidationProtocolWithExcludedPathsConfig struct {
 	ExcludedPaths                   string `yaml:"excluded_paths" category:"experimental"`
 }
 
-func (cfg *ClusterValidationProtocolWithExcludedPathsConfig) Validate(prefix string, label string) error {
-	return cfg.ClusterValidationProtocolConfig.Validate(prefix, label)
-}
-
 func (cfg *ClusterValidationProtocolWithExcludedPathsConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.ClusterValidationProtocolConfig.RegisterFlagsWithPrefix(prefix, f)
-	excludedPathsFlag := prefix + "excluded-paths"
-	f.StringVar(&cfg.ExcludedPaths, excludedPathsFlag, "", "Comma-separated list of url paths that are excluded from the cluster validation check.")
+	f.StringVar(&cfg.ExcludedPaths, prefix+"excluded-paths", "", "Comma-separated list of url paths that are excluded from the cluster validation check.")
 }

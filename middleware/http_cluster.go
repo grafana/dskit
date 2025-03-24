@@ -18,19 +18,18 @@ import (
 )
 
 type clusterValidationError struct {
-	Message string `json:"message"`
+	ClusterValidationErrorMessage string `json:"cluster_validation_error_message"`
 }
 
 // writeAsJSON writes this error as JSON to the HTTP response.
 func (e *clusterValidationError) writeAsJSON(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-
 	data, err := json.Marshal(e)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNetworkAuthenticationRequired)
 	// We ignore errors here, because we cannot do anything about them.
 	// Write will trigger sending Status code, so we cannot send a different status code afterwards.
@@ -46,17 +45,20 @@ func ClusterValidationRoundTripper(cluster string, invalidClusterValidationRepor
 		if err != nil {
 			return nil, err
 		}
-		if body, err := io.ReadAll(resp.Body); err == nil {
-			var clusterValidationErr clusterValidationError
-			if err := json.Unmarshal(body, &clusterValidationErr); err == nil {
-				defer resp.Body.Close()
-				msg := fmt.Sprintf("request rejected by the server: %s", clusterValidationErr.Message)
-				invalidClusterValidationReporter(msg, req.URL.Path)
-				return nil, httpgrpc.Error(http.StatusNetworkAuthenticationRequired, msg)
-			}
-			resp.Body = io.NopCloser(bytes.NewReader(body))
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return resp, err
 		}
-		return resp, err
+		var clusterValidationErr clusterValidationError
+		err = json.Unmarshal(body, &clusterValidationErr)
+		if err != nil {
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+			return resp, nil
+		}
+		defer resp.Body.Close()
+		msg := fmt.Sprintf("request rejected by the server: %s", clusterValidationErr.ClusterValidationErrorMessage)
+		invalidClusterValidationReporter(msg, req.URL.Path)
+		return nil, httpgrpc.Error(http.StatusNetworkAuthenticationRequired, msg)
 	}
 }
 
@@ -92,7 +94,7 @@ func ClusterValidationMiddleware(cluster string, excludedPaths []string, softVal
 				level.Warn(logger).Log(msgs...)
 			}
 			if err != nil {
-				clusterValidationErr := clusterValidationError{Message: err.Error()}
+				clusterValidationErr := clusterValidationError{ClusterValidationErrorMessage: err.Error()}
 				clusterValidationErr.writeAsJSON(w)
 				return
 			}

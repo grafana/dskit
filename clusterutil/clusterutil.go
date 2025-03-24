@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// ClusterVerificationLabelHeader is the name of the cluster verification label HTTP header.
-	ClusterVerificationLabelHeader = "X-Cluster"
+	// ClusterValidationLabelHeader is the name of the cluster verification label HTTP header.
+	ClusterValidationLabelHeader = "X-Cluster"
 
 	// MetadataClusterValidationLabelKey is the key of the cluster validation label gRPC metadata.
 	MetadataClusterValidationLabelKey = "x-cluster"
@@ -23,7 +23,7 @@ var (
 		return fmt.Errorf("gRPC metadata should contain exactly 1 value for key %q, but it contains %v", MetadataClusterValidationLabelKey, clusterIDs)
 	}
 	errDifferentClusterValidationLabelsInHeader = func(clusterIDs []string) error {
-		return fmt.Errorf("request header should contain exactly 1 value for key %q, but it contains %v", ClusterVerificationLabelHeader, clusterIDs)
+		return fmt.Errorf("request header should contain exactly 1 value for key %q, but it contains %v", ClusterValidationLabelHeader, clusterIDs)
 	}
 )
 
@@ -52,7 +52,7 @@ func GetClusterFromIncomingContext(ctx context.Context) (string, error) {
 }
 
 // PutClusterIntoHeader enriches the given request's header with the provided value
-// for the ClusterVerificationLabelHeader key.
+// for the ClusterValidationLabelHeader key.
 // Empty values are ignored.
 func PutClusterIntoHeader(req *http.Request, cluster string) {
 	if req == nil || cluster == "" {
@@ -61,14 +61,14 @@ func PutClusterIntoHeader(req *http.Request, cluster string) {
 	if req.Header == nil {
 		req.Header = make(http.Header)
 	}
-	req.Header.Set(ClusterVerificationLabelHeader, cluster)
+	req.Header.Set(ClusterValidationLabelHeader, cluster)
 }
 
-// GetClusterFromRequest returns a single value corresponding to the ClusterVerificationLabelHeader key
+// GetClusterFromRequest returns a single value corresponding to the ClusterValidationLabelHeader key
 // from the header of the given request, if it exists.
 // In all other cases an error is returned.
 func GetClusterFromRequest(req *http.Request) (string, error) {
-	clusterIDs := req.Header.Values(ClusterVerificationLabelHeader)
+	clusterIDs := req.Header.Values(ClusterValidationLabelHeader)
 	if len(clusterIDs) > 1 {
 		return "", errDifferentClusterValidationLabelsInHeader(clusterIDs)
 	}

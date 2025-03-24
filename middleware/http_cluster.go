@@ -51,8 +51,8 @@ func ClusterValidationRoundTripper(cluster string, invalidClusterValidationRepor
 		if resp.Header.Get("Content-Type") != "application/json" {
 			return resp, nil
 		}
-		body, err := io.ReadAll(resp.Body)
 		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, err
 		}

@@ -45,6 +45,12 @@ func ClusterValidationRoundTripper(cluster string, invalidClusterValidationRepor
 		if err != nil {
 			return nil, err
 		}
+		if resp.StatusCode != http.StatusNetworkAuthenticationRequired {
+			return resp, nil
+		}
+		if resp.Header.Get("Content-Type") != "application/json" {
+			return resp, nil
+		}
 		body, err := io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 		if err != nil {

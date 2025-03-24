@@ -77,10 +77,10 @@ func (cfg *ClusterValidationProtocolConfig) RegisterFlagsWithPrefix(prefix strin
 
 type ClusterValidationProtocolWithExcludedPathsConfig struct {
 	ClusterValidationProtocolConfig `yaml:",inline"`
-	ExcludedPaths                   string `yaml:"excluded_paths" category:"experimental"`
+	ExcludedPaths                   flagext.StringSliceCSV `yaml:"excluded_paths" category:"experimental"`
 }
 
 func (cfg *ClusterValidationProtocolWithExcludedPathsConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.ClusterValidationProtocolConfig.RegisterFlagsWithPrefix(prefix, f)
-	f.StringVar(&cfg.ExcludedPaths, prefix+"excluded-paths", "", "Comma-separated list of url paths that are excluded from the cluster validation check.")
+	f.Var(&cfg.ExcludedPaths, prefix+"excluded-paths", "Comma-separated list of url paths that are excluded from the cluster validation check.")
 }

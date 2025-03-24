@@ -23,6 +23,7 @@ func TestClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	require.Len(t, registeredFlags.Flags, 1)
 	_, ok := registeredFlags.Flags["label"]
 	require.True(t, ok)
+
 }
 
 func TestClusterValidationProtocolConfig_Validate(t *testing.T) {

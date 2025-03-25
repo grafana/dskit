@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/grafana/dskit/clusterutil"
-	"github.com/grafana/dskit/httpgrpc"
 )
 
 type clusterValidationError struct {
@@ -64,7 +63,7 @@ func ClusterValidationRoundTripper(cluster string, invalidClusterValidationRepor
 		}
 		msg := fmt.Sprintf("request rejected by the server: %s", clusterValidationErr.ClusterValidationErrorMessage)
 		invalidClusterValidationReporter(msg, req.URL.Path)
-		return nil, httpgrpc.Error(http.StatusNetworkAuthenticationRequired, msg)
+		return nil, fmt.Errorf("%s", msg)
 	}
 }
 

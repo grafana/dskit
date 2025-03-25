@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/clusterutil"
-	"github.com/grafana/dskit/grpcutil"
 )
 
 func TestClusterValidationRoundTripper(t *testing.T) {
@@ -29,7 +28,7 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 		expectedMetrics    string
 		expectedLogs       string
 		shouldPanic        bool
-		expectedErr        bool
+		expectedErr        error
 		expectedStatusCode int
 		expectedResponse   string
 	}{
@@ -49,7 +48,7 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 				err := clusterValidationError{ClusterValidationErrorMessage: "this is a cluster validation error"}
 				err.writeAsJSON(w)
 			},
-			expectedErr:        true,
+			expectedErr:        fmt.Errorf("request rejected by the server: this is a cluster validation error"),
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedResponse:   "request rejected by the server: this is a cluster validation error",
 			expectedMetrics: `
@@ -115,9 +114,11 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 			require.NoError(t, err)
 
 			resp, err := client.Do(req)
-			if testCase.expectedErr {
-				checkClusterValidationErr(t, err, testCase.expectedStatusCode, testCase.expectedResponse)
+			if testCase.expectedErr != nil {
+				require.Error(t, err)
+				require.ErrorContains(t, err, testCase.expectedErr.Error())
 			} else {
+				require.NoError(t, err)
 				body, err := io.ReadAll(resp.Body)
 				require.NoError(t, err)
 				resp.Body.Close()
@@ -297,11 +298,4 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 			}
 		})
 	}
-}
-
-func checkClusterValidationErr(t *testing.T, err error, expectedStatusCode int, expectedErrMessage string) {
-	stat, ok := grpcutil.ErrorToStatus(err)
-	require.True(t, ok)
-	require.Equal(t, expectedStatusCode, int(stat.Code()))
-	require.Equal(t, expectedErrMessage, stat.Message())
 }

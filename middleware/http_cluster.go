@@ -95,11 +95,7 @@ func ClusterValidationMiddleware(cluster string, excludedPaths []string, softVal
 
 	return Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			msgs, err := checkClusterFromRequest(r, cluster, softValidation, reExcludedPath)
-			if len(msgs) > 0 {
-				level.Warn(logger).Log(msgs...)
-			}
-			if err != nil {
+			if err := checkClusterFromRequest(r, cluster, softValidation, reExcludedPath, logger); err != nil {
 				clusterValidationErr := clusterValidationError{ClusterValidationErrorMessage: err.Error()}
 				clusterValidationErr.writeAsJSON(w)
 				return
@@ -118,31 +114,34 @@ func validateClusterValidationMiddlewareInputParameters(cluster string, logger l
 	}
 }
 
-func checkClusterFromRequest(r *http.Request, expectedCluster string, softValidationEnabled bool, reExcludedPath *regexp.Regexp) ([]any, error) {
+func checkClusterFromRequest(r *http.Request, expectedCluster string, softValidationEnabled bool, reExcludedPath *regexp.Regexp, logger log.Logger) error {
 	if reExcludedPath != nil && reExcludedPath.MatchString(r.URL.Path) {
-		return nil, nil
+		return nil
 	}
 	reqCluster, err := clusterutil.GetClusterFromRequest(r)
 	if err == nil {
 		if reqCluster == expectedCluster {
-			return nil, nil
+			return nil
 		}
 		var wrongClusterErr error
 		if !softValidationEnabled {
 			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster validation label %q - it should be %q", reqCluster, expectedCluster)
 		}
-		return []any{"msg", "request with wrong cluster validation label", "path", r.URL.Path, "cluster_validation_label", expectedCluster, "request_cluster_validation_label", reqCluster, "soft_validation", softValidationEnabled}, wrongClusterErr
+		level.Warn(logger).Log("msg", "request with wrong cluster validation label", "path", r.URL.Path, "cluster_validation_label", expectedCluster, "request_cluster_validation_label", reqCluster, "soft_validation", softValidationEnabled)
+		return wrongClusterErr
 	}
 	if errors.Is(err, clusterutil.ErrNoClusterValidationLabelInHeader) {
 		var emptyClusterErr error
 		if !softValidationEnabled {
 			emptyClusterErr = fmt.Errorf("rejected request with empty cluster validation label - it should be %q", expectedCluster)
 		}
-		return []any{"msg", "request with no cluster validation label", "path", r.URL.Path, "cluster_validation_label", expectedCluster, "soft_validation", softValidationEnabled}, emptyClusterErr
+		level.Warn(logger).Log("msg", "request with no cluster validation label", "path", r.URL.Path, "cluster_validation_label", expectedCluster, "soft_validation", softValidationEnabled)
+		return emptyClusterErr
 	}
 	var rejectedRequestErr error
 	if !softValidationEnabled {
 		rejectedRequestErr = fmt.Errorf("rejected request: %w", err)
 	}
-	return []any{"msg", "detected error during cluster validation label extraction", "path", r.URL.Path, "cluster_validation_label", expectedCluster, "soft_validation", softValidationEnabled, "err", err}, rejectedRequestErr
+	level.Warn(logger).Log("msg", "detected error during cluster validation label extraction", "path", r.URL.Path, "cluster_validation_label", expectedCluster, "soft_validation", softValidationEnabled, "err", err)
+	return rejectedRequestErr
 }

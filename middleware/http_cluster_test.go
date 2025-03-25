@@ -180,7 +180,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request with empty cluster validation label - it should be "cluster"`,
 		},
-		"if the incoming request contains more than one cluster labels and soft validation is disabled an error is returned": {
+		"if the incoming request contains more than one cluster label and soft validation is disabled an error is returned": {
 			header: func(r *http.Request) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"cluster", "another-cluster"}
 			},

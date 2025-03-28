@@ -2,6 +2,7 @@ package clusterutil
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -58,6 +59,59 @@ func TestGetClusterFromIncomingContext(t *testing.T) {
 	}
 }
 
+func TestPutClusterIntoHeader(t *testing.T) {
+	t.Run("no header is added to a nil request", func(t *testing.T) {
+		var req *http.Request
+		PutClusterIntoHeader(req, "cluster")
+		require.Nil(t, req)
+	})
+	t.Run("ClusterValidationLabelHeader header is added to a non-nil request", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "http://localhost:8080/Test/Me", nil)
+		require.NoError(t, err)
+		require.NotNil(t, req)
+		PutClusterIntoHeader(req, "cluster")
+		require.Equal(t, "cluster", req.Header.Get(ClusterValidationLabelHeader))
+	})
+}
+
+func TestGetClusterFromRequest(t *testing.T) {
+	testCases := map[string]struct {
+		request       *http.Request
+		expectedValue string
+		expectedError error
+	}{
+		"no cluster in request header gives an ErrNoClusterValidationLabelInHeader error": {
+			request:       createRequest(false, nil),
+			expectedError: ErrNoClusterValidationLabelInHeader,
+		},
+		"empty cluster in request header gives an ErrNoClusterValidationLabelInHeader error": {
+			request:       createRequest(true, []string{""}),
+			expectedError: ErrNoClusterValidationLabelInHeader,
+		},
+		"single cluster in request header returns that cluster and no error": {
+			request:       createRequest(true, []string{"my-cluster"}),
+			expectedError: nil,
+			expectedValue: "my-cluster",
+		},
+		"more clusters in request header give an errDifferentClusterValidationLabelsInHeader error": {
+			request:       createRequest(true, []string{"cluster-1", "cluster-2"}),
+			expectedError: errDifferentClusterValidationLabelsInHeader([]string{"cluster-1", "cluster-2"}),
+			expectedValue: "",
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			value, err := GetClusterFromRequest(testCase.request)
+			if testCase.expectedError != nil {
+				require.Equal(t, testCase.expectedError, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, testCase.expectedValue, value)
+			}
+		})
+	}
+}
+
 func checkSingleClusterInOutgoingCtx(ctx context.Context, t *testing.T, shouldExist bool, expectedValue string) {
 	md, ok := metadata.FromOutgoingContext(ctx)
 	require.Equal(t, shouldExist, ok)
@@ -87,4 +141,14 @@ func createContext(containsRequestCluster bool, clusters []string) context.Conte
 		MetadataClusterValidationLabelKey: clusters,
 	}
 	return metadata.NewIncomingContext(context.Background(), md)
+}
+
+func createRequest(containsCluster bool, clusters []string) *http.Request {
+	req := &http.Request{
+		Header: make(http.Header),
+	}
+	if containsCluster {
+		req.Header[ClusterValidationLabelHeader] = clusters
+	}
+	return req
 }

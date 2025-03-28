@@ -6,7 +6,9 @@ package tracing
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -88,10 +90,59 @@ func ExtractSampledTraceID(ctx context.Context) (string, bool) {
 	if sp == nil {
 		return "", false
 	}
-	sctx, ok := sp.Context().(jaeger.SpanContext)
+
+	sctx := sp.Context()
+
+	jctx, ok := sctx.(jaeger.SpanContext)
+	if ok {
+		return jctx.TraceID().String(), jctx.IsSampled()
+	}
+
+	return extractOtelSampledTraceID(sctx)
+}
+
+// extractOtelSampledTraceID from an OTEL compatible span context. This also
+// works when using the open tracing bridge.  The interface for the
+// span context is:
+//
+//	type SpanContext interface {
+//		TraceID() TraceID
+//		IsSampled() bool
+//	}
+//
+// See the notes below on why this is using reflection.
+func extractOtelSampledTraceID(ctx opentracing.SpanContext) (string, bool) {
+	// Fast path to check sampling
+	octx, ok := ctx.(otelCompatibleSpanContext)
+	if !ok || !octx.IsSampled() {
+		return "", false
+	}
+
+	// Slow path using reflection to get the TraceID.
+	m := reflect.ValueOf(octx).MethodByName("TraceID")
+	if !m.IsValid() {
+		return "", false
+	}
+
+	tid := m.Call(nil)
+	if len(tid) == 0 {
+		return "", false
+	}
+
+	str, ok := tid[0].Interface().(fmt.Stringer)
 	if !ok {
 		return "", false
 	}
 
-	return sctx.TraceID().String(), sctx.IsSampled()
+	return str.String(), true
+}
+
+type otelCompatibleSpanContext interface {
+	IsSampled() bool
+
+	// Ideally either of these methods are added to the interface but
+	// couldn't find a solution. The TraceID() method returns a
+	// `TraceID` struct alias of [16]byte with a String() method.
+	// TraceID() [16]byte
+	// TraceID() fmt.Stringer
 }

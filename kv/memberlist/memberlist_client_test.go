@@ -1843,7 +1843,7 @@ func newDNSProviderMock(onResolve func() ([]string, error)) *dnsProviderMock {
 	}
 }
 
-func (p *dnsProviderMock) Resolve(_ context.Context, addrs []string) error {
+func (p *dnsProviderMock) Resolve(_ context.Context, _ []string) error {
 	addrs, err := p.onResolve()
 
 	p.resolvedMx.Lock()
@@ -1853,7 +1853,7 @@ func (p *dnsProviderMock) Resolve(_ context.Context, addrs []string) error {
 	return err
 }
 
-func (p dnsProviderMock) Addresses() []string {
+func (p *dnsProviderMock) Addresses() []string {
 	p.resolvedMx.Lock()
 	defer p.resolvedMx.Unlock()
 

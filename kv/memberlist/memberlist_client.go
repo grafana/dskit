@@ -636,7 +636,7 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) error {
 	}
 
 	if totalJoined == 0 {
-		level.Warn(m.logger).Log("memberlist fast-join failed because no node has been successfully reached", "elapsed_time", time.Since(startTime))
+		level.Warn(m.logger).Log("msg", "memberlist fast-join failed because no node has been successfully reached", "elapsed_time", time.Since(startTime))
 		return fmt.Errorf("no memberlist node reached during fast-join procedure")
 	}
 

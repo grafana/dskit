@@ -1155,6 +1155,7 @@ func TestMemberlist_discoverMembersWithRetries(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 	cfg.discoverMembersBackoff.MinBackoff = time.Millisecond
 	cfg.discoverMembersBackoff.MaxBackoff = time.Millisecond
+	require.Greater(t, cfg.discoverMembersBackoff.MaxRetries, 0)
 
 	tests := map[string]struct {
 		numResolveFailures int
@@ -1170,7 +1171,7 @@ func TestMemberlist_discoverMembersWithRetries(t *testing.T) {
 			expectedAddrs:      addrsMocked,
 		},
 		"all resolutions fail": {
-			numResolveFailures: math.MaxInt,
+			numResolveFailures: cfg.discoverMembersBackoff.MaxRetries,
 			expectedErr:        errMocked,
 		},
 	}
@@ -1193,6 +1194,7 @@ func TestMemberlist_discoverMembersWithRetries(t *testing.T) {
 
 			if testData.expectedErr != nil {
 				require.EqualError(t, err, errMocked.Error())
+				require.Equal(t, cfg.discoverMembersBackoff.MaxRetries, currResolveFailures)
 			} else {
 				require.NoError(t, err)
 			}

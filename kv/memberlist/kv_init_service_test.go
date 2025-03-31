@@ -12,6 +12,6 @@ import (
 func TestStop(t *testing.T) {
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
-	kvinit := NewKVInitService(&cfg, nil, &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	kvinit := NewKVInitService(&cfg, nil, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, kvinit.stopping(nil))
 }

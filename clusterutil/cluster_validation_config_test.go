@@ -91,11 +91,10 @@ func TestServerClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "server.cluster-validation.", registeredFlags.Prefix)
-	require.Len(t, registeredFlags.Flags, 3)
-	expectedFlags := []string{"label", "grpc.enabled", "grpc.soft-validation"}
+	require.Len(t, registeredFlags.Flags, 6)
+	expectedFlags := []string{"label", "grpc.enabled", "grpc.soft-validation", "http.enabled", "http.soft-validation", "http.excluded-paths"}
 	for _, flagName := range expectedFlags {
 		_, ok := registeredFlags.Flags[flagName]
 		require.True(t, ok)
 	}
-
 }

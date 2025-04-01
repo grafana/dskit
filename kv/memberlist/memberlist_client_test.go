@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -273,7 +274,7 @@ func TestBasicGetAndCas(t *testing.T) {
 	}
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
 
@@ -336,7 +337,7 @@ func withFixtures(t *testing.T, testFN func(t *testing.T, kv *Client)) {
 	}
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
 
@@ -492,7 +493,7 @@ func TestMultipleCAS(t *testing.T) {
 	}
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	mkv.maxCasRetries = 20
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
@@ -605,7 +606,7 @@ func TestDelete(t *testing.T) {
 	cfg.ClusterLabelVerificationDisabled = true
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, reg)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
 
@@ -657,7 +658,7 @@ func TestDeleteMultipleClients(t *testing.T) {
 	cfg.PushPullInterval = deleteTime
 	cfg.ObsoleteEntriesTimeout = deleteTime
 
-	mkv1 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv1 := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
@@ -673,7 +674,7 @@ func TestDeleteMultipleClients(t *testing.T) {
 	// We will read values from second KV, which will join the first one
 	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
 
-	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv2 := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
@@ -814,7 +815,7 @@ func testMultipleClientsWithConfigGenerator(t *testing.T, members int, configGen
 		cfg := configGen(i)
 		cfg.Codecs = []codec.Codec{c}
 
-		mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 
 		kv, err := NewClient(mkv, c)
@@ -1082,7 +1083,7 @@ func TestJoinMembersWithRetryBackoff(t *testing.T) {
 	}
 }
 
-func TestMemberlistFailsToJoin(t *testing.T) {
+func TestMemberlist_AbortIfJoinFailsAtStartup(t *testing.T) {
 	c := dataCodec{}
 
 	ports, err := getFreePorts(1)
@@ -1104,7 +1105,7 @@ func TestMemberlistFailsToJoin(t *testing.T) {
 
 	cfg.Codecs = []codec.Codec{c}
 
-	mkv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
 
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1114,7 +1115,93 @@ func TestMemberlistFailsToJoin(t *testing.T) {
 	_ = mkv.AwaitTerminated(ctxTimeout)
 
 	// We verify service state here.
-	require.Equal(t, mkv.FailureCase(), errFailedToJoinCluster)
+	require.Equal(t, errFailedToJoinCluster, mkv.FailureCase())
+}
+
+func TestMemberlist_AbortIfFastJoinFailsAtStartup(t *testing.T) {
+	c := dataCodec{}
+
+	ports, err := getFreePorts(1)
+	require.NoError(t, err)
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.MinJoinBackoff = 100 * time.Millisecond
+	cfg.MaxJoinBackoff = 100 * time.Millisecond
+	cfg.MaxJoinRetries = 2
+	cfg.AbortIfFastJoinFails = true
+	cfg.JoinMembers = []string{net.JoinHostPort(getLocalhostAddr(), strconv.Itoa(ports[0]))}
+	cfg.Codecs = []codec.Codec{c}
+
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+		BindPort:  0,
+	}
+
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+
+	// We expect the service to fail when starting.
+	err = services.StartAndAwaitRunning(context.Background(), mkv)
+	require.ErrorContains(t, err, "no memberlist node reached during fast-join procedure")
+}
+
+func TestMemberlist_discoverMembersWithRetries(t *testing.T) {
+	var (
+		cfg         KVConfig
+		errMocked   = errors.New("mocked error")
+		addrsMocked = []string{"1.1.1.1", "2.2.2.2"}
+	)
+
+	flagext.DefaultValues(&cfg)
+	cfg.discoverMembersBackoff.MinBackoff = time.Millisecond
+	cfg.discoverMembersBackoff.MaxBackoff = time.Millisecond
+	require.Greater(t, cfg.discoverMembersBackoff.MaxRetries, 0)
+
+	tests := map[string]struct {
+		numResolveFailures int
+		expectedErr        error
+		expectedAddrs      []string
+	}{
+		"first resolution succeed": {
+			numResolveFailures: 0,
+			expectedAddrs:      addrsMocked,
+		},
+		"first 3 resolutions fails": {
+			numResolveFailures: 3,
+			expectedAddrs:      addrsMocked,
+		},
+		"all resolutions fail": {
+			numResolveFailures: cfg.discoverMembersBackoff.MaxRetries,
+			expectedErr:        errMocked,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			currResolveFailures := 0
+
+			dns := newDNSProviderMock(func() ([]string, error) {
+				if currResolveFailures < testData.numResolveFailures {
+					currResolveFailures++
+					return nil, errMocked
+				}
+
+				return addrsMocked, nil
+			})
+
+			mkv := NewKV(cfg, log.NewNopLogger(), dns, prometheus.NewPedanticRegistry())
+			addrs, err := mkv.discoverMembersWithRetries(context.Background(), []string{"dns+memberlist.cluster"})
+
+			if testData.expectedErr != nil {
+				require.EqualError(t, err, errMocked.Error())
+				require.Equal(t, cfg.discoverMembersBackoff.MaxRetries, currResolveFailures)
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.Equal(t, testData.expectedAddrs, addrs)
+		})
+	}
 }
 
 func getFreePorts(count int) ([]int, error) {
@@ -1277,7 +1364,7 @@ func TestMultipleCodecs(t *testing.T) {
 		distributedCounterCodec{},
 	}
 
-	mkv1 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv1 := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
@@ -1320,7 +1407,7 @@ func TestMultipleCodecs(t *testing.T) {
 	require.NoError(t, err)
 
 	// We will read values from second KV, which will join the first one
-	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv2 := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
@@ -1372,11 +1459,11 @@ func TestRejoin(t *testing.T) {
 	cfg2.JoinMembers = []string{net.JoinHostPort("localhost", strconv.Itoa(ports[0]))}
 	cfg2.RejoinInterval = 1 * time.Second
 
-	mkv1 := NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv1 := NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
-	mkv2 := NewKV(cfg2, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv2 := NewKV(cfg2, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
 
@@ -1393,7 +1480,7 @@ func TestRejoin(t *testing.T) {
 	require.Eventually(t, expectMembers(1), 10*time.Second, 100*time.Millisecond, "expected 1 member in the cluster")
 
 	// Let's start first KV again. It is not configured to join the cluster, but KV2 is rejoining.
-	mkv1 = NewKV(cfg1, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv1 = NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
@@ -1429,7 +1516,7 @@ func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
 
-	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
 	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
 
@@ -1499,7 +1586,7 @@ func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 	cfg.LeftIngestersTimeout = 5 * time.Minute
 	cfg.Codecs = append(cfg.Codecs, codec)
 
-	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
 	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
 
@@ -1594,7 +1681,7 @@ func TestFastJoin(t *testing.T) {
 		dataCodec{},
 	}
 
-	mkv1 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv1 := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
 	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
 
@@ -1610,7 +1697,7 @@ func TestFastJoin(t *testing.T) {
 	// We will read values from second KV, which will join the first one
 	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
 
-	mkv2 := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	mkv2 := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	go func() {
 		// Wait a bit, and then start mkv2.
 		time.Sleep(500 * time.Millisecond)
@@ -1640,7 +1727,7 @@ func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 		BindAddrs: getLocalhostAddrs(),
 	}
 
-	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
 	// Make sure we can call delegate methods on unstarted service, and they don't crash nor block.
 	kv.LocalState(true)
@@ -1684,7 +1771,7 @@ func TestMetricsRegistration(t *testing.T) {
 	cfg.Codecs = append(cfg.Codecs, c)
 
 	reg := prometheus.NewPedanticRegistry()
-	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
+	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, reg)
 	err := kv.CAS(context.Background(), "test", c, func(interface{}) (out interface{}, retry bool, err error) {
 		return &data{Members: map[string]member{
 			"member": {},
@@ -1746,15 +1833,45 @@ func (l testLogger) Log(_ ...interface{}) error {
 }
 
 type dnsProviderMock struct {
+	onResolve func() ([]string, error)
+
+	resolvedMx sync.Mutex
+	resolved   []string
+}
+
+func newDNSProviderMock(onResolve func() ([]string, error)) *dnsProviderMock {
+	return &dnsProviderMock{
+		onResolve: onResolve,
+	}
+}
+
+func (p *dnsProviderMock) Resolve(_ context.Context, _ []string) error {
+	addrs, err := p.onResolve()
+
+	p.resolvedMx.Lock()
+	p.resolved = addrs
+	p.resolvedMx.Unlock()
+
+	return err
+}
+
+func (p *dnsProviderMock) Addresses() []string {
+	p.resolvedMx.Lock()
+	defer p.resolvedMx.Unlock()
+
+	return slices.Clone(p.resolved)
+}
+
+type staticDNSProviderMock struct {
 	resolved []string
 }
 
-func (p *dnsProviderMock) Resolve(_ context.Context, addrs []string) error {
+func (p *staticDNSProviderMock) Resolve(_ context.Context, addrs []string) error {
 	p.resolved = addrs
 	return nil
 }
 
-func (p dnsProviderMock) Addresses() []string {
+func (p staticDNSProviderMock) Addresses() []string {
 	return p.resolved
 }
 
@@ -1793,7 +1910,7 @@ func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	cfg.Codecs = append(cfg.Codecs, codec)
 
 	reg := prometheus.NewRegistry()
-	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, reg)
+	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, reg)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
 	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
 
@@ -1851,7 +1968,7 @@ func TestRaceBetweenStoringNewValueForKeyAndUpdatingIt(t *testing.T) {
 		BindAddrs: getLocalhostAddrs(),
 	}
 
-	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
 	t.Cleanup(func() {
@@ -1930,7 +2047,7 @@ func TestNotificationDelay(t *testing.T) {
 	// We're going to trigger sends manually, so effectively disable the automatic send interval.
 	const hundredYears = 100 * 365 * 24 * time.Hour
 	cfg.NotifyInterval = hundredYears
-	kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
 	watchChan := make(chan string, 16)
 
@@ -2046,16 +2163,16 @@ func TestWatchPrefix(t *testing.T) {
 		// Test custom buffer size
 		cfg := KVConfig{}
 		cfg.WatchPrefixBufferSize = 10
-		kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 		require.Equal(t, 10, kv.cfg.WatchPrefixBufferSize)
 
 		// Test invalid buffer size is rejected
-		kvInit := NewKVInitService(&KVConfig{WatchPrefixBufferSize: -3}, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		kvInit := NewKVInitService(&KVConfig{WatchPrefixBufferSize: -3}, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 		_, err := kvInit.GetMemberlistKV()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid WatchPrefixBufferSize")
 
-		kvInit = NewKVInitService(&KVConfig{WatchPrefixBufferSize: 0}, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		kvInit = NewKVInitService(&KVConfig{WatchPrefixBufferSize: 0}, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 		_, err = kvInit.GetMemberlistKV()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid WatchPrefixBufferSize")
@@ -2067,7 +2184,7 @@ func TestWatchPrefix(t *testing.T) {
 		cfg.WatchPrefixBufferSize = 2
 		// Disable notification batching to get immediate notifications
 		cfg.NotifyInterval = 0
-		kv := NewKV(cfg, log.NewNopLogger(), &dnsProviderMock{}, prometheus.NewPedanticRegistry())
+		kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
 		defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
 

@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -2264,12 +2265,11 @@ func TestMemberlist_WatchKey_ShouldStartNotifyingChangesBeforeFullJoinIsComplete
 		},
 	}
 
+	// Don't run tests parallelly to avoid having logs interleaved. Also, we can't log using testing.T
+	// because of a race caused by memberlist library not guaranteeing every goroutine to be terminated
+	// when KV.stopping() returns (no easy way to fix it).
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
-			t.Parallel()
-
 			// In this test we create two KV clients and we make them join the same memberlist cluster.
 			// A client is called "producer" because it produces changes, and the other client is called
 			// "consumer" because it's the one joining the cluster later and watching changes.
@@ -2295,7 +2295,7 @@ func TestMemberlist_WatchKey_ShouldStartNotifyingChangesBeforeFullJoinIsComplete
 			consumerCfg.NotifyInterval = testData.NotifyInterval
 
 			// First let's start a producer.
-			producer := NewKV(producerCfg, test.NewTestingLogger(t, "component", "producer"), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			producer := NewKV(producerCfg, log.With(log.NewLogfmtLogger(os.Stderr), "component", "producer"), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 			require.NoError(t, services.StartAndAwaitRunning(ctx, producer))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, producer))
@@ -2336,7 +2336,7 @@ func TestMemberlist_WatchKey_ShouldStartNotifyingChangesBeforeFullJoinIsComplete
 			}
 
 			// Start a consumer.
-			consumer := NewKV(consumerCfg, test.NewTestingLogger(t, "component", "consumer"), consumerDNSResolver, prometheus.NewPedanticRegistry())
+			consumer := NewKV(consumerCfg, log.With(log.NewLogfmtLogger(os.Stderr), "component", "consumer"), consumerDNSResolver, prometheus.NewPedanticRegistry())
 			require.NoError(t, services.StartAndAwaitRunning(ctx, consumer))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, consumer))

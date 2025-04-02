@@ -670,8 +670,8 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 		// RF/2 failing zones. However, we need to protect from the case the ring currently
 		// contains instances in a number of zones < RF.
 		numReplicatedZones := min(len(r.ringZones), r.cfg.ReplicationFactor)
-		minSuccessZones := (numReplicatedZones / 2) + 1
-		maxUnavailableZones = minSuccessZones - 1
+		minSuccessZones := (numReplicatedZones / 2) + (numReplicatedZones & 1)
+		maxUnavailableZones = numReplicatedZones - minSuccessZones
 
 		if len(zoneFailures) > maxUnavailableZones {
 			return ReplicationSet{}, ErrTooManyUnhealthyInstances

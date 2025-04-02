@@ -301,3 +301,4 @@
 * [BUGFIX] spanlogger: include correct caller information in log messages logged through a `SpanLogger`. #547
 * [BUGFIX] Ring: shuffle shard without lookback no longer returns entire ring when shard size >= number of instances. Instead proper subring is computed, with correct number of instances in each zone. Returning entire ring was a bug, and such ring can contain instances that were not supposed to be used, if zones are not balanced. #554 #556
 * [BUGFIX] Memberlist: clone value returned by function used in CAS operation before storing the value into KV store. #586
+* [BUGFIX] Memberlist: fix `WatchKey()` not sending out notifications before the full-join has been completed, when `-memberlist.notify-interval` is configured. #675

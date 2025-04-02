@@ -2339,7 +2339,7 @@ func TestMemberlist_WatchKey_ShouldStartNotifyingChangesBeforeFullJoinIsComplete
 			consumer := NewKV(consumerCfg, test.NewTestingLogger(t, "component", "consumer"), consumerDNSResolver, prometheus.NewPedanticRegistry())
 			require.NoError(t, services.StartAndAwaitRunning(ctx, consumer))
 			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, producer))
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, consumer))
 			})
 
 			// Watch the key that the producer keeps changing.

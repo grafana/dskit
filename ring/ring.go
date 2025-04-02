@@ -32,7 +32,14 @@ const (
 	// GetBufferSize is the suggested size of buffers passed to Ring.Get(). It's based on
 	// a typical replication factor 3, plus extra room for a JOINING + LEAVING instance.
 	GetBufferSize = 5
+
+	// ConsistencyQuorum is the default consistency level.
+	ConsistencyQuorum        ConsistencyLevel = 0
+	ConsistencyAny           ConsistencyLevel = 1
+	ConsistencyRelaxedQuorum ConsistencyLevel = 2
 )
+
+type ConsistencyLevel int
 
 // Options are the result of Option instances that can be used to modify Ring.GetWithOptions behavior.
 type Options struct {
@@ -212,6 +219,20 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&cfg.ExcludedZones, prefix+"distributor.excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.")
 }
 
+// ConvertConsistencyLevel converts a string representation of a consistency level into its corresponding ConsistencyLevel.
+func ConvertConsistencyLevel(s string) (ConsistencyLevel, error) {
+	switch s {
+	case "", "quorum":
+		return ConsistencyQuorum, nil
+	case "any":
+		return ConsistencyAny, nil
+	case "relaxed_quorum":
+		return ConsistencyRelaxedQuorum, nil
+	default:
+		return -1, fmt.Errorf("Invalid ring consistency level '%s'", s)
+	}
+}
+
 type instanceInfo struct {
 	InstanceID string
 	Zone       string
@@ -277,6 +298,8 @@ type Ring struct {
 	numMembersGaugeVec      *prometheus.GaugeVec
 	totalTokensGauge        prometheus.Gauge
 	oldestTimestampGaugeVec *prometheus.GaugeVec
+
+	consistencyLevel ConsistencyLevel
 
 	logger log.Logger
 }
@@ -671,7 +694,15 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 		// contains instances in a number of zones < RF.
 		numReplicatedZones := min(len(r.ringZones), r.cfg.ReplicationFactor)
 		minSuccessZones := (numReplicatedZones / 2) + (numReplicatedZones & 1)
+		if r.consistencyLevel == ConsistencyAny {
+			minSuccessZones = 1
+		}
 		maxUnavailableZones = numReplicatedZones - minSuccessZones
+
+		if len(zoneFailures) > maxUnavailableZones && len(zoneFailures) < numReplicatedZones && r.consistencyLevel == ConsistencyRelaxedQuorum {
+			// at least all available zones need to succeed
+			maxUnavailableZones = len(zoneFailures)
+		}
 
 		if len(zoneFailures) > maxUnavailableZones {
 			return ReplicationSet{}, ErrTooManyUnhealthyInstances
@@ -1043,6 +1074,7 @@ func (r *Ring) buildRingForTheShard(shard map[string]InstanceDesc) *Ring {
 	return &Ring{
 		cfg:                                     r.cfg,
 		strategy:                                r.strategy,
+		consistencyLevel:                        r.consistencyLevel,
 		ringDesc:                                shardDesc,
 		ringTokens:                              shardTokens,
 		ringTokensByZone:                        shardTokensByZone,

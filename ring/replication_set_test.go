@@ -714,11 +714,12 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImme
 		// If this instance is in the failing zone:
 		// - if it's replica-1, return an error to trigger the cancellation of the zone
 		// - if it's replica-2, wait for this instance's context to be cancelled before returning
-		if instance.Addr == failingZone+"-replica-1" {
+		switch instance.Addr {
+		case failingZone + "-replica-1":
 			if strings.HasSuffix(instance.Addr, "-replica-1") {
 				return "", errors.New("this is the failing instance")
 			}
-		} else if instance.Addr == failingZone+"-replica-2" {
+		case failingZone + "-replica-2":
 			select {
 			case <-ctx.Done():
 				close(waitForFailingZoneToSeeCancelledContext)
@@ -727,7 +728,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImme
 				close(waitForFailingZoneToSeeCancelledContext)
 				require.FailNow(t, "other instance in failing zone gave up waiting for its context to be cancelled")
 			}
-		} else {
+		default:
 			// If this instance is not in the failing zone, wait until the failing zone's context is cancelled before returning to avoid races.
 			select {
 			case <-waitForFailingZoneToSeeCancelledContext:

@@ -2899,7 +2899,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							t.Logf("%d: subrings for event=%v, shardSize=%v, lookbackPeriod=%v,\nrs=%v,\nrsWithLookback=%v", eventID, currTime.Format("03:04"), shardSize, lookbackPeriod, getSortedAddresses(rs), getSortedAddresses(rsWithLookback))
 
 							for ix, ringState := range history {
-								if ringState.Time.Before(currTime.Add(-lookbackPeriod)) {
+								if ringState.Before(currTime.Add(-lookbackPeriod)) {
 									// This entry from the history is obsolete, we can remove it.
 									delete(history, ix)
 									continue

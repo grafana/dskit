@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -2158,7 +2159,7 @@ func TestNotificationDelay(t *testing.T) {
 	}, 20*time.Second, 100*time.Millisecond)
 }
 
-func TestWatchPrefix(t *testing.T) {
+func TestMemberlist_WatchPrefix(t *testing.T) {
 	t.Run("buffer size configuration", func(t *testing.T) {
 		// Test custom buffer size
 		cfg := KVConfig{}
@@ -2250,4 +2251,117 @@ func TestWatchPrefix(t *testing.T) {
 			t.Fatal("timeout waiting for notifications")
 		}
 	})
+}
+
+func TestMemberlist_WatchKey_ShouldStartNotifyingChangesBeforeFullJoinIsCompleted(t *testing.T) {
+	tests := map[string]struct {
+		NotifyInterval time.Duration
+	}{
+		"synchronous WatchKey() notifications": {
+			NotifyInterval: 0,
+		},
+		"asynchronous WatchKey() notifications": {
+			NotifyInterval: 50 * time.Millisecond,
+		},
+	}
+
+	// Don't run tests parallelly to avoid having logs interleaved. Also, we can't log using testing.T
+	// because of a race caused by memberlist library not guaranteeing every goroutine to be terminated
+	// when KV.stopping() returns (no easy way to fix it).
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// In this test we create two KV clients and we make them join the same memberlist cluster.
+			// A client is called "producer" because it produces changes, and the other client is called
+			// "consumer" because it's the one joining the cluster later and watching changes.
+			var (
+				producerCfg KVConfig
+				consumerCfg KVConfig
+				testCodec   = dataCodec{}
+			)
+
+			// Timeout the test in case it blocks for any reason.
+			ctx, cancelCtx := context.WithTimeout(context.Background(), 5*time.Second)
+			t.Cleanup(cancelCtx)
+
+			flagext.DefaultValues(&producerCfg)
+			flagext.DefaultValues(&consumerCfg)
+			producerCfg.TCPTransport.BindAddrs = getLocalhostAddrs()
+			producerCfg.TCPTransport.BindPort = 0
+			producerCfg.Codecs = []codec.Codec{testCodec}
+
+			consumerCfg.TCPTransport.BindAddrs = getLocalhostAddrs()
+			consumerCfg.TCPTransport.BindPort = 0
+			consumerCfg.Codecs = []codec.Codec{testCodec}
+			consumerCfg.NotifyInterval = testData.NotifyInterval
+
+			// First let's start a producer.
+			producer := NewKV(producerCfg, log.With(log.NewLogfmtLogger(os.Stderr), "component", "producer"), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			require.NoError(t, services.StartAndAwaitRunning(ctx, producer))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, producer))
+			})
+
+			// Continuously produce changes in the producer, until the test is over.
+			producerDone := make(chan struct{})
+			producerWait := sync.WaitGroup{}
+			producerWait.Add(1)
+
+			go func() {
+				defer producerWait.Done()
+
+				for {
+					select {
+					case <-producerDone:
+						return
+
+					case <-time.After(10 * time.Millisecond):
+						require.NoError(t, producer.CAS(ctx, key, testCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+							return &data{
+								Members: map[string]member{"test": {Timestamp: time.Now().UnixNano()}},
+							}, true, nil
+						}))
+					}
+				}
+			}()
+
+			// Configure the consumer to join the same memberlist cluster of the producer.
+			producerAddr := fmt.Sprintf("%s:%d", getLocalhostAddr(), producer.GetListeningPort())
+			require.NoError(t, consumerCfg.JoinMembers.Set(producerAddr))
+			consumerDNSResolver := &staticDNSProviderMock{resolved: []string{producerAddr}}
+
+			// Mock the consumer to control when we want to get the full-join being completed.
+			consumerCfg.beforeJoinMembersOnStartupHook = func(ctx context.Context) {
+				// Block the full-join until the test is over (context gets canceled).
+				<-ctx.Done()
+			}
+
+			// Start a consumer.
+			consumer := NewKV(consumerCfg, log.With(log.NewLogfmtLogger(os.Stderr), "component", "consumer"), consumerDNSResolver, prometheus.NewPedanticRegistry())
+			require.NoError(t, services.StartAndAwaitRunning(ctx, consumer))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, consumer))
+			})
+
+			// Watch the key that the producer keeps changing.
+			watchKeyNotified := make(chan struct{})
+			consumer.WatchKey(ctx, key, testCodec, func(i interface{}) bool {
+				close(watchKeyNotified)
+
+				// Returning false, the key gets stop being watched.
+				return false
+			})
+
+			// Ensure the key change gets notified.
+			select {
+			case <-watchKeyNotified:
+			case <-ctx.Done():
+				require.Fail(t, "WatchKey() has not notified the producer's change before the test timeout expired")
+			}
+
+			// The test is over. We can stop the producer.
+			close(producerDone)
+			producerWait.Wait()
+
+		})
+	}
 }

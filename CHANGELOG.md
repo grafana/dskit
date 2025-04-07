@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Update the minimum required Go version to 1.22. #665
 * [CHANGE] Remove function aws.ConfigFromURL. #667
 * [CHANGE] Add new metric `slow_request_server_throughput` to track the throughput of slow queries. #619
 * [CHANGE] Log middleware updated to honor `logRequestHeaders` in all logging scenarios. #615

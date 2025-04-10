@@ -274,7 +274,7 @@ func TestPoolingClient(t *testing.T) {
 	t.Run("exchange", func(t *testing.T) {
 		resp, _, err := client.Exchange(ctx, msg, server)
 		require.NoError(t, err)
-		require.NotEmpty(t, resp.Answer)
+		require.Equal(t, dns.RcodeSuccess, resp.Rcode)
 		require.Len(t, client.pools, 1)
 	})
 

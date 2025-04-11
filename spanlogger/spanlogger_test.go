@@ -30,7 +30,7 @@ func TestSpanLogger_Log(t *testing.T) {
 	span, ctx := New(context.Background(), logger, "test", resolver, "bar")
 	_ = span.Log("foo")
 	newSpan := FromContext(ctx, logger, resolver)
-	require.Equal(t, span.Span, newSpan.Span)
+	require.Equal(t, span.span, newSpan.span)
 	_ = newSpan.Log("bar")
 	noSpan := FromContext(context.Background(), logger, resolver)
 	_ = noSpan.Log("foo")
@@ -95,7 +95,7 @@ func TestSpanLogger_SetSpanAndLogTag(t *testing.T) {
 	spanLogger.SetSpanAndLogTag("more context", "abc")
 	require.NoError(t, spanLogger.Log("msg", "this is the third message"))
 
-	span := spanLogger.Span.(*mocktracer.MockSpan)
+	span := spanLogger.span.(*mocktracer.MockSpan)
 	expectedTags := map[string]interface{}{
 		"id":           "123",
 		"more context": "abc",
@@ -128,7 +128,7 @@ func createSpan(ctx context.Context) *mocktracer.MockSpan {
 	opentracing.SetGlobalTracer(mockTracer)
 
 	logger, _ := New(ctx, log.NewNopLogger(), "name", fakeResolver{})
-	return logger.Span.(*mocktracer.MockSpan)
+	return logger.span.(*mocktracer.MockSpan)
 }
 
 type funcLogger func(keyvals ...interface{}) error

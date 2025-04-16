@@ -122,7 +122,7 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 	if !ok {
 		logger = fallback
 	}
-	otelSpan, opentracingSpan, sampled := spanFromContext(ctx)
+	otelSpan, opentracingSpan, sampled := tracing.SpanFromContext(ctx)
 
 	return &SpanLogger{
 		ctx:        ctx,
@@ -135,23 +135,6 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 		sampled:      sampled,
 		debugEnabled: debugEnabled(logger),
 	}
-}
-
-func spanFromContext(ctx context.Context) (otelSpan trace.Span, opentracingSpan opentracing.Span, sampled bool) {
-	if opentracingSpan = opentracing.SpanFromContext(ctx); opentracingSpan != nil {
-		_, sampled = tracing.ExtractSampledTraceID(ctx)
-		return nil, opentracingSpan, sampled
-	}
-
-	otelSpan = trace.SpanFromContext(ctx)
-	otelSpanContext := otelSpan.SpanContext()
-	if otelSpanContext.IsValid() {
-		return otelSpan, nil, otelSpanContext.IsSampled()
-	}
-
-	// noop not sample span.
-	// TODO: we could also return the otelSpan here, but at this point it's probably more performant to not-call the opentracing span.
-	return nil, opentracing.NoopTracer{}.StartSpan("noop"), false
 }
 
 // Detect whether we should output debug logging.
@@ -267,7 +250,7 @@ func (s *SpanLogger) SetError() {
 // SetTag will set a tag/attribute on the span.
 func (s *SpanLogger) SetTag(key string, value interface{}) {
 	if s.otelSpan != nil {
-		s.otelSpan.SetAttributes(kvToAttr(key, value))
+		s.otelSpan.SetAttributes(tracing.KeyValueToOTelAttribute(key, value))
 		return
 	}
 
@@ -380,40 +363,14 @@ func otelAttributesFromKVs(kvps []any) []attribute.KeyValue {
 	attrs := make([]attribute.KeyValue, 0, len(kvps)/2)
 	for i := 0; i < len(kvps); i += 2 {
 		if i+1 < len(kvps) {
-			attrs = append(attrs, kvToAttr(kvps[i].(string), kvps[i+1]))
+			key, ok := kvps[i].(string)
+			if !ok {
+				key = fmt.Sprintf("not_string_key:%v", kvps[i])
+			}
+			attrs = append(attrs, tracing.KeyValueToOTelAttribute(key, kvps[i+1]))
 		}
 	}
 	return attrs
-}
-
-func kvToAttr(key string, val any) attribute.KeyValue {
-	var attr attribute.KeyValue
-	switch v := val.(type) {
-	case string:
-		attr = attribute.String(key, v)
-	case int:
-		attr = attribute.Int(key, v)
-	case int64:
-		attr = attribute.Int64(key, v)
-	case float64:
-		attr = attribute.Float64(key, v)
-	case bool:
-		attr = attribute.Bool(key, v)
-	case []string:
-		attr = attribute.StringSlice(key, v)
-	case []int:
-		attr = attribute.IntSlice(key, v)
-	case []int64:
-		attr = attribute.Int64Slice(key, v)
-	case fmt.Stringer:
-		attr = attribute.Stringer(key, v)
-	case []byte:
-		attr = attribute.String(key, string(v))
-	default:
-		// Fallback to string representation for unsupported types.
-		attr = attribute.String(key, fmt.Sprintf("%v", val))
-	}
-	return attr
 }
 
 type opentracingFieldsToAttributesMarshaler []attribute.KeyValue

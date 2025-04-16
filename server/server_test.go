@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,42 +90,50 @@ func (f FakeServer) ReturnProxyProtoCallerIP(ctx context.Context, _ *protobuf.Em
 }
 
 func TestTCPv4Network(t *testing.T) {
-	var cfg Config
-	setAutoAssignedPorts(NetworkTCPV4, &cfg)
-
-	t.Run("http", func(t *testing.T) {
+	testCases := []struct {
+		protocol string
+	}{
+		{
+			protocol: "http",
+		},
+		{
+			protocol: "grpc",
+		},
+	}
+	for _, tc := range testCases {
 		var level log.Level
 		require.NoError(t, level.Set("info"))
-		cfg.LogLevel = level
-		cfg.MetricsNamespace = "testing_http_tcp4"
+		cfg := Config{
+			Registerer:       prometheus.NewPedanticRegistry(),
+			LogLevel:         level,
+			MetricsNamespace: fmt.Sprintf("testing_%s_tcp4", tc.protocol),
+		}
+		setAutoAssignedPorts(NetworkTCPV4, &cfg)
 		srv, err := New(cfg)
 		require.NoError(t, err)
 
 		errChan := make(chan error, 1)
+		var wg sync.WaitGroup
+		t.Cleanup(wg.Wait)
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			errChan <- srv.Run()
 		}()
 
-		require.NoError(t, srv.httpListener.Close())
+		switch tc.protocol {
+		case "http":
+			require.NoError(t, srv.httpListener.Close())
+		case "grpc":
+			require.NoError(t, srv.grpcListener.Close())
+		default:
+			require.Fail(t, fmt.Sprintf("unrecognized protocol %q", tc.protocol))
+		}
 		require.NotNil(t, <-errChan)
 
 		// So that address is freed for further tests.
 		srv.GRPC.Stop()
-	})
-
-	t.Run("grpc", func(t *testing.T) {
-		cfg.MetricsNamespace = "testing_grpc_tcp4"
-		srv, err := New(cfg)
-		require.NoError(t, err)
-
-		errChan := make(chan error, 1)
-		go func() {
-			errChan <- srv.Run()
-		}()
-
-		require.NoError(t, srv.grpcListener.Close())
-		require.NotNil(t, <-errChan)
-	})
+	}
 }
 
 // Ensure that http and grpc servers work with no overrides to config
@@ -523,42 +532,50 @@ func TestHTTPInstrumentationMetrics(t *testing.T) {
 }
 
 func TestRunReturnsError(t *testing.T) {
-	var cfg Config
-	setAutoAssignedPorts(DefaultNetwork, &cfg)
-
-	t.Run("http", func(t *testing.T) {
-		cfg.MetricsNamespace = "testing_http"
+	testCases := []struct {
+		protocol string
+	}{
+		{
+			protocol: "http",
+		},
+		{
+			protocol: "grpc",
+		},
+	}
+	for _, tc := range testCases {
 		var level log.Level
 		require.NoError(t, level.Set("info"))
-		cfg.LogLevel = level
+		cfg := Config{
+			MetricsNamespace: fmt.Sprintf("testing_%s", tc.protocol),
+			LogLevel:         level,
+			Registerer:       prometheus.NewPedanticRegistry(),
+		}
+		setAutoAssignedPorts(DefaultNetwork, &cfg)
 		srv, err := New(cfg)
 		require.NoError(t, err)
 
 		errChan := make(chan error, 1)
+		var wg sync.WaitGroup
+		t.Cleanup(wg.Wait)
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			errChan <- srv.Run()
 		}()
 
-		require.NoError(t, srv.httpListener.Close())
+		switch tc.protocol {
+		case "http":
+			require.NoError(t, srv.httpListener.Close())
+		case "grpc":
+			require.NoError(t, srv.grpcListener.Close())
+		default:
+			require.Fail(t, fmt.Sprintf("unrecognized protocol %q", tc.protocol))
+		}
 		require.NotNil(t, <-errChan)
 
 		// So that address is freed for further tests.
 		srv.GRPC.Stop()
-	})
-
-	t.Run("grpc", func(t *testing.T) {
-		cfg.MetricsNamespace = "testing_grpc"
-		srv, err := New(cfg)
-		require.NoError(t, err)
-
-		errChan := make(chan error, 1)
-		go func() {
-			errChan <- srv.Run()
-		}()
-
-		require.NoError(t, srv.grpcListener.Close())
-		require.NotNil(t, <-errChan)
-	})
+	}
 }
 
 // Test to see what the logging of a 500 error looks like

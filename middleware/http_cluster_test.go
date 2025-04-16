@@ -82,10 +82,10 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedCluster, cluster)
 	}
-	invalidClusterValidationReporter := func(cluster string, logger log.Logger, invalidClusterValidations *prometheus.CounterVec) InvalidClusterValidationReporter {
+	invalidClusterValidationReporter := func(cluster string, logger log.Logger, invalidClusterRequests *prometheus.CounterVec) InvalidClusterValidationReporter {
 		return func(msg string, method string) {
 			level.Warn(logger).Log("msg", msg, "method", method, "cluster_validation_label", cluster)
-			invalidClusterValidations.WithLabelValues(method).Inc()
+			invalidClusterRequests.WithLabelValues(method).Inc()
 		}
 	}
 	for testName, testCase := range testCases {
@@ -222,8 +222,8 @@ func TestClusterValidationMiddleware(t *testing.T) {
 				buf := bytes.NewBuffer(nil)
 				logger := createLogger(t, buf)
 				reg := prometheus.NewPedanticRegistry()
-				invalidClusterValidations := NewInvalidClusterValidations(reg)
-				m := ClusterValidationMiddleware(testCase.serverCluster, nil, softValidation, invalidClusterValidations, logger)
+				invalidClusterRequests := NewInvalidClusterRequests(reg)
+				m := ClusterValidationMiddleware(testCase.serverCluster, nil, softValidation, invalidClusterRequests, logger)
 				handler := Merge(m).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 				}))
@@ -315,8 +315,8 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			invalidClusterValidations := NewInvalidClusterValidations(reg)
-			m := ClusterValidationMiddleware("server-cluster", testCase.excludedPaths, testCase.softValidation, invalidClusterValidations, log.NewNopLogger())
+			invalidClusterRequests := NewInvalidClusterRequests(reg)
+			m := ClusterValidationMiddleware("server-cluster", testCase.excludedPaths, testCase.softValidation, invalidClusterRequests, log.NewNopLogger())
 			handler := Merge(m).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))

@@ -16,16 +16,16 @@ import (
 )
 
 type Metrics struct {
-	TCPConnections            *prometheus.GaugeVec
-	TCPConnectionsLimit       *prometheus.GaugeVec
-	RequestDuration           *prometheus.HistogramVec
-	PerTenantRequestDuration  *prometheus.HistogramVec
-	PerTenantRequestTotal     *prometheus.CounterVec
-	ReceivedMessageSize       *prometheus.HistogramVec
-	SentMessageSize           *prometheus.HistogramVec
-	InflightRequests          *prometheus.GaugeVec
-	RequestThroughput         *prometheus.HistogramVec
-	InvalidClusterValidations *prometheus.CounterVec
+	TCPConnections           *prometheus.GaugeVec
+	TCPConnectionsLimit      *prometheus.GaugeVec
+	RequestDuration          *prometheus.HistogramVec
+	PerTenantRequestDuration *prometheus.HistogramVec
+	PerTenantRequestTotal    *prometheus.CounterVec
+	ReceivedMessageSize      *prometheus.HistogramVec
+	SentMessageSize          *prometheus.HistogramVec
+	InflightRequests         *prometheus.GaugeVec
+	RequestThroughput        *prometheus.HistogramVec
+	InvalidClusterRequests   *prometheus.CounterVec
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
@@ -93,6 +93,6 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),
-		InvalidClusterValidations: middleware.NewInvalidClusterValidations(reg),
+		InvalidClusterRequests: middleware.NewInvalidClusterRequests(reg),
 	}
 }

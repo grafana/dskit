@@ -68,10 +68,10 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 		require.Len(t, clusterIDs, 1)
 		require.Equal(t, expectedCluster, clusterIDs[0])
 	}
-	invalidClusterValidationReporter := func(cluster string, logger log.Logger, invalidClusterValidations *prometheus.CounterVec) InvalidClusterValidationReporter {
+	invalidClusterValidationReporter := func(cluster string, logger log.Logger, invalidClusterRequests *prometheus.CounterVec) InvalidClusterValidationReporter {
 		return func(msg string, method string) {
 			level.Warn(logger).Log("msg", msg, "method", method, "cluster_validation_label", cluster)
-			invalidClusterValidations.WithLabelValues(method).Inc()
+			invalidClusterRequests.WithLabelValues(method).Inc()
 		}
 	}
 	for testName, testCase := range testCases {
@@ -197,7 +197,7 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 				logger := createLogger(t, buf)
 				reg := prometheus.NewPedanticRegistry()
 				interceptor := ClusterUnaryServerInterceptor(
-					testCase.serverCluster, softValidation, NewInvalidClusterValidations(reg), logger,
+					testCase.serverCluster, softValidation, NewInvalidClusterRequests(reg), logger,
 				)
 				handler := func(context.Context, interface{}) (interface{}, error) {
 					return nil, nil
@@ -255,8 +255,8 @@ func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			invalidClusterValidations := NewInvalidClusterValidations(reg)
-			interceptor := ClusterUnaryServerInterceptor(goodCluster, false, invalidClusterValidations, log.NewNopLogger())
+			invalidClusterRequests := NewInvalidClusterRequests(reg)
+			interceptor := ClusterUnaryServerInterceptor(goodCluster, false, invalidClusterRequests, log.NewNopLogger())
 			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, nil
 			}

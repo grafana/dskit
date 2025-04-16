@@ -411,7 +411,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	if cfg.ClusterValidation.GRPC.Enabled {
 		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(
 			cfg.ClusterValidation.Label, cfg.ClusterValidation.GRPC.SoftValidation,
-			metrics.InvalidClusterValidations, logger,
+			metrics.InvalidClusterRequests, logger,
 		))
 	}
 
@@ -576,7 +576,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(
 			cfg.ClusterValidation.Label, cfg.ClusterValidation.HTTP.ExcludedPaths,
 			cfg.ClusterValidation.HTTP.SoftValidation,
-			metrics.InvalidClusterValidations, logger,
+			metrics.InvalidClusterRequests, logger,
 		))
 	}
 

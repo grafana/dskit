@@ -5,7 +5,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// NewInvalidClusterValidations registers and returns a new counter metric server_request_invalid_cluster_validation_labels_total.
+// NewInvalidClusterValidations registers and returns a new counter metric server_invalid_cluster_validation_label_requests_total.
 func NewInvalidClusterValidations(reg prometheus.Registerer) *prometheus.CounterVec {
 	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "server_invalid_cluster_validation_label_requests_total",

@@ -68,10 +68,10 @@ func TestClusterUnaryClientInterceptor(t *testing.T) {
 		require.Len(t, clusterIDs, 1)
 		require.Equal(t, expectedCluster, clusterIDs[0])
 	}
-	invalidClusterValidationReporter := func(cluster string, logger log.Logger, invalidClusterValidations *prometheus.CounterVec) InvalidClusterValidationReporter {
+	invalidClusterValidationReporter := func(cluster string, logger log.Logger, invalidClusterRequests *prometheus.CounterVec) InvalidClusterValidationReporter {
 		return func(msg string, method string) {
 			level.Warn(logger).Log("msg", msg, "method", method, "cluster_validation_label", cluster)
-			invalidClusterValidations.WithLabelValues(method).Inc()
+			invalidClusterRequests.WithLabelValues(method).Inc()
 		}
 	}
 	for testName, testCase := range testCases {
@@ -113,9 +113,10 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 		serverCluster   string
 		verifyErr       func(err error, softValidation bool)
 		expectedLogs    string
+		expectedMetrics string
 		shouldPanic     bool
 	}{
-		"empty server cluster make ClusterUnaryServerInterceptor panic": {
+		"empty server cluster makes ClusterUnaryServerInterceptor panic": {
 			incomingContext: newIncomingContext(false, ""),
 			serverCluster:   "",
 			shouldPanic:     true,
@@ -128,6 +129,11 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			incomingContext: newIncomingContext(true, "wrong-cluster"),
 			serverCluster:   "cluster",
 			expectedLogs:    `level=warn msg="request with wrong cluster validation label" method=/Test/Me cluster_validation_label=cluster request_cluster_validation_label=wrong-cluster soft_validation=%v`,
+			expectedMetrics: `
+                                # HELP server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE server_invalid_cluster_validation_label_requests_total counter
+                                server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster", method="/Test/Me",protocol="grpc",request_cluster_validation_label="wrong-cluster"} 1
+				`,
 			verifyErr: func(err error, softValidation bool) {
 				if !softValidation {
 					require.Equal(t, grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster validation label "wrong-cluster" - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VALIDATION_LABEL}).Err(), err)
@@ -138,6 +144,11 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			incomingContext: newIncomingContext(true, ""),
 			serverCluster:   "cluster",
 			expectedLogs:    `level=warn msg="request with no cluster validation label" method=/Test/Me cluster_validation_label=cluster soft_validation=%v`,
+			expectedMetrics: `
+                                # HELP server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE server_invalid_cluster_validation_label_requests_total counter
+                                server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="/Test/Me",protocol="grpc",request_cluster_validation_label=""} 1
+				`,
 			verifyErr: func(err error, softValidation bool) {
 				if !softValidation {
 					require.Equal(t, grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster validation label - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VALIDATION_LABEL}).Err(), err)
@@ -148,16 +159,26 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			incomingContext: newIncomingContext(false, ""),
 			serverCluster:   "cluster",
 			expectedLogs:    `level=warn msg="request with no cluster validation label" method=/Test/Me cluster_validation_label=cluster soft_validation=%v`,
+			expectedMetrics: `
+                                # HELP server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE server_invalid_cluster_validation_label_requests_total counter
+                                server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="/Test/Me",protocol="grpc",request_cluster_validation_label=""} 1
+				`,
 			verifyErr: func(err error, softValidation bool) {
 				if !softValidation {
 					require.Equal(t, grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster validation label - it should be "cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VALIDATION_LABEL}).Err(), err)
 				}
 			},
 		},
-		"if the incoming context contains more than one cluster labels an error is returned if soft validation disabled": {
+		"if the incoming context contains more than one cluster label an error is returned if soft validation disabled": {
 			incomingContext: metadata.NewIncomingContext(context.Background(), map[string][]string{clusterutil.MetadataClusterValidationLabelKey: {"cluster", "another-cluster"}}),
 			serverCluster:   "cluster",
 			expectedLogs:    `level=warn msg="detected error during cluster validation label extraction" method=/Test/Me cluster_validation_label=cluster soft_validation=%v err="gRPC metadata should contain exactly 1 value for key \"x-cluster\", but it contains [cluster another-cluster]"`,
+			expectedMetrics: `
+                                # HELP server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE server_invalid_cluster_validation_label_requests_total counter
+                                server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="/Test/Me",protocol="grpc",request_cluster_validation_label=""} 1
+				`,
 			verifyErr: func(err error, softValidation bool) {
 				if !softValidation {
 					require.Equal(t, grpcutil.Status(codes.FailedPrecondition, `rejected request: gRPC metadata should contain exactly 1 value for key "x-cluster", but it contains [cluster another-cluster]`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VALIDATION_LABEL}).Err(), err)
@@ -170,11 +191,14 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 			t.Run(fmt.Sprintf("%s softValidation=%v", testName, softValidation), func(t *testing.T) {
 				defer func() {
 					r := recover()
-					require.Equal(t, testCase.shouldPanic, r != nil)
+					require.Equal(t, testCase.shouldPanic, r != nil, r)
 				}()
 				buf := bytes.NewBuffer(nil)
 				logger := createLogger(t, buf)
-				interceptor := ClusterUnaryServerInterceptor(testCase.serverCluster, softValidation, logger)
+				reg := prometheus.NewPedanticRegistry()
+				interceptor := ClusterUnaryServerInterceptor(
+					testCase.serverCluster, softValidation, NewInvalidClusterRequests(reg), logger,
+				)
 				handler := func(context.Context, interface{}) (interface{}, error) {
 					return nil, nil
 				}
@@ -189,6 +213,8 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 				} else {
 					require.True(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(testCase.expectedLogs, softValidation))))
 				}
+				err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "server_invalid_cluster_validation_label_requests_total")
+				require.NoError(t, err)
 			})
 		}
 	}
@@ -201,6 +227,7 @@ func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 	testCases := map[string]struct {
 		serverInfo      *grpc.UnaryServerInfo
 		incomingContext context.Context
+		expectedMetrics string
 		expectedError   error
 	}{
 		"UnaryServerInfo with healthpb.HealthServer does no cluster check": {
@@ -216,13 +243,20 @@ func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 			serverInfo: &grpc.UnaryServerInfo{Server: nil, FullMethod: "/Test/Me"},
 			// We create a context with a bad cluster.
 			incomingContext: newIncomingContext(true, badCluster),
+			expectedMetrics: `
+                                # HELP server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE server_invalid_cluster_validation_label_requests_total counter
+                                server_invalid_cluster_validation_label_requests_total{cluster_validation_label="good-cluster",method="/Test/Me",protocol="grpc",request_cluster_validation_label="bad-cluster"} 1
+			`,
 			// Since UnaryServerInfo doesn't contain the grpc health server, the check is done, and we expect an error.
 			expectedError: grpcutil.Status(codes.FailedPrecondition, `rejected request with wrong cluster validation label "bad-cluster" - it should be "good-cluster"`, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VALIDATION_LABEL}).Err(),
 		},
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			interceptor := ClusterUnaryServerInterceptor(goodCluster, false, log.NewNopLogger())
+			reg := prometheus.NewPedanticRegistry()
+			invalidClusterRequests := NewInvalidClusterRequests(reg)
+			interceptor := ClusterUnaryServerInterceptor(goodCluster, false, invalidClusterRequests, log.NewNopLogger())
 			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, nil
 			}
@@ -233,6 +267,8 @@ func TestClusterUnaryServerInterceptorWithHealthServer(t *testing.T) {
 			} else {
 				require.Equal(t, testCase.expectedError, err)
 			}
+			err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "server_invalid_cluster_validation_label_requests_total")
+			require.NoError(t, err)
 		})
 	}
 }

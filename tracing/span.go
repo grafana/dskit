@@ -68,7 +68,7 @@ func (s *Span) SetError() {
 		s.otelSpan.SetStatus(codes.Error, "error")
 		return
 	}
-	if s.opentracingSpan == nil {
+	if s.opentracingSpan != nil {
 		ext.Error.Set(s.opentracingSpan, true)
 	}
 }
@@ -78,7 +78,7 @@ func (s *Span) LogError(err error) {
 		s.otelSpan.RecordError(err)
 		return
 	}
-	if s.opentracingSpan == nil {
+	if s.opentracingSpan != nil {
 		s.opentracingSpan.LogFields(otlog.Error(err))
 	}
 }

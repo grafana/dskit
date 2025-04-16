@@ -106,7 +106,7 @@
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
 * [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates cluster validation labels to the outgoing gRPC metadata. #640 #648 #649 #655
 * [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster validation label, and returns an error if it is not the case. #640 #648 #649 #655
-* [FEATURE] Server: Add support for adding `middleware.ClusterUnaryServerInterceptor` as `server.Server` unary interceptor via the following experimental configuration options: #650 #657
+* [FEATURE] Server: Add support for adding `middleware.ClusterUnaryServerInterceptor` as `server.Server` unary interceptor via the following experimental configuration options: #650 #657 #680
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.grpc.soft-validation`
   * `-server.cluster-validation.grpc.enabled`

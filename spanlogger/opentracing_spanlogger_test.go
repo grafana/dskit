@@ -29,7 +29,7 @@ var mockTracer = mocktracer.New()
 
 func init() { opentracing.SetGlobalTracer(mockTracer) }
 
-func TestOpentracingSpanLogger_Log(t *testing.T) {
+func TestOpenTracingSpanLogger_Log(t *testing.T) {
 	logger := log.NewNopLogger()
 	resolver := tenant.NewMultiResolver()
 	span, ctx := New(context.Background(), logger, "test", resolver, "bar")
@@ -43,7 +43,7 @@ func TestOpentracingSpanLogger_Log(t *testing.T) {
 	require.NoError(t, noSpan.Error(nil))
 }
 
-func TestOpentracingSpanLogger_CustomLogger(t *testing.T) {
+func TestOpenTracingSpanLogger_CustomLogger(t *testing.T) {
 	var logged [][]interface{}
 	var logger funcLogger = func(keyvals ...interface{}) error {
 		logged = append(logged, keyvals)
@@ -68,7 +68,7 @@ func TestOpentracingSpanLogger_CustomLogger(t *testing.T) {
 	require.Equal(t, expect, logged)
 }
 
-func TestOpentracingSpanLogger_SetSpanAndLogTag(t *testing.T) {
+func TestOpenTracingSpanLogger_SetSpanAndLogTag(t *testing.T) {
 	logMessages := [][]interface{}{}
 	var logger funcLogger = func(keyvals ...interface{}) error {
 		logMessages = append(logMessages, keyvals)
@@ -112,25 +112,25 @@ func TestOpentracingSpanLogger_SetSpanAndLogTag(t *testing.T) {
 	require.Equal(t, expectedLogMessages, logMessages)
 }
 
-func TestOpentracingSpanCreatedWithTenantTag(t *testing.T) {
-	mockSpan := createOpentracingMockSpan(user.InjectOrgID(context.Background(), "team-a"))
+func TestOpenTracingSpanCreatedWithTenantTag(t *testing.T) {
+	mockSpan := createOpenTracingMockSpan(user.InjectOrgID(context.Background(), "team-a"))
 
 	require.Equal(t, []string{"team-a"}, mockSpan.Tag(TenantIDsTagName))
 }
 
-func TestOpentracingSpanCreatedWithoutTenantTag(t *testing.T) {
-	mockSpan := createOpentracingMockSpan(context.Background())
+func TestOpenTracingSpanCreatedWithoutTenantTag(t *testing.T) {
+	mockSpan := createOpenTracingMockSpan(context.Background())
 
 	_, exists := mockSpan.Tags()[TenantIDsTagName]
 	require.False(t, exists)
 }
 
-func createOpentracingMockSpan(ctx context.Context) *mocktracer.MockSpan {
+func createOpenTracingMockSpan(ctx context.Context) *mocktracer.MockSpan {
 	logger, _ := New(ctx, log.NewNopLogger(), "name", tenant.NewMultiResolver())
 	return logger.opentracingSpan.(*mocktracer.MockSpan)
 }
 
-func TestOpentracingSpanLoggerAwareCaller(t *testing.T) {
+func TestOpenTracingSpanLoggerAwareCaller(t *testing.T) {
 	testCases := map[string]func(w io.Writer) log.Logger{
 		// This is based on Mimir's default logging configuration: https://github.com/grafana/mimir/blob/50d1c27b4ad82b265ff5a865345bec2d726f64ef/pkg/util/log/log.go#L45-L46
 		"default logger": func(w io.Writer) log.Logger {

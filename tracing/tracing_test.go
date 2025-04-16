@@ -14,7 +14,7 @@ import (
 
 const expectedTraceID = "00000000000000010000000000000002"
 
-func TestExtractTraceSpanID_Opentracing(t *testing.T) {
+func TestExtractTraceSpanID_OpenTracing(t *testing.T) {
 	spanCtx := jaeger.NewSpanContext(jaeger.TraceID{High: 1, Low: 2}, jaeger.SpanID(3), 0, true, nil)
 	tracer, closer := jaeger.NewTracer("test", jaeger.NewConstSampler(true), jaeger.NewNullReporter())
 	defer closer.Close()

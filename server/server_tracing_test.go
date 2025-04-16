@@ -12,6 +12,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
 	"golang.org/x/exp/maps"
@@ -201,18 +202,19 @@ func TestHTTPGRPCTracing(t *testing.T) {
 			t.Cleanup(func() { _ = closer.Close() })
 			opentracing.SetGlobalTracer(tracer)
 
-			var cfg Config
-			cfg.HTTPListenAddress = httpAddress
-			cfg.HTTPListenPort = httpPort
-			cfg.GRPCListenAddress = httpAddress
-			cfg.GRPCListenPort = 1234
-			cfg.GRPCServerMaxRecvMsgSize = 4 * 1024 * 1024
-			cfg.GRPCServerMaxSendMsgSize = 4 * 1024 * 1024
-			cfg.MetricsNamespace = "testing_httpgrpc_tracing_" + middleware.MakeLabelValue(testName)
 			var lvl log.Level
 			require.NoError(t, lvl.Set("info"))
-			cfg.LogLevel = lvl
-
+			cfg := Config{
+				HTTPListenAddress:        httpAddress,
+				HTTPListenPort:           httpPort,
+				GRPCListenAddress:        httpAddress,
+				GRPCListenPort:           1234,
+				GRPCServerMaxRecvMsgSize: 4 * 1024 * 1024,
+				GRPCServerMaxSendMsgSize: 4 * 1024 * 1024,
+				MetricsNamespace:         "testing_httpgrpc_tracing_" + middleware.MakeLabelValue(testName),
+				LogLevel:                 lvl,
+				Registerer:               prometheus.NewPedanticRegistry(),
+			}
 			server, err := New(cfg)
 			require.NoError(t, err)
 

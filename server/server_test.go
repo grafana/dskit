@@ -89,53 +89,6 @@ func (f FakeServer) ReturnProxyProtoCallerIP(ctx context.Context, _ *protobuf.Em
 	}, nil
 }
 
-func TestTCPv4Network(t *testing.T) {
-	testCases := []struct {
-		protocol string
-	}{
-		{
-			protocol: "http",
-		},
-		{
-			protocol: "grpc",
-		},
-	}
-	for _, tc := range testCases {
-		var level log.Level
-		require.NoError(t, level.Set("info"))
-		cfg := Config{
-			Registerer:       prometheus.NewPedanticRegistry(),
-			LogLevel:         level,
-			MetricsNamespace: fmt.Sprintf("testing_%s_tcp4", tc.protocol),
-		}
-		setAutoAssignedPorts(NetworkTCPV4, &cfg)
-		srv, err := New(cfg)
-		require.NoError(t, err)
-
-		errChan := make(chan error, 1)
-		var wg sync.WaitGroup
-		t.Cleanup(wg.Wait)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errChan <- srv.Run()
-		}()
-
-		switch tc.protocol {
-		case "http":
-			require.NoError(t, srv.httpListener.Close())
-		case "grpc":
-			require.NoError(t, srv.grpcListener.Close())
-		default:
-			require.Fail(t, fmt.Sprintf("unrecognized protocol %q", tc.protocol))
-		}
-		require.NotNil(t, <-errChan)
-
-		// So that address is freed for further tests.
-		srv.GRPC.Stop()
-	}
-}
-
 // Ensure that http and grpc servers work with no overrides to config
 // (except http port because an ordinary user can't bind to default port 80)
 func TestDefaultAddresses(t *testing.T) {
@@ -543,38 +496,49 @@ func TestRunReturnsError(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		var level log.Level
-		require.NoError(t, level.Set("info"))
-		cfg := Config{
-			MetricsNamespace: fmt.Sprintf("testing_%s", tc.protocol),
-			LogLevel:         level,
-			Registerer:       prometheus.NewPedanticRegistry(),
+		for _, network := range []string{"default", "tcpV4"} {
+			t.Run(network, func(t *testing.T) {
+				var level log.Level
+				require.NoError(t, level.Set("info"))
+				cfg := Config{
+					Registerer:       prometheus.NewPedanticRegistry(),
+					LogLevel:         level,
+					MetricsNamespace: fmt.Sprintf("testing_%s", tc.protocol),
+				}
+				switch network {
+				case "default":
+					setAutoAssignedPorts(DefaultNetwork, &cfg)
+				case "tcpV4":
+					setAutoAssignedPorts(NetworkTCPV4, &cfg)
+				default:
+					require.Fail(t, "unrecognized network %q", network)
+				}
+				srv, err := New(cfg)
+				require.NoError(t, err)
+
+				errChan := make(chan error, 1)
+				var wg sync.WaitGroup
+				t.Cleanup(wg.Wait)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					errChan <- srv.Run()
+				}()
+
+				switch tc.protocol {
+				case "http":
+					require.NoError(t, srv.httpListener.Close())
+				case "grpc":
+					require.NoError(t, srv.grpcListener.Close())
+				default:
+					require.Fail(t, fmt.Sprintf("unrecognized protocol %q", tc.protocol))
+				}
+				require.NotNil(t, <-errChan)
+
+				// So that address is freed for further tests.
+				srv.GRPC.Stop()
+			})
 		}
-		setAutoAssignedPorts(DefaultNetwork, &cfg)
-		srv, err := New(cfg)
-		require.NoError(t, err)
-
-		errChan := make(chan error, 1)
-		var wg sync.WaitGroup
-		t.Cleanup(wg.Wait)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errChan <- srv.Run()
-		}()
-
-		switch tc.protocol {
-		case "http":
-			require.NoError(t, srv.httpListener.Close())
-		case "grpc":
-			require.NoError(t, srv.grpcListener.Close())
-		default:
-			require.Fail(t, fmt.Sprintf("unrecognized protocol %q", tc.protocol))
-		}
-		require.NotNil(t, <-errChan)
-
-		// So that address is freed for further tests.
-		srv.GRPC.Stop()
 	}
 }
 
@@ -588,6 +552,7 @@ func TestMiddlewareLogging(t *testing.T) {
 		LogLevel:                      level,
 		DoNotAddDefaultHTTPMiddleware: true,
 		Router:                        &mux.Router{},
+		Registerer:                    prometheus.NewPedanticRegistry(),
 	}
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
@@ -633,6 +598,7 @@ func TestTLSServer(t *testing.T) {
 		},
 		MetricsNamespace: "testing_tls",
 		LogLevel:         level,
+		Registerer:       prometheus.NewPedanticRegistry(),
 	}
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
@@ -727,6 +693,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 		},
 		MetricsNamespace: "testing_tls_certs_inline",
 		LogLevel:         level,
+		Registerer:       prometheus.NewPedanticRegistry(),
 	}
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
 
@@ -884,21 +851,26 @@ func TestLogSourceIPs(t *testing.T) {
 }
 
 func TestStopWithDisabledSignalHandling(t *testing.T) {
-	var level log.Level
-	require.NoError(t, level.Set("info"))
-	cfg := Config{
-		LogLevel: level,
-	}
-	setAutoAssignedPorts(DefaultNetwork, &cfg)
+	test := func(t *testing.T, metricsNamespace string, handler SignalHandler) {
+		var level log.Level
+		require.NoError(t, level.Set("info"))
+		cfg := Config{
+			LogLevel:         level,
+			SignalHandler:    handler,
+			MetricsNamespace: metricsNamespace,
+			Registerer:       prometheus.NewPedanticRegistry(),
+		}
+		setAutoAssignedPorts(DefaultNetwork, &cfg)
 
-	var test = func(t *testing.T, metricsNamespace string, handler SignalHandler) {
-		cfg.SignalHandler = handler
-		cfg.MetricsNamespace = metricsNamespace
 		srv, err := New(cfg)
 		require.NoError(t, err)
 
 		errChan := make(chan error, 1)
+		var wg sync.WaitGroup
+		wg.Add(1)
+		t.Cleanup(wg.Wait)
 		go func() {
+			defer wg.Done()
 			errChan <- srv.Run()
 		}()
 

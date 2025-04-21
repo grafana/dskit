@@ -180,13 +180,16 @@ func NewClient(address string) (*Client, error) {
 	}
 	const grpcServiceConfig = `{"loadBalancingPolicy":"round_robin"}`
 
+	var unaryInterceptors []grpc.UnaryClientInterceptor
+	if opentracing.IsGlobalTracerRegistered() {
+		unaryInterceptors = append(unaryInterceptors, otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()))
+	}
+	unaryInterceptors = append(unaryInterceptors, middleware.ClientUserHeaderInterceptor)
+
 	dialOptions := []grpc.DialOption{
 		grpc.WithDefaultServiceConfig(grpcServiceConfig),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(
-			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-			middleware.ClientUserHeaderInterceptor,
-		),
+		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	}
 

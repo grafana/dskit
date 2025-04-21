@@ -405,10 +405,18 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	}
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
-		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
-		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
-		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
+
+	if opentracing.IsGlobalTracerRegistered() {
+		grpcMiddleware = append(grpcMiddleware,
+			otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
+		)
+	}
+
+	grpcMiddleware = append(grpcMiddleware,
+		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor, if that's configured.
+		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
+	)
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 	if cfg.ClusterValidation.GRPC.Enabled {
 		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(
@@ -419,9 +427,17 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 
 	grpcStreamMiddleware := []grpc.StreamServerInterceptor{
 		serverLog.StreamServerInterceptor,
-		otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
-		middleware.StreamServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
+
+	if opentracing.IsGlobalTracerRegistered() {
+		grpcStreamMiddleware = append(grpcStreamMiddleware,
+			otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
+		)
+	}
+
+	grpcStreamMiddleware = append(grpcStreamMiddleware,
+		middleware.StreamServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
+	)
 	grpcStreamMiddleware = append(grpcStreamMiddleware, cfg.GRPCStreamMiddleware...)
 
 	grpcKeepAliveOptions := keepalive.ServerParameters{

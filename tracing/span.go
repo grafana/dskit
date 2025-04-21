@@ -42,7 +42,7 @@ func StartSpanFromContext(ctx context.Context, operation string, options ...Span
 			for _, opt := range options {
 				otelOptions = append(otelOptions, opt.otelSpanOptions()...)
 			}
-			ctx, span := otelSpan.TracerProvider().Tracer("dskit/tracing").Start(ctx, operation)
+			ctx, span := otelSpan.TracerProvider().Tracer("dskit/tracing").Start(ctx, operation, otelOptions...)
 			s := &Span{otelSpan: span}
 			for _, opt := range options {
 				opt.apply(s)

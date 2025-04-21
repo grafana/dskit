@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestParseAttributes(t *testing.T) {
@@ -127,7 +127,7 @@ func getContextWithOpenTelemetry(_ *testing.T) (context.Context, func()) {
 }
 
 func getContextWithOpenTelemetryNoop(t *testing.T) (context.Context, func()) {
-	ctx, sp := trace.NewNoopTracerProvider().Tracer("test").Start(context.Background(), "test")
+	ctx, sp := noop.NewTracerProvider().Tracer("test").Start(context.Background(), "test")
 	// sanity check
 	require.False(t, sp.SpanContext().TraceID().IsValid())
 	return ctx, func() {

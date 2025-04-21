@@ -134,3 +134,13 @@ func getContextWithOpenTelemetryNoop(t *testing.T) (context.Context, func()) {
 		sp.End()
 	}
 }
+
+func TestNewResource(t *testing.T) {
+	res, err := NewResource("test-service", []attribute.KeyValue{
+		attribute.String("test.key", "test.value"),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.Contains(t, res.Attributes(), attribute.String("service.name", "test-service"))
+	require.Contains(t, res.Attributes(), attribute.String("test.key", "test.value"))
+}

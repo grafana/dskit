@@ -49,7 +49,7 @@ const (
 // - JAEGER_AGENT_HOST
 // - JAEGER_SAMPLER_MANAGER_HOST_PORT
 func NewOTelFromJaegerEnv(serviceName string) (io.Closer, error) {
-	cfg, err := parseTracingConfig()
+	cfg, err := parseOTelConfig()
 	if err != nil {
 		return nil, errors.Wrap(err, "could not load jaeger tracer configuration")
 	}
@@ -86,7 +86,7 @@ func parseJaegerTags(sTags string) ([]attribute.KeyValue, error) {
 	return res, nil
 }
 
-type config struct {
+type otelConfig struct {
 	agentHost         string
 	collectorEndpoint string
 	agentPort         string
@@ -97,9 +97,9 @@ type config struct {
 	agentHostPort     string
 }
 
-// parseTracingConfig facilitates initialization that is compatible with Jaeger's InitGlobalTracer method.
-func parseTracingConfig() (config, error) {
-	cfg := config{}
+// parseOTelConfig facilitates initialization that is compatible with Jaeger's InitGlobalTracer method.
+func parseOTelConfig() (otelConfig, error) {
+	cfg := otelConfig{}
 	var err error
 
 	// Parse reporting agent configuration
@@ -166,7 +166,7 @@ func parseTracingConfig() (config, error) {
 }
 
 // initJaegerTracerProvider initializes a new Jaeger Tracer Provider.
-func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error) {
+func (cfg otelConfig) initJaegerTracerProvider(serviceName string) (io.Closer, error) {
 	// Read environment variables to configure Jaeger
 	var ep jaegerotel.EndpointOption
 	// Create the jaeger exporter: address can be either agent address (host:port) or collector Endpoint.

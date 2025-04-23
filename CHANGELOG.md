@@ -107,12 +107,12 @@
 * [FEATURE] Add `ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation()`. #495
 * [FEATURE] Add `middleware.ClusterUnaryClientInterceptor`, a `grpc.UnaryClientInterceptor` that propagates cluster validation labels to the outgoing gRPC metadata. #640 #648 #649 #655
 * [FEATURE] Add `middleware.ClusterUnaryServerInterceptor`, a `grpc.UnaryServerInterceptor` that checks if the incoming gRPC metadata contains a correct cluster validation label, and returns an error if it is not the case. #640 #648 #649 #655
-* [FEATURE] Server: Add support for adding `middleware.ClusterUnaryServerInterceptor` as `server.Server` unary interceptor via the following experimental configuration options: #650 #657 #680
+* [FEATURE] Server: Add support for adding `middleware.ClusterUnaryServerInterceptor` as `server.Server` unary interceptor via the following experimental configuration options: #650 #657 #680 #682
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.grpc.soft-validation`
   * `-server.cluster-validation.grpc.enabled`
 * [FEATURE] Add `middleware.ClusterValidationRoundTripper`, an `http.RoundTripper` that enriches HTTP request headers with the cluster validation labels. #671
-* [FEATURE] Add `middleware.ClusterValidationMiddleware`, an implementation of `middleware.Interface` that checks if HTTP requests contain a correct cluster validation label, and returns an error if it is not the case. #671
+* [FEATURE] Add `middleware.ClusterValidationMiddleware`, an implementation of `middleware.Interface` that checks if HTTP requests contain a correct cluster validation label, and returns an error if it is not the case. #671 #680 #682
 * [FEATURE] Server: Add support for adding `middleware.ClusterValidationMiddleware` as `server.Server` HTTP middleware via the following experimental configuration options: #671
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.http.soft-validation`

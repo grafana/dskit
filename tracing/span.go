@@ -23,34 +23,35 @@ type Span struct {
 // If parent span is not sampled, it returns a noop span.
 func StartSpanFromContext(ctx context.Context, operation string, options ...SpanOption) (*Span, context.Context) {
 	otelSpan, opentracingSpan, sampled := SpanFromContext(ctx)
-	if sampled {
-		if opentracingSpan != nil {
-			var opentracingOptions []opentracing.StartSpanOption
-			for _, opt := range options {
-				opentracingOptions = append(opentracingOptions, opt.opentracingSpanOptions()...)
-			}
-			span, ctx := opentracing.StartSpanFromContext(ctx, operation, opentracingOptions...)
-			s := &Span{opentracingSpan: span}
-			for _, opt := range options {
-				opt.apply(s)
-			}
-			return s, ctx
-		}
-
-		if otelSpan != nil {
-			var otelOptions []trace.SpanStartOption
-			for _, opt := range options {
-				otelOptions = append(otelOptions, opt.otelSpanOptions()...)
-			}
-			ctx, span := otelSpan.TracerProvider().Tracer("dskit/tracing").Start(ctx, operation, otelOptions...)
-			s := &Span{otelSpan: span}
-			for _, opt := range options {
-				opt.apply(s)
-			}
-			return s, ctx
-		}
+	if !sampled {
+		return &Span{}, ctx
 	}
 
+	if opentracingSpan != nil {
+		var opentracingOptions []opentracing.StartSpanOption
+		for _, opt := range options {
+			opentracingOptions = append(opentracingOptions, opt.opentracingSpanOptions()...)
+		}
+		span, ctx := opentracing.StartSpanFromContext(ctx, operation, opentracingOptions...)
+		s := &Span{opentracingSpan: span}
+		for _, opt := range options {
+			opt.apply(s)
+		}
+		return s, ctx
+	}
+
+	if otelSpan != nil {
+		var otelOptions []trace.SpanStartOption
+		for _, opt := range options {
+			otelOptions = append(otelOptions, opt.otelSpanOptions()...)
+		}
+		ctx, span := otelSpan.TracerProvider().Tracer("dskit/tracing").Start(ctx, operation, otelOptions...)
+		s := &Span{otelSpan: span}
+		for _, opt := range options {
+			opt.apply(s)
+		}
+		return s, ctx
+	}
 	return &Span{}, ctx
 }
 

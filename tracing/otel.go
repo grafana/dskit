@@ -29,6 +29,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
+var tracer = otel.Tracer("dskit/tracing")
+
 const (
 	envJaegerAgentHost                 = "JAEGER_AGENT_HOST"
 	envJaegerTags                      = "JAEGER_TAGS"

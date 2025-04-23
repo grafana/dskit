@@ -19,15 +19,9 @@ type Span struct {
 	otelSpan        trace.Span
 }
 
-// StartSpanFromContext starts a new span from the context using the parent tracing library.
-// If parent span is not sampled, it returns a noop span.
+// StartSpanFromContext starts a new opentracing span if opentracing is registered, otherwise it starts a new otel span.
 func StartSpanFromContext(ctx context.Context, operation string, options ...SpanOption) (*Span, context.Context) {
-	otelSpan, opentracingSpan, sampled := SpanFromContext(ctx)
-	if !sampled {
-		return &Span{}, ctx
-	}
-
-	if opentracingSpan != nil {
+	if opentracing.IsGlobalTracerRegistered() {
 		var opentracingOptions []opentracing.StartSpanOption
 		for _, opt := range options {
 			opentracingOptions = append(opentracingOptions, opt.opentracingSpanOptions()...)
@@ -40,19 +34,16 @@ func StartSpanFromContext(ctx context.Context, operation string, options ...Span
 		return s, ctx
 	}
 
-	if otelSpan != nil {
-		var otelOptions []trace.SpanStartOption
-		for _, opt := range options {
-			otelOptions = append(otelOptions, opt.otelSpanOptions()...)
-		}
-		ctx, span := otelSpan.TracerProvider().Tracer("dskit/tracing").Start(ctx, operation, otelOptions...)
-		s := &Span{otelSpan: span}
-		for _, opt := range options {
-			opt.apply(s)
-		}
-		return s, ctx
+	var otelOptions []trace.SpanStartOption
+	for _, opt := range options {
+		otelOptions = append(otelOptions, opt.otelSpanOptions()...)
 	}
-	return &Span{}, ctx
+	ctx, span := tracer.Start(ctx, operation, otelOptions...)
+	s := &Span{otelSpan: span}
+	for _, opt := range options {
+		opt.apply(s)
+	}
+	return s, ctx
 }
 
 func (s *Span) SetTag(name string, value any) {

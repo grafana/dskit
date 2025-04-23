@@ -39,6 +39,7 @@ func (t Tracer) Wrap(next http.Handler) http.Handler {
 	if opentracing.IsGlobalTracerRegistered() {
 		return t.wrapWithOpenTracing(next)
 	}
+	// If no OpenTracing, let's do OTel.
 	return t.wrapWithOTel(next)
 }
 
@@ -70,7 +71,6 @@ func (t Tracer) wrapWithOpenTracing(next http.Handler) http.Handler {
 }
 
 func (t Tracer) wrapWithOTel(next http.Handler) http.Handler {
-	// If no OpenTracing, let's do OTel.
 	tracingMiddleware := otelhttp.NewHandler(next, "http.tracing", otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 		return httpOperationName(r)
 	}))

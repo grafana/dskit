@@ -53,7 +53,7 @@ func NewOTelFromJaegerEnv(serviceName string) (io.Closer, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "could not load jaeger tracer configuration")
 	}
-	if cfg.samplingServerURL == "" && cfg.agentHostPort == "" && cfg.collectorEndpoint == "" {
+	if cfg.samplingServerURL == "" && cfg.agentHostPort == "" && cfg.jaegerEndpoint == "" {
 		return nil, ErrBlankTraceConfiguration
 	}
 	return cfg.initJaegerTracerProvider(serviceName)
@@ -88,7 +88,7 @@ func parseJaegerTags(sTags string) ([]attribute.KeyValue, error) {
 
 type otelConfig struct {
 	agentHost         string
-	collectorEndpoint string
+	jaegerEndpoint    string
 	agentPort         string
 	samplerType       string
 	samplingServerURL string
@@ -108,7 +108,7 @@ func parseOTelConfig() (otelConfig, error) {
 		if err != nil {
 			return cfg, errors.Wrapf(err, "cannot parse env var %s=%s", envJaegerEndpoint, e)
 		}
-		cfg.collectorEndpoint = u.String()
+		cfg.jaegerEndpoint = u.String()
 	} else {
 		useEnv := false
 		host := envJaegerDefaultUDPSpanServerHost
@@ -176,7 +176,7 @@ func (cfg otelConfig) initJaegerTracerProvider(serviceName string) (io.Closer, e
 			jaegerotel.WithAgentPort(cfg.agentPort))
 	} else {
 		ep = jaegerotel.WithCollectorEndpoint(
-			jaegerotel.WithEndpoint(cfg.collectorEndpoint))
+			jaegerotel.WithEndpoint(cfg.jaegerEndpoint))
 	}
 	exp, err := jaegerotel.New(ep)
 

@@ -34,7 +34,7 @@ func TestParseAttributes(t *testing.T) {
 			{
 				input: "key1=${EXISTENT_ENV_KEY},key2=${NON_EXISTENT_ENV_KEY:default_value}",
 				expectedOutput: []attribute.KeyValue{
-					attribute.String("key1", os.Getenv("EXISTENT_ENV_KEY")),
+					attribute.String("key1", "env_value"),
 					attribute.String("key2", "default_value"),
 				},
 				expectedError: nil,

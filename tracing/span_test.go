@@ -65,6 +65,16 @@ func TestKeyValueToOTelAttribute(t *testing.T) {
 			kv:       kv{"key", testStringer{}},
 			expected: attribute.Stringer("key", testStringer{}),
 		},
+		{
+			name:     "[]byte",
+			kv:       kv{"key", []byte("value")},
+			expected: attribute.String("key", "value"),
+		},
+		{
+			name:     "fallback",
+			kv:       kv{"key", map[string]string{"key": "value"}},
+			expected: attribute.String("key", "map[key:value]"),
+		},
 	}
 
 	for _, test := range tests {

@@ -190,7 +190,9 @@ func NewClient(address string) (*Client, error) {
 		grpc.WithDefaultServiceConfig(grpcServiceConfig),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	}
+	if !opentracing.IsGlobalTracerRegistered() { // Note: I'm not sure whether this condition is required, feel free to question it.
+		dialOptions = append(dialOptions, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	}
 
 	conn, err := grpc.NewClient(address, dialOptions...)

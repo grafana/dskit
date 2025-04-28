@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -50,6 +52,8 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up Go ${{ matrix.go-version }}
         uses: actions/setup-go@v5
         with:

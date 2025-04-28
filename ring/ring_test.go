@@ -2096,6 +2096,53 @@ func TestRing_ShuffleShard_Stability(t *testing.T) {
 	}
 }
 
+func TestRing_ShuffleShardWithConsistency(t *testing.T) {
+	var (
+		numInstances      = 50
+		numZones          = 3
+		consistencyLevels = []ConsistencyLevel{ConsistencyQuorum, ConsistencyRelaxedQuorum, ConsistencyAny}
+	)
+
+	for _, ringConsistency := range consistencyLevels {
+		// Initialise the ring.
+		ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
+		ring := newRingForTesting(Config{
+			HeartbeatTimeout:     time.Hour,
+			ZoneAwarenessEnabled: true,
+		}, true)
+		ring.setRingStateFromDesc(ringDesc, false, false, false)
+		setRingConsistencyLevel(ring, ringConsistency)
+		checkConsistencyLevel(t, ring, ringConsistency) // sanity check
+
+		r := ring.ShuffleShard("user", 3).(*Ring)
+		expected, err := r.GetAllHealthy(Read)
+		require.NoError(t, err)
+		checkConsistencyLevel(t, r, ringConsistency)
+		require.NotSame(t, ring, r)
+
+		for _, shuffleShardConsistency := range consistencyLevels {
+			rc := ring.ShuffleShardWithConsistency("user", 3, shuffleShardConsistency).(*Ring)
+			checkConsistencyLevel(t, rc, shuffleShardConsistency)
+
+			if shuffleShardConsistency == ringConsistency {
+				assert.Same(t, r, rc, "when consistency levels match, the same ring instance should be returned")
+			} else {
+				actual, err := rc.GetAllHealthy(Read)
+				require.NoError(t, err)
+				assert.ElementsMatch(t, expected.Instances, actual.Instances)
+			}
+		}
+	}
+}
+
+func checkConsistencyLevel(t *testing.T, r *Ring, expected ConsistencyLevel) {
+	t.Helper()
+
+	assert.Equal(t, expected, r.consistencyLevel, "ring has unexpected consistency level")
+	defaultStrategy := r.strategy.(*defaultReplicationStrategy)
+	assert.Equal(t, expected, defaultStrategy.consistencyLevel, "ring strategy has unexpected consistency level")
+}
+
 func initTokenGenerator(t testing.TB) TokenGenerator {
 	seed := time.Now().UnixNano()
 	t.Log("token generator seed:", seed)
@@ -2931,7 +2978,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						currTime := time.Now().Add(lookbackPeriod).Add(time.Minute)
 
 						// Add the initial shard to the history.
-						rs, err := ring.shuffleShard(userID, shardSize, 0, currTime).GetReplicationSetForOperation(Read)
+						rs, err := ring.shuffleShard(userID, shardSize, 0, currTime, ring.consistencyLevel).GetReplicationSetForOperation(Read)
 						require.NoError(t, err)
 
 						type historyEntry struct {
@@ -3033,7 +3080,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							}
 
 							// Add the current shard to the history.
-							rs, err = ring.shuffleShard(userID, shardSize, 0, currTime).GetReplicationSetForOperation(Read)
+							rs, err = ring.shuffleShard(userID, shardSize, 0, currTime, ring.consistencyLevel).GetReplicationSetForOperation(Read)
 							require.NoError(t, err)
 							history[eventID] = historyEntry{rs, shardSize, currTime}
 
@@ -4236,6 +4283,14 @@ func TestRing_ShuffleShard_Caching(t *testing.T) {
 	subring = newSubring
 	newSubring = ring.ShuffleShard("user", 1)
 	require.Same(t, subring, newSubring)
+
+	// Verify that getting the same subring with same consistency uses cached instance.
+	newSubring = ring.ShuffleShardWithConsistency("user", 1, ConsistencyQuorum)
+	require.Same(t, subring, newSubring)
+
+	// Verify that getting the same subring with different consistency does not use cached instance.
+	newSubring = ring.ShuffleShardWithConsistency("user", 1, ConsistencyAny)
+	require.NotSame(t, subring, newSubring)
 
 	// But after cleanup, it doesn't.
 	ring.CleanupShuffleShardCache("user")

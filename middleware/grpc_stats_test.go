@@ -44,7 +44,12 @@ func TestGrpcStats(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	stats := NewStatsHandler(received, sent, inflightRequests)
+	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "grpc_concurrent_streams_by_conn_max",
+		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
+	}, []string{})
+
+	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -149,7 +154,12 @@ func TestGrpcStatsStreaming(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	stats := NewStatsHandler(received, sent, inflightRequests)
+	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "grpc_concurrent_streams_by_conn_max",
+		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
+	}, []string{})
+
+	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxSendMsgSize(10e6), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -257,6 +267,129 @@ func TestGrpcStatsStreaming(t *testing.T) {
 	`), "received_payload_bytes", "sent_payload_bytes")
 
 	require.NoError(t, err)
+}
+
+func TestGrpcStatsMaxStreams(t *testing.T) {
+	reg := prometheus.NewRegistry()
+
+	received := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "received_payload_bytes",
+		Help:    "Size of received gRPC messages",
+		Buckets: BodySizeBuckets,
+	}, []string{"method", "route"})
+
+	sent := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "sent_payload_bytes",
+		Help:    "Size of sent gRPC",
+		Buckets: BodySizeBuckets,
+	}, []string{"method", "route"})
+
+	inflightRequests := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "inflight_requests",
+		Help: "Current number of inflight requests.",
+	}, []string{"method", "route"})
+
+	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "grpc_concurrent_streams_by_conn_max",
+		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
+	}, []string{})
+
+	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+
+	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
+	defer serv.GracefulStop()
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	middleware_test.RegisterEchoServerServer(serv, &halfEcho{log: t.Log})
+
+	go func() {
+		require.NoError(t, serv.Serve(listener))
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create a single connection with 10 streams
+	conn, streams := launchConnWithStreams(t, ctx, listener, 10)
+	defer conn.Close()
+
+	// Give time for all streams to be established
+	time.Sleep(100 * time.Millisecond)
+
+	err = testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP grpc_concurrent_streams_by_conn_max The current number of concurrent streams in the connection with the most concurrent streams.
+		# TYPE grpc_concurrent_streams_by_conn_max gauge
+		grpc_concurrent_streams_by_conn_max{} 10
+	`), "grpc_concurrent_streams_by_conn_max")
+	require.NoError(t, err)
+
+	// Cancel the context to stop the streams
+	cancel()
+
+	// Close all streams
+	for _, stream := range streams {
+		_ = stream.CloseSend()
+	}
+
+	// Wait for streams to be cleaned up
+	timeout := 1 * time.Second
+	sleep := timeout / 10
+
+	for endTime := time.Now().Add(timeout); time.Now().Before(endTime); {
+		err = testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP grpc_concurrent_streams_by_conn_max The current number of concurrent streams in the connection with the most concurrent streams.
+			# TYPE grpc_concurrent_streams_by_conn_max gauge
+			grpc_concurrent_streams_by_conn_max{} 0
+		`), "grpc_concurrent_streams_by_conn_max")
+		if err == nil {
+			break
+		}
+		time.Sleep(sleep)
+	}
+	require.NoError(t, err)
+}
+
+func launchConnWithStreams(t *testing.T, ctx context.Context, listener net.Listener, streamsCount int) (conn *grpc.ClientConn, streams []middleware_test.EchoServer_ProcessClient) {
+	t.Helper()
+
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(10e6), grpc.MaxCallSendMsgSize(10e6)))
+	require.NoError(t, err)
+
+	fc := middleware_test.NewEchoServerClient(conn)
+
+	streams = make([]middleware_test.EchoServer_ProcessClient, streamsCount)
+	for i := 0; i < streamsCount; i++ {
+		stream, err := fc.Process(context.Background())
+		require.NoError(t, err)
+		streams[i] = stream
+	}
+
+	// Keep streams alive by continuously sending messages
+	for i := 0; i < len(streams); i++ {
+		go func(streamIndex int) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					msg := &middleware_test.Msg{
+						Body: []byte(generateString(100)), // Small message to keep stream alive
+					}
+					if err := streams[streamIndex].Send(msg); err != nil {
+						return
+					}
+					if _, err := streams[streamIndex].Recv(); err != nil {
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+		}(i)
+	}
+
+	return conn, streams
 }
 
 type halfEcho struct {

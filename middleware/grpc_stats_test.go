@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/rand"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -432,4 +433,125 @@ func generateString(size int) string {
 		buf[ix] = b
 	}
 	return string(buf)
+}
+
+func TestGrpcStreamTracker(t *testing.T) {
+	tracker := NewStreamTracker()
+
+	// Test basic stream operations
+	conn1 := "conn1"
+	conn2 := "conn2"
+
+	// Open streams for conn1
+	tracker.OpenStream(conn1)
+	require.Equal(t, 1, tracker.MaxStreams())
+
+	tracker.OpenStream(conn1)
+	require.Equal(t, 2, tracker.MaxStreams())
+
+	// Open streams for conn2
+	tracker.OpenStream(conn2)
+	require.Equal(t, 2, tracker.MaxStreams()) // conn1 still has more streams
+
+	tracker.OpenStream(conn2)
+	require.Equal(t, 2, tracker.MaxStreams()) // equal number of streams
+
+	tracker.OpenStream(conn2)
+	require.Equal(t, 3, tracker.MaxStreams()) // conn2 now has more streams
+
+	// Close streams
+	tracker.CloseStream(conn2)
+	require.Equal(t, 2, tracker.MaxStreams()) // back to equal
+
+	tracker.CloseStream(conn1)
+	require.Equal(t, 2, tracker.MaxStreams()) // conn2 has more
+
+	tracker.CloseStream(conn1)
+	require.Equal(t, 2, tracker.MaxStreams()) // conn2 still has more
+
+	tracker.CloseStream(conn2)
+	require.Equal(t, 1, tracker.MaxStreams())
+
+	tracker.CloseStream(conn2)
+	require.Equal(t, 0, tracker.MaxStreams()) // all streams closed
+
+	// Test concurrent operations
+	var wg sync.WaitGroup
+	conns := []string{"conn3", "conn4", "conn5"}
+	streamsPerConn := 5
+
+	for connIndex, conn := range conns {
+		wg.Add(1)
+		go func(connIndex int, conn string) {
+			defer wg.Done()
+			for i := 0; i < streamsPerConn+connIndex; i++ {
+				tracker.OpenStream(conn)
+				time.Sleep(time.Millisecond) // Add some delay to increase chance of race conditions
+			}
+		}(connIndex, conn)
+	}
+
+	wg.Wait()
+	require.Equal(t, streamsPerConn+2, tracker.MaxStreams())
+
+	// Close all streams
+	for _, conn := range conns {
+		wg.Add(1)
+		go func(conn string) {
+			defer wg.Done()
+			for i := 0; i < streamsPerConn; i++ {
+				tracker.CloseStream(conn)
+				time.Sleep(time.Millisecond) // Add some delay to increase chance of race conditions
+			}
+		}(conn)
+	}
+
+	wg.Wait()
+	require.Equal(t, 2, tracker.MaxStreams())
+}
+
+func BenchmarkStreamTracker_OpenStream(b *testing.B) {
+	tracker := bootstrapStreamTracker(b)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracker.OpenStream("conn1")
+		tracker.OpenStream("conn2")
+		tracker.OpenStream("conn3")
+		tracker.OpenStream("conn4")
+		tracker.OpenStream("conn5")
+		tracker.OpenStream("conn6")
+		tracker.OpenStream("conn7")
+		tracker.OpenStream("conn8")
+		tracker.OpenStream("conn9")
+		tracker.OpenStream("conn10")
+	}
+}
+
+func BenchmarkStreamTracker_CloseStream(b *testing.B) {
+	tracker := bootstrapStreamTracker(b)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracker.CloseStream("conn1")
+		tracker.CloseStream("conn2")
+		tracker.CloseStream("conn3")
+		tracker.CloseStream("conn4")
+		tracker.CloseStream("conn5")
+	}
+}
+func bootstrapStreamTracker(b *testing.B) *StreamTracker {
+	b.Helper()
+
+	conns := []string{"conn1", "conn2", "conn3", "conn4", "conn5"}
+
+	tracker := NewStreamTracker()
+	for ix, conn := range conns {
+		streams := (ix + 1) * 100
+		for i := 0; i < streams; i++ {
+			tracker.OpenStream(conn)
+		}
+	}
+
+	return tracker
 }

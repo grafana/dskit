@@ -163,6 +163,6 @@ func (st *StreamTracker) MaxStreams() int {
 	if st.tree.Len() == 0 {
 		return 0
 	}
-	entry := st.tree.Max().(streamEntry)
+	entry := st.tree.Min().(streamEntry)
 	return entry.streamCount
 }

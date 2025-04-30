@@ -387,7 +387,9 @@ func launchConnWithStreams(t *testing.T, ctx context.Context, listener net.Liste
 			for {
 				select {
 				case <-ctx.Done():
-					streams[streamIndex].CloseSend()
+					if err := streams[streamIndex].CloseSend(); err != nil {
+						t.Log("Error closing stream", err)
+					}
 					return
 				default:
 					msg := &middleware_test.Msg{

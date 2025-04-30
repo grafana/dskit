@@ -163,6 +163,6 @@ func (st *StreamTracker) MaxStreams() int {
 	if st.tree.Len() == 0 {
 		return 0
 	}
-	entry := st.tree.Min().(streamEntry)
+	entry := st.tree.Min().(streamEntry) // Min returns the first item in the tree which is the one with the most streams here (descending order)
 	return entry.streamCount
 }

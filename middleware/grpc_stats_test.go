@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -520,11 +522,7 @@ func BenchmarkStreamTracker_OpenStream(b *testing.B) {
 		tracker.OpenStream("conn3")
 		tracker.OpenStream("conn4")
 		tracker.OpenStream("conn5")
-		tracker.OpenStream("conn6")
-		tracker.OpenStream("conn7")
-		tracker.OpenStream("conn8")
-		tracker.OpenStream("conn9")
-		tracker.OpenStream("conn10")
+		tracker.OpenStream("newconn" + strconv.Itoa(i))
 	}
 }
 
@@ -543,11 +541,14 @@ func BenchmarkStreamTracker_CloseStream(b *testing.B) {
 func bootstrapStreamTracker(b *testing.B) *StreamTracker {
 	b.Helper()
 
-	conns := []string{"conn1", "conn2", "conn3", "conn4", "conn5"}
+	conns := make([]string, 1000)
+	for ix := range conns {
+		conns[ix] = fmt.Sprintf("conn%d", ix)
+	}
 
 	tracker := NewStreamTracker()
 	for ix, conn := range conns {
-		streams := (ix + 1) * 100
+		streams := (ix + 1) * 1
 		for i := 0; i < streams; i++ {
 			tracker.OpenStream(conn)
 		}

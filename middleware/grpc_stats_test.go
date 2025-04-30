@@ -441,46 +441,47 @@ func TestGrpcStreamTracker(t *testing.T) {
 	tracker := NewStreamTracker()
 
 	// Test basic stream operations
+	conn0 := "conn0"
 	conn1 := "conn1"
-	conn2 := "conn2"
+
+	// Open streams for conn0
+	tracker.OpenStream(conn0)
+	require.Equal(t, 1, tracker.MaxStreams())
+
+	tracker.OpenStream(conn0)
+	require.Equal(t, 2, tracker.MaxStreams())
 
 	// Open streams for conn1
 	tracker.OpenStream(conn1)
-	require.Equal(t, 1, tracker.MaxStreams())
+	require.Equal(t, 2, tracker.MaxStreams()) // conn0 still has more streams
 
 	tracker.OpenStream(conn1)
-	require.Equal(t, 2, tracker.MaxStreams())
-
-	// Open streams for conn2
-	tracker.OpenStream(conn2)
-	require.Equal(t, 2, tracker.MaxStreams()) // conn1 still has more streams
-
-	tracker.OpenStream(conn2)
 	require.Equal(t, 2, tracker.MaxStreams()) // equal number of streams
 
-	tracker.OpenStream(conn2)
-	require.Equal(t, 3, tracker.MaxStreams()) // conn2 now has more streams
+	tracker.OpenStream(conn1)
+	require.Equal(t, 3, tracker.MaxStreams()) // conn1 now has more streams
 
 	// Close streams
-	tracker.CloseStream(conn2)
+	tracker.CloseStream(conn1)
 	require.Equal(t, 2, tracker.MaxStreams()) // back to equal
 
-	tracker.CloseStream(conn1)
-	require.Equal(t, 2, tracker.MaxStreams()) // conn2 has more
+	tracker.CloseStream(conn0)
+	require.Equal(t, 2, tracker.MaxStreams()) // conn1 has more
+
+	tracker.CloseStream(conn0)
+	require.Equal(t, 2, tracker.MaxStreams()) // conn1 still has more
 
 	tracker.CloseStream(conn1)
-	require.Equal(t, 2, tracker.MaxStreams()) // conn2 still has more
-
-	tracker.CloseStream(conn2)
 	require.Equal(t, 1, tracker.MaxStreams())
 
-	tracker.CloseStream(conn2)
+	tracker.CloseStream(conn1)
 	require.Equal(t, 0, tracker.MaxStreams()) // all streams closed
 
 	// Test concurrent operations
+	// Open streams for conn0, conn1, conn2
 	var wg sync.WaitGroup
-	conns := []string{"conn3", "conn4", "conn5"}
-	streamsPerConn := 5
+	conns := []string{"conn0", "conn1", "conn2"}
+	streamsPerConn := 300
 
 	for connIndex, conn := range conns {
 		wg.Add(1)
@@ -494,14 +495,14 @@ func TestGrpcStreamTracker(t *testing.T) {
 	}
 
 	wg.Wait()
-	require.Equal(t, streamsPerConn+2, tracker.MaxStreams())
+	require.Equal(t, streamsPerConn+2, tracker.MaxStreams()) // +2 because idx=0,1,2
 
-	// Close all streams
+	// Close half of the streams for each conn
 	for _, conn := range conns {
 		wg.Add(1)
 		go func(conn string) {
 			defer wg.Done()
-			for i := 0; i < streamsPerConn; i++ {
+			for i := 0; i < streamsPerConn/2; i++ {
 				tracker.CloseStream(conn)
 				time.Sleep(time.Millisecond) // Add some delay to increase chance of race conditions
 			}
@@ -509,7 +510,26 @@ func TestGrpcStreamTracker(t *testing.T) {
 	}
 
 	wg.Wait()
-	require.Equal(t, 2, tracker.MaxStreams())
+	require.Equal(t, streamsPerConn/2+2, tracker.MaxStreams()) // +2 because idx=0,1,2
+
+	// Close all streams on conn0
+	for i := 0; i < streamsPerConn; i++ {
+		tracker.CloseStream("conn0")
+	}
+	require.Equal(t, (streamsPerConn/2)+2, tracker.MaxStreams()) // +2 because idx=1,2 remain
+
+	// Close all streams on conn2
+	for i := 0; i < streamsPerConn; i++ {
+		tracker.CloseStream("conn2")
+	}
+	require.Equal(t, (streamsPerConn/2)+1, tracker.MaxStreams()) // +1 because idx=1 remains
+
+	// Close remaining streams. Only conn1 should remain open.
+	for tracker.MaxStreams() > 1 {
+		curr := tracker.MaxStreams()
+		tracker.CloseStream("conn1")
+		require.Equal(t, curr-1, tracker.MaxStreams())
+	}
 }
 
 func BenchmarkStreamTracker_OpenStream(b *testing.B) {
@@ -517,9 +537,9 @@ func BenchmarkStreamTracker_OpenStream(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		tracker.OpenStream("conn0")
 		tracker.OpenStream("conn1")
 		tracker.OpenStream("conn2")
-		tracker.OpenStream("conn3")
 		tracker.OpenStream("conn4")
 		tracker.OpenStream("conn5")
 		tracker.OpenStream("newconn" + strconv.Itoa(i))
@@ -531,9 +551,9 @@ func BenchmarkStreamTracker_CloseStream(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		tracker.CloseStream("conn0")
 		tracker.CloseStream("conn1")
 		tracker.CloseStream("conn2")
-		tracker.CloseStream("conn3")
 		tracker.CloseStream("conn4")
 		tracker.CloseStream("conn5")
 	}

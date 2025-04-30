@@ -273,7 +273,27 @@ func TestGrpcStatsStreaming(t *testing.T) {
 }
 
 func TestGrpcStatsMaxStreams(t *testing.T) {
+	const (
+		waitTime = 1 * time.Second
+		sleep    = waitTime / 10
+	)
 	reg := prometheus.NewRegistry()
+
+	waitAndExpectMaxStreams := func(expected int) {
+		var err error
+		for endTime := time.Now().Add(waitTime); time.Now().Before(endTime); {
+			err = testutil.GatherAndCompare(reg, bytes.NewBufferString(fmt.Sprintf(`
+			# HELP grpc_concurrent_streams_by_conn_max The current number of concurrent streams in the connection with the most concurrent streams.
+			# TYPE grpc_concurrent_streams_by_conn_max gauge
+			grpc_concurrent_streams_by_conn_max{} %d
+		`, expected)), "grpc_concurrent_streams_by_conn_max")
+			if err == nil {
+				break
+			}
+			time.Sleep(sleep)
+		}
+		require.NoError(t, err)
+	}
 
 	received := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "received_payload_bytes",
@@ -311,50 +331,42 @@ func TestGrpcStatsMaxStreams(t *testing.T) {
 		require.NoError(t, serv.Serve(listener))
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Create a connection with 10 streams
+	ctx, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+	conn1 := launchConnWithStreams(t, ctx, listener, 10)
+	defer conn1.Close()
+	waitAndExpectMaxStreams(10)
 
-	// Create a single connection with 10 streams
-	conn, streams := launchConnWithStreams(t, ctx, listener, 10)
-	defer conn.Close()
+	// Create a connection with 5 streams. Max is still 10.
+	ctx, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	conn2 := launchConnWithStreams(t, ctx, listener, 5)
+	defer conn2.Close()
+	waitAndExpectMaxStreams(10)
 
-	// Give time for all streams to be established
-	time.Sleep(100 * time.Millisecond)
+	// Cancel the first connection context to stop the streams. Connection 2 should still have 5 streams.
+	cancel1()
+	waitAndExpectMaxStreams(5)
 
-	err = testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP grpc_concurrent_streams_by_conn_max The current number of concurrent streams in the connection with the most concurrent streams.
-		# TYPE grpc_concurrent_streams_by_conn_max gauge
-		grpc_concurrent_streams_by_conn_max{} 10
-	`), "grpc_concurrent_streams_by_conn_max")
-	require.NoError(t, err)
+	// Launch a new connection with 15 streams
+	ctx, cancel3 := context.WithCancel(context.Background())
+	defer cancel3()
+	conn3 := launchConnWithStreams(t, ctx, listener, 15)
+	defer conn3.Close()
+	waitAndExpectMaxStreams(15)
 
-	// Cancel the context to stop the streams
-	cancel()
+	// Cancel the third connection context to stop the streams. Connection 2 should still have 5 streams.
+	cancel3()
+	waitAndExpectMaxStreams(5)
 
-	// Close all streams
-	for _, stream := range streams {
-		_ = stream.CloseSend()
-	}
+	// Cancel the second connection context to stop the streams. All streams should be closed.
+	cancel2()
+	waitAndExpectMaxStreams(0)
 
-	// Wait for streams to be cleaned up
-	timeout := 1 * time.Second
-	sleep := timeout / 10
-
-	for endTime := time.Now().Add(timeout); time.Now().Before(endTime); {
-		err = testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-			# HELP grpc_concurrent_streams_by_conn_max The current number of concurrent streams in the connection with the most concurrent streams.
-			# TYPE grpc_concurrent_streams_by_conn_max gauge
-			grpc_concurrent_streams_by_conn_max{} 0
-		`), "grpc_concurrent_streams_by_conn_max")
-		if err == nil {
-			break
-		}
-		time.Sleep(sleep)
-	}
-	require.NoError(t, err)
 }
 
-func launchConnWithStreams(t *testing.T, ctx context.Context, listener net.Listener, streamsCount int) (conn *grpc.ClientConn, streams []middleware_test.EchoServer_ProcessClient) {
+func launchConnWithStreams(t *testing.T, ctx context.Context, listener net.Listener, streamsCount int) *grpc.ClientConn {
 	t.Helper()
 
 	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(10e6), grpc.MaxCallSendMsgSize(10e6)))
@@ -362,7 +374,7 @@ func launchConnWithStreams(t *testing.T, ctx context.Context, listener net.Liste
 
 	fc := middleware_test.NewEchoServerClient(conn)
 
-	streams = make([]middleware_test.EchoServer_ProcessClient, streamsCount)
+	streams := make([]middleware_test.EchoServer_ProcessClient, streamsCount)
 	for i := 0; i < streamsCount; i++ {
 		stream, err := fc.Process(context.Background())
 		require.NoError(t, err)
@@ -375,6 +387,7 @@ func launchConnWithStreams(t *testing.T, ctx context.Context, listener net.Liste
 			for {
 				select {
 				case <-ctx.Done():
+					streams[streamIndex].CloseSend()
 					return
 				default:
 					msg := &middleware_test.Msg{
@@ -392,7 +405,7 @@ func launchConnWithStreams(t *testing.T, ctx context.Context, listener net.Liste
 		}(i)
 	}
 
-	return conn, streams
+	return conn
 }
 
 type halfEcho struct {

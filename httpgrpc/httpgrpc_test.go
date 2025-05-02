@@ -1,9 +1,11 @@
 package httpgrpc
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"testing"
 
@@ -12,6 +14,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	grpcstatus "google.golang.org/grpc/status"
+
+	"github.com/grafana/dskit/clusterutil"
 )
 
 func TestAppendMessageSizeToOutgoingContext(t *testing.T) {
@@ -120,6 +124,38 @@ func TestHTTPResponseFromError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFromHTTPRequestWithCluster(t *testing.T) {
+	t.Run("with matching header", func(t *testing.T) {
+		r, err := http.NewRequest(http.MethodGet, "http://server", io.NopCloser(bytes.NewBuffer(nil)))
+		require.NoError(t, err)
+		r.Header.Set(clusterutil.ClusterValidationLabelHeader, "test")
+		// TODO: Test with metric.
+		gr, err := FromHTTPRequestWithCluster(r, "test", nil)
+		require.NoError(t, err)
+		require.Equal(t, []*Header{
+			{
+				Key:    clusterutil.ClusterValidationLabelHeader,
+				Values: []string{"test"},
+			},
+		}, gr.Headers)
+	})
+	t.Run("without header", func(t *testing.T) {
+		r, err := http.NewRequest(http.MethodGet, "http://server", nil)
+		require.NoError(t, err)
+		// TODO: Test with metric.
+		_, err = FromHTTPRequestWithCluster(r, "test", nil)
+		require.EqualError(t, err, `httpgrpc.FromHTTPRequestWithCluster: "X-Cluster" header should be "test", but is ""`)
+	})
+	t.Run("with mismatched header", func(t *testing.T) {
+		r, err := http.NewRequest(http.MethodGet, "http://server", nil)
+		require.NoError(t, err)
+		r.Header.Set(clusterutil.ClusterValidationLabelHeader, "prod")
+		// TODO: Test with metric.
+		_, err = FromHTTPRequestWithCluster(r, "test", nil)
+		require.EqualError(t, err, `httpgrpc.FromHTTPRequestWithCluster: "X-Cluster" header should be "test", but is "prod"`)
+	})
 }
 
 func checkDetailAsHTTPResponse(t *testing.T, httpResponse *HTTPResponse, stat *status.Status) {

@@ -567,6 +567,13 @@ func BenchmarkStreamTracker(b *testing.B) {
 		}
 	})
 
+	// Benchmark getting the max streams with a ton of streams
+	b.Run("MaxStreams", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			tracker.MaxStreams()
+		}
+	})
+
 	// Shuffle the streams to close
 	rand.Shuffle(len(streamsToClose), func(i, j int) {
 		streamsToClose[i], streamsToClose[j] = streamsToClose[j], streamsToClose[i]

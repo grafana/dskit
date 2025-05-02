@@ -93,6 +93,7 @@
 * [CHANGE] Server: The `PerTenantDurationInstrumentation` config option was renamed to `PerTenantInstrumentation` and now allows specifying whether a full histogram should be recorded or only a counter #642
 * [CHANGE] grpcclient: Signature of `grpcclient.Config.DialOption()` has changed. It now requires an additional parameter of type `middleware.InvalidClusterValidationReporter` used for reporting cluster validation issues back to the caller. #657
 * [CHANGE] spanlogger: `SpanLogger` no longer embeds `opentracing.Span`, instead it exposes methods that would provide the common functionality. Users of this library will have to replace the `ext.Error.Set(spanlog, true)` by `spanlog.SetError`. #679
+* [CHANGE] memberlist: WatchPrefix now logs processing failures of f(key, val) instead of exiting, and continues watching. #688
 * [FEATURE] Cache: Add support for configuring a Redis cache backend. #268 #271 #276
 * [FEATURE] Add support for waiting on the rate limiter using the new `WaitN` method. #279
 * [FEATURE] Add `log.BufferedLogger` type. #338

@@ -7,8 +7,9 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	mathRand "math/rand"
 	"net"
 	"sync"
 	"testing"
@@ -553,7 +554,7 @@ func BenchmarkStreamTracker(b *testing.B) {
 
 	// Bootstrap a bit of streams to make sure we have a bit of load
 	for i := 0; i < numConns*1000; i++ {
-		connID := fmt.Sprintf("conn%d", rand.Intn(numConns))
+		connID := fmt.Sprintf("conn%d", mathRand.Intn(numConns))
 		tracker.OpenStream(connID)
 		streamsToClose = append(streamsToClose, connID)
 	}
@@ -561,7 +562,7 @@ func BenchmarkStreamTracker(b *testing.B) {
 	// Benchmark opening streams
 	b.Run("OpenStream", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			connID := fmt.Sprintf("conn%d", rand.Intn(numConns))
+			connID := fmt.Sprintf("conn%d", mathRand.Intn(numConns))
 			tracker.OpenStream(connID)
 			streamsToClose = append(streamsToClose, connID)
 		}
@@ -575,7 +576,7 @@ func BenchmarkStreamTracker(b *testing.B) {
 	})
 
 	// Shuffle the streams to close
-	rand.Shuffle(len(streamsToClose), func(i, j int) {
+	mathRand.Shuffle(len(streamsToClose), func(i, j int) {
 		streamsToClose[i], streamsToClose[j] = streamsToClose[j], streamsToClose[i]
 	})
 

@@ -51,8 +51,11 @@ func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, 
 	return r
 }
 
-func (w *PartitionRingWatcher) WithDelegate(d PartitionRingWatcherDelegate) *PartitionRingWatcher {
-	w.delegate = d
+// WithDelegate adds the delegate to be called when the partition ring changes.
+//
+// Not concurrency safe.
+func (w *PartitionRingWatcher) WithDelegate(delegate PartitionRingWatcherDelegate) *PartitionRingWatcher {
+	w.delegate = delegate
 	return w
 }
 

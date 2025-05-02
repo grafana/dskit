@@ -31,6 +31,7 @@ type PartitionRingWatcher struct {
 }
 
 type PartitionRingWatcherDelegate interface {
+	// OnPartitionRingChanged provides the old and new partition ring descriptions, which must not be modified.
 	OnPartitionRingChanged(oldRing, newRing *PartitionRingDesc)
 }
 
@@ -92,13 +93,14 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 	newRing := NewPartitionRing(*desc)
-
 	w.ringMx.Lock()
-	if w.delegate != nil {
-		w.delegate.OnPartitionRingChanged(&w.ring.desc, desc)
-	}
+	oldRing := w.ring
 	w.ring = newRing
 	w.ringMx.Unlock()
+
+	if w.delegate != nil {
+		w.delegate.OnPartitionRingChanged(&oldRing.desc, desc)
+	}
 
 	// Update metrics.
 	for state, count := range desc.countPartitionsByState() {

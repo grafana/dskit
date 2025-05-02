@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,12 +18,20 @@ import (
 )
 
 type ringWatcherDelegateStub struct {
-	oldRing, newRing *PartitionRingDesc
+	mu      sync.Mutex
+	newRing *PartitionRingDesc
 }
 
-func (r *ringWatcherDelegateStub) OnPartitionRingChanged(oldRing, newRing *PartitionRingDesc) {
-	r.oldRing = oldRing
+func (r *ringWatcherDelegateStub) OnPartitionRingChanged(_, newRing *PartitionRingDesc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.newRing = newRing
+}
+
+func (r *ringWatcherDelegateStub) PartitionState(partition int32) PartitionState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.newRing.Partitions[partition].State
 }
 
 func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
@@ -66,7 +75,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return watcher.PartitionRing().PartitionsCount() == 1
 	}, time.Second, 10*time.Millisecond)
-	require.Equal(t, PartitionActive, delegate.newRing.GetPartitions()[1].State)
+	require.Equal(t, PartitionActive, delegate.PartitionState(1))
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
@@ -86,7 +95,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return watcher.PartitionRing().PartitionsCount() == 2
 	}, time.Second, 10*time.Millisecond)
-	require.Equal(t, PartitionInactive, delegate.newRing.GetPartitions()[2].State)
+	require.Equal(t, PartitionInactive, delegate.PartitionState(2))
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
@@ -106,7 +115,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return watcher.PartitionRing().PartitionsCount() == 3
 	}, time.Second, 10*time.Millisecond)
-	require.Equal(t, PartitionPending, delegate.newRing.GetPartitions()[3].State)
+	require.Equal(t, PartitionPending, delegate.PartitionState(3))
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
@@ -124,9 +133,9 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.PartitionRing().Partitions()[0].State == PartitionInactive
+		return watcher.PartitionRing().Partitions()[1].State == PartitionInactive
 	}, time.Second, 10*time.Millisecond)
 
 	// Ensure delegate is called
-	require.Equal(t, PartitionInactive, delegate.newRing.GetPartitions()[1].State)
+	require.Equal(t, PartitionInactive, delegate.PartitionState(1))
 }

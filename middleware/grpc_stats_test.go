@@ -7,10 +7,9 @@ package middleware
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"fmt"
+	"math/rand"
 	"net"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -547,47 +546,40 @@ func TestGrpcStreamTracker(t *testing.T) {
 	}
 }
 
-func BenchmarkStreamTracker_OpenStream(b *testing.B) {
-	tracker := bootstrapStreamTracker(b)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		tracker.OpenStream("conn0")
-		tracker.OpenStream("conn1")
-		tracker.OpenStream("conn2")
-		tracker.OpenStream("conn4")
-		tracker.OpenStream("conn5")
-		tracker.OpenStream("newconn" + strconv.Itoa(i))
-	}
-}
-
-func BenchmarkStreamTracker_CloseStream(b *testing.B) {
-	tracker := bootstrapStreamTracker(b)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		tracker.CloseStream("conn0")
-		tracker.CloseStream("conn1")
-		tracker.CloseStream("conn2")
-		tracker.CloseStream("conn4")
-		tracker.CloseStream("conn5")
-	}
-}
-func bootstrapStreamTracker(b *testing.B) *StreamTracker {
-	b.Helper()
-
-	conns := make([]string, 1000)
-	for ix := range conns {
-		conns[ix] = fmt.Sprintf("conn%d", ix)
-	}
-
+func BenchmarkStreamTracker(b *testing.B) {
 	tracker := NewStreamTracker()
-	for ix, conn := range conns {
-		streams := (ix + 1) * 1
-		for i := 0; i < streams; i++ {
-			tracker.OpenStream(conn)
-		}
+	streamsToClose := []string{}
+	numConns := 1000
+
+	// Bootstrap a bit of streams to make sure we have a bit of load
+	for i := 0; i < numConns*1000; i++ {
+		connID := fmt.Sprintf("conn%d", rand.Intn(numConns))
+		tracker.OpenStream(connID)
+		streamsToClose = append(streamsToClose, connID)
 	}
 
-	return tracker
+	// Benchmark opening streams
+	b.Run("OpenStream", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			connID := fmt.Sprintf("conn%d", rand.Intn(numConns))
+			tracker.OpenStream(connID)
+			streamsToClose = append(streamsToClose, connID)
+		}
+	})
+
+	// Shuffle the streams to close
+	rand.Shuffle(len(streamsToClose), func(i, j int) {
+		streamsToClose[i], streamsToClose[j] = streamsToClose[j], streamsToClose[i]
+	})
+
+	// Benchmark closing streams
+	b.Run("CloseStream", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			// End the test when we have no more streams to close
+			if i > len(streamsToClose) {
+				panic("no more streams to close")
+			}
+			tracker.CloseStream(streamsToClose[i])
+		}
+	})
 }

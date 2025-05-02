@@ -2253,6 +2253,73 @@ func TestMemberlist_WatchPrefix(t *testing.T) {
 	})
 }
 
+func TestMemberlist_WatchPrefix_HandleGracefullyErrorProcessing(t *testing.T) {
+	cfg := KVConfig{}
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	kv := NewKV(cfg, logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
+	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
+
+	codec := dataCodec{}
+	prefix := "test_prefix_"
+
+	// Create a channel to receive notifications
+	notifications := make([]string, 0)
+	mu := sync.Mutex{} // Protect notifications slice
+	done := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	key1 := prefix + "1"
+	key2 := prefix + "2"
+
+	KVStore := map[string]bool{
+		key1: false,
+		key2: true,
+	}
+
+	// Start watching prefix with a function that always returns false
+	go func() {
+		kv.WatchPrefix(ctx, "", codec, func(key string, _ any) bool {
+			value := KVStore[key]
+
+			mu.Lock()
+			notifications = append(notifications, key)
+			mu.Unlock()
+
+			if value {
+				close(done)
+				return true
+			}
+			return false // Simulate failure
+		})
+	}()
+
+	// Give the watcher time to register
+	time.Sleep(100 * time.Millisecond)
+
+	// Update key via CAS
+	for _, key := range []string{key1, key2} {
+		err := kv.CAS(context.Background(), key, codec, func(in interface{}) (out interface{}, retry bool, err error) {
+			d := getOrCreateData(in)
+			d.Members["test"] = member{Timestamp: time.Now().Unix(), State: JOINING}
+			return d, true, nil
+		})
+		require.NoError(t, err)
+	}
+
+	// Wait for all notifications or timeout
+	select {
+	case <-done:
+		mu.Lock()
+		defer mu.Unlock()
+		require.Len(t, notifications, 2)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for notifications from WatchPrefix")
+	}
+}
+
 func TestMemberlist_WatchKey_ShouldStartNotifyingChangesBeforeFullJoinIsCompleted(t *testing.T) {
 	tests := map[string]struct {
 		NotifyInterval time.Duration

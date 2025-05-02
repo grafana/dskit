@@ -988,7 +988,9 @@ func (m *KV) WatchPrefix(ctx context.Context, prefix string, codec codec.Codec, 
 			}
 
 			if !f(key, val) {
-				return
+				// Handle the error gracefully to allow WatchPrefix to continue checking messages without immediately failing after processing val.
+				level.Warn(m.logger).Log("msg", "failed to process value while watching for changes", "key", key, "value", val)
+				continue
 			}
 
 		case <-m.shutdown:

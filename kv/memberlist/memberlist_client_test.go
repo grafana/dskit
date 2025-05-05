@@ -2254,7 +2254,11 @@ func TestMemberlist_WatchPrefix(t *testing.T) {
 }
 
 func TestMemberlist_WatchPrefix_HandleGracefullyErrorProcessing(t *testing.T) {
+
 	cfg := KVConfig{}
+	cfg.WatchPrefixBufferSize = 2
+	// Disable notification batching to get immediate notifications
+	cfg.NotifyInterval = 0
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	kv := NewKV(cfg, logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
@@ -2271,19 +2275,17 @@ func TestMemberlist_WatchPrefix_HandleGracefullyErrorProcessing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	key1 := prefix + "1"
-	key2 := prefix + "2"
+	keys := []string{prefix + "1", prefix + "2"}
 
 	KVStore := map[string]bool{
-		key1: false,
-		key2: true,
+		keys[0]: false,
+		keys[1]: true,
 	}
 
 	// Start watching prefix with a function that always returns false
 	go func() {
-		kv.WatchPrefix(ctx, "", codec, func(key string, _ any) bool {
+		kv.WatchPrefix(ctx, prefix, codec, func(key string, _ any) bool {
 			value := KVStore[key]
-
 			mu.Lock()
 			notifications = append(notifications, key)
 			mu.Unlock()
@@ -2300,7 +2302,7 @@ func TestMemberlist_WatchPrefix_HandleGracefullyErrorProcessing(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Update key via CAS
-	for _, key := range []string{key1, key2} {
+	for _, key := range keys {
 		err := kv.CAS(context.Background(), key, codec, func(in interface{}) (out interface{}, retry bool, err error) {
 			d := getOrCreateData(in)
 			d.Members["test"] = member{Timestamp: time.Now().Unix(), State: JOINING}

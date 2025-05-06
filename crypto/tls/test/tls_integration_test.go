@@ -153,7 +153,7 @@ func newIntegrationClientServer(
 					strings.Contains(err.Error(), "broken pipe") ||
 					strings.Contains(err.Error(), "client conn could not be established")
 			}
-			for i := 0; i < 5 && isRST(err) && tc.httpExpectError != nil; i++ {
+			for i := 0; i < 10 && isRST(err) && tc.httpExpectError != nil; i++ {
 				t.Logf("Sleeping before retry #%d, due to RST error: %s", i+1, err)
 				time.Sleep(100 * time.Millisecond)
 				resp, err = client.Do(req)

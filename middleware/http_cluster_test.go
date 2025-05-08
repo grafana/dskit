@@ -163,7 +163,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"wrong-cluster"}
 			},
 			serverCluster: "cluster",
-			expectedLogs:  `level=warn msg="request with wrong cluster validation label" path=/Test/Me cluster_validation_label=cluster request_cluster_validation_label=wrong-cluster soft_validation=%v`,
+			expectedLogs:  `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="request with wrong cluster validation label" request_cluster_validation_label=wrong-cluster`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
@@ -177,7 +177,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{""}
 			},
 			serverCluster: "cluster",
-			expectedLogs:  `level=warn msg="request with no cluster validation label" path=/Test/Me cluster_validation_label=cluster soft_validation=%v`,
+			expectedLogs:  `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="request with no cluster validation label"`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
@@ -188,7 +188,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 		},
 		"no request cluster and non-empty server cluster give an error if soft validation disabled": {
 			serverCluster: "cluster",
-			expectedLogs:  `level=warn msg="request with no cluster validation label" path=/Test/Me cluster_validation_label=cluster soft_validation=%v`,
+			expectedLogs:  `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="request with no cluster validation label"`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
@@ -202,7 +202,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"cluster", "another-cluster"}
 			},
 			serverCluster: "cluster",
-			expectedLogs:  `level=warn msg="detected error during cluster validation label extraction" path=/Test/Me cluster_validation_label=cluster soft_validation=%v err="request header should contain exactly 1 value for key \"X-Cluster\", but it contains [cluster another-cluster]"`,
+			expectedLogs:  `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="detected error during cluster validation label extraction" err="request header should contain exactly 1 value for key \"X-Cluster\", but it contains [cluster another-cluster]"`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
@@ -248,7 +248,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 					}
 				}
 				if testCase.expectedLogs != "" {
-					require.True(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(testCase.expectedLogs, softValidation))))
+					require.Contains(t, buf.String(), fmt.Sprintf(testCase.expectedLogs, softValidation))
 				}
 				err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "test_server_invalid_cluster_validation_label_requests_total")
 				require.NoError(t, err)

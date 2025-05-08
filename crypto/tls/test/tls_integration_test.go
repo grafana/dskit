@@ -37,6 +37,7 @@ import (
 const (
 	mismatchCAAndCerts         = "remote error: tls: unknown certificate authority"
 	badCertificateErrorMessage = "remote error: tls: certificate required"
+	tcpNetwork                 = "tcp"
 )
 
 type tcIntegrationClientServer struct {
@@ -64,12 +65,12 @@ func (h *grpcHealthCheck) Watch(_ *grpc_health_v1.HealthCheckRequest, _ grpc_hea
 }
 
 func getLocalHostAddr() (*net.TCPAddr, error) {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	addr, err := net.ResolveTCPAddr(tcpNetwork, "[::]:0")
 	if err != nil {
 		return nil, err
 	}
 
-	l, err := net.ListenTCP("tcp", addr)
+	l, err := net.ListenTCP(tcpNetwork, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +153,7 @@ func newIntegrationClientServer(
 					strings.Contains(err.Error(), "broken pipe") ||
 					strings.Contains(err.Error(), "client conn could not be established")
 			}
-			for i := 0; i < 5 && isRST(err) && tc.httpExpectError != nil; i++ {
+			for i := 0; i < 10 && isRST(err) && tc.httpExpectError != nil; i++ {
 				t.Logf("Sleeping before retry #%d, due to RST error: %s", i+1, err)
 				time.Sleep(100 * time.Millisecond)
 				resp, err = client.Do(req)
@@ -171,7 +172,7 @@ func newIntegrationClientServer(
 			body, err := io.ReadAll(resp.Body)
 			assert.NoError(t, err, tc.name)
 
-			assert.Equal(t, []byte("OK"), body, tc.name)
+			assert.Equal(t, []byte("OK"), body, tc.name, string(body))
 		})
 
 		// GRPC

@@ -60,6 +60,12 @@ func (h *grpcHealthCheck) Check(_ context.Context, _ *grpc_health_v1.HealthCheck
 	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
 }
 
+func (h *grpcHealthCheck) List(ctx context.Context, _ *grpc_health_v1.HealthListRequest) (*grpc_health_v1.HealthListResponse, error) {
+	statuses := make(map[string]*grpc_health_v1.HealthCheckResponse)
+	statuses["server"], _ = h.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+	return &grpc_health_v1.HealthListResponse{Statuses: statuses}, nil
+}
+
 func (h *grpcHealthCheck) Watch(_ *grpc_health_v1.HealthCheckRequest, _ grpc_health_v1.Health_WatchServer) error {
 	return status.Error(codes.Unimplemented, "Watching is not supported")
 }
@@ -557,7 +563,6 @@ func setupCertificates(t *testing.T) keyMaterial {
 		require.NoError(t, err)
 		_, err = io.Copy(dst, src2)
 		require.NoError(t, err)
-
 	}()
 
 	client1CertFile := filepath.Join(testCADir, "client-1.crt")

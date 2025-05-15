@@ -78,7 +78,7 @@ func (h *HealthCheck) Watch(_ *grpc_health_v1.HealthCheckRequest, _ grpc_health_
 func (h *HealthCheck) List(ctx context.Context, _ *grpc_health_v1.HealthListRequest) (*grpc_health_v1.HealthListResponse, error) {
 	checkResp, err := h.Check(ctx, nil)
 	if err != nil {
-		return &grpc_health_v1.HealthListResponse{}, err
+		return nil, err
 	}
 
 	return &grpc_health_v1.HealthListResponse{

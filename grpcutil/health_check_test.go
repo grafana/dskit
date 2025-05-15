@@ -85,6 +85,45 @@ func TestHealthCheck_Check_ServiceManager(t *testing.T) {
 	}
 }
 
+func TestHealthCheck_List_ServiceManager(t *testing.T) {
+	tests := map[string]struct {
+		states   []services.State
+		expected map[string]*grpc_health_v1.HealthCheckResponse
+	}{
+		"all services are new": {
+			states: []services.State{services.New, services.New},
+			expected: map[string]*grpc_health_v1.HealthCheckResponse{
+				"server": {Status: grpc_health_v1.HealthCheckResponse_NOT_SERVING},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			var svcs []services.Service
+			for range testData.states {
+				svcs = append(svcs, &mockService{})
+			}
+
+			ctx := context.Background()
+			req := &grpc_health_v1.HealthListRequest{}
+			sm, err := services.NewManager(svcs...)
+			require.NoError(t, err)
+
+			// Switch the state of each mocked services.
+			for i, s := range svcs {
+				s.(*mockService).switchState(testData.states[i])
+			}
+
+			h := NewHealthCheckFrom(WithManager(sm))
+			res, err := h.List(ctx, req)
+
+			require.NoError(t, err)
+			require.Equal(t, testData.expected, res.Statuses)
+		})
+	}
+}
+
 func TestHealthCheck_Check_ShutdownRequested(t *testing.T) {
 	tests := map[string]struct {
 		requested *atomic.Bool

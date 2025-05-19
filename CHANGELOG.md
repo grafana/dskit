@@ -1,6 +1,8 @@
 ## Changelog
 
 * [CHANGE] Readd 5xx response logging when `logRequestHeaders` is false. #693
+* [CHANGE] Update the minimum required Go version to 1.23. 689
+* [CHANGE] grpcutil: update health check interface to include List method. 689
 * [CHANGE] Update the minimum required Go version to 1.22. #665
 * [CHANGE] Remove function aws.ConfigFromURL. #667
 * [CHANGE] Add new metric `slow_request_server_throughput` to track the throughput of slow queries. #619

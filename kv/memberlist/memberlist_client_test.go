@@ -2424,7 +2424,6 @@ func TestWatchPrefixHandlesGracefullyNotificationForAlreadyDeletedEntry(t *testi
 	if err != nil {
 		t.Fatalf("Failed to delete key %s: %v", key, err)
 	}
-	
 	select {
 	case <-done:
 	case <-time.After(1 * time.Second):

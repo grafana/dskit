@@ -1129,7 +1129,6 @@ func (m *KV) Delete(key string) error {
 	}
 
 	if newver > 0 {
-
 		m.notifyWatchers(key)
 		m.broadcastNewValue(key, change, newver, c, false, deleted, updated)
 	}

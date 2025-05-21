@@ -1457,6 +1457,79 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 	}
 }
 
+func TestRing_GetSubringForOperationStates(t *testing.T) {
+	tests := map[string]struct {
+		input    map[string]InstanceDesc
+		op       Operation
+		expected map[string]InstanceDesc
+	}{
+		"all instances in healthy state": {
+			input: map[string]InstanceDesc{
+				"instance1": {State: ACTIVE},
+				"instance2": {State: ACTIVE},
+				"instance3": {State: ACTIVE},
+			},
+			op: Write,
+			expected: map[string]InstanceDesc{
+				"instance1": {State: ACTIVE},
+				"instance2": {State: ACTIVE},
+				"instance3": {State: ACTIVE},
+			},
+		},
+		"all instances in healthy state with multiple states": {
+			input: map[string]InstanceDesc{
+				"instance1": {State: ACTIVE},
+				"instance2": {State: LEAVING},
+				"instance3": {State: PENDING},
+			},
+			op: Read,
+			expected: map[string]InstanceDesc{
+				"instance1": {State: ACTIVE},
+				"instance2": {State: LEAVING},
+				"instance3": {State: PENDING},
+			},
+		},
+		"some instances in healthy state": {
+			input: map[string]InstanceDesc{
+				"instance1": {State: ACTIVE},
+				"instance2": {State: LEFT},
+				"instance3": {State: PENDING},
+			},
+			op: Write,
+			expected: map[string]InstanceDesc{
+				"instance1": {State: ACTIVE},
+			},
+		},
+		"no instances in healthy state": {
+			input: map[string]InstanceDesc{
+				"instance1": {State: LEFT},
+				"instance3": {State: LEFT},
+			},
+			op:       Write,
+			expected: map[string]InstanceDesc{},
+		},
+		"empty ring": {
+			input:    map[string]InstanceDesc{},
+			op:       Write,
+			expected: map[string]InstanceDesc{},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ring := &Ring{
+				ringDesc: &Desc{
+					Ingesters: testData.input,
+				},
+			}
+
+			subring := ring.GetSubringForOperationStates(testData.op)
+
+			require.Equal(t, testData.expected, subring.(*Ring).ringDesc.Ingesters)
+		})
+	}
+}
+
 func TestRing_GetInstancesWithTokensCounts(t *testing.T) {
 	gen := initTokenGenerator(t)
 

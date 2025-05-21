@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/dskit/clusterutil"
+	"github.com/grafana/dskit/tracing"
 	"github.com/grafana/dskit/user"
 )
 
@@ -125,6 +126,12 @@ func checkClusterFromRequest(
 		return nil
 	}
 
+	reqCluster, err := clusterutil.GetClusterFromRequest(r)
+	if reqCluster == expectedCluster {
+		return nil
+	}
+	// Everything below is for the case when the requested cluster doesn't match the expectation or an error occurred.
+
 	logger = log.With(
 		logger,
 		"path", r.URL.Path,
@@ -136,13 +143,11 @@ func checkClusterFromRequest(
 		"host", r.Host,
 		"client_address", r.RemoteAddr,
 	)
+	if traceID, ok := tracing.ExtractSampledTraceID(r.Context()); ok {
+		logger = log.With(logger, "trace_id", traceID)
+	}
 
-	reqCluster, err := clusterutil.GetClusterFromRequest(r)
 	if err == nil {
-		if reqCluster == expectedCluster {
-			return nil
-		}
-
 		var wrongClusterErr error
 		if !softValidationEnabled {
 			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster validation label %q - it should be %q", reqCluster, expectedCluster)

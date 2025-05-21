@@ -957,8 +957,8 @@ func (m *KV) WatchKey(ctx context.Context, key string, codec codec.Codec, f func
 
 // WatchPrefix watches for any change of values stored under keys with given prefix. When change occurs,
 // function 'f' is called with key and current value.
-// Each change of the key results in one notification. If the key has already been deleted, a nil value is generated that it is ignored.
-// If there are too many pending notifications ('f' is slow), some notifications may be lost.
+// Each change of the key results in one notification. If there are too many pending notifications ('f' is slow),
+// some notifications may be lost.
 //
 // Watching ends when 'f' returns false, context is done, or this client is shut down.
 func (m *KV) WatchPrefix(ctx context.Context, prefix string, codec codec.Codec, f func(string, interface{}) bool) {

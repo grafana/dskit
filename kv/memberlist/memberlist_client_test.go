@@ -2400,9 +2400,6 @@ func TestWatchPrefixHandlesGracefullyNotificationForAlreadyDeletedEntry(t *testi
 		t.Error("Expected nil, got:", val)
 	}
 
-	// Create a channel to receive nil notifications
-	nilNotifications := make([]string, 0)
-	mu := sync.Mutex{} // Protect nil notification's slice
 	done := make(chan struct{})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2411,9 +2408,7 @@ func TestWatchPrefixHandlesGracefullyNotificationForAlreadyDeletedEntry(t *testi
 	go func() {
 		kv.WatchPrefix(ctx, "test", func(s string, i interface{}) bool {
 			if i == nil {
-				mu.Lock()
-				nilNotifications = append(nilNotifications, s)
-				mu.Unlock()
+				t.Errorf("got nil notification for %q", s)
 			}
 			close(done)
 			return true
@@ -2426,16 +2421,12 @@ func TestWatchPrefixHandlesGracefullyNotificationForAlreadyDeletedEntry(t *testi
 
 	// Delete entry with key: test
 	err = kv.Delete(context.Background(), key)
-
 	if err != nil {
 		t.Fatalf("Failed to delete key %s: %v", key, err)
 	}
+	
 	select {
 	case <-done:
-		mu.Lock()
-		defer mu.Unlock()
-		t.Fatalf("Received unexpected nil notification for key %s", key)
 	case <-time.After(1 * time.Second):
-		require.Len(t, nilNotifications, 0) // didn't receive any nil notification
 	}
 }

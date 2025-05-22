@@ -7,6 +7,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/peer"
 
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcutil"
@@ -113,6 +114,9 @@ func checkClusterFromIncomingContext(
 	)
 	if traceID, ok := tracing.ExtractSampledTraceID(ctx); ok {
 		logger = log.With(logger, "trace_id", traceID)
+	}
+	if p, ok := peer.FromContext(ctx); ok {
+		logger = log.With(logger, "peer_address", p.Addr.String())
 	}
 
 	if err == nil {

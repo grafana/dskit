@@ -127,10 +127,9 @@ func checkClusterFromRequest(
 	}
 
 	reqCluster, err := clusterutil.GetClusterFromRequest(r)
-	if reqCluster == expectedCluster {
+	if err == nil && reqCluster == expectedCluster {
 		return nil
 	}
-	// Everything below is for the case when the requested cluster doesn't match the expectation or an error occurred.
 
 	logger = log.With(
 		logger,
@@ -148,6 +147,7 @@ func checkClusterFromRequest(
 	}
 
 	if err == nil {
+		// No error, but the requested cluster didn't match the expectation.
 		var wrongClusterErr error
 		if !softValidationEnabled {
 			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster validation label %q - it should be %q", reqCluster, expectedCluster)

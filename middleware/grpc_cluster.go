@@ -101,10 +101,9 @@ func checkClusterFromIncomingContext(
 	invalidClusterRequests *prometheus.CounterVec, logger log.Logger,
 ) error {
 	reqCluster, err := clusterutil.GetClusterFromIncomingContext(ctx)
-	if reqCluster == expectedCluster {
+	if err == nil && reqCluster == expectedCluster {
 		return nil
 	}
-	// Everything below is for the case when the requested cluster doesn't match the expectation or an error occurred.
 
 	logger = log.With(
 		logger,
@@ -117,6 +116,7 @@ func checkClusterFromIncomingContext(
 	}
 
 	if err == nil {
+		// No error, but the requested cluster didn't match the expectation.
 		var wrongClusterErr error
 		if !softValidationEnabled {
 			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster validation label %q - it should be %q", reqCluster, expectedCluster)
@@ -134,7 +134,7 @@ func checkClusterFromIncomingContext(
 		}
 
 		invalidClusterRequests.WithLabelValues("grpc", method, expectedCluster, "").Inc()
-		level.Warn(logger).Log("msg", "request with no cluster validation label", "method", method, "cluster_validation_label", expectedCluster)
+		level.Warn(logger).Log("msg", "request with no cluster validation label")
 		return emptyClusterErr
 	}
 

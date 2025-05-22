@@ -211,7 +211,7 @@ func TestClusterUnaryServerInterceptor(t *testing.T) {
 				if testCase.expectedLogs == "" {
 					require.Empty(t, buf.Bytes())
 				} else {
-					require.True(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(testCase.expectedLogs, softValidation))), "got %q", buf.String())
+					require.Contains(t, buf.String(), fmt.Sprintf(testCase.expectedLogs, softValidation))
 				}
 				err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "test_server_invalid_cluster_validation_label_requests_total")
 				require.NoError(t, err)

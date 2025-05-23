@@ -147,7 +147,7 @@ func checkClusterFromRequest(
 	}
 
 	if err == nil {
-		// No error, but request's and server's cluster validation labels  didn't match.
+		// No error, but request's and server's cluster validation labels didn't match.
 		var wrongClusterErr error
 		if !softValidationEnabled {
 			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster validation label %q - it should be %q", reqCluster, expectedCluster)

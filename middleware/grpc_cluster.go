@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tracing"
+	"github.com/grafana/dskit/user"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
@@ -112,11 +113,14 @@ func checkClusterFromIncomingContext(
 		"cluster_validation_label", expectedCluster,
 		"soft_validation", softValidationEnabled,
 	)
-	if traceID, ok := tracing.ExtractSampledTraceID(ctx); ok {
-		logger = log.With(logger, "trace_id", traceID)
+	if tenantID, err := user.ExtractOrgID(ctx); err == nil {
+		logger = log.With(logger, "tenant", tenantID)
 	}
 	if p, ok := peer.FromContext(ctx); ok {
-		logger = log.With(logger, "peer_address", p.Addr.String())
+		logger = log.With(logger, "client_address", p.Addr.String())
+	}
+	if traceID, ok := tracing.ExtractSampledTraceID(ctx); ok {
+		logger = log.With(logger, "trace_id", traceID)
 	}
 
 	if err == nil {

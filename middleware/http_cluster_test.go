@@ -283,7 +283,6 @@ func TestClusterValidationMiddleware(t *testing.T) {
 						err = json.Unmarshal(recorder.Body.Bytes(), &clusterValidationErr)
 						require.NoError(t, err)
 						require.Equal(t, testCase.expectedErrorMsg, clusterValidationErr.ClusterValidationErrorMessage)
-						t.Logf("Expecting route %q", testCase.route)
 						require.Equal(t, testCase.route, clusterValidationErr.Route)
 					}
 				}

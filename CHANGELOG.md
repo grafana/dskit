@@ -112,7 +112,7 @@
   * `-server.cluster-validation.grpc.soft-validation`
   * `-server.cluster-validation.grpc.enabled`
 * [FEATURE] Add `middleware.ClusterValidationRoundTripper`, an `http.RoundTripper` that enriches HTTP request headers with the cluster validation labels. #671
-* [FEATURE] Add `middleware.ClusterValidationMiddleware`, an implementation of `middleware.Interface` that checks if HTTP requests contain a correct cluster validation label, and returns an error if it is not the case. #671 #680 #682
+* [FEATURE] Add `middleware.ClusterValidationMiddleware`, an implementation of `middleware.Interface` that checks if HTTP requests contain a correct cluster validation label, and returns an error if it is not the case. #671 #680 #682 #698
 * [FEATURE] Server: Add support for adding `middleware.ClusterValidationMiddleware` as `server.Server` HTTP middleware via the following experimental configuration options: #671
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.http.soft-validation`

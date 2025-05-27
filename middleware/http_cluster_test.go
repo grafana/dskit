@@ -183,7 +183,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 			serverCluster:      "cluster",
 			expectedStatusCode: http.StatusOK,
 		},
-		"different request and server clusters give rise to an error if soft validation disabled": {
+		"different request and server clusters give rise to an error including the request route if soft validation disabled": {
 			header: func(r *http.Request) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"wrong-cluster"}
 			},
@@ -199,7 +199,23 @@ func TestClusterValidationMiddleware(t *testing.T) {
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request with wrong cluster validation label "wrong-cluster" - it should be "cluster"`,
 		},
-		"empty request cluster and non-empty server cluster give an error if soft validation disabled": {
+		"different request and server clusters give rise to an error handling an unknown request route if soft validation disabled": {
+			header: func(r *http.Request) {
+				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"wrong-cluster"}
+			},
+			serverCluster: "cluster",
+			// Verify that an empty route in the request context is handled.
+			route:        "",
+			expectedLogs: `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="request with wrong cluster validation label" request_cluster_validation_label=wrong-cluster`,
+			expectedMetrics: `
+                                # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE test_server_invalid_cluster_validation_label_requests_total counter
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="<unknown-route>",protocol="http",request_cluster_validation_label="wrong-cluster"} 1
+			`,
+			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
+			expectedErrorMsg:   `rejected request with wrong cluster validation label "wrong-cluster" - it should be "cluster"`,
+		},
+		"empty request cluster and non-empty server cluster give an error including the request route if soft validation disabled": {
 			header: func(r *http.Request) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{""}
 			},
@@ -215,7 +231,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request with empty cluster validation label - it should be "cluster"`,
 		},
-		"no request cluster and non-empty server cluster give an error if soft validation disabled": {
+		"no request cluster and non-empty server cluster give an error including the request route if soft validation disabled": {
 			serverCluster: "cluster",
 			// Verify that the route from the request context is used.
 			route:        "/Test",
@@ -228,7 +244,7 @@ func TestClusterValidationMiddleware(t *testing.T) {
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request with empty cluster validation label - it should be "cluster"`,
 		},
-		"if the incoming request contains more than one cluster label and soft validation is disabled an error is returned": {
+		"if the incoming request contains more than one cluster label and soft validation is disabled an error is returned including the request route": {
 			header: func(r *http.Request) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"cluster", "another-cluster"}
 			},
@@ -283,7 +299,11 @@ func TestClusterValidationMiddleware(t *testing.T) {
 						err = json.Unmarshal(recorder.Body.Bytes(), &clusterValidationErr)
 						require.NoError(t, err)
 						require.Equal(t, testCase.expectedErrorMsg, clusterValidationErr.ClusterValidationErrorMessage)
-						require.Equal(t, testCase.route, clusterValidationErr.Route)
+						if testCase.route != "" {
+							require.Equal(t, testCase.route, clusterValidationErr.Route)
+						} else {
+							require.Equal(t, "<unknown-route>", clusterValidationErr.Route)
+						}
 					}
 				}
 				if testCase.expectedLogs != "" {

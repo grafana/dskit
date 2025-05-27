@@ -101,6 +101,9 @@ func ClusterValidationMiddleware(
 	return Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			route := ExtractRouteName(r.Context())
+			if route == "" {
+				route = "<unknown-route>"
+			}
 			if err := checkClusterFromRequest(r, cluster, route, softValidation, reExcludedPath, invalidClusterRequests, logger); err != nil {
 				clusterValidationErr := clusterValidationError{
 					ClusterValidationErrorMessage: err.Error(),

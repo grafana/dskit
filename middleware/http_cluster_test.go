@@ -49,7 +49,7 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 				err := clusterValidationError{
 					ClusterValidationErrorMessage: "this is a cluster validation error",
 					// Use a different route from the URL path, to verify that the route is used.
-					Route: "/Test",
+					Route: "test_argument",
 				}
 				err.writeAsJSON(w)
 			},
@@ -59,16 +59,16 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 			expectedMetrics: `
 				# HELP test_request_invalid_cluster_validation_labels_total Number of requests with invalid cluster validation label.
 				# TYPE test_request_invalid_cluster_validation_labels_total counter
-				test_request_invalid_cluster_validation_labels_total{method="/Test"} 1
+				test_request_invalid_cluster_validation_labels_total{method="test_argument"} 1
 			`,
-			expectedLogs: `level=warn msg="request rejected by the server: this is a cluster validation error" method=/Test cluster_validation_label=cluster`,
+			expectedLogs: `level=warn msg="request rejected by the server: this is a cluster validation error" method=test_argument cluster_validation_label=cluster`,
 		},
-		"if the server returns a clusterValidationError with an empty route it is handled by ClusterValidationRoundTripper": {
+		"if the server returns a clusterValidationError with an unknown route it is handled by ClusterValidationRoundTripper": {
 			cluster: "cluster",
 			serverResponse: func(w http.ResponseWriter) {
 				err := clusterValidationError{
 					ClusterValidationErrorMessage: "this is a cluster validation error",
-					Route:                         "",
+					Route:                         "<unknown-route>",
 				}
 				err.writeAsJSON(w)
 			},
@@ -78,9 +78,9 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 			expectedMetrics: `
 				# HELP test_request_invalid_cluster_validation_labels_total Number of requests with invalid cluster validation label.
 				# TYPE test_request_invalid_cluster_validation_labels_total counter
-				test_request_invalid_cluster_validation_labels_total{method=""} 1
+				test_request_invalid_cluster_validation_labels_total{method="<unknown-route>"} 1
 			`,
-			expectedLogs: `level=warn msg="request rejected by the server: this is a cluster validation error" method= cluster_validation_label=cluster`,
+			expectedLogs: `level=warn msg="request rejected by the server: this is a cluster validation error" method=<unknown-route> cluster_validation_label=cluster`,
 		},
 		"if the server returns a generic error with http.StatusNetworkAuthenticationRequired status code the error is propagated": {
 			cluster: "cluster",

@@ -272,6 +272,7 @@
 * [ENHANCEMENT] Server: Add interceptor support to `GrpcInflightMethodLimiter`. #643
 * [ENHANCEMENT] flagext: Add `LimitsMap` as a new flag type. #651
 * [ENHANCEMENT] Memberlist: Add `-memberlist.abort-if-fast-join-fails` support and retries on DNS resolution. #674
+* [ENHANCEMENT] Ring: Add `GetSubringForOperationStates()` method. #699
 * [BUGFIX] spanlogger: Support multiple tenant IDs. #59
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #85
 * [BUGFIX] Ring: `ring_member_ownership_percent` and `ring_tokens_owned` metrics are not updated on scale down. #109

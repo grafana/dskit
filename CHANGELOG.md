@@ -1,5 +1,6 @@
 ## Changelog
 
+* [CHANGE] Bump go.opentelemetry.io/contrib/samplers/jaegerremote to version v0.30.0 #694
 * [CHANGE] Readd 5xx response logging when `logRequestHeaders` is false. #693
 * [CHANGE] Update the minimum required Go version to 1.23. 689
 * [CHANGE] grpcutil: update health check interface to include List method. 689

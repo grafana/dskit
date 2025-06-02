@@ -47,12 +47,14 @@ func TestGrpcStats(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "grpc_concurrent_streams_by_conn_max",
-		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
-	}, []string{})
+	grpcConcurrentStreamsByConnMax := prometheus.NewDesc(
+		"grpc_concurrent_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	)
 
-	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -157,12 +159,14 @@ func TestGrpcStatsStreaming(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "grpc_concurrent_streams_by_conn_max",
-		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
-	}, []string{})
+	grpcConcurrentStreamsByConnMax := prometheus.NewDesc(
+		"grpc_concurrent_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	)
 
-	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxSendMsgSize(10e6), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -312,12 +316,14 @@ func TestGrpcStatsMaxStreams(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "grpc_concurrent_streams_by_conn_max",
-		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
-	}, []string{})
+	grpcConcurrentStreamsByConnMax := prometheus.NewDesc(
+		"grpc_concurrent_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	)
 
-	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -453,7 +459,12 @@ func generateString(size int) string {
 }
 
 func TestGrpcStreamTracker(t *testing.T) {
-	tracker := NewStreamTracker()
+	tracker := NewStreamTracker(prometheus.NewDesc(
+		"grpc_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	))
 
 	// Test basic stream operations
 	conn0 := "conn0"
@@ -548,23 +559,42 @@ func TestGrpcStreamTracker(t *testing.T) {
 }
 
 func BenchmarkStreamTracker(b *testing.B) {
-	tracker := NewStreamTracker()
-	streamsToClose := []string{}
+	tracker := NewStreamTracker(prometheus.NewDesc(
+		"grpc_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	))
 	numConns := 1000
+	existingConnIDs := make([]string, numConns)
+	for i := 0; i < numConns; i++ {
+		existingConnIDs[i] = fmt.Sprintf("conn%d", i)
+	}
+	newConnIDs := make([]string, numConns)
+	for i := 0; i < numConns; i++ {
+		newConnIDs[i] = fmt.Sprintf("conn%d", i+numConns)
+	}
+	connIDs := append(existingConnIDs, newConnIDs...)
 
 	// Bootstrap a bit of streams to make sure we have a bit of load
 	for i := 0; i < numConns*1000; i++ {
-		connID := fmt.Sprintf("conn%d", mathRand.Intn(numConns))
+		connID := existingConnIDs[mathRand.Intn(numConns)]
 		tracker.OpenStream(connID)
-		streamsToClose = append(streamsToClose, connID)
 	}
 
 	// Benchmark opening streams
-	b.Run("OpenStream", func(b *testing.B) {
+	b.Run("OpenStreamOnExistingConn", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			connID := fmt.Sprintf("conn%d", mathRand.Intn(numConns))
+			connID := existingConnIDs[mathRand.Intn(numConns)]
 			tracker.OpenStream(connID)
-			streamsToClose = append(streamsToClose, connID)
+		}
+	})
+
+	// Benchmark opening streams on new connections
+	b.Run("OpenStreamOnNewConn", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			connID := newConnIDs[mathRand.Intn(numConns)]
+			tracker.OpenStream(connID)
 		}
 	})
 
@@ -575,19 +605,10 @@ func BenchmarkStreamTracker(b *testing.B) {
 		}
 	})
 
-	// Shuffle the streams to close
-	mathRand.Shuffle(len(streamsToClose), func(i, j int) {
-		streamsToClose[i], streamsToClose[j] = streamsToClose[j], streamsToClose[i]
-	})
-
-	// Benchmark closing streams
 	b.Run("CloseStream", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			// End the test when we have no more streams to close
-			if i > len(streamsToClose) {
-				panic("no more streams to close")
-			}
-			tracker.CloseStream(streamsToClose[i])
+			connID := connIDs[mathRand.Intn(numConns*2)]
+			tracker.CloseStream(connID)
 		}
 	})
 }

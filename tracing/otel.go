@@ -33,7 +33,7 @@ var tracer = otel.Tracer("dskit/tracing")
 
 // NewOTelFromEnv is a convenience function to allow OpenTelemetry tracing configuration via environment variables.
 // Refer to official OTel SDK configuration docs to see the available options.
-// https://github.com/arminru/opentelemetry.io/blob/667cb1399942e49b51ea72fd1f107642e2149157/content/en/docs/concepts/sdk-configuration/general-sdk-configuration.md
+// https://opentelemetry.io/docs/languages/sdk-configuration/general/
 func NewOTelFromEnv(serviceName string, logger log.Logger, opts ...OTelOption) (io.Closer, error) {
 	level.Info(logger).Log("msg", "initialising OpenTelemetry tracer")
 
@@ -164,7 +164,7 @@ func NewResource(serviceName string, customAttributes []attribute.KeyValue) (*re
 // if `jaeger_remote` or `parentbased_jaeger_remote` sampler is configured through OTEL_TRACES_SAMPLER.
 //
 // This extends go.opentelemetry.io/otel/sdk/trace/sampler_env.go `samplerFromEnv()` with support for Jaeger remote samplers as per docs in:
-// https://github.com/arminru/opentelemetry.io/blob/667cb1399942e49b51ea72fd1f107642e2149157/content/en/docs/concepts/sdk-configuration/general-sdk-configuration.md?plain=1#L85-L98
+// https://opentelemetry.io/docs/languages/sdk-configuration/general/
 // It is not planned to implement this in OTel SDK: https://github.com/open-telemetry/opentelemetry-go/issues/6296#issuecomment-2648125926
 //
 // If the environment variable is set to "jaeger_remote" or "parentbased_jaeger_remote",
@@ -258,7 +258,7 @@ func (c closableParentBasedSampler) Close() { c.closer.Close() }
 // If the environment variable is not set, it defaults to using TraceContext, Baggage, and Jaeger propagators.
 // This implementation supports only `tracecontext`, `baggage`, and `jaeger` and `none` propagators.
 // See docs in:
-// https://github.com/arminru/opentelemetry.io/blob/667cb1399942e49b51ea72fd1f107642e2149157/content/en/docs/concepts/sdk-configuration/general-sdk-configuration.md?plain=1#L100C5-L125
+// https://opentelemetry.io/docs/languages/sdk-configuration/general/
 func OTelPropagatorsFromEnv() []propagation.TextMapPropagator {
 	// If OTEL_PROPAGATORS is not set, use the default propagators.
 	if os.Getenv("OTEL_PROPAGATORS") == "" {

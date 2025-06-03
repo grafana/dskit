@@ -126,6 +126,7 @@
 * [FEATURE] grpcclient: Add experimental configuration option `-cluster-validation.label` to `grpcclient.Config` used for setting the cluster validation label of gRPC clients. #657
 * [FEATURE] Add `ring.GetWithOptions()` method to support additional features at a per-call level. #632
 * [FEATURE] Add `-memberlist.watch-prefix-buffer-size` that controls the size of the buffered channel used by WatchPrefix. #669
+* [FEATURE] tracing: Add `NewOTelFromEnv` function to configure OpenTelemetry tracing via environment variables following official OTel SDK configuration standards. #704
 * [ENHANCEMENT] Add feature flag to make Memcached soft-dependency on startup. If so, DNS failures on startup will be ignored on client creation. #647, #658
 * [ENHANCEMENT] Add option to hide token information in ring status page #633
 * [ENHANCEMENT] Display token information in partition ring status page #631

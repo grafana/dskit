@@ -225,18 +225,29 @@ func MaybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool
 		return nil, false, fmt.Errorf("endpoint is not set in OTEL_TRACES_SAMPLER_ARG for Jaeger remote sampler %s", samplerName)
 	}
 
-	sampler := jaegerremote.New(serviceName,
+	options := []jaegerremote.Option{
 		jaegerremote.WithSamplingServerURL(endpoint),
 		jaegerremote.WithInitialSampler(tracesdk.TraceIDRatioBased(initialSamplingRate)),
-		jaegerremote.WithSamplingRefreshInterval(pollingInterval),
-	)
+	}
+	if pollingInterval > 0 {
+		options = append(options, jaegerremote.WithSamplingRefreshInterval(pollingInterval))
+	}
+
+	sampler := jaegerremote.New(serviceName, options...)
 
 	if parentBased {
-		return tracesdk.ParentBased(sampler), true, nil
+		return closableParentBasedSampler{tracesdk.ParentBased(sampler), sampler}, true, nil
 	}
 
 	return sampler, true, nil
 }
+
+type closableParentBasedSampler struct {
+	tracesdk.Sampler
+	closer interface{ Close() }
+}
+
+func (c closableParentBasedSampler) Close() { c.closer.Close() }
 
 // OTelPropagatorsFromEnv returns a slice of OpenTelemetry TextMapPropagators based on the OTEL_PROPAGATORS environment variable.
 // If the environment variable is not set, it defaults to using TraceContext, Baggage, and Jaeger propagators.

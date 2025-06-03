@@ -16,6 +16,7 @@ var tracer = otel.Tracer("dskit.test")
 
 func init() {
 	// Install OTel tracing.
+	//nolint:staticcheck // This is intentionally testing the deprecated function
 	_, err := tracing.NewOTelFromJaegerEnv("test")
 	if err != nil {
 		panic(err)

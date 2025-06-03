@@ -195,6 +195,7 @@ func MaybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool
 	var endpoint string
 	var pollingInterval time.Duration
 	var initialSamplingRate float64
+	var initialSamplingRateSet bool
 	var endpointSet bool
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -219,6 +220,7 @@ func MaybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool
 			if initialSamplingRate < 0 || initialSamplingRate > 1 {
 				return nil, false, fmt.Errorf("initialSamplingRate value set in OTEL_TRACES_SAMPLER_ARG must be between 0 and 1, got %f", initialSamplingRate)
 			}
+			initialSamplingRateSet = true
 		}
 	}
 	if !endpointSet {
@@ -227,10 +229,12 @@ func MaybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool
 
 	options := []jaegerremote.Option{
 		jaegerremote.WithSamplingServerURL(endpoint),
-		jaegerremote.WithInitialSampler(tracesdk.TraceIDRatioBased(initialSamplingRate)),
 	}
 	if pollingInterval > 0 {
 		options = append(options, jaegerremote.WithSamplingRefreshInterval(pollingInterval))
+	}
+	if initialSamplingRateSet {
+		options = append(options, jaegerremote.WithInitialSampler(tracesdk.TraceIDRatioBased(initialSamplingRate)))
 	}
 
 	sampler := jaegerremote.New(serviceName, options...)

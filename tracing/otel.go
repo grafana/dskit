@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/contrib/samplers/jaegerremote"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
@@ -30,6 +31,12 @@ import (
 )
 
 var tracer = otel.Tracer("dskit/tracing")
+
+func init() {
+	autoexport.RegisterSpanExporter("jaeger", func(_ context.Context) (tracesdk.SpanExporter, error) {
+		return jaeger.New(jaeger.WithAgentEndpoint())
+	})
+}
 
 // NewOTelFromEnv is a convenience function to allow OpenTelemetry tracing configuration via environment variables.
 // Refer to official OTel SDK configuration docs to see the available options.

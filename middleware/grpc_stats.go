@@ -143,7 +143,13 @@ func (st *StreamTracker) CloseStream(connID string) {
 	if res := conn.Dec(); res == 0 {
 		// Delete the entry if it's empty.
 		st.mu.Lock()
-		delete(st.connMap, connID)
+
+		// Get the entry again to avoid race condition.
+		conn = st.connMap[connID]
+		if conn == nil || conn.Load() == 0 {
+			delete(st.connMap, connID)
+		}
+
 		st.mu.Unlock()
 	}
 }

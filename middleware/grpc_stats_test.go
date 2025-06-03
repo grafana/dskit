@@ -612,3 +612,57 @@ func BenchmarkStreamTracker(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
+	tracker := NewStreamTracker(prometheus.NewDesc(
+		"grpc_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	))
+
+	for i := 0; i < b.N; i++ {
+		numRoutines := 10000
+
+		wg := sync.WaitGroup{}
+		wg.Add(numRoutines)
+		for i := 0; i < numRoutines; i++ {
+			go func(i int) {
+				defer wg.Done()
+
+				// Open 3, close 3
+				connID := fmt.Sprintf("conn%d", i%10)
+				tracker.OpenStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.OpenStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.CloseStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.OpenStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.CloseStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.CloseStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.OpenStream(connID)
+				tracker.OpenStream(connID)
+				tracker.CloseStream(connID)
+				tracker.CloseStream(connID)
+			}(i)
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				tracker.MaxStreams()
+			}
+		}()
+
+		wg.Wait()
+
+		if tracker.MaxStreams() != 0 {
+			b.Fatalf("MaxStreams() = %d, want 0", tracker.MaxStreams())
+		}
+	}
+}

@@ -45,12 +45,31 @@ const (
 // - JAEGER_AGENT_HOST
 // - JAEGER_ENDPOINT
 // - JAEGER_SAMPLER_MANAGER_HOST_PORT
-// Otherwise, it will initialize tracing with the OTel auto exporter, as per OTel docs.
+// Otherwise, it will initialize tracing with the OTel auto exporter, as per OTel docs, if any of the following environment variables are set:
+// - OTEL_TRACES_EXPORTER
+// - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+// - OTEL_TRACES_SAMPLER
 func NewOTelOrJaegerFromEnv(serviceName string, logger log.Logger, opts ...OTelOption) (io.Closer, error) {
-	if os.Getenv(envJaegerAgentHost) != "" || os.Getenv(envJaegerEndpoint) != "" || os.Getenv(envJaegerSamplerManagerHostPort) != "" {
+	if env, found := findNonEmptyEnv(envJaegerAgentHost, envJaegerEndpoint, envJaegerSamplerManagerHostPort); found {
+		level.Info(logger).Log("msg", "Configuring tracing with Jaeger exporter", "detected_env_var", env)
 		return newOTelFromJaegerEnv(serviceName, logger, opts...)
 	}
-	return NewOTelFromEnv(serviceName, logger, opts...)
+	if env, found := findNonEmptyEnv("OTEL_TRACES_EXPORTER", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_TRACES_SAMPLER"); found {
+		level.Info(logger).Log("msg", "Configuring tracing with OTel auto exporter", "detected_env_var", env)
+		return NewOTelFromEnv(serviceName, logger, opts...)
+	}
+	level.Info(logger).Log("msg", "No Jaeger or OTel auto exporter configuration found, tracing will not be configured")
+
+	return ioCloser(func() error { return nil }), ErrBlankTraceConfiguration
+}
+
+func findNonEmptyEnv(envVars ...string) (string, bool) {
+	for _, envVar := range envVars {
+		if value := os.Getenv(envVar); value != "" {
+			return envVar, true
+		}
+	}
+	return "", false
 }
 
 // NewOTelFromJaegerEnv is a convenience function to allow OTel tracing configuration via Jaeger environment variables

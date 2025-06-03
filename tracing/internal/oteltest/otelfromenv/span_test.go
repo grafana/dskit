@@ -56,9 +56,7 @@ func TestStartSpanFromContext(t *testing.T) {
 
 func TestOTelFromEnvInitialization(t *testing.T) {
 	t.Run("can create tracer provider", func(t *testing.T) {
-		// Save original exporter setting
-		originalExporter := os.Getenv("OTEL_TRACES_EXPORTER")
-		defer os.Setenv("OTEL_TRACES_EXPORTER", originalExporter)
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_EXPORTER")()
 
 		// Set to none to avoid actual export
 		os.Setenv("OTEL_TRACES_EXPORTER", "none")
@@ -81,4 +79,25 @@ func TestOTelFromEnvInitialization(t *testing.T) {
 		require.True(t, span.SpanContext().TraceID().IsValid())
 		require.True(t, span.SpanContext().SpanID().IsValid())
 	})
+}
+
+func saveEnvAndRestoreDeferred(vars ...string) func() {
+	originalValues := make(map[string]string)
+	for _, v := range vars {
+		originalValues[v] = os.Getenv(v)
+	}
+
+	return func() {
+		for _, v := range vars {
+			if originalValue, exists := originalValues[v]; exists {
+				if originalValue == "" {
+					os.Unsetenv(v)
+				} else {
+					os.Setenv(v, originalValue)
+				}
+			} else {
+				os.Unsetenv(v)
+			}
+		}
+	}
 }

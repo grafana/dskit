@@ -96,15 +96,7 @@ func TestNewResource(t *testing.T) {
 
 func TestNewOTelFromEnv(t *testing.T) {
 	t.Run("with none exporter", func(t *testing.T) {
-		// Save original environment
-		originalExporter := os.Getenv("OTEL_TRACES_EXPORTER")
-		defer func() {
-			if originalExporter == "" {
-				os.Unsetenv("OTEL_TRACES_EXPORTER")
-			} else {
-				os.Setenv("OTEL_TRACES_EXPORTER", originalExporter)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_EXPORTER")()
 
 		// Set to none to avoid actual export
 		os.Setenv("OTEL_TRACES_EXPORTER", "none")
@@ -127,15 +119,7 @@ func TestNewOTelFromEnv(t *testing.T) {
 	})
 
 	t.Run("with custom resource attributes", func(t *testing.T) {
-		// Save original environment
-		originalExporter := os.Getenv("OTEL_TRACES_EXPORTER")
-		defer func() {
-			if originalExporter == "" {
-				os.Unsetenv("OTEL_TRACES_EXPORTER")
-			} else {
-				os.Setenv("OTEL_TRACES_EXPORTER", originalExporter)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_EXPORTER")()
 
 		os.Setenv("OTEL_TRACES_EXPORTER", "none")
 
@@ -151,15 +135,7 @@ func TestNewOTelFromEnv(t *testing.T) {
 	})
 
 	t.Run("with pyroscope disabled", func(t *testing.T) {
-		// Save original environment
-		originalExporter := os.Getenv("OTEL_TRACES_EXPORTER")
-		defer func() {
-			if originalExporter == "" {
-				os.Unsetenv("OTEL_TRACES_EXPORTER")
-			} else {
-				os.Setenv("OTEL_TRACES_EXPORTER", originalExporter)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_EXPORTER")()
 
 		os.Setenv("OTEL_TRACES_EXPORTER", "none")
 
@@ -172,21 +148,7 @@ func TestNewOTelFromEnv(t *testing.T) {
 
 func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 	t.Run("no sampler configured", func(t *testing.T) {
-		// Save original environment
-		originalSampler := os.Getenv("OTEL_TRACES_SAMPLER")
-		originalArgs := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
-		defer func() {
-			if originalSampler == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER", originalSampler)
-			}
-			if originalArgs == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER_ARG", originalArgs)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
 
 		os.Unsetenv("OTEL_TRACES_SAMPLER")
 		os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
@@ -198,21 +160,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 	})
 
 	t.Run("jaeger_remote sampler with valid args", func(t *testing.T) {
-		// Save original environment
-		originalSampler := os.Getenv("OTEL_TRACES_SAMPLER")
-		originalArgs := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
-		defer func() {
-			if originalSampler == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER", originalSampler)
-			}
-			if originalArgs == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER_ARG", originalArgs)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
 
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=5000,initialSamplingRate=0.25")
@@ -227,21 +175,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 	})
 
 	t.Run("parentbased_jaeger_remote sampler", func(t *testing.T) {
-		// Save original environment
-		originalSampler := os.Getenv("OTEL_TRACES_SAMPLER")
-		originalArgs := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
-		defer func() {
-			if originalSampler == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER", originalSampler)
-			}
-			if originalArgs == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER_ARG", originalArgs)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
 
 		os.Setenv("OTEL_TRACES_SAMPLER", "parentbased_jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=5000")
@@ -256,21 +190,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 	})
 
 	t.Run("missing sampler args", func(t *testing.T) {
-		// Save original environment
-		originalSampler := os.Getenv("OTEL_TRACES_SAMPLER")
-		originalArgs := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
-		defer func() {
-			if originalSampler == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER", originalSampler)
-			}
-			if originalArgs == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER_ARG", originalArgs)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
 
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
@@ -283,21 +203,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 	})
 
 	t.Run("missing endpoint in args", func(t *testing.T) {
-		// Save original environment
-		originalSampler := os.Getenv("OTEL_TRACES_SAMPLER")
-		originalArgs := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
-		defer func() {
-			if originalSampler == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER", originalSampler)
-			}
-			if originalArgs == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER_ARG", originalArgs)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
 
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "pollingIntervalMs=5000,initialSamplingRate=0.25")
@@ -310,21 +216,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 	})
 
 	t.Run("invalid polling interval", func(t *testing.T) {
-		// Save original environment
-		originalSampler := os.Getenv("OTEL_TRACES_SAMPLER")
-		originalArgs := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
-		defer func() {
-			if originalSampler == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER", originalSampler)
-			}
-			if originalArgs == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER_ARG", originalArgs)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
 
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=invalid")
@@ -337,21 +229,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 	})
 
 	t.Run("invalid initial sampling rate", func(t *testing.T) {
-		// Save original environment
-		originalSampler := os.Getenv("OTEL_TRACES_SAMPLER")
-		originalArgs := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
-		defer func() {
-			if originalSampler == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER", originalSampler)
-			}
-			if originalArgs == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER_ARG", originalArgs)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
 
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,initialSamplingRate=2.0")
@@ -364,21 +242,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 	})
 
 	t.Run("other sampler type", func(t *testing.T) {
-		// Save original environment
-		originalSampler := os.Getenv("OTEL_TRACES_SAMPLER")
-		originalArgs := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
-		defer func() {
-			if originalSampler == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER", originalSampler)
-			}
-			if originalArgs == "" {
-				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
-			} else {
-				os.Setenv("OTEL_TRACES_SAMPLER_ARG", originalArgs)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
 
 		os.Setenv("OTEL_TRACES_SAMPLER", "always_on")
 
@@ -391,15 +255,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 
 func TestOTelPropagatorsFromEnv(t *testing.T) {
 	t.Run("default propagators when env not set", func(t *testing.T) {
-		// Save original environment
-		originalPropagators := os.Getenv("OTEL_PROPAGATORS")
-		defer func() {
-			if originalPropagators == "" {
-				os.Unsetenv("OTEL_PROPAGATORS")
-			} else {
-				os.Setenv("OTEL_PROPAGATORS", originalPropagators)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
 
 		os.Unsetenv("OTEL_PROPAGATORS")
 
@@ -408,15 +264,7 @@ func TestOTelPropagatorsFromEnv(t *testing.T) {
 	})
 
 	t.Run("custom propagators from env", func(t *testing.T) {
-		// Save original environment
-		originalPropagators := os.Getenv("OTEL_PROPAGATORS")
-		defer func() {
-			if originalPropagators == "" {
-				os.Unsetenv("OTEL_PROPAGATORS")
-			} else {
-				os.Setenv("OTEL_PROPAGATORS", originalPropagators)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
 
 		os.Setenv("OTEL_PROPAGATORS", "tracecontext,baggage")
 
@@ -425,15 +273,7 @@ func TestOTelPropagatorsFromEnv(t *testing.T) {
 	})
 
 	t.Run("none propagator", func(t *testing.T) {
-		// Save original environment
-		originalPropagators := os.Getenv("OTEL_PROPAGATORS")
-		defer func() {
-			if originalPropagators == "" {
-				os.Unsetenv("OTEL_PROPAGATORS")
-			} else {
-				os.Setenv("OTEL_PROPAGATORS", originalPropagators)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
 
 		os.Setenv("OTEL_PROPAGATORS", "none")
 
@@ -442,19 +282,32 @@ func TestOTelPropagatorsFromEnv(t *testing.T) {
 	})
 
 	t.Run("jaeger propagator", func(t *testing.T) {
-		// Save original environment
-		originalPropagators := os.Getenv("OTEL_PROPAGATORS")
-		defer func() {
-			if originalPropagators == "" {
-				os.Unsetenv("OTEL_PROPAGATORS")
-			} else {
-				os.Setenv("OTEL_PROPAGATORS", originalPropagators)
-			}
-		}()
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
 
 		os.Setenv("OTEL_PROPAGATORS", "jaeger")
 
 		propagators := OTelPropagatorsFromEnv()
 		require.Len(t, propagators, 1)
 	})
+}
+
+func saveEnvAndRestoreDeferred(vars ...string) func() {
+	originalValues := make(map[string]string)
+	for _, v := range vars {
+		originalValues[v] = os.Getenv(v)
+	}
+
+	return func() {
+		for _, v := range vars {
+			if originalValue, exists := originalValues[v]; exists {
+				if originalValue == "" {
+					os.Unsetenv(v)
+				} else {
+					os.Setenv(v, originalValue)
+				}
+			} else {
+				os.Unsetenv(v)
+			}
+		}
+	}
 }

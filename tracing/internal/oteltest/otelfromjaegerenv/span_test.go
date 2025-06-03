@@ -1,5 +1,5 @@
 // Package opentracingtest tests tracing with OTel installed.
-package oteltest
+package otelfromjaegerenv
 
 import (
 	"context"

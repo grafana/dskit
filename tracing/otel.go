@@ -63,6 +63,7 @@ func NewOTelFromEnv(serviceName string, logger log.Logger, opts ...OTelOption) (
 	}
 	options = append(options, cfg.tracerProviderOptions...)
 
+	level.Debug(logger).Log("msg", "OpenTelemetry tracer provider initialized from OTel environment variables")
 	tpsdk := tracesdk.NewTracerProvider(options...)
 	tp := trace.TracerProvider(tpsdk)
 	if !cfg.pyroscopeDisabled {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	otelpyroscope "github.com/grafana/otel-profiling-go"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/contrib/samplers/jaegerremote"
@@ -244,13 +245,18 @@ func (cfg otelJaegerConfig) initJaegerTracerProvider(serviceName string, logger 
 		tp = otelpyroscope.NewTracerProvider(tp)
 	}
 
+	level.Debug(logger).Log("msg", "OpenTelemetry tracer provider initialized from Jaeger env vars")
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(OTelPropagatorsFromEnv()...))
+	otel.SetErrorHandler(otelErrorHandlerFunc(func(err error) {
+		level.Error(logger).Log("msg", "OpenTelemetry.ErrorHandler", "err", err)
+	}))
 
 	return ioCloser(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := tpsdk.Shutdown(ctx); err != nil {
+			level.Error(logger).Log("msg", "OpenTelemetry trace provider failed to shutdown", "err", err)
 			return err
 		}
 		return nil

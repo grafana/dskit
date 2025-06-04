@@ -71,39 +71,38 @@ func (t Tracer) wrapWithOpenTracing(next http.Handler) http.Handler {
 }
 
 func (t Tracer) wrapWithOTel(next http.Handler) http.Handler {
-	tracingMiddleware := otelhttp.NewHandler(next, "http.tracing", otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
-		return httpOperationName(r)
-	}))
-
-	// Wrap the 'tracingMiddleware' to capture its execution
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	addSpanAttributes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if labeler, ok := otelhttp.LabelerFromContext(r.Context()); ok {
+			labeler.Add(attribute.String("labeler", "true"))
+
 			// add a tag with the client's user agent to the span
 			userAgent := r.Header.Get("User-Agent")
 			if userAgent != "" {
-				labeler.Add(attribute.String("http.user_agent", userAgent))
+				labeler.Add(attribute.String("dskit.http.user_agent", userAgent))
 			}
 
-			labeler.Add(attribute.String("http.url", r.URL.Path))
-			labeler.Add(attribute.String("http.method", r.Method))
+			labeler.Add(attribute.String("dskit.http.url", r.URL.Path))
+			labeler.Add(attribute.String("dskit.http.method", r.Method))
 
 			// add the content type, useful when query requests are sent as POST
 			if ct := r.Header.Get("Content-Type"); ct != "" {
-				labeler.Add(attribute.String("http.content_type", ct))
+				labeler.Add(attribute.String("dskit.http.content_type", ct))
 			}
 
-			labeler.Add(attribute.String("headers", fmt.Sprintf("%v", r.Header)))
+			labeler.Add(attribute.String("dskit.headers", fmt.Sprintf("%v", r.Header)))
 			// add a tag with the client's sourceIPs to the span, if a
 			// SourceIPExtractor is given.
 			if t.SourceIPs != nil {
-				labeler.Add(attribute.String("sourceIPs", t.SourceIPs.Get(r)))
+				labeler.Add(attribute.String("dskit.sourceIPs", t.SourceIPs.Get(r)))
 			}
 		}
 
-		tracingMiddleware.ServeHTTP(w, r)
+		next.ServeHTTP(w, r)
 	})
 
-	return handler
+	return otelhttp.NewHandler(addSpanAttributes, "http.tracing", otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+		return httpOperationName(r)
+	}))
 }
 
 // HTTPGRPCTracingInterceptor adds additional information about the encapsulated HTTP request

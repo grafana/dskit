@@ -7,7 +7,6 @@ toolchain go1.24.2
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/alicebob/miniredis v2.5.0+incompatible
-	github.com/armon/go-metrics v0.4.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cristalhq/hedgedhttp v0.9.1
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
@@ -20,7 +19,7 @@ require (
 	github.com/gogo/status v1.1.0
 	github.com/golang/protobuf v1.5.4
 	github.com/golang/snappy v0.0.4
-	github.com/google/btree v1.0.1
+	github.com/google/btree v1.1.2
 	github.com/google/go-cmp v0.7.0
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/gomemcache v0.0.0-20250318131618-74242eea118d
@@ -28,9 +27,10 @@ require (
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2
-	github.com/hashicorp/go-sockaddr v1.0.2
+	github.com/hashicorp/go-metrics v0.5.4
+	github.com/hashicorp/go-sockaddr v1.0.5
 	github.com/hashicorp/golang-lru/v2 v2.0.5
-	github.com/hashicorp/memberlist v0.3.1
+	github.com/hashicorp/memberlist v0.5.2
 	github.com/miekg/dns v1.1.63
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 	github.com/opentracing-contrib/go-stdlib v1.0.0
@@ -71,6 +71,7 @@ require (
 
 require (
 	github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a // indirect
+	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
@@ -83,15 +84,14 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/errwrap v1.0.0 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-hclog v0.14.1 // indirect
-	github.com/hashicorp/go-immutable-radix v1.3.0 // indirect
-	github.com/hashicorp/go-metrics v0.5.4 // indirect
-	github.com/hashicorp/go-msgpack/v2 v2.1.1 // indirect
+	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
+	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
-	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/hashicorp/serf v0.9.7 // indirect
+	github.com/hashicorp/golang-lru v1.0.2 // indirect
+	github.com/hashicorp/serf v0.10.2 // indirect
 	github.com/jaegertracing/jaeger-idl v0.5.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.8 // indirect

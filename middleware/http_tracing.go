@@ -72,30 +72,36 @@ func (t Tracer) wrapWithOpenTracing(next http.Handler) http.Handler {
 
 func (t Tracer) wrapWithOTel(next http.Handler) http.Handler {
 	addSpanAttributes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if labeler, ok := otelhttp.LabelerFromContext(r.Context()); ok {
-			labeler.Add(attribute.String("labeler", "true"))
-
-			// add a tag with the client's user agent to the span
-			userAgent := r.Header.Get("User-Agent")
-			if userAgent != "" {
-				labeler.Add(attribute.String("dskit.http.user_agent", userAgent))
-			}
-
-			labeler.Add(attribute.String("dskit.http.url", r.URL.Path))
-			labeler.Add(attribute.String("dskit.http.method", r.Method))
-
-			// add the content type, useful when query requests are sent as POST
-			if ct := r.Header.Get("Content-Type"); ct != "" {
-				labeler.Add(attribute.String("dskit.http.content_type", ct))
-			}
-
-			labeler.Add(attribute.String("dskit.headers", fmt.Sprintf("%v", r.Header)))
-			// add a tag with the client's sourceIPs to the span, if a
-			// SourceIPExtractor is given.
-			if t.SourceIPs != nil {
-				labeler.Add(attribute.String("dskit.sourceIPs", t.SourceIPs.Get(r)))
-			}
+		sp := trace.SpanFromContext(r.Context())
+		if !sp.SpanContext().IsValid() {
+			next.ServeHTTP(w, r)
+			return
 		}
+
+		attributes := []attribute.KeyValue{
+			attribute.String("dskit", "true"),
+			attribute.String("dskit.http.url", r.URL.Path),
+			attribute.String("dskit.http.method", r.Method),
+			attribute.String("dskit.headers", fmt.Sprintf("%v", r.Header)),
+		}
+
+		// add a tag with the client's user agent to the span
+		userAgent := r.Header.Get("User-Agent")
+		if userAgent != "" {
+			attributes = append(attributes, attribute.String("dskit.http.user_agent", userAgent))
+		}
+
+		// add the content type, useful when query requests are sent as POST
+		if ct := r.Header.Get("Content-Type"); ct != "" {
+			attributes = append(attributes, attribute.String("dskit.http.content_type", ct))
+		}
+
+		// add a tag with the client's sourceIPs to the span, if a
+		// SourceIPExtractor is given.
+		if t.SourceIPs != nil {
+			attributes = append(attributes, attribute.String("dskit.sourceIPs", t.SourceIPs.Get(r)))
+		}
+		sp.SetAttributes(attributes...)
 
 		next.ServeHTTP(w, r)
 	})

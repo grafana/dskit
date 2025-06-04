@@ -14,9 +14,15 @@ import (
 )
 
 // NewStatsHandler creates handler that can be added to gRPC server options to track received and sent message sizes.
-func NewStatsHandler(reg prometheus.Registerer, receivedPayloadSize, sentPayloadSize *prometheus.HistogramVec, inflightRequests *prometheus.GaugeVec, grpcConcurrentStreamsByConnMax *prometheus.Desc) stats.Handler {
+func NewStatsHandler(reg prometheus.Registerer, receivedPayloadSize, sentPayloadSize *prometheus.HistogramVec, inflightRequests *prometheus.GaugeVec, collectMaxStreamsByConn bool) stats.Handler {
 	var streamTracker *StreamTracker
-	if grpcConcurrentStreamsByConnMax != nil {
+	if collectMaxStreamsByConn {
+		grpcConcurrentStreamsByConnMax := prometheus.NewDesc(
+			"grpc_concurrent_streams_by_conn_max",
+			"The current number of concurrent streams in the connection with the most concurrent streams.",
+			[]string{},
+			prometheus.Labels{},
+		)
 		streamTracker = NewStreamTracker(grpcConcurrentStreamsByConnMax)
 		reg.MustRegister(streamTracker)
 	}

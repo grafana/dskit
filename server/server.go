@@ -491,7 +491,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 				metrics.ReceivedMessageSize,
 				metrics.SentMessageSize,
 				metrics.InflightRequests,
-				metrics.GRPCConcurrentStreamsByConnMax,
+				cfg.GRPCCollectMaxStreamsByConn,
 			)),
 		)
 	}

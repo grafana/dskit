@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -47,14 +48,7 @@ func TestGrpcStats(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := prometheus.NewDesc(
-		"grpc_concurrent_streams_by_conn_max",
-		"The current number of concurrent streams in the connection with the most concurrent streams.",
-		[]string{},
-		prometheus.Labels{},
-	)
-
-	stats := NewStatsHandler(reg, received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, true)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -159,14 +153,7 @@ func TestGrpcStatsStreaming(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := prometheus.NewDesc(
-		"grpc_concurrent_streams_by_conn_max",
-		"The current number of concurrent streams in the connection with the most concurrent streams.",
-		[]string{},
-		prometheus.Labels{},
-	)
-
-	stats := NewStatsHandler(reg, received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, true)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxSendMsgSize(10e6), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -276,6 +263,49 @@ func TestGrpcStatsStreaming(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGrpcStatsMaxStreamsDisabled(t *testing.T) {
+	reg := prometheus.NewRegistry()
+
+	received := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "received_payload_bytes",
+		Help:    "Size of received gRPC messages",
+		Buckets: BodySizeBuckets,
+	}, []string{"method", "route"})
+
+	sent := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "sent_payload_bytes",
+		Help:    "Size of sent gRPC",
+		Buckets: BodySizeBuckets,
+	}, []string{"method", "route"})
+
+	inflightRequests := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "inflight_requests",
+		Help: "Current number of inflight requests.",
+	}, []string{"method", "route"})
+
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, false)
+
+	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
+	defer serv.GracefulStop()
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	middleware_test.RegisterEchoServerServer(serv, &halfEcho{log: t.Log})
+
+	go func() {
+		require.NoError(t, serv.Serve(listener))
+	}()
+
+	ctx, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+	conn1 := launchConnWithStreams(t, ctx, listener, 10)
+	defer conn1.Close()
+
+	err = testutil.GatherAndCompare(reg, bytes.NewBufferString(``), "grpc_concurrent_streams_by_conn_max")
+	assert.NoError(t, err)
+}
+
 func TestGrpcStatsMaxStreams(t *testing.T) {
 	const (
 		waitTime = 1 * time.Second
@@ -316,14 +346,7 @@ func TestGrpcStatsMaxStreams(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := prometheus.NewDesc(
-		"grpc_concurrent_streams_by_conn_max",
-		"The current number of concurrent streams in the connection with the most concurrent streams.",
-		[]string{},
-		prometheus.Labels{},
-	)
-
-	stats := NewStatsHandler(reg, received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, true)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -651,13 +674,15 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 			}(i)
 		}
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 1000; i++ {
-				tracker.MaxStreams()
-			}
-		}()
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 1000; i++ {
+					tracker.MaxStreams()
+				}
+			}()
+		}
 
 		wg.Wait()
 

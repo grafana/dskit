@@ -127,7 +127,7 @@
 * [FEATURE] Add `ring.GetWithOptions()` method to support additional features at a per-call level. #632
 * [FEATURE] Add `-memberlist.watch-prefix-buffer-size` that controls the size of the buffered channel used by WatchPrefix. #669
 * [FEATURE] tracing: Add `NewOTelFromEnv` function to configure OpenTelemetry tracing via environment variables following official OTel SDK configuration standards. #704
-* [ENHANCEMENT] Add feature flag to make Memcached soft-dependency on startup. If so, DNS failures on startup will be ignored on client creation. #647, #658
+* [ENHANCEMENT] Add feature flag to make Memcached soft-dependency on startup. If so, DNS failures on startup will be ignored on client creation. #647, #658, #705
 * [ENHANCEMENT] Add option to hide token information in ring status page #633
 * [ENHANCEMENT] Display token information in partition ring status page #631
 * [ENHANCEMENT] Add ability to log all source hosts from http header instead of only the first one. #444

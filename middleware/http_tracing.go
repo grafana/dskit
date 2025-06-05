@@ -43,12 +43,12 @@ type Tracer struct {
 
 // NewTracer creates a new tracer optionally configuring the tracing of HTTP headers.
 // The configuration for HTTP headers tracing only applies to OpenTelemetry spans.
-func NewTracer(sourceIPs *SourceIPExtractor, traceHeaders bool, excludeHeadersList []string) Tracer {
+func NewTracer(sourceIPs *SourceIPExtractor, traceHeaders bool, excludeHeaders []string) Tracer {
 	httpHeadersToExclude := map[string]bool{}
 	for header := range AlwaysExcludedHeaders {
 		httpHeadersToExclude[header] = true
 	}
-	for _, header := range excludeHeadersList {
+	for _, header := range excludeHeaders {
 		httpHeadersToExclude[header] = true
 	}
 

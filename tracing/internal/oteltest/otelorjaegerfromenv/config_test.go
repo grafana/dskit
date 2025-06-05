@@ -36,12 +36,8 @@ func unsetAndRestoreDeferred(vars ...string) func() {
 
 	return func() {
 		for _, v := range vars {
-			if originalValue, exists := originalValues[v]; exists {
-				if originalValue == "" {
-					os.Unsetenv(v)
-				} else {
-					os.Setenv(v, originalValue)
-				}
+			if originalValue := originalValues[v]; originalValue != "" {
+				os.Setenv(v, originalValue)
 			} else {
 				os.Unsetenv(v)
 			}

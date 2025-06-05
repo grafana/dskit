@@ -46,7 +46,7 @@ const (
 // - JAEGER_ENDPOINT
 // - JAEGER_SAMPLER_MANAGER_HOST_PORT
 //
-// Otherwise, it will initialize tracing with the OTel auto exporter using the environment variables defined in the OTel docs
+// Otherwise, it will initialize tracing with the OTel auto exporter using the environment variables defined in the OTel docs.
 // If you want to explicitly disable OTel auto exporter, you can set the environment variable `OTEL_TRACES_EXPORTER` to `none`.
 func NewOTelOrJaegerFromEnv(serviceName string, logger log.Logger, opts ...OTelOption) (io.Closer, error) {
 	if env, found := findNonEmptyEnv(envJaegerAgentHost, envJaegerEndpoint, envJaegerSamplerManagerHostPort); found {

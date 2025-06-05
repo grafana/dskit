@@ -115,7 +115,7 @@ func (t Tracer) wrapWithOTel(next http.Handler) http.Handler {
 
 		// Add an attribute with the client's sourceIPs to the span, if a SourceIPExtractor is given.
 		if t.SourceIPs != nil {
-			attributes = append(attributes, attribute.String("sourceIPs", t.SourceIPs.Get(r)))
+			attributes = append(attributes, attribute.String("source_ips", t.SourceIPs.Get(r)))
 		}
 
 		if t.traceHeaders {

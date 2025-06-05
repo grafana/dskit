@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -47,12 +48,7 @@ func TestGrpcStats(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "grpc_concurrent_streams_by_conn_max",
-		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
-	}, []string{})
-
-	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, true)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -157,12 +153,7 @@ func TestGrpcStatsStreaming(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "grpc_concurrent_streams_by_conn_max",
-		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
-	}, []string{})
-
-	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, true)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxSendMsgSize(10e6), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -272,6 +263,49 @@ func TestGrpcStatsStreaming(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGrpcStatsMaxStreamsDisabled(t *testing.T) {
+	reg := prometheus.NewRegistry()
+
+	received := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "received_payload_bytes",
+		Help:    "Size of received gRPC messages",
+		Buckets: BodySizeBuckets,
+	}, []string{"method", "route"})
+
+	sent := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "sent_payload_bytes",
+		Help:    "Size of sent gRPC",
+		Buckets: BodySizeBuckets,
+	}, []string{"method", "route"})
+
+	inflightRequests := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "inflight_requests",
+		Help: "Current number of inflight requests.",
+	}, []string{"method", "route"})
+
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, false)
+
+	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
+	defer serv.GracefulStop()
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	middleware_test.RegisterEchoServerServer(serv, &halfEcho{log: t.Log})
+
+	go func() {
+		require.NoError(t, serv.Serve(listener))
+	}()
+
+	ctx, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+	conn1 := launchConnWithStreams(t, ctx, listener, 10)
+	defer conn1.Close()
+
+	err = testutil.GatherAndCompare(reg, bytes.NewBufferString(``), "grpc_concurrent_streams_by_conn_max")
+	assert.NoError(t, err)
+}
+
 func TestGrpcStatsMaxStreams(t *testing.T) {
 	const (
 		waitTime = 1 * time.Second
@@ -312,12 +346,7 @@ func TestGrpcStatsMaxStreams(t *testing.T) {
 		Help: "Current number of inflight requests.",
 	}, []string{"method", "route"})
 
-	grpcConcurrentStreamsByConnMax := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "grpc_concurrent_streams_by_conn_max",
-		Help: "The current number of concurrent streams in the connection with the most concurrent streams.",
-	}, []string{})
-
-	stats := NewStatsHandler(received, sent, inflightRequests, grpcConcurrentStreamsByConnMax)
+	stats := NewStatsHandler(reg, received, sent, inflightRequests, true)
 
 	serv := grpc.NewServer(grpc.StatsHandler(stats), grpc.MaxRecvMsgSize(10e6))
 	defer serv.GracefulStop()
@@ -453,7 +482,12 @@ func generateString(size int) string {
 }
 
 func TestGrpcStreamTracker(t *testing.T) {
-	tracker := NewStreamTracker()
+	tracker := NewStreamTracker(prometheus.NewDesc(
+		"grpc_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	))
 
 	// Test basic stream operations
 	conn0 := "conn0"
@@ -548,23 +582,42 @@ func TestGrpcStreamTracker(t *testing.T) {
 }
 
 func BenchmarkStreamTracker(b *testing.B) {
-	tracker := NewStreamTracker()
-	streamsToClose := []string{}
+	tracker := NewStreamTracker(prometheus.NewDesc(
+		"grpc_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	))
 	numConns := 1000
+	existingConnIDs := make([]string, numConns)
+	for i := 0; i < numConns; i++ {
+		existingConnIDs[i] = fmt.Sprintf("conn%d", i)
+	}
+	newConnIDs := make([]string, numConns)
+	for i := 0; i < numConns; i++ {
+		newConnIDs[i] = fmt.Sprintf("conn%d", i+numConns)
+	}
+	connIDs := append(existingConnIDs, newConnIDs...)
 
 	// Bootstrap a bit of streams to make sure we have a bit of load
 	for i := 0; i < numConns*1000; i++ {
-		connID := fmt.Sprintf("conn%d", mathRand.Intn(numConns))
+		connID := existingConnIDs[mathRand.Intn(numConns)]
 		tracker.OpenStream(connID)
-		streamsToClose = append(streamsToClose, connID)
 	}
 
 	// Benchmark opening streams
-	b.Run("OpenStream", func(b *testing.B) {
+	b.Run("OpenStreamOnExistingConn", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			connID := fmt.Sprintf("conn%d", mathRand.Intn(numConns))
+			connID := existingConnIDs[mathRand.Intn(numConns)]
 			tracker.OpenStream(connID)
-			streamsToClose = append(streamsToClose, connID)
+		}
+	})
+
+	// Benchmark opening streams on new connections
+	b.Run("OpenStreamOnNewConn", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			connID := newConnIDs[mathRand.Intn(numConns)]
+			tracker.OpenStream(connID)
 		}
 	})
 
@@ -575,19 +628,66 @@ func BenchmarkStreamTracker(b *testing.B) {
 		}
 	})
 
-	// Shuffle the streams to close
-	mathRand.Shuffle(len(streamsToClose), func(i, j int) {
-		streamsToClose[i], streamsToClose[j] = streamsToClose[j], streamsToClose[i]
-	})
-
-	// Benchmark closing streams
 	b.Run("CloseStream", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			// End the test when we have no more streams to close
-			if i > len(streamsToClose) {
-				panic("no more streams to close")
-			}
-			tracker.CloseStream(streamsToClose[i])
+			connID := connIDs[mathRand.Intn(numConns*2)]
+			tracker.CloseStream(connID)
 		}
 	})
+}
+
+func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
+	tracker := NewStreamTracker(prometheus.NewDesc(
+		"grpc_streams_by_conn_max",
+		"The current number of concurrent streams in the connection with the most concurrent streams.",
+		[]string{},
+		prometheus.Labels{},
+	))
+
+	for i := 0; i < b.N; i++ {
+		numRoutines := 10000
+
+		wg := sync.WaitGroup{}
+		wg.Add(numRoutines)
+		for i := 0; i < numRoutines; i++ {
+			go func(i int) {
+				defer wg.Done()
+
+				// Open 3, close 3
+				connID := fmt.Sprintf("conn%d", i%10)
+				tracker.OpenStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.OpenStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.CloseStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.OpenStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.CloseStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.CloseStream(connID)
+				time.Sleep(time.Millisecond)
+				tracker.OpenStream(connID)
+				tracker.OpenStream(connID)
+				tracker.CloseStream(connID)
+				tracker.CloseStream(connID)
+			}(i)
+		}
+
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 1000; i++ {
+					tracker.MaxStreams()
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		if tracker.MaxStreams() != 0 {
+			b.Fatalf("MaxStreams() = %d, want 0", tracker.MaxStreams())
+		}
+	}
 }

@@ -8,19 +8,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"slices"
-
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.20.0" // otelhttp uses semconv v1.20.0 so we stick to the same version in order to produce consistent attributes on HTTP and HTTPGRPC spans.
-	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/exp/maps"
 
 	"github.com/gorilla/mux"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.20.0" // otelhttp uses semconv v1.20.0 so we stick to the same version in order to produce consistent attributes on HTTP and HTTPGRPC spans.
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/httpgrpc"
@@ -119,25 +116,33 @@ func (t Tracer) wrapWithOTel(next http.Handler) http.Handler {
 		}
 
 		if t.traceHeaders {
-			headers := maps.Keys(r.Header)
 			const maxHeadersToAddAsSpanAttributes = 100
-			if len(headers) > maxHeadersToAddAsSpanAttributes {
-				slices.Sort(headers)
-				sp.AddEvent("Client sent too many headers, some of them were not included in the span attributes: ", trace.WithAttributes(
-					attribute.Int("headers_total", len(headers)),
-					attribute.StringSlice("headers_not_added_as_span_attributes", headers[maxHeadersToAddAsSpanAttributes:])),
-				)
-				headers = headers[:maxHeadersToAddAsSpanAttributes]
+
+			var notAddedHeaders []string
+			if len(r.Header) > maxHeadersToAddAsSpanAttributes {
+				notAddedHeaders = make([]string, len(r.Header)-maxHeadersToAddAsSpanAttributes)
 			}
 
-			for _, header := range headers {
+			added := 0
+			for header, values := range r.Header {
+				if added >= maxHeadersToAddAsSpanAttributes {
+					notAddedHeaders = append(notAddedHeaders, header)
+					continue
+				}
+				added++
 				if _, ok := t.httpHeadersToExclude[header]; ok {
 					// Do not add excluded headers to the span attributes, but note that they were sent.
 					attributes = append(attributes, attribute.String("http.header."+header+".present", "true"))
 					continue
 				}
-				values := r.Header[header]
 				attributes = append(attributes, attribute.StringSlice("http.header."+header, values))
+			}
+
+			if len(notAddedHeaders) > 0 {
+				sp.AddEvent("Client sent too many headers, some of them were not included in the span attributes: ", trace.WithAttributes(
+					attribute.Int("headers_total", len(r.Header)),
+					attribute.StringSlice("headers_not_added_as_span_attributes", notAddedHeaders)),
+				)
 			}
 		}
 

@@ -33,6 +33,11 @@ This library aims to support at least the two latest Go minor releases.
 If you're interested in contributing to this project:
 
 - Start by reading the [Contributing guide](/CONTRIBUTING.md).
+- Pull request titles must follow [Conventional Commits](https://www.conventionalcommits.org/) format.
+
+## Release History
+
+This project uses conventional commit messages to maintain a clear history of changes. No separate changelog is maintained - please refer to the [commit history](https://github.com/grafana/dskit/commits/main) for information about releases and changes.
 
 ## License
 

@@ -25,8 +25,7 @@ is finished it should:
 * Have unit tests for new functionality or tests that would have caught the bug
   being fixed.
 
-* Include a CHANGELOG message if users of Dskit need to hear about what you
-  did.
+* Have a pull request title that follows [Conventional Commits](https://www.conventionalcommits.org/) format (e.g., `feat: Add new feature`, `fix: Resolve bug`, `docs: Update README`). This title will become the commit message when your PR is squashed and merged.
 
 ## Testing und Linting the Code
 

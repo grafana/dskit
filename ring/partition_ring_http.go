@@ -29,6 +29,7 @@ var partitionRingPageTemplate = template.Must(template.New("webpage").Funcs(temp
 
 type PartitionRingUpdater interface {
 	ChangePartitionState(ctx context.Context, partitionID int32, toState PartitionState) error
+	ForgetPartition(ctx context.Context, partitionID int32) error
 	RemoveOwner(ctx context.Context, partitionID int32, ownerID string) error
 }
 
@@ -131,6 +132,19 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 }
 
 func (h *PartitionRingPageHandler) handlePostRequest(w http.ResponseWriter, req *http.Request) {
+	if req.FormValue("action") == "forget_partition" {
+		partitionID, err := strconv.Atoi(req.FormValue("partition_id"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid partition ID: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+
+		if err := h.updater.ForgetPartition(req.Context(), int32(partitionID)); err != nil {
+			http.Error(w, fmt.Sprintf("failed to forget partition: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+	}
+
 	if req.FormValue("action") == "change_state" {
 		partitionID, err := strconv.Atoi(req.FormValue("partition_id"))
 		if err != nil {

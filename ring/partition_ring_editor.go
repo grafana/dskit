@@ -23,6 +23,13 @@ func NewPartitionRingEditor(ringKey string, store kv.Client) *PartitionRingEdito
 	}
 }
 
+func (l *PartitionRingEditor) ForgetPartition(ctx context.Context, partitionID int32) error {
+	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
+		ring.RemovePartition(partitionID)
+		return true, nil
+	})
+}
+
 // ChangePartitionState changes the partition state to toState.
 // This function returns ErrPartitionDoesNotExist if the partition doesn't exist,
 // and ErrPartitionStateChangeNotAllowed if the state change is not allowed.

@@ -208,10 +208,11 @@ func parseOTelJaegerConfig() (otelJaegerConfig, error) {
 	}
 
 	if e := os.Getenv(envJaegerSamplerNotParentBased); e != "" {
-		if e != "true" && e != "false" {
-			return cfg, errors.Errorf("invalid value for %s: %s, expected 'true' or 'false'", envJaegerSamplerNotParentBased, e)
+		if value, err := strconv.ParseBool(e); err == nil {
+			cfg.samplerNotParentBased = value
+		} else {
+			return cfg, errors.Wrapf(err, "cannot parse env var %s=%s", envJaegerSamplerNotParentBased, e)
 		}
-		cfg.samplerNotParentBased = e == "true"
 	}
 
 	return cfg, nil

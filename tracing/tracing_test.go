@@ -123,8 +123,9 @@ func TestExtractSampledTraceID_OTel(t *testing.T) {
 			SpanID:  spanID,
 		})
 		ctx := trace.ContextWithSpanContext(context.Background(), sc)
-		_, sampled := ExtractSampledTraceID(ctx)
+		gotTraceID, sampled := ExtractSampledTraceID(ctx)
 		require.False(t, sampled)
+		require.Equal(t, expectedTraceID, gotTraceID)
 	})
 
 	t.Run("no span", func(t *testing.T) {

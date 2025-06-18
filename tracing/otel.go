@@ -185,6 +185,10 @@ func MaybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool
 		return nil, false, nil
 	}
 
+	// Unset the OTEL_TRACES_SAMPLER environment variable to the SDK's samplerFromEnv()
+	// function complaining about unknown sampler and logging confusing messages.
+	_ = os.Unsetenv("OTEL_TRACES_SAMPLER")
+
 	args, ok := os.LookupEnv("OTEL_TRACES_SAMPLER_ARG")
 	if !ok || args == "" {
 		return nil, false, fmt.Errorf("OTEL_TRACES_SAMPLER_ARG is not set for Jaeger remote sampler %s", samplerName)

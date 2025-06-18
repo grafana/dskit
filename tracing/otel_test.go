@@ -172,6 +172,10 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 
 		// Clean up sampler to avoid goroutine leak. Don't check the type, it should always be closeable.
 		sampler.(interface{ Close() }).Close()
+
+		// Verify that OTEL_TRACES_SAMPLER env was unset.
+		_, found := os.LookupEnv("OTEL_TRACES_SAMPLER")
+		require.False(t, found, "OTEL_TRACES_SAMPLER should not be set after creating sampler")
 	})
 
 	t.Run("parentbased_jaeger_remote sampler", func(t *testing.T) {

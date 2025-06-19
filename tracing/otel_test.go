@@ -153,7 +153,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 		os.Unsetenv("OTEL_TRACES_SAMPLER")
 		os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
 
-		sampler, ok, err := MaybeJaegerRemoteSamplerFromEnv("test-service")
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
 		require.NoError(t, err)
 		require.False(t, ok)
 		require.Nil(t, sampler)
@@ -165,13 +165,17 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=5000,initialSamplingRate=0.25")
 
-		sampler, ok, err := MaybeJaegerRemoteSamplerFromEnv("test-service")
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
 		require.NoError(t, err)
 		require.True(t, ok)
 		require.NotNil(t, sampler)
 
 		// Clean up sampler to avoid goroutine leak. Don't check the type, it should always be closeable.
 		sampler.(interface{ Close() }).Close()
+
+		// Verify that OTEL_TRACES_SAMPLER env was unset.
+		_, found := os.LookupEnv("OTEL_TRACES_SAMPLER")
+		require.False(t, found, "OTEL_TRACES_SAMPLER should not be set after creating sampler")
 	})
 
 	t.Run("parentbased_jaeger_remote sampler", func(t *testing.T) {
@@ -180,7 +184,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 		os.Setenv("OTEL_TRACES_SAMPLER", "parentbased_jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=5000")
 
-		sampler, ok, err := MaybeJaegerRemoteSamplerFromEnv("test-service")
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
 		require.NoError(t, err)
 		require.True(t, ok)
 		require.NotNil(t, sampler)
@@ -195,7 +199,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
 
-		sampler, ok, err := MaybeJaegerRemoteSamplerFromEnv("test-service")
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
 		require.Error(t, err)
 		require.False(t, ok)
 		require.Nil(t, sampler)
@@ -208,7 +212,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "pollingIntervalMs=5000,initialSamplingRate=0.25")
 
-		sampler, ok, err := MaybeJaegerRemoteSamplerFromEnv("test-service")
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
 		require.Error(t, err)
 		require.False(t, ok)
 		require.Nil(t, sampler)
@@ -221,7 +225,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=invalid")
 
-		sampler, ok, err := MaybeJaegerRemoteSamplerFromEnv("test-service")
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
 		require.Error(t, err)
 		require.False(t, ok)
 		require.Nil(t, sampler)
@@ -234,7 +238,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
 		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,initialSamplingRate=2.0")
 
-		sampler, ok, err := MaybeJaegerRemoteSamplerFromEnv("test-service")
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
 		require.Error(t, err)
 		require.False(t, ok)
 		require.Nil(t, sampler)
@@ -246,7 +250,7 @@ func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
 
 		os.Setenv("OTEL_TRACES_SAMPLER", "always_on")
 
-		sampler, ok, err := MaybeJaegerRemoteSamplerFromEnv("test-service")
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
 		require.NoError(t, err)
 		require.False(t, ok)
 		require.Nil(t, sampler)

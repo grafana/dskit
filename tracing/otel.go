@@ -169,6 +169,8 @@ func NewResource(serviceName string, customAttributes []attribute.KeyValue) (*re
 //
 // If the environment variable is set to "jaeger_remote" or "parentbased_jaeger_remote",
 // but `OTEL_TRACES_SAMPLER_ARG` is not in the correct format (according to the docs mentioned above), then an error is returned.
+//
+// When MaybeJaegerRemoteSamplerFromEnv finds a supported Jaeger remote sampler OTEL_TRACES_SAMPLER value, it unsets that environment variable.
 func MaybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool, error) {
 	samplerName, ok := os.LookupEnv("OTEL_TRACES_SAMPLER")
 	if !ok {

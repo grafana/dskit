@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -55,6 +56,12 @@ func testLoadOverrides(r io.Reader) (interface{}, error) {
 		return nil, err
 	}
 	return overrides, nil
+}
+
+func testPreprocessor(retVal []byte, retErr error) Preprocessor {
+	return func(_ []byte) ([]byte, error) {
+		return retVal, retErr
+	}
 }
 
 type value struct {
@@ -339,6 +346,63 @@ func TestOverridesManagerMultipleFilesWithEmptyFile(t *testing.T) {
 	require.NotNil(t, overridesManager.GetConfig())
 	conf := overridesManager.GetConfig().(*testOverrides)
 	require.Equal(t, 100, conf.Overrides["user1"].Limit1)
+}
+
+func TestOverridesManagerPreprocessor(t *testing.T) {
+	tempFiles, err := generateRuntimeFiles(t,
+		[]string{`overrides:
+  user1:
+    limit1: ${VALUE}`,
+			``})
+	require.NoError(t, err)
+
+	alteredTo := `overrides:
+  user1:
+    limit1: 200`
+
+	// testing runtimeconfig Manager with overrides reload config set
+	overridesManagerConfig := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     generateLoadPath(tempFiles),
+		Loader:       testLoadOverrides,
+		Preprocessor: testPreprocessor([]byte(alteredTo), nil),
+	}
+
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
+
+	// Cleaning up
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
+
+	// Make sure test limits were loaded.
+	require.NotNil(t, overridesManager.GetConfig())
+	conf := overridesManager.GetConfig().(*testOverrides)
+	require.Equal(t, 200, conf.Overrides["user1"].Limit1)
+}
+
+func TestOverridesManagerFailingPreprocessor(t *testing.T) {
+	tempFiles, err := generateRuntimeFiles(t,
+		[]string{`overrides:
+  user1:
+    limit1: ${VALUE}`,
+			``})
+	require.NoError(t, err)
+
+	// testing runtimeconfig Manager with overrides reload config set
+	overridesManagerConfig := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     generateLoadPath(tempFiles),
+		Loader:       testLoadOverrides,
+		Preprocessor: testPreprocessor(nil, errors.New("some preprocessor error")),
+	}
+
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	err = services.StartAndAwaitRunning(context.Background(), overridesManager)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "preprocess file")
+	require.Contains(t, err.Error(), "some preprocessor error")
 }
 
 func TestManager_ListenerWithDefaultLimits(t *testing.T) {

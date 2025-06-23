@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -42,10 +43,14 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			},
 		},
-		"if the server returns a clusterValidationError it is handled by ClusterValidationRoundTripper": {
+		"if the server returns a clusterValidationError with a non-empty route it is handled by ClusterValidationRoundTripper": {
 			cluster: "cluster",
 			serverResponse: func(w http.ResponseWriter) {
-				err := clusterValidationError{ClusterValidationErrorMessage: "this is a cluster validation error"}
+				err := clusterValidationError{
+					ClusterValidationErrorMessage: "this is a cluster validation error",
+					// Use a different route from the URL path, to verify that the route is used.
+					Route: "test_argument",
+				}
 				err.writeAsJSON(w)
 			},
 			expectedErr:        fmt.Errorf("request rejected by the server: this is a cluster validation error"),
@@ -54,9 +59,28 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 			expectedMetrics: `
 				# HELP test_request_invalid_cluster_validation_labels_total Number of requests with invalid cluster validation label.
 				# TYPE test_request_invalid_cluster_validation_labels_total counter
-				test_request_invalid_cluster_validation_labels_total{method="/Test/Me"} 1
+				test_request_invalid_cluster_validation_labels_total{method="test_argument"} 1
 			`,
-			expectedLogs: `level=warn msg="request rejected by the server: this is a cluster validation error" method=/Test/Me cluster_validation_label=cluster`,
+			expectedLogs: `level=warn msg="request rejected by the server: this is a cluster validation error" method=test_argument cluster_validation_label=cluster`,
+		},
+		"if the server returns a clusterValidationError with an unknown route it is handled by ClusterValidationRoundTripper": {
+			cluster: "cluster",
+			serverResponse: func(w http.ResponseWriter) {
+				err := clusterValidationError{
+					ClusterValidationErrorMessage: "this is a cluster validation error",
+					Route:                         "<unknown-route>",
+				}
+				err.writeAsJSON(w)
+			},
+			expectedErr:        fmt.Errorf("request rejected by the server: this is a cluster validation error"),
+			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
+			expectedResponse:   "request rejected by the server: this is a cluster validation error",
+			expectedMetrics: `
+				# HELP test_request_invalid_cluster_validation_labels_total Number of requests with invalid cluster validation label.
+				# TYPE test_request_invalid_cluster_validation_labels_total counter
+				test_request_invalid_cluster_validation_labels_total{method="<unknown-route>"} 1
+			`,
+			expectedLogs: `level=warn msg="request rejected by the server: this is a cluster validation error" method=<unknown-route> cluster_validation_label=cluster`,
 		},
 		"if the server returns a generic error with http.StatusNetworkAuthenticationRequired status code the error is propagated": {
 			cluster: "cluster",
@@ -131,16 +155,18 @@ func TestClusterValidationRoundTripper(t *testing.T) {
 			if testCase.expectedLogs == "" {
 				require.Empty(t, buf.Bytes())
 			} else {
-				require.True(t, bytes.Contains(buf.Bytes(), []byte(testCase.expectedLogs)))
+				require.Contains(t, buf.String(), testCase.expectedLogs)
 			}
 		})
 	}
 }
 
 func TestClusterValidationMiddleware(t *testing.T) {
+	const urlPath = "/Test/Me"
 	testCases := map[string]struct {
 		header             func(r *http.Request)
 		serverCluster      string
+		route              string
 		expectedStatusCode int
 		expectedErrorMsg   string
 		expectedLogs       string
@@ -158,55 +184,78 @@ func TestClusterValidationMiddleware(t *testing.T) {
 			serverCluster:      "cluster",
 			expectedStatusCode: http.StatusOK,
 		},
-		"different request and server clusters give rise to an error if soft validation disabled": {
+		"different request and server clusters give rise to an error including the request route if soft validation disabled": {
 			header: func(r *http.Request) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"wrong-cluster"}
 			},
 			serverCluster: "cluster",
-			expectedLogs:  `level=warn msg="request with wrong cluster validation label" path=/Test/Me cluster_validation_label=cluster request_cluster_validation_label=wrong-cluster soft_validation=%v`,
+			// Verify that the route from the request context is used.
+			route:        "test_argument",
+			expectedLogs: `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="request with wrong cluster validation label" request_cluster_validation_label=wrong-cluster`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
-                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="/Test/Me",protocol="http",request_cluster_validation_label="wrong-cluster"} 1
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="test_argument",protocol="http",request_cluster_validation_label="wrong-cluster"} 1
 			`,
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request with wrong cluster validation label "wrong-cluster" - it should be "cluster"`,
 		},
-		"empty request cluster and non-empty server cluster give an error if soft validation disabled": {
+		"different request and server clusters give rise to an error handling an unknown request route if soft validation disabled": {
+			header: func(r *http.Request) {
+				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"wrong-cluster"}
+			},
+			serverCluster: "cluster",
+			// Verify that an empty route in the request context is handled.
+			route:        "",
+			expectedLogs: `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="request with wrong cluster validation label" request_cluster_validation_label=wrong-cluster`,
+			expectedMetrics: `
+                                # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE test_server_invalid_cluster_validation_label_requests_total counter
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="<unknown-route>",protocol="http",request_cluster_validation_label="wrong-cluster"} 1
+			`,
+			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
+			expectedErrorMsg:   `rejected request with wrong cluster validation label "wrong-cluster" - it should be "cluster"`,
+		},
+		"empty request cluster and non-empty server cluster give an error including the request route if soft validation disabled": {
 			header: func(r *http.Request) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{""}
 			},
 			serverCluster: "cluster",
-			expectedLogs:  `level=warn msg="request with no cluster validation label" path=/Test/Me cluster_validation_label=cluster soft_validation=%v`,
+			// Verify that the route from the request context is used.
+			route:        "test_argument",
+			expectedLogs: `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="request with no cluster validation label"`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
-                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="/Test/Me",protocol="http",request_cluster_validation_label=""} 1
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="test_argument",protocol="http",request_cluster_validation_label=""} 1
 			`,
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request with empty cluster validation label - it should be "cluster"`,
 		},
-		"no request cluster and non-empty server cluster give an error if soft validation disabled": {
+		"no request cluster and non-empty server cluster give an error including the request route if soft validation disabled": {
 			serverCluster: "cluster",
-			expectedLogs:  `level=warn msg="request with no cluster validation label" path=/Test/Me cluster_validation_label=cluster soft_validation=%v`,
+			// Verify that the route from the request context is used.
+			route:        "test_argument",
+			expectedLogs: `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="request with no cluster validation label"`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
-                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="/Test/Me",protocol="http",request_cluster_validation_label=""} 1
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="test_argument",protocol="http",request_cluster_validation_label=""} 1
 				`,
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request with empty cluster validation label - it should be "cluster"`,
 		},
-		"if the incoming request contains more than one cluster label and soft validation is disabled an error is returned": {
+		"if the incoming request contains more than one cluster label and soft validation is disabled an error is returned including the request route": {
 			header: func(r *http.Request) {
 				r.Header[clusterutil.ClusterValidationLabelHeader] = []string{"cluster", "another-cluster"}
 			},
+			route:         "test_argument",
 			serverCluster: "cluster",
-			expectedLogs:  `level=warn msg="detected error during cluster validation label extraction" path=/Test/Me cluster_validation_label=cluster soft_validation=%v err="request header should contain exactly 1 value for key \"X-Cluster\", but it contains [cluster another-cluster]"`,
+			expectedLogs:  `level=warn path=/Test/Me method=GET cluster_validation_label=cluster soft_validation=%t tenant= user_agent= host= client_address= msg="detected error during cluster validation label extraction" err="request header should contain exactly 1 value for key \"X-Cluster\", but it contains [cluster another-cluster]"`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
-                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="/Test/Me",protocol="http",request_cluster_validation_label=""} 1
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="cluster",method="test_argument",protocol="http",request_cluster_validation_label=""} 1
 			`,
 			expectedStatusCode: http.StatusNetworkAuthenticationRequired,
 			expectedErrorMsg:   `rejected request: request header should contain exactly 1 value for key "X-Cluster", but it contains [cluster another-cluster]`,
@@ -222,19 +271,33 @@ func TestClusterValidationMiddleware(t *testing.T) {
 				buf := bytes.NewBuffer(nil)
 				logger := createLogger(t, buf)
 				reg := prometheus.NewPedanticRegistry()
-				invalidClusterRequests := NewInvalidClusterRequests(reg, "test")
-				m := ClusterValidationMiddleware(testCase.serverCluster, nil, softValidation, invalidClusterRequests, logger)
-				handler := Merge(m).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				router := mux.NewRouter()
+				var routeInjector Interface = RouteInjector{
+					RouteMatcher: router,
+				}
+				if testCase.route == "" {
+					// Explicitly inject an empty route.
+					routeInjector = Func(func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							next.ServeHTTP(w, WithRouteName(r, ""))
+						})
+					})
+				}
+				handler := Merge(
+					routeInjector,
+					ClusterValidationMiddleware(testCase.serverCluster, nil, softValidation, NewInvalidClusterRequests(reg, "test"), logger),
+				).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 				}))
+				router.Handle("/Test/{argument}", handler)
 
 				recorder := httptest.NewRecorder()
-				req, err := http.NewRequest("GET", "/Test/Me", nil)
+				req, err := http.NewRequest("GET", urlPath, nil)
 				require.NoError(t, err)
 				if testCase.header != nil {
 					testCase.header(req)
 				}
-				handler.ServeHTTP(recorder, req)
+				router.ServeHTTP(recorder, req)
 				if softValidation {
 					require.Equal(t, http.StatusOK, recorder.Code)
 				} else {
@@ -245,10 +308,15 @@ func TestClusterValidationMiddleware(t *testing.T) {
 						err = json.Unmarshal(recorder.Body.Bytes(), &clusterValidationErr)
 						require.NoError(t, err)
 						require.Equal(t, testCase.expectedErrorMsg, clusterValidationErr.ClusterValidationErrorMessage)
+						if testCase.route != "" {
+							require.Equal(t, testCase.route, clusterValidationErr.Route)
+						} else {
+							require.Equal(t, "<unknown-route>", clusterValidationErr.Route)
+						}
 					}
 				}
 				if testCase.expectedLogs != "" {
-					require.True(t, bytes.Contains(buf.Bytes(), []byte(fmt.Sprintf(testCase.expectedLogs, softValidation))))
+					require.Contains(t, buf.String(), fmt.Sprintf(testCase.expectedLogs, softValidation))
 				}
 				err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "test_server_invalid_cluster_validation_label_requests_total")
 				require.NoError(t, err)
@@ -258,9 +326,11 @@ func TestClusterValidationMiddleware(t *testing.T) {
 }
 
 func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
+	const urlPath = "Test/Me"
 	testCases := map[string]struct {
 		softValidation       bool
 		requestPath          string
+		route                string
 		excludedPaths        []string
 		expectedStatusCode   int
 		expectedErrorMessage string
@@ -268,58 +338,66 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 	}{
 		"when soft validation is enabled and request path is excluded no error is returned": {
 			softValidation:       true,
-			requestPath:          "Test/Me",
-			excludedPaths:        []string{"Exclude/Me", "Test/Me", "Do/Not/Test/Me"},
+			requestPath:          urlPath,
+			excludedPaths:        []string{"Exclude/Me", urlPath, "Do/Not/Test/Me"},
 			expectedStatusCode:   http.StatusOK,
 			expectedErrorMessage: "",
 		},
 		"when soft validation is disabled and request path is excluded no error is returned": {
 			softValidation:       false,
-			requestPath:          "Test/Me",
-			excludedPaths:        []string{"Exclude/Me", "Test/Me", "Do/Not/Test/Me"},
+			requestPath:          urlPath,
+			excludedPaths:        []string{"Exclude/Me", urlPath, "Do/Not/Test/Me"},
 			expectedStatusCode:   http.StatusOK,
 			expectedErrorMessage: "",
 		},
 		"when soft validation is disabled and request path is implicitly excluded no error is returned": {
 			softValidation:       false,
 			requestPath:          "metrics",
-			excludedPaths:        []string{"Exclude/Me", "Test/Me", "Do/Not/Test/Me"},
+			excludedPaths:        []string{"Exclude/Me", urlPath, "Do/Not/Test/Me"},
 			expectedStatusCode:   http.StatusOK,
 			expectedErrorMessage: "",
 		},
 		"when soft validation is enabled and request path is not excluded no error is returned": {
 			softValidation:       true,
-			requestPath:          "Test/Me",
+			requestPath:          urlPath,
+			route:                "/" + urlPath,
 			excludedPaths:        []string{"Exclude/Me", "Do/Not/Test/Me"},
 			expectedStatusCode:   http.StatusOK,
 			expectedErrorMessage: "",
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
-                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="server-cluster",method="/Test/Me",protocol="http",request_cluster_validation_label="client-cluster"} 1
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="server-cluster",method="test_argument",protocol="http",request_cluster_validation_label="client-cluster"} 1
 			`,
 		},
 		"when soft validation is disabled and request path is not excluded an error is returned": {
 			softValidation:       false,
-			requestPath:          "Test/Me",
+			requestPath:          urlPath,
+			route:                "/" + urlPath,
 			excludedPaths:        []string{"Exclude/Me", "Do/Not/Test/Me"},
 			expectedStatusCode:   http.StatusNetworkAuthenticationRequired,
 			expectedErrorMessage: `rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`,
 			expectedMetrics: `
                                 # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
                                 # TYPE test_server_invalid_cluster_validation_label_requests_total counter
-                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="server-cluster",method="/Test/Me",protocol="http",request_cluster_validation_label="client-cluster"} 1
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="server-cluster",method="test_argument",protocol="http",request_cluster_validation_label="client-cluster"} 1
 			`,
 		},
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			invalidClusterRequests := NewInvalidClusterRequests(reg, "test")
-			m := ClusterValidationMiddleware("server-cluster", testCase.excludedPaths, testCase.softValidation, invalidClusterRequests, log.NewNopLogger())
-			handler := Merge(m).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			router := mux.NewRouter()
+			routeInjector := RouteInjector{
+				RouteMatcher: router,
+			}
+			handler := Merge(
+				routeInjector,
+				ClusterValidationMiddleware("server-cluster", testCase.excludedPaths, testCase.softValidation, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger()),
+			).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
+			router.Handle("/Test/{argument}", handler)
 
 			recorder := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:8080/%s", testCase.requestPath), nil)

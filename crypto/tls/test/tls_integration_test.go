@@ -37,6 +37,7 @@ import (
 const (
 	mismatchCAAndCerts         = "remote error: tls: unknown certificate authority"
 	badCertificateErrorMessage = "remote error: tls: certificate required"
+	tcpNetwork                 = "tcp"
 )
 
 type tcIntegrationClientServer struct {
@@ -59,17 +60,23 @@ func (h *grpcHealthCheck) Check(_ context.Context, _ *grpc_health_v1.HealthCheck
 	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
 }
 
+func (h *grpcHealthCheck) List(ctx context.Context, _ *grpc_health_v1.HealthListRequest) (*grpc_health_v1.HealthListResponse, error) {
+	statuses := make(map[string]*grpc_health_v1.HealthCheckResponse)
+	statuses["server"], _ = h.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+	return &grpc_health_v1.HealthListResponse{Statuses: statuses}, nil
+}
+
 func (h *grpcHealthCheck) Watch(_ *grpc_health_v1.HealthCheckRequest, _ grpc_health_v1.Health_WatchServer) error {
 	return status.Error(codes.Unimplemented, "Watching is not supported")
 }
 
 func getLocalHostAddr() (*net.TCPAddr, error) {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	addr, err := net.ResolveTCPAddr(tcpNetwork, "[::]:0")
 	if err != nil {
 		return nil, err
 	}
 
-	l, err := net.ListenTCP("tcp", addr)
+	l, err := net.ListenTCP(tcpNetwork, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +159,7 @@ func newIntegrationClientServer(
 					strings.Contains(err.Error(), "broken pipe") ||
 					strings.Contains(err.Error(), "client conn could not be established")
 			}
-			for i := 0; i < 5 && isRST(err) && tc.httpExpectError != nil; i++ {
+			for i := 0; i < 10 && isRST(err) && tc.httpExpectError != nil; i++ {
 				t.Logf("Sleeping before retry #%d, due to RST error: %s", i+1, err)
 				time.Sleep(100 * time.Millisecond)
 				resp, err = client.Do(req)
@@ -171,7 +178,7 @@ func newIntegrationClientServer(
 			body, err := io.ReadAll(resp.Body)
 			assert.NoError(t, err, tc.name)
 
-			assert.Equal(t, []byte("OK"), body, tc.name)
+			assert.Equal(t, []byte("OK"), body, tc.name, string(body))
 		})
 
 		// GRPC
@@ -556,7 +563,6 @@ func setupCertificates(t *testing.T) keyMaterial {
 		require.NoError(t, err)
 		_, err = io.Copy(dst, src2)
 		require.NoError(t, err)
-
 	}()
 
 	client1CertFile := filepath.Join(testCADir, "client-1.crt")

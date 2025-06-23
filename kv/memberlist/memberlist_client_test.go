@@ -2365,3 +2365,67 @@ func TestMemberlist_WatchKey_ShouldStartNotifyingChangesBeforeFullJoinIsComplete
 		})
 	}
 }
+
+// Every duration interval (100ms), cleanupObsoleteEntries() is called to remove obsolete entries from the KV store
+// After 5*duration interval (500ms), notifications are sent to the appropriate keys. Since the entry is already deleted,
+// it should generate a nil notification that will never be processed.
+func TestWatchPrefixHandlesGracefullyNotificationForAlreadyDeletedEntry(t *testing.T) {
+	c := dataCodec{}
+
+	duration := 100 * time.Millisecond
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+		BindPort:  0, // randomize ports
+	}
+	cfg.ClusterLabelVerificationDisabled = true
+	cfg.Codecs = []codec.Codec{c}
+
+	cfg.ObsoleteEntriesTimeout = duration
+	cfg.NotifyInterval = 5 * duration // 5 * ObsoleteEntriesTimeout to ensure the entry is deleted before sending the notification
+
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
+
+	kv, err := NewClient(mkv, c)
+	require.NoError(t, err)
+
+	const key = "test"
+
+	val := get(t, kv, key)
+	if val != nil {
+		t.Error("Expected nil, got:", val)
+	}
+
+	done := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		kv.WatchPrefix(ctx, "test", func(s string, i interface{}) bool {
+			if i == nil {
+				t.Errorf("got nil notification for %q", s)
+			}
+			close(done)
+			return true
+		})
+	}()
+
+	// Create entry with key:  test
+	err = cas(kv, key, updateFn("test"))
+	require.NoError(t, err)
+
+	// Delete entry with key: test
+	err = kv.Delete(context.Background(), key)
+	if err != nil {
+		t.Fatalf("Failed to delete key %s: %v", key, err)
+	}
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+	}
+}

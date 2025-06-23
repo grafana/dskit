@@ -2,6 +2,9 @@ name: Find flaky tests
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   find-flaky-tests:
     strategy:

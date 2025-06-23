@@ -43,6 +43,11 @@ func (r *RingMock) GetReplicationSetForOperation(op Operation) (ReplicationSet, 
 	return args.Get(0).(ReplicationSet), args.Error(1)
 }
 
+func (r *RingMock) GetSubringForOperationStates(op Operation) ReadRing {
+	args := r.Called(op)
+	return args.Get(0).(ReadRing)
+}
+
 func (r *RingMock) ReplicationFactor() int {
 	return 0
 }

@@ -1,4 +1,4 @@
-package server
+package opentracingtest
 
 import (
 	"bytes"
@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/server"
 )
 
 // testObserver implements jaeger.ContribSpanObserver to collect an emitted span's attributes
@@ -204,7 +205,7 @@ func TestHTTPGRPCTracing(t *testing.T) {
 
 			var lvl log.Level
 			require.NoError(t, lvl.Set("info"))
-			cfg := Config{
+			cfg := server.Config{
 				HTTPListenAddress:        httpAddress,
 				HTTPListenPort:           httpPort,
 				GRPCListenAddress:        httpAddress,
@@ -215,26 +216,26 @@ func TestHTTPGRPCTracing(t *testing.T) {
 				LogLevel:                 lvl,
 				Registerer:               prometheus.NewPedanticRegistry(),
 			}
-			server, err := New(cfg)
+			srv, err := server.New(cfg)
 			require.NoError(t, err)
 
-			grpc_health_v1.RegisterHealthServer(server.GRPC, health.NewServer())
+			grpc_health_v1.RegisterHealthServer(srv.GRPC, health.NewServer())
 
 			handlerFunc := func(http.ResponseWriter, *http.Request) {}
 			if test.routeName != "" {
 				// explicitly-named routes will be labeled using the provided route name
-				server.HTTP.NewRoute().Name(test.routeName).Path(test.routeTmpl).HandlerFunc(handlerFunc)
+				srv.HTTP.NewRoute().Name(test.routeName).Path(test.routeTmpl).HandlerFunc(handlerFunc)
 			} else {
 				// unnamed routes will be labeled with their registered path template
-				server.HTTP.HandleFunc(test.routeTmpl, handlerFunc)
+				srv.HTTP.HandleFunc(test.routeTmpl, handlerFunc)
 			}
 
 			go func() {
-				require.NoError(t, server.Run())
+				require.NoError(t, srv.Run())
 			}()
-			t.Cleanup(server.Shutdown)
+			t.Cleanup(srv.Shutdown)
 
-			target := server.GRPCListenAddr()
+			target := srv.GRPCListenAddr()
 			conn, err := grpc.NewClient(
 				target.String(),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),

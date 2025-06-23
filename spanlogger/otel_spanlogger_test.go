@@ -223,7 +223,7 @@ func TestOTelSpanLogger_SetSpanAndLogTag(t *testing.T) {
 	require.Equal(t, expectedLogMessages, logged)
 }
 
-func TestOTelSpanCreatedWithTenantTag(t *testing.T) {
+func TestOTelSpanCreatedWithTenantAttribute(t *testing.T) {
 	t.Cleanup(spanExporter.Reset)
 
 	ctx := user.InjectOrgID(context.Background(), "team-a")
@@ -234,10 +234,24 @@ func TestOTelSpanCreatedWithTenantTag(t *testing.T) {
 	require.Len(t, spans, 1, "There should be exactly one span after the span is finished")
 	exportedSpan := spans[0]
 
-	require.Equal(t, []attribute.KeyValue{attribute.String(TenantIDsTagName, "team-a")}, exportedSpan.Attributes)
+	require.Equal(t, []attribute.KeyValue{attribute.StringSlice(TenantIDsTagName, []string{"team-a"})}, exportedSpan.Attributes)
 }
 
-func TestOTelSpanCreatedWithoutTenantTag(t *testing.T) {
+func TestOTelSpanCreatedWithMultipleTenantsAttribute(t *testing.T) {
+	t.Cleanup(spanExporter.Reset)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b")
+	sp, _ := NewOTel(ctx, log.NewNopLogger(), tracer, "name", tenant.NewMultiResolver())
+	sp.Finish()
+
+	spans := spanExporter.GetSpans()
+	require.Len(t, spans, 1, "There should be exactly one span after the span is finished")
+	exportedSpan := spans[0]
+
+	require.Equal(t, []attribute.KeyValue{attribute.StringSlice(TenantIDsTagName, []string{"team-a", "team-b"})}, exportedSpan.Attributes)
+}
+
+func TestOTelSpanCreatedWithoutTenantAttribute(t *testing.T) {
 	t.Cleanup(spanExporter.Reset)
 
 	sp, _ := NewOTel(context.Background(), log.NewNopLogger(), tracer, "name", tenant.NewMultiResolver())

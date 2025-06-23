@@ -2,72 +2,21 @@ package tracing
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace/noop"
+	"go.uber.org/goleak"
 )
 
-func TestParseAttributes(t *testing.T) {
-	os.Setenv("EXISTENT_ENV_KEY", "env_value")
-	defer os.Unsetenv("EXISTENT_ENV_KEY")
-	t.Run("ValidAttributes", func(t *testing.T) {
-		tests := []struct {
-			input          string
-			expectedOutput []attribute.KeyValue
-			expectedError  error
-		}{
-			{
-				input: "key1=value1,key2=value2",
-				expectedOutput: []attribute.KeyValue{
-					attribute.String("key1", "value1"),
-					attribute.String("key2", "value2"),
-				},
-				expectedError: nil,
-			},
-			{
-				input: "key1=${EXISTENT_ENV_KEY},key2=${NON_EXISTENT_ENV_KEY:default_value}",
-				expectedOutput: []attribute.KeyValue{
-					attribute.String("key1", "env_value"),
-					attribute.String("key2", "default_value"),
-				},
-				expectedError: nil,
-			},
-		}
-
-		for _, test := range tests {
-			output, err := parseJaegerTags(test.input)
-			assert.Equal(t, test.expectedOutput, output)
-			assert.Equal(t, test.expectedError, err)
-		}
-	})
-
-	t.Run("InvalidAttributes", func(t *testing.T) {
-		tests := []struct {
-			input         string
-			expectedError string
-		}{
-			{
-				input:         "key1=value1,key2",
-				expectedError: fmt.Sprintf("invalid tag \"%s\", expected key=value", "key2"),
-			},
-			{
-				input:         "key1=value1,key2=",
-				expectedError: fmt.Sprintf("invalid tag \"%s\", expected key=value", "key2="),
-			},
-		}
-
-		for _, test := range tests {
-			_, err := parseJaegerTags(test.input)
-			assert.Error(t, err, test.expectedError)
-		}
-	})
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }
 
 func TestExtractSampledTraceID(t *testing.T) {
@@ -143,4 +92,226 @@ func TestNewResource(t *testing.T) {
 	require.NotNil(t, res)
 	require.Contains(t, res.Attributes(), attribute.String("service.name", "test-service"))
 	require.Contains(t, res.Attributes(), attribute.String("test.key", "test.value"))
+}
+
+func TestNewOTelFromEnv(t *testing.T) {
+	t.Run("with none exporter", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_EXPORTER")()
+
+		// Set to none to avoid actual export
+		os.Setenv("OTEL_TRACES_EXPORTER", "none")
+
+		closer, err := NewOTelFromEnv("test-service", log.NewNopLogger())
+		require.NoError(t, err)
+		require.NotNil(t, closer)
+		defer closer.Close()
+
+		// Verify tracer provider is configured
+		tp := otel.GetTracerProvider()
+		require.NotNil(t, tp)
+
+		// Verify we can create spans
+		tr := tp.Tracer("test")
+		_, span := tr.Start(context.Background(), "test-operation")
+		defer span.End()
+
+		require.True(t, span.SpanContext().IsValid())
+	})
+
+	t.Run("with custom resource attributes", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_EXPORTER")()
+
+		os.Setenv("OTEL_TRACES_EXPORTER", "none")
+
+		closer, err := NewOTelFromEnv("test-service", log.NewNopLogger(),
+			WithResourceAttributes(
+				attribute.String("service.version", "1.0.0"),
+				attribute.String("deployment.environment", "test"),
+			),
+		)
+		require.NoError(t, err)
+		require.NotNil(t, closer)
+		defer closer.Close()
+	})
+
+	t.Run("with pyroscope disabled", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_EXPORTER")()
+
+		os.Setenv("OTEL_TRACES_EXPORTER", "none")
+
+		closer, err := NewOTelFromEnv("test-service", log.NewNopLogger(), WithPyroscopeDisabled())
+		require.NoError(t, err)
+		require.NotNil(t, closer)
+		defer closer.Close()
+	})
+}
+
+func TestMaybeJaegerRemoteSamplerFromEnv(t *testing.T) {
+	t.Run("no sampler configured", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+		os.Unsetenv("OTEL_TRACES_SAMPLER")
+		os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
+
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
+		require.NoError(t, err)
+		require.False(t, ok)
+		require.Nil(t, sampler)
+	})
+
+	t.Run("jaeger_remote sampler with valid args", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
+		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=5000,initialSamplingRate=0.25")
+
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.NotNil(t, sampler)
+
+		// Clean up sampler to avoid goroutine leak. Don't check the type, it should always be closeable.
+		sampler.(interface{ Close() }).Close()
+
+		// Verify that OTEL_TRACES_SAMPLER env was unset.
+		_, found := os.LookupEnv("OTEL_TRACES_SAMPLER")
+		require.False(t, found, "OTEL_TRACES_SAMPLER should not be set after creating sampler")
+	})
+
+	t.Run("parentbased_jaeger_remote sampler", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+		os.Setenv("OTEL_TRACES_SAMPLER", "parentbased_jaeger_remote")
+		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=5000")
+
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.NotNil(t, sampler)
+
+		// Clean up sampler to avoid goroutine leak. Don't check the type, it should always be closeable.
+		sampler.(interface{ Close() }).Close()
+	})
+
+	t.Run("missing sampler args", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
+		os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
+
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
+		require.Error(t, err)
+		require.False(t, ok)
+		require.Nil(t, sampler)
+		require.Contains(t, err.Error(), "OTEL_TRACES_SAMPLER_ARG is not set")
+	})
+
+	t.Run("missing endpoint in args", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
+		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "pollingIntervalMs=5000,initialSamplingRate=0.25")
+
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
+		require.Error(t, err)
+		require.False(t, ok)
+		require.Nil(t, sampler)
+		require.Contains(t, err.Error(), "endpoint is not set")
+	})
+
+	t.Run("invalid polling interval", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
+		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,pollingIntervalMs=invalid")
+
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
+		require.Error(t, err)
+		require.False(t, ok)
+		require.Nil(t, sampler)
+		require.Contains(t, err.Error(), "invalid pollingIntervalMs value")
+	})
+
+	t.Run("invalid initial sampling rate", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+		os.Setenv("OTEL_TRACES_SAMPLER", "jaeger_remote")
+		os.Setenv("OTEL_TRACES_SAMPLER_ARG", "endpoint=http://localhost:14250,initialSamplingRate=2.0")
+
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
+		require.Error(t, err)
+		require.False(t, ok)
+		require.Nil(t, sampler)
+		require.Contains(t, err.Error(), "initialSamplingRate value set in OTEL_TRACES_SAMPLER_ARG must be between 0 and 1")
+	})
+
+	t.Run("other sampler type", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+		os.Setenv("OTEL_TRACES_SAMPLER", "always_on")
+
+		sampler, ok, err := maybeJaegerRemoteSamplerFromEnv("test-service")
+		require.NoError(t, err)
+		require.False(t, ok)
+		require.Nil(t, sampler)
+	})
+}
+
+func TestOTelPropagatorsFromEnv(t *testing.T) {
+	t.Run("default propagators when env not set", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
+
+		os.Unsetenv("OTEL_PROPAGATORS")
+
+		propagators := OTelPropagatorsFromEnv()
+		require.Len(t, propagators, 3)
+	})
+
+	t.Run("custom propagators from env", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
+
+		os.Setenv("OTEL_PROPAGATORS", "tracecontext,baggage")
+
+		propagators := OTelPropagatorsFromEnv()
+		require.Len(t, propagators, 2)
+	})
+
+	t.Run("none propagator", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
+
+		os.Setenv("OTEL_PROPAGATORS", "none")
+
+		propagators := OTelPropagatorsFromEnv()
+		require.Nil(t, propagators)
+	})
+
+	t.Run("jaeger propagator", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
+
+		os.Setenv("OTEL_PROPAGATORS", "jaeger")
+
+		propagators := OTelPropagatorsFromEnv()
+		require.Len(t, propagators, 1)
+	})
+}
+
+func saveEnvAndRestoreDeferred(vars ...string) func() {
+	originalValues := make(map[string]string)
+	for _, v := range vars {
+		originalValues[v] = os.Getenv(v)
+	}
+
+	return func() {
+		for _, v := range vars {
+			if originalValue, exists := originalValues[v]; exists {
+				if originalValue == "" {
+					os.Unsetenv(v)
+				} else {
+					os.Setenv(v, originalValue)
+				}
+			} else {
+				os.Unsetenv(v)
+			}
+		}
+	}
 }

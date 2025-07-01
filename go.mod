@@ -54,10 +54,10 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.35.0
 	go.opentelemetry.io/contrib/samplers/jaegerremote v0.30.0
-	go.opentelemetry.io/otel v1.36.0
+	go.opentelemetry.io/otel v1.37.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0
-	go.opentelemetry.io/otel/sdk v1.36.0
-	go.opentelemetry.io/otel/trace v1.36.0
+	go.opentelemetry.io/otel/sdk v1.37.0
+	go.opentelemetry.io/otel/trace v1.37.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
@@ -81,7 +81,7 @@ require (
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/btree v1.1.2 // indirect
@@ -124,7 +124,7 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.36.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.36.0 // indirect
 	go.opentelemetry.io/otel/log v0.12.2 // indirect
-	go.opentelemetry.io/otel/metric v1.36.0 // indirect
+	go.opentelemetry.io/otel/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.12.2 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.36.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.6.0 // indirect

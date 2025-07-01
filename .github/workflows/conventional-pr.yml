@@ -1,4 +1,4 @@
-name: Check conventional commits
+name: Conventional PR
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   conventional-commit:
-    name: Conventional commit
+    name: PR title follows conventional commit style
     runs-on: ubuntu-latest
     steps:
       - uses: amannn/action-semantic-pull-request@0723387faaf9b38adef4775cd42cfd5155ed6017 # v5.5.3
@@ -29,8 +29,8 @@ jobs:
             chore
             revert
           requireScope: false
-          subjectPattern: ^[A-Z].+$
+          subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |
             The subject "{subject}" found in the pull request title "{title}"
             didn't match the configured pattern. Please ensure that the subject
-            starts with an uppercase letter.
+            doesn't start with an uppercase character.

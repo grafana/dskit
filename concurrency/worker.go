@@ -1,6 +1,10 @@
 package concurrency
 
-import "go.uber.org/atomic"
+import (
+	"math"
+
+	"go.uber.org/atomic"
+)
 
 // NewReusableGoroutinesPool creates a new worker pool with the given size.
 // Workers are created on demand as they're needed up to the specified size.
@@ -28,9 +32,12 @@ func (p *ReusableGoroutinesPool) Go(f func()) {
 	select {
 	case p.jobs <- f:
 	default:
-		if p.pending.Dec() >= 0 {
+		if pending := p.pending.Dec(); pending >= 0 {
 			p.newWorker(f)
 			return
+		} else if pending < math.MinInt64/2 {
+			// Wow, that's a lot of goroutines created, make sure we don't overflow.
+			p.pending.Store(0)
 		}
 		go f()
 	}

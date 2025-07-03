@@ -150,7 +150,7 @@ func TestIsDynamicNode(t *testing.T) {
 
 func TestResolverType(t *testing.T) {
 	t.Run("set valid types", func(t *testing.T) {
-		for _, val := range []string{"golang", "miekgdns", "miekgdns2"} {
+		for _, val := range []string{"golang", "miekgdns"} {
 			var rt ResolverType
 			require.NoError(t, rt.Set(val))
 			require.Equal(t, val, rt.String())

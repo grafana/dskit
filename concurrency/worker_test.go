@@ -28,14 +28,14 @@ func TestReusableGoroutinesPool(t *testing.T) {
 
 	const workerCount = 2
 	w := NewReusableGoroutinesPool(workerCount)
-	require.Equal(t, workerCount, countGoroutines())
+	require.Equal(t, 0, countGoroutines())
 
 	// Wait a little bit so both goroutines would be waiting on the jobs chan.
 	time.Sleep(10 * time.Millisecond)
 
 	ch := make(chan struct{})
 	w.Go(func() { <-ch })
-	require.Equal(t, workerCount, countGoroutines())
+	require.Equal(t, 1, countGoroutines())
 	w.Go(func() { <-ch })
 	require.Equal(t, workerCount, countGoroutines())
 	w.Go(func() { <-ch })
@@ -43,10 +43,7 @@ func TestReusableGoroutinesPool(t *testing.T) {
 
 	// end workloads, we should have only the workers again.
 	close(ch)
-	for i := 0; i < 1000; i++ {
-		if countGoroutines() == workerCount {
-			break
-		}
+	for i := 0; i < 1000 && countGoroutines() >= workerCount; i++ {
 		time.Sleep(time.Millisecond)
 	}
 	require.Equal(t, workerCount, countGoroutines())

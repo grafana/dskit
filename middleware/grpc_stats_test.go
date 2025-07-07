@@ -674,7 +674,7 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 	))
 
 	for i := 0; i < b.N; i++ {
-		numRoutines := 10000
+		numRoutines := 10
 
 		wg := sync.WaitGroup{}
 		wg.Add(numRoutines)
@@ -682,25 +682,21 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 			go func(i int) {
 				defer wg.Done()
 
-				// Open 3, close 3
-				connID := fmt.Sprintf("conn%d", i%10)
+				connID := fmt.Sprintf("conn%d", i)
 				tracker.OpenConn(connID)
-				tracker.OpenStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.OpenStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.CloseStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.OpenStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.CloseStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.CloseStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.OpenStream(connID)
-				tracker.OpenStream(connID)
-				tracker.CloseStream(connID)
-				tracker.CloseStream(connID)
+
+				for j := 0; j < 1000; j++ {
+					tracker.OpenStream(connID)
+					tracker.OpenStream(connID)
+					tracker.CloseStream(connID)
+					tracker.OpenStream(connID)
+					tracker.CloseStream(connID)
+					tracker.CloseStream(connID)
+					tracker.OpenStream(connID)
+					tracker.OpenStream(connID)
+					tracker.CloseStream(connID)
+					tracker.CloseStream(connID)
+				}
 				tracker.CloseConn(connID)
 			}(i)
 		}

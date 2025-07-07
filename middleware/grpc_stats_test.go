@@ -194,7 +194,11 @@ func TestGrpcStatsStreaming(t *testing.T) {
 			# HELP inflight_requests Current number of inflight requests.
 			# TYPE inflight_requests gauge
 			inflight_requests{method="gRPC", route="/middleware.EchoServer/Process"} 1
-		`), "inflight_requests")
+
+			# HELP grpc_concurrent_streams_by_conn_max The current number of concurrent streams in the connection with the most concurrent streams.
+			# TYPE grpc_concurrent_streams_by_conn_max gauge
+			grpc_concurrent_streams_by_conn_max{} 1
+		`), "inflight_requests", "grpc_concurrent_streams_by_conn_max")
 		require.NoError(t, err)
 	}
 	require.NoError(t, s.CloseSend())
@@ -208,7 +212,11 @@ func TestGrpcStatsStreaming(t *testing.T) {
 			# HELP inflight_requests Current number of inflight requests.
 			# TYPE inflight_requests gauge
 			inflight_requests{method="gRPC", route="/middleware.EchoServer/Process"} 0
-		`), "inflight_requests")
+
+			# HELP grpc_concurrent_streams_by_conn_max The current number of concurrent streams in the connection with the most concurrent streams.
+			# TYPE grpc_concurrent_streams_by_conn_max gauge
+			grpc_concurrent_streams_by_conn_max{} 0
+		`), "inflight_requests", "grpc_concurrent_streams_by_conn_max")
 		if err == nil {
 			break
 		}
@@ -493,6 +501,9 @@ func TestGrpcStreamTracker(t *testing.T) {
 	conn0 := "conn0"
 	conn1 := "conn1"
 
+	tracker.OpenConn(conn0)
+	tracker.OpenConn(conn1)
+
 	// Open streams for conn0
 	tracker.OpenStream(conn0)
 	require.Equal(t, 1, tracker.MaxStreams())
@@ -526,6 +537,12 @@ func TestGrpcStreamTracker(t *testing.T) {
 	tracker.CloseStream(conn1)
 	require.Equal(t, 0, tracker.MaxStreams()) // all streams closed
 
+	tracker.CloseConn(conn0)
+	require.Equal(t, 0, tracker.MaxStreams()) // all streams closed
+
+	tracker.CloseConn(conn1)
+	require.Equal(t, 0, tracker.MaxStreams()) // all streams closed
+
 	// Test concurrent operations
 	// Open streams for conn0, conn1, conn2
 	var wg sync.WaitGroup
@@ -533,6 +550,7 @@ func TestGrpcStreamTracker(t *testing.T) {
 	streamsPerConn := 300
 
 	for connIndex, conn := range conns {
+		tracker.OpenConn(conn)
 		wg.Add(1)
 		go func(connIndex int, conn string) {
 			defer wg.Done()
@@ -579,6 +597,11 @@ func TestGrpcStreamTracker(t *testing.T) {
 		tracker.CloseStream("conn1")
 		require.Equal(t, curr-1, tracker.MaxStreams())
 	}
+
+	tracker.CloseConn("conn0")
+	tracker.CloseConn("conn1")
+	tracker.CloseConn("conn2")
+	require.Equal(t, 0, tracker.MaxStreams()) // all streams closed
 }
 
 func BenchmarkStreamTracker(b *testing.B) {
@@ -589,34 +612,29 @@ func BenchmarkStreamTracker(b *testing.B) {
 		prometheus.Labels{},
 	))
 	numConns := 1000
-	existingConnIDs := make([]string, numConns)
+	connIDs := make([]string, numConns)
 	for i := 0; i < numConns; i++ {
-		existingConnIDs[i] = fmt.Sprintf("conn%d", i)
+		connIDs[i] = fmt.Sprintf("conn%d", i)
+		tracker.OpenConn(connIDs[i])
 	}
-	newConnIDs := make([]string, numConns)
-	for i := 0; i < numConns; i++ {
-		newConnIDs[i] = fmt.Sprintf("conn%d", i+numConns)
-	}
-	connIDs := append(existingConnIDs, newConnIDs...)
 
 	// Bootstrap a bit of streams to make sure we have a bit of load
 	for i := 0; i < numConns*1000; i++ {
-		connID := existingConnIDs[mathRand.Intn(numConns)]
+		connID := connIDs[mathRand.Intn(numConns)]
 		tracker.OpenStream(connID)
 	}
 
-	// Benchmark opening streams
-	b.Run("OpenStreamOnExistingConn", func(b *testing.B) {
+	// Benchmark opening connections
+	b.Run("OpenConn", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			connID := existingConnIDs[mathRand.Intn(numConns)]
-			tracker.OpenStream(connID)
+			tracker.OpenConn(fmt.Sprintf("OpenConn%d", i))
 		}
 	})
 
-	// Benchmark opening streams on new connections
-	b.Run("OpenStreamOnNewConn", func(b *testing.B) {
+	// Benchmark opening streams
+	b.Run("OpenStream", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			connID := newConnIDs[mathRand.Intn(numConns)]
+			connID := connIDs[mathRand.Intn(numConns)]
 			tracker.OpenStream(connID)
 		}
 	})
@@ -630,10 +648,21 @@ func BenchmarkStreamTracker(b *testing.B) {
 
 	b.Run("CloseStream", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			connID := connIDs[mathRand.Intn(numConns*2)]
+			connID := connIDs[mathRand.Intn(numConns)]
 			tracker.CloseStream(connID)
 		}
 	})
+
+	// Benchmark opening and closing connections
+	// Can't really do a close conn benchmark because we don't necessarily have enough connections open to close.
+	b.Run("OpenAndCloseConn", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			connID := fmt.Sprintf("OpenAndCloseConn%d", i)
+			tracker.OpenConn(connID)
+			tracker.CloseConn(connID)
+		}
+	})
+
 }
 
 func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
@@ -655,6 +684,7 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 
 				// Open 3, close 3
 				connID := fmt.Sprintf("conn%d", i%10)
+				tracker.OpenConn(connID)
 				tracker.OpenStream(connID)
 				time.Sleep(time.Millisecond)
 				tracker.OpenStream(connID)
@@ -671,6 +701,7 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 				tracker.OpenStream(connID)
 				tracker.CloseStream(connID)
 				tracker.CloseStream(connID)
+				tracker.CloseConn(connID)
 			}(i)
 		}
 

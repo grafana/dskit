@@ -99,8 +99,18 @@ func (g *grpcStatsHandler) TagConn(ctx context.Context, conn *stats.ConnTagInfo)
 	return ctx
 }
 
-func (g *grpcStatsHandler) HandleConn(_ context.Context, _ stats.ConnStats) {
-	// Not interested.
+func (g *grpcStatsHandler) HandleConn(ctx context.Context, connStats stats.ConnStats) {
+	connID, hasConnID := ctx.Value(contextKeyConnID).(string)
+	if !hasConnID {
+		return
+	}
+
+	switch connStats.(type) {
+	case *stats.ConnBegin:
+		g.grpcConcurrentStreamsTracker.OpenConn(connID)
+	case *stats.ConnEnd:
+		g.grpcConcurrentStreamsTracker.CloseConn(connID)
+	}
 }
 
 // StreamTracker tracks the number of streams per connection and the max.
@@ -118,15 +128,16 @@ func NewStreamTracker(grpcConcurrentStreamsByConnMax *prometheus.Desc) *StreamTr
 	}
 }
 
-func (st *StreamTracker) createOrGetConnEntry(connID string) *atomic.Int32 {
+func (st *StreamTracker) OpenConn(connID string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	got, ok := st.connMap[connID] // Do not overwrite new entries.
-	if !ok {
-		st.connMap[connID] = atomic.NewInt32(0)
-		return st.connMap[connID]
-	}
-	return got
+	st.connMap[connID] = atomic.NewInt32(0)
+}
+
+func (st *StreamTracker) CloseConn(connID string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	delete(st.connMap, connID)
 }
 
 func (st *StreamTracker) OpenStream(connID string) {
@@ -134,30 +145,19 @@ func (st *StreamTracker) OpenStream(connID string) {
 	conn, ok := st.connMap[connID]
 	st.mu.RUnlock()
 	if !ok {
-		conn = st.createOrGetConnEntry(connID)
+		return
 	}
 	conn.Inc()
 }
 
 func (st *StreamTracker) CloseStream(connID string) {
 	st.mu.RLock()
-	conn := st.connMap[connID]
+	conn, ok := st.connMap[connID]
 	st.mu.RUnlock()
-	if conn == nil {
+	if !ok {
 		return
 	}
-	if res := conn.Dec(); res == 0 {
-		// Delete the entry if it's empty.
-		st.mu.Lock()
-
-		// Get the entry again to avoid race condition.
-		conn = st.connMap[connID]
-		if conn == nil || conn.Load() == 0 {
-			delete(st.connMap, connID)
-		}
-
-		st.mu.Unlock()
-	}
+	conn.Dec()
 }
 
 // MaxStreams returns the number of streams in the connection with the most streams.

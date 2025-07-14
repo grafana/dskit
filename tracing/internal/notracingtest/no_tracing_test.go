@@ -42,11 +42,18 @@ func TestNoTracingConfigured(t *testing.T) {
 
 func ensureTracingDoesNotLogErrors(t *testing.T, logger mockLogger) {
 	tracer := otel.Tracer("test")
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		for t.Context().Err() == nil {
-			// Generate A LOT of spans, so exporter will be forced to export them if configured.
-			_, sp := tracer.Start(context.Background(), "test-operation")
-			sp.End()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				// Generate A LOT of spans, so exporter will be forced to export them if configured.
+				_, sp := tracer.Start(context.Background(), "test-operation")
+				sp.End()
+			}
 		}
 	}()
 

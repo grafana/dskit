@@ -447,6 +447,64 @@ func TestBasicLifecycler_ChangeState(t *testing.T) {
 	}
 }
 
+func TestBasicLifecycler_ChangeReadOnlyState(t *testing.T) {
+	ctx := context.Background()
+	cfg := prepareBasicLifecyclerConfig()
+	lifecycler, _, store, err := prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+
+	// Read the default state.
+	{
+		readOnly, readOnlySince := lifecycler.GetReadOnlyState()
+		require.False(t, readOnly)
+		require.Zero(t, readOnlySince)
+
+		// Assert on the instance read-only state read from the ring.
+		desc, ok := getInstanceFromStore(t, store, testInstanceID)
+		assert.True(t, ok)
+		readOnly, readOnlySince = desc.GetReadOnlyState()
+		require.False(t, readOnly)
+		require.Zero(t, readOnlySince)
+	}
+
+	// Change the read-only state to true.
+	{
+		readOnlyChange := time.Now()
+		err := lifecycler.ChangeReadOnlyState(context.Background(), true)
+		require.NoError(t, err)
+
+		// Assert on the instance read-only state read from the ring.
+		desc, ok := getInstanceFromStore(t, store, testInstanceID)
+		assert.True(t, ok)
+		readOnly, readOnlySince := desc.GetReadOnlyState()
+		require.True(t, readOnly)
+		require.InDelta(t, readOnlySince.Sub(readOnlyChange), 0, float64(time.Second))
+	}
+
+	// Let the clock advance a little bit.
+	// Read only timestamp has seconds precision.
+	time.Sleep(time.Second + 500*time.Millisecond)
+
+	// Change the read-only state to false.
+	{
+		_, prevReadOnlySince := lifecycler.GetReadOnlyState()
+		require.NotZero(t, prevReadOnlySince)
+
+		err := lifecycler.ChangeReadOnlyState(context.Background(), false)
+		require.NoError(t, err)
+
+		// Assert on the instance read-only state read from the ring.
+		desc, ok := getInstanceFromStore(t, store, testInstanceID)
+		assert.True(t, ok)
+		readOnly, readOnlySince := desc.GetReadOnlyState()
+		require.False(t, readOnly)
+		// Since this has seconds precision we can forget about monotonic clocks and just assert that new timestamp is higher.
+		require.True(t, readOnlySince.After(prevReadOnlySince))
+	}
+}
+
 func TestBasicLifecycler_TokensObservePeriod(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()

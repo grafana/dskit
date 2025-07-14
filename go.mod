@@ -37,9 +37,9 @@ require (
 	github.com/pires/go-proxyproto v0.7.0
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
-	github.com/prometheus/client_golang v1.22.0
+	github.com/prometheus/client_golang v1.22.1-0.20250714112350-b3c02a766eb9
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.64.0
+	github.com/prometheus/common v0.65.1-0.20250714091050-c6ae72fb63e9
 	github.com/prometheus/exporter-toolkit v0.10.1-0.20230714054209-2f4150c63f97
 	github.com/sercand/kuberesolver/v6 v6.0.0
 	github.com/stretchr/testify v1.10.0
@@ -61,8 +61,8 @@ require (
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
-	golang.org/x/net v0.40.0
-	golang.org/x/sync v0.14.0
+	golang.org/x/net v0.41.0
+	golang.org/x/sync v0.15.0
 	golang.org/x/time v0.1.0
 	google.golang.org/grpc v1.72.1
 	gopkg.in/yaml.v2 v2.4.0
@@ -130,12 +130,12 @@ require (
 	go.opentelemetry.io/proto/otlp v1.6.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
-	golang.org/x/crypto v0.38.0 // indirect
-	golang.org/x/mod v0.18.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
+	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
-	golang.org/x/tools v0.22.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/tools v0.33.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250519155744-55703ea1f237 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250519155744-55703ea1f237 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect

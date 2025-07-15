@@ -1,7 +1,10 @@
 package ring
 
 import (
+	"cmp"
 	"context"
+	"maps"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -269,6 +272,86 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 			return lifecycler.State() == services.Failed
 		}, time.Second, eventuallyTick)
 	})
+
+	t.Run("should register and unregister with multi-owner ID when multiple partition ownership is enabled", func(t *testing.T) {
+		t.Parallel()
+
+		const instanceID1 = "instance-zone-a-1"
+		const instanceID2 = "instance-zone-b-1"
+
+		lifecyclerInstance1Partition1Config := createTestMultipartitionOwnershipPartitionInstanceLifecyclerConfig(1, instanceID1)
+		lifecyclerInstance1Partition2Config := createTestMultipartitionOwnershipPartitionInstanceLifecyclerConfig(2, instanceID1)
+		lifecyclerInstance2Partition1Config := createTestMultipartitionOwnershipPartitionInstanceLifecyclerConfig(1, instanceID2)
+
+		store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
+		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+		// Start instance-zone-a-1 lifecycler for partition 1.
+		lifecyclerInstance1Partition1 := NewPartitionInstanceLifecycler(lifecyclerInstance1Partition1Config, "test", ringKey, store, logger, nil)
+		lifecyclerInstance1Partition1.SetRemoveOwnerOnShutdown(true)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecyclerInstance1Partition1))
+
+		assertMapElementsMatch(t, map[int32][]string{
+			1: {multiPartitionOwnerInstanceID(instanceID1, 1)},
+		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
+
+		// Start instance-zone-a-1 lifecycler for partition 2.
+		lifecyclerInstance1Partition2 := NewPartitionInstanceLifecycler(lifecyclerInstance1Partition2Config, "test", ringKey, store, logger, nil)
+		lifecyclerInstance1Partition2.SetRemoveOwnerOnShutdown(false)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecyclerInstance1Partition2))
+
+		assertMapElementsMatch(t, map[int32][]string{
+			1: {multiPartitionOwnerInstanceID(instanceID1, 1)},
+			2: {multiPartitionOwnerInstanceID(instanceID1, 2)},
+		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
+
+		// Start instance-zone-b-1 lifecycler for partition 1.
+		lifecyclerInstance2Partition1 := NewPartitionInstanceLifecycler(lifecyclerInstance2Partition1Config, "test", ringKey, store, logger, nil)
+		lifecyclerInstance2Partition1.SetRemoveOwnerOnShutdown(true)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecyclerInstance2Partition1))
+
+		assertMapElementsMatch(t, map[int32][]string{
+			1: {
+				multiPartitionOwnerInstanceID(instanceID1, 1),
+				multiPartitionOwnerInstanceID(instanceID2, 1),
+			},
+			2: {multiPartitionOwnerInstanceID(instanceID1, 2)},
+		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
+
+		// Shutdown lifecyclerInstance1Partition1, this should remove the owner for partition 1.
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecyclerInstance1Partition1))
+
+		assertMapElementsMatch(t, map[int32][]string{
+			1: {multiPartitionOwnerInstanceID(instanceID2, 1)},
+			2: {multiPartitionOwnerInstanceID(instanceID1, 2)},
+		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
+
+		// Shutdown lifecyclerInstance1Partition2, this should *NOT* remove the owner for partition 2, because "remove on shutdown" was disabled.
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecyclerInstance1Partition2))
+		assertMapElementsMatch(t, map[int32][]string{
+			1: {multiPartitionOwnerInstanceID(instanceID2, 1)},
+			2: {multiPartitionOwnerInstanceID(instanceID1, 2)},
+		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
+
+		// Shutdown lifecyclerInstance2Partition1, this should remove the owner for partition 1.
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecyclerInstance2Partition1))
+		assertMapElementsMatch(t, map[int32][]string{
+			2: {multiPartitionOwnerInstanceID(instanceID1, 2)},
+		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
+	})
+}
+
+func assertMapElementsMatch[K cmp.Ordered, V any, S ~[]V](t *testing.T, expected map[K]S, actual map[K]S) {
+	t.Helper()
+	expectedKeys := slices.Sorted(maps.Keys(expected))
+	actualKeys := slices.Sorted(maps.Keys(actual))
+	require.Equal(t, expectedKeys, actualKeys, "expected keys do not match actual keys")
+
+	for _, k := range expectedKeys {
+		expectedValues := expected[k]
+		actualValues := actual[k]
+		assert.ElementsMatch(t, expectedValues, actualValues, "for key %v", k)
+	}
 }
 
 func TestPartitionInstanceLifecycler_GetAndChangePartitionState(t *testing.T) {
@@ -343,6 +426,18 @@ func createTestPartitionInstanceLifecyclerConfig(partitionID int32, instanceID s
 	return PartitionInstanceLifecyclerConfig{
 		PartitionID:                          partitionID,
 		InstanceID:                           instanceID,
+		WaitOwnersCountOnPending:             0,
+		WaitOwnersDurationOnPending:          0,
+		DeleteInactivePartitionAfterDuration: 0,
+		PollingInterval:                      10 * time.Millisecond,
+	}
+}
+
+func createTestMultipartitionOwnershipPartitionInstanceLifecyclerConfig(partitionID int32, instanceID string) PartitionInstanceLifecyclerConfig {
+	return PartitionInstanceLifecyclerConfig{
+		PartitionID:                          partitionID,
+		InstanceID:                           instanceID,
+		MultiPartitionOwnership:              true,
 		WaitOwnersCountOnPending:             0,
 		WaitOwnersDurationOnPending:          0,
 		DeleteInactivePartitionAfterDuration: 0,

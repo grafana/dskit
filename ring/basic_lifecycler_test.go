@@ -160,6 +160,12 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 
 				return testData.registerState, testData.registerTokens
 			}
+			var expectedReadOnly bool
+			var expectedReadOnlyUpdatedTimestamp int64
+			if testData.initialInstanceDesc != nil {
+				expectedReadOnly = testData.initialInstanceDesc.ReadOnly
+				expectedReadOnlyUpdatedTimestamp = testData.initialInstanceDesc.ReadOnlyUpdatedTimestamp
+			}
 
 			assert.Equal(t, testInstanceID, lifecycler.GetInstanceID())
 			assert.Equal(t, services.New, lifecycler.State())
@@ -169,6 +175,9 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
 			assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
 			assert.Zero(t, lifecycler.GetRegisteredAt())
+			readOnly, readOnlySince := lifecycler.GetReadOnlyState()
+			assert.False(t, readOnly)
+			assert.Zero(t, readOnlySince)
 
 			require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
 
@@ -178,6 +187,13 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			assert.True(t, lifecycler.IsRegistered())
 			assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
 			assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+			readOnly, readOnlySince = lifecycler.GetReadOnlyState()
+			assert.Equal(t, expectedReadOnly, readOnly)
+			if expectedReadOnlyUpdatedTimestamp > 0 {
+				assert.Equal(t, expectedReadOnlyUpdatedTimestamp, readOnlySince.Unix())
+			} else {
+				assert.Zero(t, readOnlySince)
+			}
 
 			// Assert on the instance registered within the ring.
 			instanceDesc, ok := getInstanceFromStore(t, store, testInstanceID)
@@ -187,6 +203,8 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			assert.Equal(t, testData.registerState, instanceDesc.GetState())
 			assert.Equal(t, testData.registerTokens, Tokens(instanceDesc.GetTokens()))
 			assert.Equal(t, cfg.Zone, instanceDesc.GetZone())
+			assert.Equal(t, expectedReadOnly, instanceDesc.ReadOnly)
+			assert.Equal(t, expectedReadOnlyUpdatedTimestamp, instanceDesc.ReadOnlyUpdatedTimestamp)
 
 			// The expected registered timestamp is "now" if the instance didn't exist in the ring yet
 			// or the already existing value.

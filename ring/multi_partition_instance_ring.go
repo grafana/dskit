@@ -91,6 +91,7 @@ func (r *MultiPartitionInstanceRing) GetReplicationSetForPartitionAndOperation(p
 
 // this method expects instanceIDs to be in the same order as instances.
 // instanceIDs should hold the parsed multi-partition owner IDs.
+// instances input slice is updated in place and returned.
 func highestPreferablyNonReadOnlyFromEachZone(instances []InstanceDesc, instanceIDs []string, instanceZones []string) []InstanceDesc {
 	var stackAllInstances [16]InstanceDesc
 	allInstances := append(stackAllInstances[:0], instances...)

@@ -326,7 +326,7 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 			2: {multiPartitionOwnerInstanceID(instanceID1, 2)},
 		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
 
-		// Shutdown lifecyclerInstance1Partition1, this should *NOT* the owner for partition 2.
+		// Shutdown lifecyclerInstance1Partition2, this should *NOT* remove the owner for partition 2, because "remove on shutdown" was disabled.
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecyclerInstance1Partition2))
 		assertMapElementsMatch(t, map[int32][]string{
 			1: {multiPartitionOwnerInstanceID(instanceID2, 1)},

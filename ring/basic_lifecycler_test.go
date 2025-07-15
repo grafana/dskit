@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -159,6 +160,12 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 
 				return testData.registerState, testData.registerTokens
 			}
+			var expectedReadOnly bool
+			var expectedReadOnlyUpdatedTimestamp int64
+			if testData.initialInstanceDesc != nil {
+				expectedReadOnly = testData.initialInstanceDesc.ReadOnly
+				expectedReadOnlyUpdatedTimestamp = testData.initialInstanceDesc.ReadOnlyUpdatedTimestamp
+			}
 
 			assert.Equal(t, testInstanceID, lifecycler.GetInstanceID())
 			assert.Equal(t, services.New, lifecycler.State())
@@ -168,6 +175,9 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
 			assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
 			assert.Zero(t, lifecycler.GetRegisteredAt())
+			readOnly, readOnlySince := lifecycler.GetReadOnlyState()
+			assert.False(t, readOnly)
+			assert.Zero(t, readOnlySince)
 
 			require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
 
@@ -177,6 +187,13 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			assert.True(t, lifecycler.IsRegistered())
 			assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
 			assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+			readOnly, readOnlySince = lifecycler.GetReadOnlyState()
+			assert.Equal(t, expectedReadOnly, readOnly)
+			if expectedReadOnlyUpdatedTimestamp > 0 {
+				assert.Equal(t, expectedReadOnlyUpdatedTimestamp, readOnlySince.Unix())
+			} else {
+				assert.Zero(t, readOnlySince)
+			}
 
 			// Assert on the instance registered within the ring.
 			instanceDesc, ok := getInstanceFromStore(t, store, testInstanceID)
@@ -186,6 +203,8 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			assert.Equal(t, testData.registerState, instanceDesc.GetState())
 			assert.Equal(t, testData.registerTokens, Tokens(instanceDesc.GetTokens()))
 			assert.Equal(t, cfg.Zone, instanceDesc.GetZone())
+			assert.Equal(t, expectedReadOnly, instanceDesc.ReadOnly)
+			assert.Equal(t, expectedReadOnlyUpdatedTimestamp, instanceDesc.ReadOnlyUpdatedTimestamp)
 
 			// The expected registered timestamp is "now" if the instance didn't exist in the ring yet
 			// or the already existing value.
@@ -447,6 +466,64 @@ func TestBasicLifecycler_ChangeState(t *testing.T) {
 	}
 }
 
+func TestBasicLifecycler_ChangeReadOnlyState(t *testing.T) {
+	ctx := context.Background()
+	cfg := prepareBasicLifecyclerConfig()
+	lifecycler, _, store, err := prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+
+	// Read the default state.
+	{
+		readOnly, readOnlySince := lifecycler.GetReadOnlyState()
+		require.False(t, readOnly)
+		require.Zero(t, readOnlySince)
+
+		// Assert on the instance read-only state read from the ring.
+		desc, ok := getInstanceFromStore(t, store, testInstanceID)
+		assert.True(t, ok)
+		readOnly, readOnlySince = desc.GetReadOnlyState()
+		require.False(t, readOnly)
+		require.Zero(t, readOnlySince)
+	}
+
+	// Change the read-only state to true.
+	{
+		readOnlyChange := time.Now()
+		err := lifecycler.ChangeReadOnlyState(context.Background(), true)
+		require.NoError(t, err)
+
+		// Assert on the instance read-only state read from the ring.
+		desc, ok := getInstanceFromStore(t, store, testInstanceID)
+		assert.True(t, ok)
+		readOnly, readOnlySince := desc.GetReadOnlyState()
+		require.True(t, readOnly)
+		require.InDelta(t, readOnlySince.Sub(readOnlyChange), 0, float64(time.Second))
+	}
+
+	// Let the clock advance a little bit.
+	// Read only timestamp has seconds precision.
+	time.Sleep(time.Second + 500*time.Millisecond)
+
+	// Change the read-only state to false.
+	{
+		_, prevReadOnlySince := lifecycler.GetReadOnlyState()
+		require.NotZero(t, prevReadOnlySince)
+
+		err := lifecycler.ChangeReadOnlyState(context.Background(), false)
+		require.NoError(t, err)
+
+		// Assert on the instance read-only state read from the ring.
+		desc, ok := getInstanceFromStore(t, store, testInstanceID)
+		assert.True(t, ok)
+		readOnly, readOnlySince := desc.GetReadOnlyState()
+		require.False(t, readOnly)
+		// Since this has seconds precision we can forget about monotonic clocks and just assert that new timestamp is higher.
+		require.True(t, readOnlySince.After(prevReadOnlySince))
+	}
+}
+
 func TestBasicLifecycler_TokensObservePeriod(t *testing.T) {
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()
@@ -489,43 +566,54 @@ func TestBasicLifecycler_TokensObservePeriod(t *testing.T) {
 }
 
 func TestBasicLifecycler_updateInstance_ShouldAddInstanceToTheRingIfDoesNotExistEvenIfNotChanged(t *testing.T) {
-	ctx := context.Background()
-	cfg := prepareBasicLifecyclerConfig()
-	cfg.HeartbeatPeriod = time.Hour // No heartbeat during the test.
+	for _, readOnly := range []bool{false, true} {
+		t.Run(fmt.Sprintf("readOnly=%t", readOnly), func(t *testing.T) {
+			ctx := context.Background()
+			cfg := prepareBasicLifecyclerConfig()
+			cfg.HeartbeatPeriod = time.Hour // No heartbeat during the test.
 
-	lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
-	require.NoError(t, err)
-	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
+			lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
+			require.NoError(t, err)
+			defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
-	registerTokens := Tokens{1, 2, 3, 4, 5}
-	delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (state InstanceState, tokens Tokens) {
-		return ACTIVE, registerTokens
+			registerTokens := Tokens{1, 2, 3, 4, 5}
+			delegate.onRegister = func(_ *BasicLifecycler, _ Desc, _ bool, _ string, _ InstanceDesc) (state InstanceState, tokens Tokens) {
+				return ACTIVE, registerTokens
+			}
+
+			require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+
+			// At this point the instance has been registered to the ring.
+			expectedRegisteredAt := lifecycler.GetRegisteredAt()
+			if readOnly {
+				// If the instance is read-only, we set the read-only state.
+				require.NoError(t, lifecycler.ChangeReadOnlyState(ctx, true))
+			}
+
+			// Now we delete it from the ring to simulate a ring storage reset.
+			require.NoError(t, store.CAS(ctx, testRingKey, func(interface{}) (out interface{}, retry bool, err error) {
+				return NewDesc(), true, nil
+			}))
+
+			// Run a noop update instance, but since the instance is not in the ring we do expect
+			// it will added back anyway.
+			require.NoError(t, lifecycler.updateInstance(ctx, func(*Desc, *InstanceDesc) bool {
+				return false
+			}))
+
+			desc, ok := getInstanceFromStore(t, store, testInstanceID)
+			require.True(t, ok)
+			assert.Equal(t, cfg.ID, desc.GetId())
+			assert.Equal(t, ACTIVE, desc.GetState())
+			assert.Equal(t, registerTokens, Tokens(desc.GetTokens()))
+			assert.Equal(t, cfg.Addr, desc.GetAddr())
+			assert.Equal(t, expectedRegisteredAt.Unix(), desc.RegisteredTimestamp)
+			assert.Equal(t, expectedRegisteredAt.Unix(), desc.GetRegisteredAt().Unix())
+			readOnlyState, readOnlySince := desc.GetReadOnlyState()
+			assert.Equal(t, readOnly, readOnlyState)
+			assert.Equal(t, readOnly, !readOnlySince.IsZero())
+		})
 	}
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-
-	// At this point the instance has been registered to the ring.
-	expectedRegisteredAt := lifecycler.GetRegisteredAt()
-
-	// Now we delete it from the ring to simulate a ring storage reset.
-	require.NoError(t, store.CAS(ctx, testRingKey, func(interface{}) (out interface{}, retry bool, err error) {
-		return NewDesc(), true, nil
-	}))
-
-	// Run a noop update instance, but since the instance is not in the ring we do expect
-	// it will added back anyway.
-	require.NoError(t, lifecycler.updateInstance(ctx, func(*Desc, *InstanceDesc) bool {
-		return false
-	}))
-
-	desc, ok := getInstanceFromStore(t, store, testInstanceID)
-	require.True(t, ok)
-	assert.Equal(t, cfg.ID, desc.GetId())
-	assert.Equal(t, ACTIVE, desc.GetState())
-	assert.Equal(t, registerTokens, Tokens(desc.GetTokens()))
-	assert.Equal(t, cfg.Addr, desc.GetAddr())
-	assert.Equal(t, expectedRegisteredAt.Unix(), desc.RegisteredTimestamp)
-	assert.Equal(t, expectedRegisteredAt.Unix(), desc.GetRegisteredAt().Unix())
 }
 
 func prepareBasicLifecyclerConfig() BasicLifecyclerConfig {

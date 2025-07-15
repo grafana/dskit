@@ -467,7 +467,8 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 			// a resharding of tenants among instances: to guarantee query correctness we need to update the
 			// registration timestamp to current time.
 			registeredAt := time.Now()
-			instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, l.GetTokens(), l.GetState(), registeredAt, false, time.Time{})
+			readOnly, readOnlyUpdatedTimestamp := l.GetReadOnlyState()
+			instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, l.GetTokens(), l.GetState(), registeredAt, readOnly, readOnlyUpdatedTimestamp)
 		}
 
 		prevTimestamp := instanceDesc.Timestamp

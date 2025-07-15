@@ -62,7 +62,6 @@ func (r *MultiPartitionInstanceRing) GetReplicationSetForPartitionAndOperation(p
 
 		instances = append(instances, instance)
 		// Store this in the same position as the instance, so we can use it to compare later.
-		// We only need this when r.pickHighestZoneOwner=true, but it's probably cheaper to do it than to check it.
 		ownerIDs[len(instances)-1] = instanceID
 	}
 

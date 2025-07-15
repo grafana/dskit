@@ -1258,6 +1258,37 @@ func BenchmarkActivePartitionBatchRing_Get(b *testing.B) {
 	}
 }
 
+func TestPartitionRing_MultiPartitionOwnerIDs(t *testing.T) {
+	const (
+		// instance 1 contains `/` which is the special char we use in the suffix.
+		// This should be handled correctly.
+		instance1 = "instance/0"
+		instance2 = "instance-1"
+	)
+
+	now := time.Date(2023, 10, 1, 0, 0, 0, 0, time.UTC)
+	desc := NewPartitionRingDesc()
+	desc.AddPartition(1, PartitionActive, now.Add(-1*time.Hour))
+	desc.AddPartition(2, PartitionActive, now.Add(-90*time.Minute))
+	desc.AddPartition(3, PartitionActive, now.Add(-6*time.Hour))
+	desc.AddPartition(4, PartitionActive, now.Add(-6*time.Hour))
+	desc.AddPartition(5, PartitionActive, now.Add(-6*time.Hour))
+	desc.AddPartition(6, PartitionActive, now.Add(-6*time.Hour))
+
+	// instance1 owns 0 and 1
+	desc.AddOrUpdateOwner(multiPartitionOwnerInstanceID(instance1, 0), OwnerActive, 0, now)
+	desc.AddOrUpdateOwner(multiPartitionOwnerInstanceID(instance1, 1), OwnerActive, 1, now)
+	// instance2 owns 1 and 2
+	desc.AddOrUpdateOwner(multiPartitionOwnerInstanceID(instance2, 1), OwnerActive, 1, now)
+	desc.AddOrUpdateOwner(multiPartitionOwnerInstanceID(instance2, 2), OwnerActive, 2, now)
+	ring := NewPartitionRing(*desc)
+
+	// Check ownership.
+	require.ElementsMatch(t, []string{instance1}, ring.MultiPartitionOwnerIDs(0, nil))
+	require.ElementsMatch(t, []string{instance1, instance2}, ring.MultiPartitionOwnerIDs(1, nil))
+	require.ElementsMatch(t, []string{instance2}, ring.MultiPartitionOwnerIDs(2, nil))
+}
+
 func generatePartitionWithInfo(state PartitionState, stateTS time.Time) PartitionDesc {
 	return PartitionDesc{
 		State:          state,

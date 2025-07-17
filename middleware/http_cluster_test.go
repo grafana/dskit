@@ -283,9 +283,14 @@ func TestClusterValidationMiddleware(t *testing.T) {
 						})
 					})
 				}
+				cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+					ClusterValidationProtocolConfig: clusterutil.ClusterValidationProtocolConfig{
+						SoftValidation: softValidation,
+					},
+				}
 				handler := Merge(
 					routeInjector,
-					ClusterValidationMiddleware(testCase.serverCluster, nil, nil, softValidation, NewInvalidClusterRequests(reg, "test"), logger),
+					ClusterValidationMiddleware(testCase.serverCluster, cfg, NewInvalidClusterRequests(reg, "test"), logger),
 				).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 				}))
@@ -391,9 +396,15 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 			routeInjector := RouteInjector{
 				RouteMatcher: router,
 			}
+			cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+				ClusterValidationProtocolConfig: clusterutil.ClusterValidationProtocolConfig{
+					SoftValidation: testCase.softValidation,
+				},
+				ExcludedPaths: testCase.excludedPaths,
+			}
 			handler := Merge(
 				routeInjector,
-				ClusterValidationMiddleware("server-cluster", testCase.excludedPaths, nil, testCase.softValidation, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger()),
+				ClusterValidationMiddleware("server-cluster", cfg, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger()),
 			).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
@@ -497,9 +508,15 @@ func TestClusterValidationMiddlewareWithExcludedUserAgents(t *testing.T) {
 			routeInjector := RouteInjector{
 				RouteMatcher: router,
 			}
+			cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+				ClusterValidationProtocolConfig: clusterutil.ClusterValidationProtocolConfig{
+					SoftValidation: testCase.softValidation,
+				},
+				ExcludedUserAgents: testCase.excludedUserAgents,
+			}
 			handler := Merge(
 				routeInjector,
-				ClusterValidationMiddleware("server-cluster", nil, testCase.excludedUserAgents, testCase.softValidation, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger()),
+				ClusterValidationMiddleware("server-cluster", cfg, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger()),
 			).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))

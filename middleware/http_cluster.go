@@ -86,13 +86,13 @@ func validateClusterValidationRoundTripperInputParameters(cluster string, invali
 // If the softValidation parameter is true, errors related to the cluster label validation are logged, but not returned.
 // Otherwise, an error is returned.
 func ClusterValidationMiddleware(
-	cluster string, excludedPaths []string, excludedUserAgents []string, softValidation bool, invalidClusterRequests *prometheus.CounterVec, logger log.Logger,
+	cluster string, cfg clusterutil.ClusterValidationProtocolConfigForHTTP, invalidClusterRequests *prometheus.CounterVec, logger log.Logger,
 ) Interface {
 	validateClusterValidationMiddlewareInputParameters(cluster, logger)
 	var reB strings.Builder
 	// Allow for a potential path prefix being configured.
 	reB.WriteString(".*/(metrics|debug/pprof.*|ready")
-	for _, path := range excludedPaths {
+	for _, path := range cfg.ExcludedPaths {
 		reB.WriteString("|" + regexp.QuoteMeta(path))
 	}
 	reB.WriteString(")")
@@ -100,10 +100,10 @@ func ClusterValidationMiddleware(
 
 	// Build user agent regex similar to excluded paths
 	var reExcludedUserAgent *regexp.Regexp
-	if len(excludedUserAgents) > 0 {
+	if len(cfg.ExcludedUserAgents) > 0 {
 		var uaB strings.Builder
 		uaB.WriteString("(")
-		for i, userAgent := range excludedUserAgents {
+		for i, userAgent := range cfg.ExcludedUserAgents {
 			if i > 0 {
 				uaB.WriteString("|")
 			}
@@ -119,7 +119,7 @@ func ClusterValidationMiddleware(
 			if route == "" {
 				route = "<unknown-route>"
 			}
-			if err := checkClusterFromRequest(r, cluster, route, softValidation, reExcludedPath, reExcludedUserAgent, invalidClusterRequests, logger); err != nil {
+			if err := checkClusterFromRequest(r, cluster, route, cfg.SoftValidation, reExcludedPath, reExcludedUserAgent, invalidClusterRequests, logger); err != nil {
 				clusterValidationErr := clusterValidationError{
 					ClusterValidationErrorMessage: err.Error(),
 					Route:                         route,

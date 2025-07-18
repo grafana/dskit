@@ -3,6 +3,8 @@ package clusterutil
 import (
 	"flag"
 	"fmt"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -91,10 +93,6 @@ func TestServerClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "server.cluster-validation.", registeredFlags.Prefix)
-	require.Len(t, registeredFlags.Flags, 6)
-	expectedFlags := []string{"label", "grpc.enabled", "grpc.soft-validation", "http.enabled", "http.soft-validation", "http.excluded-paths"}
-	for _, flagName := range expectedFlags {
-		_, ok := registeredFlags.Flags[flagName]
-		require.True(t, ok)
-	}
+	expectedFlags := []string{"label", "grpc.enabled", "grpc.soft-validation", "http.enabled", "http.soft-validation", "http.excluded-paths", "http.excluded-user-agents"}
+	require.ElementsMatch(t, expectedFlags, slices.Collect(maps.Keys(registeredFlags.Flags)))
 }

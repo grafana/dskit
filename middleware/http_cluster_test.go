@@ -283,9 +283,14 @@ func TestClusterValidationMiddleware(t *testing.T) {
 						})
 					})
 				}
+				cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+					ClusterValidationProtocolConfig: clusterutil.ClusterValidationProtocolConfig{
+						SoftValidation: softValidation,
+					},
+				}
 				handler := Merge(
 					routeInjector,
-					ClusterValidationMiddleware(testCase.serverCluster, nil, softValidation, NewInvalidClusterRequests(reg, "test"), logger),
+					ClusterValidationMiddleware(testCase.serverCluster, cfg, NewInvalidClusterRequests(reg, "test"), logger),
 				).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 				}))
@@ -391,9 +396,15 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 			routeInjector := RouteInjector{
 				RouteMatcher: router,
 			}
+			cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+				ClusterValidationProtocolConfig: clusterutil.ClusterValidationProtocolConfig{
+					SoftValidation: testCase.softValidation,
+				},
+				ExcludedPaths: testCase.excludedPaths,
+			}
 			handler := Merge(
 				routeInjector,
-				ClusterValidationMiddleware("server-cluster", testCase.excludedPaths, testCase.softValidation, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger()),
+				ClusterValidationMiddleware("server-cluster", cfg, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger()),
 			).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
@@ -403,6 +414,121 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 			req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:8080/%s", testCase.requestPath), nil)
 			require.NoError(t, err)
 			req.Header[clusterutil.ClusterValidationLabelHeader] = []string{"client-cluster"}
+
+			handler.ServeHTTP(recorder, req)
+			require.Equal(t, testCase.expectedStatusCode, recorder.Code)
+			if recorder.Code != http.StatusOK {
+				var clusterValidationErr clusterValidationError
+				err = json.Unmarshal(recorder.Body.Bytes(), &clusterValidationErr)
+				require.NoError(t, err)
+				require.Equal(t, testCase.expectedErrorMessage, clusterValidationErr.ClusterValidationErrorMessage)
+			}
+			err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "test_server_invalid_cluster_validation_label_requests_total")
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestClusterValidationMiddlewareWithExcludedUserAgents(t *testing.T) {
+	const urlPath = "Test/Me"
+	testCases := map[string]struct {
+		softValidation       bool
+		userAgent            string
+		route                string
+		excludedUserAgents   []string
+		expectedStatusCode   int
+		expectedErrorMessage string
+		expectedMetrics      string
+	}{
+		"when soft validation is enabled and user agent is excluded no error is returned": {
+			softValidation:       true,
+			userAgent:            "curl/8.7.1",
+			excludedUserAgents:   []string{"curl/.*", "wget/.*"},
+			expectedStatusCode:   http.StatusOK,
+			expectedErrorMessage: "",
+		},
+		"when soft validation is disabled and user agent is excluded no error is returned": {
+			softValidation:       false,
+			userAgent:            "curl/8.7.1",
+			excludedUserAgents:   []string{"curl/.*", "wget/.*"},
+			expectedStatusCode:   http.StatusOK,
+			expectedErrorMessage: "",
+		},
+		"when soft validation is disabled and user agent matches different pattern no error is returned": {
+			softValidation:       false,
+			userAgent:            "wget/1.21.3",
+			excludedUserAgents:   []string{"curl/.*", "wget/.*"},
+			expectedStatusCode:   http.StatusOK,
+			expectedErrorMessage: "",
+		},
+		"when soft validation is enabled and user agent is not excluded no error is returned": {
+			softValidation:       true,
+			userAgent:            "Mozilla/5.0",
+			route:                "/" + urlPath,
+			excludedUserAgents:   []string{"curl/.*", "wget/.*"},
+			expectedStatusCode:   http.StatusOK,
+			expectedErrorMessage: "",
+			expectedMetrics: `
+                                # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE test_server_invalid_cluster_validation_label_requests_total counter
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="server-cluster",method="test_argument",protocol="http",request_cluster_validation_label="client-cluster"} 1
+			`,
+		},
+		"when soft validation is disabled and user agent is not excluded an error is returned": {
+			softValidation:       false,
+			userAgent:            "Mozilla/5.0",
+			route:                "/" + urlPath,
+			excludedUserAgents:   []string{"curl/.*", "wget/.*"},
+			expectedStatusCode:   http.StatusNetworkAuthenticationRequired,
+			expectedErrorMessage: `rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`,
+			expectedMetrics: `
+                                # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE test_server_invalid_cluster_validation_label_requests_total counter
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="server-cluster",method="test_argument",protocol="http",request_cluster_validation_label="client-cluster"} 1
+			`,
+		},
+		"when no user agent is provided and user agents are excluded validation proceeds normally": {
+			softValidation:       false,
+			userAgent:            "",
+			route:                "/" + urlPath,
+			excludedUserAgents:   []string{"curl/.*", "wget/.*"},
+			expectedStatusCode:   http.StatusNetworkAuthenticationRequired,
+			expectedErrorMessage: `rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`,
+			expectedMetrics: `
+                                # HELP test_server_invalid_cluster_validation_label_requests_total Number of requests received by server with invalid cluster validation label.
+                                # TYPE test_server_invalid_cluster_validation_label_requests_total counter
+                                test_server_invalid_cluster_validation_label_requests_total{cluster_validation_label="server-cluster",method="test_argument",protocol="http",request_cluster_validation_label="client-cluster"} 1
+			`,
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			router := mux.NewRouter()
+			routeInjector := RouteInjector{
+				RouteMatcher: router,
+			}
+			cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+				ClusterValidationProtocolConfig: clusterutil.ClusterValidationProtocolConfig{
+					SoftValidation: testCase.softValidation,
+				},
+				ExcludedUserAgents: testCase.excludedUserAgents,
+			}
+			handler := Merge(
+				routeInjector,
+				ClusterValidationMiddleware("server-cluster", cfg, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger()),
+			).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			router.Handle("/Test/{argument}", handler)
+
+			recorder := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:8080/%s", urlPath), nil)
+			require.NoError(t, err)
+			req.Header[clusterutil.ClusterValidationLabelHeader] = []string{"client-cluster"}
+			if testCase.userAgent != "" {
+				req.Header.Set("User-Agent", testCase.userAgent)
+			}
 
 			handler.ServeHTTP(recorder, req)
 			require.Equal(t, testCase.expectedStatusCode, recorder.Code)

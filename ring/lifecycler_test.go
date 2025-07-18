@@ -445,6 +445,49 @@ func TestLifecycler_ZonesCount(t *testing.T) {
 	}
 }
 
+func TestLifecycler_Zones(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	var ringConfig Config
+	flagext.DefaultValues(&ringConfig)
+	ringConfig.KVStore.Mock = ringStore
+
+	events := []struct {
+		zone          string
+		expectedZones []string
+	}{
+		{"zone-a", []string{"zone-a"}},
+		{"zone-b", []string{"zone-a", "zone-b"}},
+		{"zone-a", []string{"zone-a", "zone-b"}},
+		{"zone-c", []string{"zone-a", "zone-b", "zone-c"}},
+	}
+
+	for idx, event := range events {
+		ctx := context.Background()
+
+		// Register an ingester to the ring.
+		cfg := testLifecyclerConfig(ringConfig, fmt.Sprintf("instance-%d", idx))
+		cfg.HeartbeatPeriod = 100 * time.Millisecond
+		cfg.JoinAfter = 100 * time.Millisecond
+		cfg.Zone = event.zone
+
+		lifecycler, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+		assert.Equal(t, 0, lifecycler.ZonesCount())
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+		defer services.StopAndAwaitTerminated(ctx, lifecycler) // nolint:errcheck
+
+		// Wait until joined.
+		test.Poll(t, time.Second, idx+1, func() interface{} {
+			return lifecycler.HealthyInstancesCount()
+		})
+
+		assert.Equal(t, event.expectedZones, lifecycler.Zones())
+	}
+}
+
 func TestLifecycler_NilFlushTransferer(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })

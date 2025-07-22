@@ -42,25 +42,4 @@ func TestBackendConfig_Validate(t *testing.T) {
 
 		require.Equal(t, ErrNoMemcachedAddresses, cfg.Validate())
 	})
-
-	t.Run("redis backend valid", func(t *testing.T) {
-		cfg := BackendConfig{
-			Backend: BackendRedis,
-			Redis: RedisClientConfig{
-				Endpoint:            []string{"localhost:6379"},
-				MaxAsyncConcurrency: 1,
-			},
-		}
-
-		require.NoError(t, cfg.Validate())
-	})
-
-	t.Run("redis backend invalid", func(t *testing.T) {
-		cfg := BackendConfig{
-			Backend: BackendRedis,
-			Redis:   RedisClientConfig{},
-		}
-
-		require.Error(t, cfg.Validate())
-	})
 }

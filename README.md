@@ -3,7 +3,7 @@
 This library contains utilities that are useful for building distributed
 services, including:
  - Exponential [backoff](https://github.com/grafana/dskit/tree/main/backoff) for retries.
- - A common [cache](https://github.com/grafana/dskit/tree/main/cache) API, implemented for Memcached and Redis.
+ - A common [cache](https://github.com/grafana/dskit/tree/main/cache) API and Memcached implementation.
  - [Hedging](https://github.com/grafana/dskit/tree/main/hedging), sending extra duplicate requests to improve the chance that one succeeds.
  - A common [key-value](https://github.com/grafana/dskit/tree/main/kv) API, implemented for Consul, Etcd and Memberlist.
  - RPC [middlewares](https://github.com/grafana/dskit/tree/main/middleware), for metrics, logging, etc.

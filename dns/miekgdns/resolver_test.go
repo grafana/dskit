@@ -1,4 +1,4 @@
-package miekgdns2
+package miekgdns
 
 import (
 	"context"

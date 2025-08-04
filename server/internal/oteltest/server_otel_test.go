@@ -149,12 +149,16 @@ func TestOTelTracing(t *testing.T) {
 				"X-Unexpected-Header": "42",
 				"X-Excluded-Header":   "private",
 				"Authorization":       "should always be excluded",
+				"X-Access-Token":      "should also always be excluded",
+				"X-Grafana-Id":        "also excluded",
 			},
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
 				expectedOpNameHelloPathParamHTTPSpan: append(expectedAttrsHelloPathParamHTTPSpan,
 					attribute.StringSlice("http.header.X-Unexpected-Header", []string{"42"}),
 					attribute.String("http.header.X-Excluded-Header.present", "true"),
 					attribute.String("http.header.Authorization.present", "true"),
+					attribute.String("http.header.X-Access-Token.present", "true"),
+					attribute.String("http.header.X-Grafana-Id.present", "true"),
 				),
 			},
 

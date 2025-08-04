@@ -143,7 +143,7 @@ func TestLoggingRequestsAtInfoLevel(t *testing.T) {
 }
 
 func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
-	defaultHeaders := []string{"Authorization", "Cookie", "X-Csrf-Token"}
+	defaultHeaders := []string{"Authorization", "Cookie", "X-Csrf-Token", "X-Grafana-Id", "X-Access-Token"}
 	for _, tc := range []struct {
 		name              string
 		setHeaderList     []string

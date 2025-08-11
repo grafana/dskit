@@ -1,12 +1,17 @@
 package tracing
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 )
 
 func TestParseJaegerTags(t *testing.T) {
@@ -63,4 +68,72 @@ func TestParseJaegerTags(t *testing.T) {
 			require.Error(t, err, test.expectedError)
 		}
 	})
+}
+
+func TestJaegerDebugIDHandling(t *testing.T) {
+	resultFromInnerPropagator := tracesdk.SamplingResult{
+		Decision:   tracesdk.RecordOnly,
+		Attributes: []attribute.KeyValue{attribute.String("some.key", "some_value")},
+	}
+
+	resultWithDebugID := tracesdk.SamplingResult{
+		Decision: tracesdk.RecordAndSample,
+		Attributes: []attribute.KeyValue{
+			attribute.String("some.key", "some_value"),
+			attribute.String("jaeger-debug-id", "the-debug-id"),
+		},
+	}
+
+	testCases := map[string]struct {
+		headers  http.Header
+		expected tracesdk.SamplingResult
+	}{
+		"header not present": {
+			headers: http.Header{
+				"Content-Type": []string{"application/json"},
+			},
+			expected: resultFromInnerPropagator,
+		},
+		"header present": {
+			headers: http.Header{
+				"Content-Type":    []string{"application/json"},
+				"Jaeger-Debug-Id": []string{"the-debug-id"},
+			},
+			expected: resultWithDebugID,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			propagator := JaegerDebuggingPropagator{}
+			inner := mockSampler{resultFromInnerPropagator}
+			sampler := JaegerDebuggingSampler{inner}
+
+			ctx := context.Background()
+			carrier := propagation.HeaderCarrier(testCase.headers)
+			ctx = propagator.Extract(ctx, carrier)
+
+			params := tracesdk.SamplingParameters{
+				ParentContext: ctx,
+			}
+			result := sampler.ShouldSample(params)
+			require.Equal(t, testCase.expected, result)
+		})
+	}
+}
+
+type mockSampler struct {
+	result tracesdk.SamplingResult
+}
+
+func (m mockSampler) ShouldSample(parameters tracesdk.SamplingParameters) tracesdk.SamplingResult {
+	// Clone the result so that we don't share the attributes slice between invocations.
+	return tracesdk.SamplingResult{
+		Decision:   m.result.Decision,
+		Attributes: slices.Clone(m.result.Attributes),
+	}
+}
+
+func (m mockSampler) Description() string {
+	return "mockSampler"
 }

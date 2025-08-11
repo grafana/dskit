@@ -264,7 +264,7 @@ func TestOTelPropagatorsFromEnv(t *testing.T) {
 		os.Unsetenv("OTEL_PROPAGATORS")
 
 		propagators := OTelPropagatorsFromEnv()
-		require.Len(t, propagators, 3)
+		require.Len(t, propagators, 4)
 	})
 
 	t.Run("custom propagators from env", func(t *testing.T) {
@@ -291,7 +291,7 @@ func TestOTelPropagatorsFromEnv(t *testing.T) {
 		os.Setenv("OTEL_PROPAGATORS", "jaeger")
 
 		propagators := OTelPropagatorsFromEnv()
-		require.Len(t, propagators, 1)
+		require.Len(t, propagators, 2)
 	})
 }
 

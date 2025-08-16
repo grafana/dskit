@@ -15,6 +15,9 @@ import (
 	"github.com/grafana/dskit/spanlogger"
 )
 
+// Used to communicate, via a context, when an associated call was made for only a single replica.
+type onlyReplicaContextKey struct{}
+
 // ReplicationSet describes the instances to talk to for a given key, and how
 // many errors to tolerate.
 type ReplicationSet struct {
@@ -136,6 +139,11 @@ type DoUntilQuorumConfig struct {
 	// This can be used to prioritise zones that are more likely to succeed, or are expected to complete
 	// faster, for example.
 	ZoneSorter ZoneSorter
+
+	// MarkOnlyReplica indicates when we should provide information in a DoUntilQuorum call, as part of the context, that
+	// indicates a replica is the only one in a set. This can be used by the replica to make informed decisions about load
+	// shedding.
+	MarkOnlyReplica bool
 }
 
 func (c DoUntilQuorumConfig) Validate() error {
@@ -245,6 +253,10 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	var logger kitlog.Logger = cfg.Logger
 	if cfg.Logger == nil {
 		logger = kitlog.NewNopLogger()
+	}
+
+	if cfg.MarkOnlyReplica && len(r.Instances) == 1 {
+		ctx = ContextWithOnlyReplica(ctx)
 	}
 
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
@@ -620,4 +632,16 @@ func hasReplicationSetChangedExcluding(before, after ReplicationSet, exclude fun
 	}
 
 	return false
+}
+
+// ContextWithOnlyReplica returns a new context with the only-replica marker set. This can be later checked via
+// IsOnlyReplicaContext.
+func ContextWithOnlyReplica(ctx context.Context) context.Context {
+	return context.WithValue(ctx, onlyReplicaContextKey{}, true)
+}
+
+// IsOnlyReplicaContext returns whether the ctx indicates a replication set contains only one replica.
+func IsOnlyReplicaContext(ctx context.Context) bool {
+	result, ok := ctx.Value(onlyReplicaContextKey{}).(bool)
+	return result && ok
 }

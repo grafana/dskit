@@ -360,14 +360,34 @@ func (d MetricFamiliesPerTenant) SendSumOfHistograms(out chan<- prometheus.Metri
 	out <- hd.Metric(desc)
 }
 
-func (d MetricFamiliesPerTenant) SendSumOfHistogramsPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, histogramName string) {
+func (d MetricFamiliesPerTenant) SendSumOfHistogramsPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, histogramName string, options ...MetricOption) {
+	opts := applyMetricOptions(options...)
+
 	for _, tenantEntry := range d {
 		if tenantEntry.tenant == "" {
 			continue
 		}
 
-		data := tenantEntry.metrics.SumHistograms(histogramName)
-		out <- data.Metric(desc, tenantEntry.tenant)
+		if len(opts.labelNames) == 0 {
+			// Simple case: no label filtering, just sum all histograms for this tenant
+			data := tenantEntry.metrics.SumHistograms(histogramName)
+			out <- data.Metric(desc, tenantEntry.tenant)
+		} else {
+			// Complex case: group by labels within this tenant, then create metrics with tenant + labels
+			metricsPerLabelValue := getMetricsWithLabelNames(tenantEntry.metrics[histogramName], opts.labelNames)
+
+			for _, mwl := range metricsPerLabelValue {
+				data := HistogramData{}
+				for _, m := range mwl.metrics {
+					data.AddHistogram(m.GetHistogram())
+				}
+
+				// Prepend tenant to label values: [tenant, label1, label2, ...]
+				labelValues := []string{tenantEntry.tenant}
+				labelValues = append(labelValues, mwl.labelValues...)
+				out <- data.Metric(desc, labelValues...)
+			}
+		}
 	}
 }
 

@@ -1056,6 +1056,43 @@ func TestSendSumOfHistogramsPerTenant_NativeHistograms(t *testing.T) {
 	require.Equal(t, uint64(0), user2Histogram.GetZeroCount()) // No zero observations
 }
 
+func TestSendSumOfHistogramsPerTenant_WithLabels(t *testing.T) {
+	user1Reg := prometheus.NewRegistry()
+	user1Metric := promauto.With(user1Reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    1.1,
+		NativeHistogramMaxBucketNumber: 100,
+	}, []string{"method"})
+
+	// Add observations with different labels
+	user1Metric.WithLabelValues("GET").Observe(1.0)
+	user1Metric.WithLabelValues("POST").Observe(2.0)
+
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
+
+	// Test without labels (basic functionality)
+	desc1 := prometheus.NewDesc("test_metric", "", []string{"user"}, nil)
+	actual1 := collectMetrics(t, func(out chan prometheus.Metric) {
+		mf.SendSumOfHistogramsPerTenant(out, desc1, "test_metric")
+	})
+	require.Len(t, actual1, 1)
+	require.Equal(t, uint64(2), actual1[0].GetHistogram().GetSampleCount())
+
+	// Test with labels (should create separate metrics per label combination)
+	desc2 := prometheus.NewDesc("test_metric", "", []string{"user", "method"}, nil)
+	actual2 := collectMetrics(t, func(out chan prometheus.Metric) {
+		mf.SendSumOfHistogramsPerTenant(out, desc2, "test_metric", WithLabels("method"))
+	})
+	require.Len(t, actual2, 2) // Should have 2 metrics: user-1/GET and user-1/POST
+
+	// Verify both have count of 1 (since they were separated by label)
+	for _, metric := range actual2 {
+		require.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
+	}
+}
+
 func TestFloat64PrecisionStability(t *testing.T) {
 	const (
 		numRuns       = 100

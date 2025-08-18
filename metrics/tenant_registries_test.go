@@ -548,6 +548,116 @@ func TestSendSumOfHistogramsWithLabels(t *testing.T) {
 	}
 }
 
+func TestSendSumOfHistograms_NativeHistograms(t *testing.T) {
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+
+	// Create native histograms with NativeHistogramBucketFactor > 1
+	user1Metric := promauto.With(user1Reg).NewHistogram(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    1.1,
+		NativeHistogramMaxBucketNumber: 100,
+	})
+	user2Metric := promauto.With(user2Reg).NewHistogram(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    1.1,
+		NativeHistogramMaxBucketNumber: 100,
+	})
+
+	// Add some observations to create native histogram data
+	user1Metric.Observe(1.5)
+	user1Metric.Observe(2.5)
+	user1Metric.Observe(0.1) // Should go to zero bucket
+
+	user2Metric.Observe(3.5)
+	user2Metric.Observe(4.5)
+	user2Metric.Observe(0.2) // Should go to zero bucket
+
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
+
+	desc := prometheus.NewDesc("test_metric", "", nil, nil)
+	actual := collectMetrics(t, func(out chan prometheus.Metric) {
+		mf.SendSumOfHistograms(out, desc, "test_metric")
+	})
+
+	require.Len(t, actual, 1)
+	histogram := actual[0].GetHistogram()
+	require.NotNil(t, histogram)
+
+	// Check that we have the expected sample count and sum
+	require.Equal(t, uint64(6), histogram.GetSampleCount()) // 3 + 3 observations
+	expectedSum := 1.5 + 2.5 + 0.1 + 3.5 + 4.5 + 0.2        // = 12.3
+	require.InDelta(t, expectedSum, histogram.GetSampleSum(), 0.001)
+
+	// Check that native histogram fields are present and non-empty
+	require.NotNil(t, histogram.Schema)                     // Should have a schema for native histograms
+	require.NotNil(t, histogram.ZeroThreshold)              // Should have zero threshold
+	require.Greater(t, histogram.GetZeroCount(), uint64(0)) // Should have observations in zero bucket
+
+	// Should have either positive buckets or spans (depending on the values observed)
+	require.True(t, len(histogram.GetPositiveSpan()) > 0 || len(histogram.GetPositiveDelta()) > 0 || len(histogram.GetPositiveCount()) > 0)
+}
+
+func TestSendSumOfHistogramsWithLabels_NativeHistograms(t *testing.T) {
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+
+	// Create native histogram vectors with labels
+	user1Metric := promauto.With(user1Reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    1.1,
+		NativeHistogramMaxBucketNumber: 100,
+	}, []string{"label_one", "label_two"})
+
+	user2Metric := promauto.With(user2Reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    1.1,
+		NativeHistogramMaxBucketNumber: 100,
+	}, []string{"label_one", "label_two"})
+
+	// Add observations with different label combinations
+	user1Metric.WithLabelValues("a", "b").Observe(1.0)
+	user1Metric.WithLabelValues("a", "c").Observe(2.0)
+	user1Metric.WithLabelValues("a", "b").Observe(0.1) // Second observation for same labels
+
+	user2Metric.WithLabelValues("a", "b").Observe(3.0)
+	user2Metric.WithLabelValues("a", "c").Observe(4.0)
+
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
+
+	// Test aggregation by label_one
+	desc := prometheus.NewDesc("test_metric", "", []string{"label_one"}, nil)
+	actual := collectMetrics(t, func(out chan prometheus.Metric) {
+		mf.SendSumOfHistogramsWithLabels(out, desc, "test_metric", "label_one")
+	})
+
+	require.Len(t, actual, 1) // Should have one result for label_one="a"
+	metric := actual[0]
+
+	// Check the label value
+	require.Len(t, metric.GetLabel(), 1)
+	require.Equal(t, "label_one", metric.GetLabel()[0].GetName())
+	require.Equal(t, "a", metric.GetLabel()[0].GetValue())
+
+	// Check histogram data
+	histogram := metric.GetHistogram()
+	require.NotNil(t, histogram)
+	require.Equal(t, uint64(5), histogram.GetSampleCount()) // All 5 observations
+	expectedSum := 1.0 + 2.0 + 0.1 + 3.0 + 4.0              // = 10.1
+	require.InDelta(t, expectedSum, histogram.GetSampleSum(), 0.001)
+
+	// Check native histogram fields are present
+	require.NotNil(t, histogram.Schema)
+	require.NotNil(t, histogram.ZeroThreshold)
+	require.True(t, len(histogram.GetPositiveSpan()) > 0 || len(histogram.GetPositiveDelta()) > 0 || len(histogram.GetPositiveCount()) > 0)
+}
+
 // TestSendSumOfCountersPerTenant_WithLabels tests to ensure multiple metrics for the same user with a matching label are
 // summed correctly
 func TestSendSumOfCountersPerTenant_WithLabels(t *testing.T) {

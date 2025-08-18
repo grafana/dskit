@@ -574,16 +574,24 @@ func (d *HistogramData) addNativeHistogram(histo *dto.Histogram) {
 			// First native histogram - copy schema
 			schema := histo.GetSchema()
 			d.schema = &schema
+		} else {
+			// Validate that schemas match - we cannot aggregate histograms with different schemas
+			if *d.schema != histo.GetSchema() {
+				panic(fmt.Errorf("cannot aggregate native histograms with different schemas: existing=%d, new=%d", *d.schema, histo.GetSchema()))
+			}
 		}
-		// For aggregation, we keep the same schema (assuming all histograms have same schema)
 	}
 
 	if histo.ZeroThreshold != nil {
 		if d.zeroThreshold == nil {
 			threshold := histo.GetZeroThreshold()
 			d.zeroThreshold = &threshold
+		} else {
+			// Validate that zero thresholds match - different thresholds are incompatible
+			if *d.zeroThreshold != histo.GetZeroThreshold() {
+				panic(fmt.Errorf("cannot aggregate native histograms with different zero thresholds: existing=%f, new=%f", *d.zeroThreshold, histo.GetZeroThreshold()))
+			}
 		}
-		// For aggregation, we keep the same zero threshold (assuming all histograms have same threshold)
 	}
 
 	// Aggregate zero bucket counts

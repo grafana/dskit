@@ -592,15 +592,6 @@ func TestSendSumOfHistograms_NativeHistograms(t *testing.T) {
 	expectedSum := 1.5 + 2.5 + 0.0 + 3.5 + 4.5 + 0.2
 	require.InDelta(t, expectedSum, histogram.GetSampleSum(), 0.001)
 
-	// Debug: Print what fields are available after aggregation
-	t.Logf("After aggregation - Schema: %v", histogram.Schema)
-	t.Logf("After aggregation - ZeroThreshold: %v", histogram.ZeroThreshold)
-	t.Logf("After aggregation - ZeroCount: %v", histogram.ZeroCount)
-	t.Logf("After aggregation - PositiveSpan: %d", len(histogram.GetPositiveSpan()))
-	t.Logf("After aggregation - PositiveDelta: %d", len(histogram.GetPositiveDelta()))
-	t.Logf("After aggregation - PositiveCount: %d", len(histogram.GetPositiveCount()))
-	t.Logf("After aggregation - Bucket count: %d", len(histogram.GetBucket()))
-
 	// Check that native histogram fields are present and non-empty
 	require.Equal(t, int32(3), *histogram.Schema, "Expected native histogram schema to be the same as the two schemas aggregated")
 	require.NotNil(t, histogram.ZeroThreshold)
@@ -713,15 +704,6 @@ func TestSendSumOfHistograms_NativeHistograms_DifferentMagnitudes(t *testing.T) 
 	expectedSum := 0.000001 + 0.0000001 + 0.00001 + 1000000 + 100000000 + 10000
 	require.InDelta(t, expectedSum, histogram.GetSampleSum(), 0.001)
 
-	// Debug: Print what fields are available after aggregation
-	t.Logf("After aggregation - Schema: %v", histogram.Schema)
-	t.Logf("After aggregation - ZeroThreshold: %v", histogram.ZeroThreshold)
-	t.Logf("After aggregation - ZeroCount: %v", histogram.ZeroCount)
-	t.Logf("After aggregation - PositiveSpan: %d", len(histogram.GetPositiveSpan()))
-	t.Logf("After aggregation - PositiveDelta: %d", len(histogram.GetPositiveDelta()))
-	t.Logf("After aggregation - PositiveCount: %d", len(histogram.GetPositiveCount()))
-	t.Logf("After aggregation - NegativeSpan: %d", len(histogram.GetNegativeSpan()))
-
 	// Check that native histogram fields are present and non-empty
 	require.NotNil(t, histogram.Schema, "Schema should be present for native histogram")
 	require.NotNil(t, histogram.ZeroThreshold, "ZeroThreshold should be present")
@@ -734,6 +716,44 @@ func TestSendSumOfHistograms_NativeHistograms_DifferentMagnitudes(t *testing.T) 
 	// Verify that we successfully aggregated histograms with vastly different scales
 	// The key test is that the aggregation didn't fail and produced a valid native histogram
 	t.Logf("Successfully aggregated histograms with values ranging from %.9f to %.0f", 0.0000001, 100000000.0)
+}
+
+func TestSendSumOfHistograms_NativeHistograms_DifferentSchemas(t *testing.T) {
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+
+	// Create histograms with different schemas - this should be rejected
+	user1Metric := promauto.With(user1Reg).NewHistogram(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    1.1, // Schema will be different
+		NativeHistogramMaxBucketNumber: 100,
+	})
+
+	user2Metric := promauto.With(user2Reg).NewHistogram(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    2.0, // Different bucket factor = different schema
+		NativeHistogramMaxBucketNumber: 100,
+	})
+
+	// Add some observations to both histograms
+	user1Metric.Observe(1.0)
+	user1Metric.Observe(2.0)
+
+	user2Metric.Observe(3.0)
+	user2Metric.Observe(4.0)
+
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
+
+	desc := prometheus.NewDesc("test_metric", "", nil, nil)
+
+	// Test schema validation by capturing the panic from the goroutine
+	// The validation works correctly - we can verify by the error message in test output
+	require.Panics(t, func() {
+		mf.SendSumOfHistograms(make(chan prometheus.Metric, 1), desc, "test_metric")
+	})
 }
 
 // TestSendSumOfCountersPerTenant_WithLabels tests to ensure multiple metrics for the same user with a matching label are

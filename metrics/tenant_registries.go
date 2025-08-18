@@ -549,7 +549,6 @@ func (d HistogramData) Count() uint64 {
 // is using the buckets map (doesn't make a copy), and it's not allowed to change the buckets
 // after they've been passed to a prometheus.Metric.
 func (d *HistogramData) AddHistogram(histo *dto.Histogram) {
-
 	d.sampleCount += histo.GetSampleCount()
 	d.sampleSum += histo.GetSampleSum()
 

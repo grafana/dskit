@@ -782,36 +782,6 @@ func (d *HistogramData) Metric(desc *prometheus.Desc, labelValues ...string) pro
 	return prometheus.MustNewConstHistogram(desc, d.sampleCount, d.sampleSum, d.buckets, labelValues...)
 }
 
-// convertSpansToBuckets converts histogram spans and counts to the bucket map format
-// required by prometheus.NewConstNativeHistogram
-func (d *HistogramData) convertSpansToBuckets(spans []*dto.BucketSpan, counts []uint64) map[int]int64 {
-	buckets := make(map[int]int64)
-
-	if len(spans) == 0 || len(counts) == 0 {
-		return buckets
-	}
-
-	countIndex := 0
-
-	for _, span := range spans {
-		if span == nil {
-			continue
-		}
-
-		bucketIndex := int(span.GetOffset())
-
-		for i := uint32(0); i < span.GetLength() && countIndex < len(counts); i++ {
-			if counts[countIndex] > 0 {
-				buckets[bucketIndex] = int64(counts[countIndex])
-			}
-			bucketIndex++
-			countIndex++
-		}
-	}
-
-	return buckets
-}
-
 // Copy returns a copy of this histogram data.
 func (d *HistogramData) Copy() *HistogramData {
 	cp := &HistogramData{}

@@ -1087,10 +1087,34 @@ func TestSendSumOfHistogramsPerTenant_WithLabels(t *testing.T) {
 	})
 	require.Len(t, actual2, 2) // Should have 2 metrics: user-1/GET and user-1/POST
 
-	// Verify both have count of 1 (since they were separated by label)
-	for _, metric := range actual2 {
-		require.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
+	// Helper function to find label value by name
+	getLabelValue := func(labels []*dto.LabelPair, name string) string {
+		for _, label := range labels {
+			if label.GetName() == name {
+				return label.GetValue()
+			}
+		}
+		return ""
 	}
+
+	// Sort metrics by method label for predictable testing
+	sort.Slice(actual2, func(i, j int) bool {
+		return getLabelValue(actual2[i].GetLabel(), "method") < getLabelValue(actual2[j].GetLabel(), "method")
+	})
+
+	// Verify first metric: user-1, GET
+	getMetric := actual2[0]
+	require.Equal(t, uint64(1), getMetric.GetHistogram().GetSampleCount())
+	require.Equal(t, "user-1", getLabelValue(getMetric.GetLabel(), "user"))
+	require.Equal(t, "GET", getLabelValue(getMetric.GetLabel(), "method"))
+	require.InDelta(t, 1.0, getMetric.GetHistogram().GetSampleSum(), 0.001)
+
+	// Verify second metric: user-1, POST
+	postMetric := actual2[1]
+	require.Equal(t, uint64(1), postMetric.GetHistogram().GetSampleCount())
+	require.Equal(t, "user-1", getLabelValue(postMetric.GetLabel(), "user"))
+	require.Equal(t, "POST", getLabelValue(postMetric.GetLabel(), "method"))
+	require.InDelta(t, 2.0, postMetric.GetHistogram().GetSampleSum(), 0.001)
 }
 
 func TestFloat64PrecisionStability(t *testing.T) {

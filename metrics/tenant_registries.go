@@ -360,6 +360,17 @@ func (d MetricFamiliesPerTenant) SendSumOfHistograms(out chan<- prometheus.Metri
 	out <- hd.Metric(desc)
 }
 
+func (d MetricFamiliesPerTenant) SendSumOfHistogramsPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, histogramName string) {
+	for _, tenantEntry := range d {
+		if tenantEntry.tenant == "" {
+			continue
+		}
+
+		data := tenantEntry.metrics.SumHistograms(histogramName)
+		out <- data.Metric(desc, tenantEntry.tenant)
+	}
+}
+
 func (d MetricFamiliesPerTenant) SendSumOfHistogramsWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, histogramName string, labelNames ...string) {
 	type histogramResult struct {
 		data        HistogramData

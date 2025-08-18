@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -931,6 +932,128 @@ func TestSendSumOfSummariesPerTenant(t *testing.T) {
 		}
 		require.ElementsMatch(t, expected, actual)
 	}
+}
+
+func TestSendSumOfHistogramsPerTenant(t *testing.T) {
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+
+	// Create classic histograms for each tenant
+	user1Metric := promauto.With(user1Reg).NewHistogram(prometheus.HistogramOpts{
+		Name:    "test_metric",
+		Buckets: prometheus.LinearBuckets(0, 1, 5),
+	})
+	user2Metric := promauto.With(user2Reg).NewHistogram(prometheus.HistogramOpts{
+		Name:    "test_metric",
+		Buckets: prometheus.LinearBuckets(0, 1, 5),
+	})
+
+	// Add different observations for each tenant
+	user1Metric.Observe(1.5)
+	user1Metric.Observe(2.5)
+	user1Metric.Observe(0.5)
+
+	user2Metric.Observe(3.2)
+	user2Metric.Observe(4.1)
+
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
+
+	desc := prometheus.NewDesc("test_metric", "", []string{"user"}, nil)
+	actual := collectMetrics(t, func(out chan prometheus.Metric) {
+		mf.SendSumOfHistogramsPerTenant(out, desc, "test_metric")
+	})
+
+	// Should have one histogram metric per tenant
+	require.Len(t, actual, 2)
+
+	// Sort by tenant name for predictable testing
+	sort.Slice(actual, func(i, j int) bool {
+		return actual[i].GetLabel()[0].GetValue() < actual[j].GetLabel()[0].GetValue()
+	})
+
+	// Check user-1 histogram
+	user1Histogram := actual[0].GetHistogram()
+	require.NotNil(t, user1Histogram)
+	require.Equal(t, "user-1", actual[0].GetLabel()[0].GetValue())
+	require.Equal(t, uint64(3), user1Histogram.GetSampleCount())
+	require.InDelta(t, 4.5, user1Histogram.GetSampleSum(), 0.001) // 1.5 + 2.5 + 0.5
+
+	// Check user-2 histogram
+	user2Histogram := actual[1].GetHistogram()
+	require.NotNil(t, user2Histogram)
+	require.Equal(t, "user-2", actual[1].GetLabel()[0].GetValue())
+	require.Equal(t, uint64(2), user2Histogram.GetSampleCount())
+	require.InDelta(t, 7.3, user2Histogram.GetSampleSum(), 0.001) // 3.2 + 4.1
+}
+
+func TestSendSumOfHistogramsPerTenant_NativeHistograms(t *testing.T) {
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+
+	// Create native histograms for each tenant
+	user1Metric := promauto.With(user1Reg).NewHistogram(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    1.1,
+		NativeHistogramMaxBucketNumber: 100,
+	})
+	user2Metric := promauto.With(user2Reg).NewHistogram(prometheus.HistogramOpts{
+		Name:                           "test_metric",
+		NativeHistogramBucketFactor:    1.1,
+		NativeHistogramMaxBucketNumber: 100,
+	})
+
+	// Add different observations for each tenant
+	user1Metric.Observe(1.5)
+	user1Metric.Observe(2.5)
+	user1Metric.Observe(0.0) // Test zero count for native histograms
+
+	user2Metric.Observe(10.2)
+	user2Metric.Observe(20.1)
+
+	regs := NewTenantRegistries(log.NewNopLogger())
+	regs.AddTenantRegistry("user-1", user1Reg)
+	regs.AddTenantRegistry("user-2", user2Reg)
+	mf := regs.BuildMetricFamiliesPerTenant()
+
+	desc := prometheus.NewDesc("test_metric", "", []string{"user"}, nil)
+	actual := collectMetrics(t, func(out chan prometheus.Metric) {
+		mf.SendSumOfHistogramsPerTenant(out, desc, "test_metric")
+	})
+
+	// Should have one histogram metric per tenant
+	require.Len(t, actual, 2)
+
+	// Sort by tenant name for predictable testing
+	sort.Slice(actual, func(i, j int) bool {
+		return actual[i].GetLabel()[0].GetValue() < actual[j].GetLabel()[0].GetValue()
+	})
+
+	// Check user-1 native histogram
+	user1Histogram := actual[0].GetHistogram()
+	require.NotNil(t, user1Histogram)
+	require.Equal(t, "user-1", actual[0].GetLabel()[0].GetValue())
+	require.Equal(t, uint64(3), user1Histogram.GetSampleCount())
+	require.InDelta(t, 4.0, user1Histogram.GetSampleSum(), 0.001) // 1.5 + 2.5 + 0.0
+
+	// Verify native histogram specific fields for user-1
+	require.NotNil(t, user1Histogram.Schema)
+	require.Equal(t, int32(3), *user1Histogram.Schema)         // bucket factor 1.1 gives schema 3
+	require.Equal(t, uint64(1), user1Histogram.GetZeroCount()) // One zero observation
+
+	// Check user-2 native histogram
+	user2Histogram := actual[1].GetHistogram()
+	require.NotNil(t, user2Histogram)
+	require.Equal(t, "user-2", actual[1].GetLabel()[0].GetValue())
+	require.Equal(t, uint64(2), user2Histogram.GetSampleCount())
+	require.InDelta(t, 30.3, user2Histogram.GetSampleSum(), 0.001) // 10.2 + 20.1
+
+	// Verify native histogram specific fields for user-2
+	require.NotNil(t, user2Histogram.Schema)
+	require.Equal(t, int32(3), *user2Histogram.Schema)
+	require.Equal(t, uint64(0), user2Histogram.GetZeroCount()) // No zero observations
 }
 
 func TestFloat64PrecisionStability(t *testing.T) {

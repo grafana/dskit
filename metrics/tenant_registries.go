@@ -567,14 +567,16 @@ func (d *HistogramData) AddHistogram(histo *dto.Histogram) {
 	if histo.Schema != nil {
 		if d.schema == nil {
 			// First native histogram - copy schema
-			d.schema = histo.Schema
+			schema := histo.GetSchema()
+			d.schema = &schema
 		}
 		// For aggregation, we keep the same schema (assuming all histograms have same schema)
 	}
 
 	if histo.ZeroThreshold != nil {
 		if d.zeroThreshold == nil {
-			d.zeroThreshold = histo.ZeroThreshold
+			threshold := histo.GetZeroThreshold()
+			d.zeroThreshold = &threshold
 		}
 		// For aggregation, we keep the same zero threshold (assuming all histograms have same threshold)
 	}
@@ -753,8 +755,10 @@ func (d *HistogramData) AddHistogramData(histo HistogramData) {
 // Note that returned metric shares bucket with this HistogramData, so avoid
 // doing more modifications to this HistogramData after calling Metric.
 func (d *HistogramData) Metric(desc *prometheus.Desc, labelValues ...string) prometheus.Metric {
+
 	// Check if this is a native histogram (has native histogram fields)
-	if d.schema != nil && (len(d.positiveCounts) > 0 || len(d.negativeCounts) > 0 || d.zeroCount != nil) {
+	if d.schema != nil {
+		// We have a schema, so this should be a native histogram
 		// TEMPORARY: For now, just verify that native histogram fields are populated
 		// but return a classic histogram to avoid aggregation complexity.
 		// This allows tests to verify that native histogram data is being processed

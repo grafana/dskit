@@ -600,9 +600,12 @@ func TestSendSumOfHistograms_NativeHistograms(t *testing.T) {
 			for _, m := range mf.GetMetric() {
 				h := m.GetHistogram()
 				if h != nil {
-					t.Logf("Direct from registry - Schema: %v", h.Schema)
-					t.Logf("Direct from registry - ZeroThreshold: %v", h.ZeroThreshold)
+					t.Logf("Direct from registry - Schema: %v (value: %d)", h.Schema, h.GetSchema())
+					t.Logf("Direct from registry - ZeroThreshold: %v (value: %f)", h.ZeroThreshold, h.GetZeroThreshold())
+					t.Logf("Direct from registry - ZeroCount: %d", h.GetZeroCount())
 					t.Logf("Direct from registry - PositiveSpan: %d", len(h.GetPositiveSpan()))
+					t.Logf("Direct from registry - PositiveDelta: %d", len(h.GetPositiveDelta()))
+					t.Logf("Direct from registry - NegativeSpan: %d", len(h.GetNegativeSpan()))
 					t.Logf("Direct from registry - Bucket count: %d", len(h.GetBucket()))
 				}
 			}

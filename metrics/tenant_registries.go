@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -530,13 +531,12 @@ type HistogramData struct {
 	buckets     map[float64]uint64
 
 	// Native histogram fields
-	schema         *int32
-	zeroThreshold  *float64
-	zeroCount      *uint64
-	negativeSpans  []*dto.BucketSpan
-	negativeCounts []uint64
-	positiveSpans  []*dto.BucketSpan
-	positiveCounts []uint64
+	schema        *int32
+	zeroThreshold *float64
+	zeroCount     *uint64
+	// Store buckets as maps for easier aggregation
+	negativeBuckets map[int]uint64 // bucket index -> count
+	positiveBuckets map[int]uint64 // bucket index -> count
 }
 
 // Count returns the histogram count value.
@@ -549,6 +549,7 @@ func (d HistogramData) Count() uint64 {
 // is using the buckets map (doesn't make a copy), and it's not allowed to change the buckets
 // after they've been passed to a prometheus.Metric.
 func (d *HistogramData) AddHistogram(histo *dto.Histogram) {
+
 	d.sampleCount += histo.GetSampleCount()
 	d.sampleSum += histo.GetSampleSum()
 
@@ -591,73 +592,25 @@ func (d *HistogramData) AddHistogram(histo *dto.Histogram) {
 		}
 	}
 
-	// Handle negative buckets
-	if len(histo.GetNegativeSpan()) > 0 {
-		if d.negativeSpans == nil {
-			// Copy spans structure from first histogram
-			d.negativeSpans = make([]*dto.BucketSpan, len(histo.GetNegativeSpan()))
-			for i, span := range histo.GetNegativeSpan() {
-				d.negativeSpans[i] = &dto.BucketSpan{
-					Offset: span.Offset,
-					Length: span.Length,
-				}
-			}
+	// Handle negative buckets - convert spans and deltas to bucket index map
+	if len(histo.GetNegativeSpan()) > 0 && len(histo.GetNegativeDelta()) > 0 {
+		negativeBuckets := convertSpansAndDeltasToBuckets(histo.GetNegativeSpan(), histo.GetNegativeDelta())
+		if d.negativeBuckets == nil {
+			d.negativeBuckets = make(map[int]uint64)
 		}
-
-		// Aggregate negative bucket counts (convert deltas to absolute counts first)
-		if len(histo.GetNegativeDelta()) > 0 {
-			// Convert deltas to absolute counts for this histogram
-			absoluteCounts := make([]uint64, len(histo.GetNegativeDelta()))
-			var cumulativeCount uint64 = 0
-			for i, delta := range histo.GetNegativeDelta() {
-				cumulativeCount += uint64(delta)
-				absoluteCounts[i] = cumulativeCount
-			}
-
-			// Add to our aggregated absolute counts
-			if d.negativeCounts == nil {
-				d.negativeCounts = make([]uint64, len(absoluteCounts))
-			}
-			for i, count := range absoluteCounts {
-				if i < len(d.negativeCounts) {
-					d.negativeCounts[i] += count
-				}
-			}
+		for bucketIdx, count := range negativeBuckets {
+			d.negativeBuckets[bucketIdx] += count
 		}
 	}
 
-	// Handle positive buckets
-	if len(histo.GetPositiveSpan()) > 0 {
-		if d.positiveSpans == nil {
-			// Copy spans structure from first histogram
-			d.positiveSpans = make([]*dto.BucketSpan, len(histo.GetPositiveSpan()))
-			for i, span := range histo.GetPositiveSpan() {
-				d.positiveSpans[i] = &dto.BucketSpan{
-					Offset: span.Offset,
-					Length: span.Length,
-				}
-			}
+	// Handle positive buckets - convert spans and deltas to bucket index map
+	if len(histo.GetPositiveSpan()) > 0 && len(histo.GetPositiveDelta()) > 0 {
+		positiveBuckets := convertSpansAndDeltasToBuckets(histo.GetPositiveSpan(), histo.GetPositiveDelta())
+		if d.positiveBuckets == nil {
+			d.positiveBuckets = make(map[int]uint64)
 		}
-
-		// Aggregate positive bucket counts (convert deltas to absolute counts first)
-		if len(histo.GetPositiveDelta()) > 0 {
-			// Convert deltas to absolute counts for this histogram
-			absoluteCounts := make([]uint64, len(histo.GetPositiveDelta()))
-			var cumulativeCount uint64 = 0
-			for i, delta := range histo.GetPositiveDelta() {
-				cumulativeCount += uint64(delta)
-				absoluteCounts[i] = cumulativeCount
-			}
-
-			// Add to our aggregated absolute counts
-			if d.positiveCounts == nil {
-				d.positiveCounts = make([]uint64, len(absoluteCounts))
-			}
-			for i, count := range absoluteCounts {
-				if i < len(d.positiveCounts) {
-					d.positiveCounts[i] += count
-				}
-			}
+		for bucketIdx, count := range positiveBuckets {
+			d.positiveBuckets[bucketIdx] += count
 		}
 	}
 }
@@ -702,50 +655,22 @@ func (d *HistogramData) AddHistogramData(histo HistogramData) {
 	}
 
 	// Merge negative buckets
-	if len(histo.negativeSpans) > 0 {
-		if d.negativeSpans == nil {
-			d.negativeSpans = make([]*dto.BucketSpan, len(histo.negativeSpans))
-			for i, span := range histo.negativeSpans {
-				d.negativeSpans[i] = &dto.BucketSpan{
-					Offset: span.Offset,
-					Length: span.Length,
-				}
-			}
+	if len(histo.negativeBuckets) > 0 {
+		if d.negativeBuckets == nil {
+			d.negativeBuckets = make(map[int]uint64)
 		}
-	}
-
-	if len(histo.negativeCounts) > 0 {
-		if d.negativeCounts == nil {
-			d.negativeCounts = make([]uint64, len(histo.negativeCounts))
-		}
-		for i, count := range histo.negativeCounts {
-			if i < len(d.negativeCounts) {
-				d.negativeCounts[i] += count
-			}
+		for bucketIdx, count := range histo.negativeBuckets {
+			d.negativeBuckets[bucketIdx] += count
 		}
 	}
 
 	// Merge positive buckets
-	if len(histo.positiveSpans) > 0 {
-		if d.positiveSpans == nil {
-			d.positiveSpans = make([]*dto.BucketSpan, len(histo.positiveSpans))
-			for i, span := range histo.positiveSpans {
-				d.positiveSpans[i] = &dto.BucketSpan{
-					Offset: span.Offset,
-					Length: span.Length,
-				}
-			}
+	if len(histo.positiveBuckets) > 0 {
+		if d.positiveBuckets == nil {
+			d.positiveBuckets = make(map[int]uint64)
 		}
-	}
-
-	if len(histo.positiveCounts) > 0 {
-		if d.positiveCounts == nil {
-			d.positiveCounts = make([]uint64, len(histo.positiveCounts))
-		}
-		for i, count := range histo.positiveCounts {
-			if i < len(d.positiveCounts) {
-				d.positiveCounts[i] += count
-			}
+		for bucketIdx, count := range histo.positiveBuckets {
+			d.positiveBuckets[bucketIdx] += count
 		}
 	}
 }
@@ -755,15 +680,42 @@ func (d *HistogramData) AddHistogramData(histo HistogramData) {
 // Note that returned metric shares bucket with this HistogramData, so avoid
 // doing more modifications to this HistogramData after calling Metric.
 func (d *HistogramData) Metric(desc *prometheus.Desc, labelValues ...string) prometheus.Metric {
-
 	// Check if this is a native histogram (has native histogram fields)
 	if d.schema != nil {
-		// We have a schema, so this should be a native histogram
-		// TEMPORARY: For now, just verify that native histogram fields are populated
-		// but return a classic histogram to avoid aggregation complexity.
-		// This allows tests to verify that native histogram data is being processed
-		// even though the final output is still a classic histogram.
-		return prometheus.MustNewConstHistogram(desc, d.sampleCount, d.sampleSum, d.buckets, labelValues...)
+		// Create native histogram with aggregated data
+		zeroThreshold := 0.0
+		if d.zeroThreshold != nil {
+			zeroThreshold = *d.zeroThreshold
+		}
+
+		zeroCount := uint64(0)
+		if d.zeroCount != nil {
+			zeroCount = *d.zeroCount
+		}
+
+		// Convert to int64 maps as required by prometheus
+		negativeBuckets := make(map[int]int64)
+		for bucketIdx, count := range d.negativeBuckets {
+			negativeBuckets[bucketIdx] = int64(count)
+		}
+
+		positiveBuckets := make(map[int]int64)
+		for bucketIdx, count := range d.positiveBuckets {
+			positiveBuckets[bucketIdx] = int64(count)
+		}
+
+		return prometheus.MustNewConstNativeHistogram(
+			desc,
+			d.sampleCount,
+			d.sampleSum,
+			positiveBuckets,
+			negativeBuckets,
+			zeroCount,
+			*d.schema,
+			zeroThreshold,
+			time.Time{}, // createdTimestamp - using zero time
+			labelValues...,
+		)
 	}
 
 	// Fall back to classic histogram

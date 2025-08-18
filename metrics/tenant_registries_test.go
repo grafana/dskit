@@ -567,11 +567,11 @@ func TestSendSumOfHistograms_NativeHistograms(t *testing.T) {
 	// Add some observations to create native histogram data
 	user1Metric.Observe(1.5)
 	user1Metric.Observe(2.5)
-	user1Metric.Observe(0.1) // Should go to zero bucket
+	user1Metric.Observe(0.0)
 
 	user2Metric.Observe(3.5)
 	user2Metric.Observe(4.5)
-	user2Metric.Observe(0.2) // Should go to zero bucket
+	user2Metric.Observe(0.2)
 
 	regs := NewTenantRegistries(log.NewNopLogger())
 	regs.AddTenantRegistry("user-1", user1Reg)
@@ -588,29 +588,9 @@ func TestSendSumOfHistograms_NativeHistograms(t *testing.T) {
 	require.NotNil(t, histogram)
 
 	// Check that we have the expected sample count and sum
-	require.Equal(t, uint64(6), histogram.GetSampleCount()) // 3 + 3 observations
-	expectedSum := 1.5 + 2.5 + 0.1 + 3.5 + 4.5 + 0.2        // = 12.3
+	require.Equal(t, uint64(6), histogram.GetSampleCount())
+	expectedSum := 1.5 + 2.5 + 0.0 + 3.5 + 4.5 + 0.2
 	require.InDelta(t, expectedSum, histogram.GetSampleSum(), 0.001)
-
-	// Debug: Let's also check what we get directly from the registries
-	user1Gathered, err := regs.GetRegistryForTenant("user-1").Gather()
-	require.NoError(t, err)
-	for _, mf := range user1Gathered {
-		if mf.GetName() == "test_metric" {
-			for _, m := range mf.GetMetric() {
-				h := m.GetHistogram()
-				if h != nil {
-					t.Logf("Direct from registry - Schema: %v (value: %d)", h.Schema, h.GetSchema())
-					t.Logf("Direct from registry - ZeroThreshold: %v (value: %f)", h.ZeroThreshold, h.GetZeroThreshold())
-					t.Logf("Direct from registry - ZeroCount: %d", h.GetZeroCount())
-					t.Logf("Direct from registry - PositiveSpan: %d", len(h.GetPositiveSpan()))
-					t.Logf("Direct from registry - PositiveDelta: %d", len(h.GetPositiveDelta()))
-					t.Logf("Direct from registry - NegativeSpan: %d", len(h.GetNegativeSpan()))
-					t.Logf("Direct from registry - Bucket count: %d", len(h.GetBucket()))
-				}
-			}
-		}
-	}
 
 	// Debug: Print what fields are available after aggregation
 	t.Logf("After aggregation - Schema: %v", histogram.Schema)
@@ -621,8 +601,13 @@ func TestSendSumOfHistograms_NativeHistograms(t *testing.T) {
 	t.Logf("After aggregation - PositiveCount: %d", len(histogram.GetPositiveCount()))
 	t.Logf("After aggregation - Bucket count: %d", len(histogram.GetBucket()))
 
-	// For now, just check that we have basic histogram data
-	// (expectedSum already calculated above)
+	// Check that native histogram fields are present and non-empty
+	require.Equal(t, int32(3), *histogram.Schema, "Expected native histogram schema to be the same as the two schemas aggregated")
+	require.NotNil(t, histogram.ZeroThreshold)
+	require.Equal(t, uint64(1), histogram.GetZeroCount())
+
+	// Should have either positive buckets or spans (depending on the values observed)
+	require.True(t, len(histogram.GetPositiveSpan()) > 0 || len(histogram.GetPositiveDelta()) > 0 || len(histogram.GetPositiveCount()) > 0)
 }
 
 func TestSendSumOfHistogramsWithLabels_NativeHistograms(t *testing.T) {
@@ -672,12 +657,14 @@ func TestSendSumOfHistogramsWithLabels_NativeHistograms(t *testing.T) {
 	// Check histogram data
 	histogram := metric.GetHistogram()
 	require.NotNil(t, histogram)
-	require.Equal(t, uint64(5), histogram.GetSampleCount()) // All 5 observations
-	expectedSum := 1.0 + 2.0 + 0.1 + 3.0 + 4.0              // = 10.1
+	require.Equal(t, uint64(5), histogram.GetSampleCount())
+	expectedSum := 1.0 + 2.0 + 0.1 + 3.0 + 4.0
 	require.InDelta(t, expectedSum, histogram.GetSampleSum(), 0.001)
 
-	// For now, just verify basic histogram aggregation works
-	// Native histogram field verification will be added once the implementation is complete
+	// Check native histogram fields are present
+	require.NotNil(t, histogram.Schema)
+	require.NotNil(t, histogram.ZeroThreshold)
+	require.True(t, len(histogram.GetPositiveSpan()) > 0 || len(histogram.GetPositiveDelta()) > 0 || len(histogram.GetPositiveCount()) > 0)
 }
 
 // TestSendSumOfCountersPerTenant_WithLabels tests to ensure multiple metrics for the same user with a matching label are

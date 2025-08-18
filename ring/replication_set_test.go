@@ -2071,6 +2071,21 @@ func TestReplicationSet_ZoneCount(t *testing.T) {
 	}
 }
 
+func TestContextWithAvailableReplicas(t *testing.T) {
+	t.Run("when available replicas exists in a context", func(t *testing.T) {
+		ctx := ContextWithAvailableReplicas(context.Background(), 5)
+		replicas, ok := GetAvailableReplicas(ctx)
+		require.Equal(t, 5, replicas)
+		require.True(t, ok)
+	})
+
+	t.Run("when available replicas does not exist in a context", func(t *testing.T) {
+		replicas, ok := GetAvailableReplicas(context.Background())
+		require.Equal(t, 0, replicas)
+		require.False(t, ok)
+	})
+}
+
 func BenchmarkReplicationSetZoneCount(b *testing.B) {
 	for _, instancesPerZone := range []int{1, 2, 5, 10, 100, 300} {
 		for _, zones := range []int{1, 2, 3} {

@@ -15,8 +15,8 @@ import (
 	"github.com/grafana/dskit/spanlogger"
 )
 
-// Used to communicate, via a context, when an associated call was made for only a single replica.
-type onlyReplicaContextKey struct{}
+// Used to communicate, via a context, the number of replicas that are available for a DoUntilQuorum call.
+type availableReplicasContextKey struct{}
 
 // ReplicationSet describes the instances to talk to for a given key, and how
 // many errors to tolerate.
@@ -140,10 +140,10 @@ type DoUntilQuorumConfig struct {
 	// faster, for example.
 	ZoneSorter ZoneSorter
 
-	// MarkOnlyReplica indicates when we should provide information in a DoUntilQuorum call, as part of the context, that
-	// indicates a replica is the only one in a set. This can be used by the replica to make informed decisions about load
+	// IncludeReplicaCount indicates that we should unclude in a DoUntilQuorum call, as part of the context, a count of the
+	// number of available replicas. This can be propagated to a replica and used to make informed decisions about load
 	// shedding.
-	MarkOnlyReplica bool
+	IncludeReplicaCount bool
 }
 
 func (c DoUntilQuorumConfig) Validate() error {
@@ -255,8 +255,8 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		logger = kitlog.NewNopLogger()
 	}
 
-	if cfg.MarkOnlyReplica && len(r.Instances) == 1 {
-		ctx = ContextWithOnlyReplica(ctx)
+	if cfg.IncludeReplicaCount {
+		ctx = ContextWithAvailableReplicas(ctx, len(r.Instances))
 	}
 
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
@@ -634,14 +634,15 @@ func hasReplicationSetChangedExcluding(before, after ReplicationSet, exclude fun
 	return false
 }
 
-// ContextWithOnlyReplica returns a new context with the only-replica marker set. This can be later checked via
-// IsOnlyReplicaContext.
-func ContextWithOnlyReplica(ctx context.Context) context.Context {
-	return context.WithValue(ctx, onlyReplicaContextKey{}, true)
+// ContextWithAvailableReplicas returns a new context that can be used as part of a DoUntilQuorum call, with the number
+// of availableReplicas set. This can be later checked via GetAvailableReplicas.
+func ContextWithAvailableReplicas(ctx context.Context, availableReplicas int) context.Context {
+	return context.WithValue(ctx, availableReplicasContextKey{}, availableReplicas)
 }
 
-// IsOnlyReplicaContext returns whether the ctx indicates a replication set contains only one replica.
-func IsOnlyReplicaContext(ctx context.Context) bool {
-	result, ok := ctx.Value(onlyReplicaContextKey{}).(bool)
-	return result && ok
+// GetAvailableReplicas returns the available replicas count from the context, if any, along with an ok flag indicating
+// if the availableReplicas was set.
+func GetAvailableReplicas(ctx context.Context) (int, bool) {
+	result, ok := ctx.Value(availableReplicasContextKey{}).(int)
+	return result, ok
 }

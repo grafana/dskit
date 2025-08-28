@@ -368,7 +368,7 @@ func newMockMemcachedClientBackend() *mockMemcachedClientBackend {
 	}
 }
 
-func (m *mockMemcachedClientBackend) GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error) {
+func (m *mockMemcachedClientBackend) GetMulti(ctx context.Context, keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error) {
 	options := &memcache.Options{}
 	for _, opt := range opts {
 		opt(options)

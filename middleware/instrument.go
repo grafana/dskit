@@ -50,16 +50,17 @@ func (f PerTenantCallback) shouldInstrument(ctx context.Context) (*PerTenantConf
 
 // Instrument is a Middleware which records timings for every HTTP request
 type Instrument struct {
-	Duration          *prometheus.HistogramVec
-	PerTenantDuration *prometheus.HistogramVec
-	PerTenantTotal    *prometheus.CounterVec
-	PerTenantCallback PerTenantCallback
-	RequestBodySize   *prometheus.HistogramVec
-	ResponseBodySize  *prometheus.HistogramVec
-	InflightRequests  *prometheus.GaugeVec
-	LatencyCutoff     time.Duration
-	ThroughputUnit    string
-	RequestThroughput *prometheus.HistogramVec
+	Duration                    *prometheus.HistogramVec
+	PerTenantDuration           *prometheus.HistogramVec
+	PerTenantTotal              *prometheus.CounterVec
+	PerTenantCallback           PerTenantCallback
+	SubtractRequestBodyReadTime bool
+	RequestBodySize             *prometheus.HistogramVec
+	ResponseBodySize            *prometheus.HistogramVec
+	InflightRequests            *prometheus.GaugeVec
+	LatencyCutoff               time.Duration
+	ThroughputUnit              string
+	RequestThroughput           *prometheus.HistogramVec
 }
 
 // IsWSHandshakeRequest returns true if the given request is a websocket handshake request.
@@ -101,6 +102,10 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 
 		i.RequestBodySize.WithLabelValues(r.Method, route).Observe(float64(rBody.read))
 		i.ResponseBodySize.WithLabelValues(r.Method, route).Observe(float64(respMetrics.Written))
+
+		if i.SubtractRequestBodyReadTime && rBody.readDuration < respMetrics.Duration {
+			respMetrics.Duration -= rBody.readDuration
+		}
 
 		labelValues := []string{
 			r.Method,
@@ -173,15 +178,18 @@ func (i Instrument) getRouteName(r *http.Request) string {
 }
 
 type reqBody struct {
-	b    io.ReadCloser
-	read int64
+	b            io.ReadCloser
+	read         int64
+	readDuration time.Duration
 }
 
 func (w *reqBody) Read(p []byte) (int, error) {
+	t1 := time.Now()
 	n, err := w.b.Read(p)
 	if n > 0 {
 		w.read += int64(n)
 	}
+	w.readDuration += time.Since(t1)
 	return n, err
 }
 

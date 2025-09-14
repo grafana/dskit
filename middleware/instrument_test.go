@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -8,9 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/expfmt"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/instrument"
@@ -211,3 +217,82 @@ func TestExtractValueFromMultiValueHeader(t *testing.T) {
 		})
 	}
 }
+
+func TestInstrumentSlowRequest(t *testing.T) {
+	assertMetricsContains := func(t *testing.T, registry prometheus.Gatherer, needles []string) {
+		got, err := registry.Gather()
+		assert.NoError(t, err)
+
+		var gotBuf bytes.Buffer
+		enc := expfmt.NewEncoder(&gotBuf, expfmt.NewFormat(expfmt.TypeTextPlain))
+		for _, mf := range got {
+			if err := enc.Encode(mf); err != nil {
+				require.NoError(t, err)
+			}
+		}
+		for _, needle := range needles {
+			assert.Contains(t, gotBuf.String(), needle, "metric %s not found in %s", needle, gotBuf.String())
+		}
+	}
+
+	tests := []struct {
+		SubtractRequestBodyReadTime bool
+		expectedMetrics             []string
+	}{
+		{
+			SubtractRequestBodyReadTime: true,
+			expectedMetrics: []string{
+				`request_duration_seconds_bucket{method="POST",route="serverpath_foo",status_code="200",ws="false",le="0.05"} 1`,
+			},
+		},
+		{
+			SubtractRequestBodyReadTime: false,
+			expectedMetrics: []string{
+				`request_duration_seconds_bucket{method="POST",route="serverpath_foo",status_code="200",ws="false",le="0.1"} 0`,
+				`request_duration_seconds_bucket{method="POST",route="serverpath_foo",status_code="200",ws="false",le="0.25"} 1`,
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("SubtractRequestBodyReadTime=%v", test.SubtractRequestBodyReadTime), func(t *testing.T) {
+			expectedURI := "/serverpath/foo?qwe=asd"
+			sleepTime := 100 * time.Millisecond
+
+			reg := prometheus.NewRegistry()
+
+			r := mux.NewRouter()
+			r.Handle("/serverpath/foo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				data, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				assert.Equal(t, "hello world", string(data))
+				w.WriteHeader(200)
+				w.Write([]byte("239"))
+			}))
+
+			i := newInstrument(reg)
+			i.SubtractRequestBodyReadTime = test.SubtractRequestBodyReadTime
+			h := i.Wrap(r)
+			h = RouteInjector{RouteMatcher: r}.Wrap(h)
+
+			server := httptest.NewServer(h)
+			defer server.Close()
+
+			rBody := strings.NewReader("hello world")
+			resp, err := http.Post(server.URL+expectedURI, "application/json", readerFunc(func(b []byte) (int, error) {
+				time.Sleep(sleepTime)
+				return rBody.Read(b)
+			}))
+			require.NoError(t, err, "Failed to get URL")
+
+			body, _ := io.ReadAll(resp.Body)
+			assert.Equal(t, 200, resp.StatusCode)
+			assert.Equal(t, "239", string(body))
+
+			assertMetricsContains(t, reg, test.expectedMetrics)
+		})
+	}
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(b []byte) (int, error) { return f(b) }

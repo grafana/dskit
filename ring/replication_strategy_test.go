@@ -6,11 +6,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRingReplicationStrategy(t *testing.T) {
 	for i, tc := range []struct {
 		replicationFactor, liveIngesters, deadIngesters int
+		consistencyLevel                                ConsistencyLevel
 		expectedMaxFailure                              int
 		expectedError                                   string
 	}{
@@ -26,6 +28,12 @@ func TestRingReplicationStrategy(t *testing.T) {
 			deadIngesters:     1,
 			expectedError:     "at least 1 live replicas required, could only find 0 - unhealthy instances: dead1",
 		},
+		{
+			replicationFactor: 1,
+			deadIngesters:     1,
+			consistencyLevel:  ConsistencyRelaxedQuorum,
+			expectedError:     "at least 1 live replicas required, could only find 0 - unhealthy instances: dead1",
+		},
 
 		// Ensure it works for RF=3 and 2 ingesters.
 		{
@@ -33,12 +41,24 @@ func TestRingReplicationStrategy(t *testing.T) {
 			liveIngesters:      2,
 			expectedMaxFailure: 0,
 		},
+		{
+			replicationFactor:  3,
+			liveIngesters:      2,
+			consistencyLevel:   ConsistencyAny,
+			expectedMaxFailure: 1,
+		},
 
 		// Ensure it works for the default production config.
 		{
 			replicationFactor:  3,
 			liveIngesters:      3,
 			expectedMaxFailure: 1,
+		},
+		{
+			replicationFactor:  3,
+			liveIngesters:      3,
+			consistencyLevel:   ConsistencyAny,
+			expectedMaxFailure: 2,
 		},
 
 		{
@@ -53,6 +73,41 @@ func TestRingReplicationStrategy(t *testing.T) {
 			liveIngesters:     1,
 			deadIngesters:     2,
 			expectedError:     "at least 2 live replicas required, could only find 1 - unhealthy instances: dead1,dead2",
+		},
+		{
+			replicationFactor:  3,
+			liveIngesters:      1,
+			deadIngesters:      2,
+			consistencyLevel:   ConsistencyRelaxedQuorum,
+			expectedMaxFailure: 0,
+		},
+		{
+			replicationFactor:  3,
+			liveIngesters:      1,
+			deadIngesters:      2,
+			consistencyLevel:   ConsistencyAny,
+			expectedMaxFailure: 0,
+		},
+
+		{
+			replicationFactor: 3,
+			liveIngesters:     0,
+			deadIngesters:     3,
+			expectedError:     "at least 2 live replicas required, could only find 0 - unhealthy instances: dead1,dead2,dead3",
+		},
+		{
+			replicationFactor: 3,
+			liveIngesters:     0,
+			deadIngesters:     3,
+			consistencyLevel:  ConsistencyRelaxedQuorum,
+			expectedError:     "at least 1 live replicas required, could only find 0 - unhealthy instances: dead1,dead2,dead3",
+		},
+		{
+			replicationFactor: 3,
+			liveIngesters:     0,
+			deadIngesters:     3,
+			consistencyLevel:  ConsistencyAny,
+			expectedError:     "at least 1 live replicas required, could only find 0 - unhealthy instances: dead1,dead2,dead3",
 		},
 
 		// Ensure it works when adding / removing nodes.
@@ -77,6 +132,20 @@ func TestRingReplicationStrategy(t *testing.T) {
 			deadIngesters:     2,
 			expectedError:     "at least 3 live replicas required, could only find 2 - unhealthy instances: dead1,dead2",
 		},
+		{
+			replicationFactor:  3,
+			liveIngesters:      2,
+			deadIngesters:      2,
+			consistencyLevel:   ConsistencyRelaxedQuorum,
+			expectedMaxFailure: 0,
+		},
+		{
+			replicationFactor:  3,
+			liveIngesters:      2,
+			deadIngesters:      2,
+			consistencyLevel:   ConsistencyAny,
+			expectedMaxFailure: 1,
+		},
 	} {
 		ingesters := []InstanceDesc{}
 		for i := 0; i < tc.liveIngesters; i++ {
@@ -89,7 +158,9 @@ func TestRingReplicationStrategy(t *testing.T) {
 		}
 
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			strategy := NewDefaultReplicationStrategy()
+			defaultStrategy := NewDefaultReplicationStrategy()
+			strategy, err := withConsistency(defaultStrategy, tc.consistencyLevel)
+			require.NoError(t, err)
 			liveIngesters, maxFailure, err := strategy.Filter(ingesters, Read, tc.replicationFactor, 100*time.Second, false)
 			if tc.expectedError == "" {
 				assert.NoError(t, err)

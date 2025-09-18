@@ -9,17 +9,37 @@ import (
 
 type ClusterValidationConfig struct {
 	Label           string                  `yaml:"label" category:"experimental"`
+	Labels          flagext.StringSliceCSV  `yaml:"labels" category:"experimental"`
 	registeredFlags flagext.RegisteredFlags `yaml:"-"`
 }
 
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
-		f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the cluster validation label.")
+		f.StringVar(&cfg.Label, prefix+"label", "", "Cluster validation label (deprecated, use labels instead).")
+		f.Var(&cfg.Labels, prefix+"labels", "Comma-separated list of cluster validation labels.")
 	})
 }
 
 func (cfg *ClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
 	return cfg.registeredFlags
+}
+
+// GetEffectiveLabels returns the effective cluster validation labels.
+// For backwards compatibility, if the deprecated Label field is used, it returns it as a single-element slice.
+// If both Label and Labels are set, it returns an error during validation.
+func (cfg *ClusterValidationConfig) GetEffectiveLabels() []string {
+	if cfg.Label != "" {
+		return []string{cfg.Label}
+	}
+	return cfg.Labels
+}
+
+// Validate ensures that Label and Labels are not both set.
+func (cfg *ClusterValidationConfig) Validate() error {
+	if cfg.Label != "" && len(cfg.Labels) > 0 {
+		return fmt.Errorf("cluster validation label and labels cannot both be set - use labels instead of the deprecated label flag")
+	}
+	return nil
 }
 
 type ServerClusterValidationConfig struct {
@@ -30,11 +50,19 @@ type ServerClusterValidationConfig struct {
 }
 
 func (cfg *ServerClusterValidationConfig) Validate() error {
-	err := cfg.GRPC.Validate("grpc", cfg.Label)
+	// First validate the base cluster validation config
+	if err := cfg.ClusterValidationConfig.Validate(); err != nil {
+		return err
+	}
+
+	// Get the effective labels (either from deprecated Label or new Labels)
+	labels := cfg.GetEffectiveLabels()
+
+	err := cfg.GRPC.Validate("grpc", labels)
 	if err != nil {
 		return err
 	}
-	return cfg.HTTP.Validate("http", cfg.Label)
+	return cfg.HTTP.Validate("http", labels)
 }
 
 func (cfg *ServerClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -54,10 +82,10 @@ type ClusterValidationProtocolConfig struct {
 	SoftValidation bool `yaml:"soft_validation" category:"experimental"`
 }
 
-func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, label string) error {
-	if label == "" {
+func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, labels []string) error {
+	if len(labels) == 0 {
 		if cfg.Enabled || cfg.SoftValidation {
-			return fmt.Errorf("%s: validation cannot be enabled if cluster validation label is not configured", prefix)
+			return fmt.Errorf("%s: validation cannot be enabled if cluster validation labels are not configured", prefix)
 		}
 		return nil
 	}

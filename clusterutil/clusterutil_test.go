@@ -143,6 +143,52 @@ func createContext(containsRequestCluster bool, clusters []string) context.Conte
 	return metadata.NewIncomingContext(context.Background(), md)
 }
 
+func TestIsClusterAllowed(t *testing.T) {
+	testCases := map[string]struct {
+		cluster         string
+		allowedClusters []string
+		expectedAllowed bool
+	}{
+		"cluster found in single allowed cluster": {
+			cluster:         "cluster-a",
+			allowedClusters: []string{"cluster-a"},
+			expectedAllowed: true,
+		},
+		"cluster found in multiple allowed clusters": {
+			cluster:         "cluster-b",
+			allowedClusters: []string{"cluster-a", "cluster-b", "cluster-c"},
+			expectedAllowed: true,
+		},
+		"cluster not found in allowed clusters": {
+			cluster:         "cluster-d",
+			allowedClusters: []string{"cluster-a", "cluster-b", "cluster-c"},
+			expectedAllowed: false,
+		},
+		"empty cluster with empty allowed clusters": {
+			cluster:         "",
+			allowedClusters: []string{},
+			expectedAllowed: false,
+		},
+		"empty cluster with non-empty allowed clusters": {
+			cluster:         "",
+			allowedClusters: []string{"cluster-a", "cluster-b"},
+			expectedAllowed: false,
+		},
+		"non-empty cluster with empty allowed clusters": {
+			cluster:         "cluster-a",
+			allowedClusters: []string{},
+			expectedAllowed: false,
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			allowed := IsClusterAllowed(testCase.cluster, testCase.allowedClusters)
+			require.Equal(t, testCase.expectedAllowed, allowed)
+		})
+	}
+}
+
 func createRequest(containsCluster bool, clusters []string) *http.Request {
 	req := &http.Request{
 		Header: make(http.Header),

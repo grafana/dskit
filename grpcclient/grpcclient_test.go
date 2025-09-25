@@ -70,14 +70,6 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 			expectedUnaryInterceptors:             1,
 			expectedClusterUnaryClientInterceptor: true,
 		},
-		"if cluster validation label is set (deprecated field) and there is no input and an implicit UnaryClientInterceptor we expect ClusterUnaryClientInterceptor to be the last one": {
-			clusterValidation:      clusterutil.ClusterValidationConfig{Label: "cluster"},
-			inputUnaryInterceptors: nil,
-			// setting rateLimit creates an implicit UnaryClientInterceptor
-			rateLimit:                             10,
-			expectedUnaryInterceptors:             2,
-			expectedClusterUnaryClientInterceptor: true,
-		},
 		"if cluster validation label is set and there is no input and an implicit UnaryClientInterceptor we expect ClusterUnaryClientInterceptor to be the last one": {
 			clusterValidation:      clusterutil.ClusterValidationConfig{Label: "cluster"},
 			inputUnaryInterceptors: nil,

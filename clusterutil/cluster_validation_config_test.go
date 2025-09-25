@@ -18,14 +18,14 @@ func TestClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterFlagsWithPrefix("prefix", fs)
 
-	// After we track registered flags, both label and labels flags are returned.
+	// After we track registered flags, both label and additional-labels flags are returned.
 	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "prefix", registeredFlags.Prefix)
 	require.Len(t, registeredFlags.Flags, 2)
 	_, ok := registeredFlags.Flags["label"]
 	require.True(t, ok)
-	_, ok = registeredFlags.Flags["labels"]
+	_, ok = registeredFlags.Flags["additional-labels"]
 	require.True(t, ok)
 }
 
@@ -96,42 +96,47 @@ func TestServerClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterFlagsWithPrefix("server.cluster-validation.", fs)
 
-	// After we track registered flags, label, labels, grpc.enabled and grpc.soft-validation flags are returned.
+	// After we track registered flags, label, additional-labels, grpc.enabled and grpc.soft-validation flags are returned.
 	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "server.cluster-validation.", registeredFlags.Prefix)
-	expectedFlags := []string{"label", "labels", "grpc.enabled", "grpc.soft-validation", "http.enabled", "http.soft-validation", "http.excluded-paths", "http.excluded-user-agents"}
+	expectedFlags := []string{"label", "additional-labels", "grpc.enabled", "grpc.soft-validation", "http.enabled", "http.soft-validation", "http.excluded-paths", "http.excluded-user-agents"}
 	require.ElementsMatch(t, expectedFlags, slices.Collect(maps.Keys(registeredFlags.Flags)))
 }
 
 func TestClusterValidationConfig_GetEffectiveLabels(t *testing.T) {
 	testCases := map[string]struct {
-		label          string
-		labels         []string
-		expectedLabels []string
+		label            string
+		additionalLabels []string
+		expectedLabels   []string
 	}{
 		"empty config returns nil slice": {
-			label:          "",
-			labels:         nil,
-			expectedLabels: nil,
+			label:            "",
+			additionalLabels: nil,
+			expectedLabels:   nil,
 		},
-		"only deprecated label set": {
-			label:          "cluster-a",
-			labels:         nil,
-			expectedLabels: []string{"cluster-a"},
+		"only primary label set": {
+			label:            "cluster-a",
+			additionalLabels: nil,
+			expectedLabels:   []string{"cluster-a"},
 		},
-		"only new labels set": {
-			label:          "",
-			labels:         []string{"cluster-a", "cluster-b"},
-			expectedLabels: []string{"cluster-a", "cluster-b"},
+		"only additional labels set": {
+			label:            "",
+			additionalLabels: []string{"cluster-a", "cluster-b"},
+			expectedLabels:   []string{"cluster-a", "cluster-b"},
+		},
+		"both primary label and additional labels set": {
+			label:            "primary-cluster",
+			additionalLabels: []string{"cluster-a", "cluster-b"},
+			expectedLabels:   []string{"primary-cluster", "cluster-a", "cluster-b"},
 		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			cfg := ClusterValidationConfig{
-				Label:  testCase.label,
-				Labels: testCase.labels,
+				Label:            testCase.label,
+				AdditionalLabels: testCase.additionalLabels,
 			}
 			effective := cfg.GetEffectiveLabels()
 			require.Equal(t, testCase.expectedLabels, effective)
@@ -141,44 +146,41 @@ func TestClusterValidationConfig_GetEffectiveLabels(t *testing.T) {
 
 func TestClusterValidationConfig_Validate(t *testing.T) {
 	testCases := map[string]struct {
-		label       string
-		labels      []string
-		expectError bool
-		errorMsg    string
+		label            string
+		additionalLabels []string
+		expectError      bool
 	}{
 		"empty config is valid": {
-			label:       "",
-			labels:      nil,
-			expectError: false,
+			label:            "",
+			additionalLabels: nil,
+			expectError:      false,
 		},
-		"only deprecated label is valid": {
-			label:       "cluster-a",
-			labels:      nil,
-			expectError: false,
+		"only primary label is valid": {
+			label:            "cluster-a",
+			additionalLabels: nil,
+			expectError:      false,
 		},
-		"only new labels is valid": {
-			label:       "",
-			labels:      []string{"cluster-a", "cluster-b"},
-			expectError: false,
+		"only additional labels is valid": {
+			label:            "",
+			additionalLabels: []string{"cluster-a", "cluster-b"},
+			expectError:      false,
 		},
-		"both label and labels set is invalid": {
-			label:       "cluster-a",
-			labels:      []string{"cluster-b"},
-			expectError: true,
-			errorMsg:    "cluster validation label and labels cannot both be set - use labels instead of the deprecated label flag",
+		"both primary label and additional labels set is valid": {
+			label:            "cluster-a",
+			additionalLabels: []string{"cluster-b"},
+			expectError:      false,
 		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			cfg := ClusterValidationConfig{
-				Label:  testCase.label,
-				Labels: testCase.labels,
+				Label:            testCase.label,
+				AdditionalLabels: testCase.additionalLabels,
 			}
 			err := cfg.Validate()
 			if testCase.expectError {
 				require.Error(t, err)
-				require.Equal(t, testCase.errorMsg, err.Error())
 			} else {
 				require.NoError(t, err)
 			}

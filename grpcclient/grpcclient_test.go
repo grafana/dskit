@@ -65,7 +65,7 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 			expectedClusterUnaryClientInterceptor: false,
 		},
 		"if cluster validation label is set and there is no input and no implicit UnaryClientInterceptors we expect ClusterUnaryClientInterceptor to be the last one": {
-			clusterValidation:                     clusterutil.ClusterValidationConfig{Labels: []string{"cluster"}},
+			clusterValidation:                     clusterutil.ClusterValidationConfig{Label: "cluster"},
 			inputUnaryInterceptors:                nil,
 			expectedUnaryInterceptors:             1,
 			expectedClusterUnaryClientInterceptor: true,
@@ -79,7 +79,7 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 			expectedClusterUnaryClientInterceptor: true,
 		},
 		"if cluster validation label is set and there is no input and an implicit UnaryClientInterceptor we expect ClusterUnaryClientInterceptor to be the last one": {
-			clusterValidation:      clusterutil.ClusterValidationConfig{Labels: []string{"cluster"}},
+			clusterValidation:      clusterutil.ClusterValidationConfig{Label: "cluster"},
 			inputUnaryInterceptors: nil,
 			// setting rateLimit creates an implicit UnaryClientInterceptor
 			rateLimit:                             10,
@@ -87,13 +87,13 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 			expectedClusterUnaryClientInterceptor: true,
 		},
 		"if cluster validation label is set and there are input and no implicit UnaryClientInterceptors we expect ClusterUnaryClientInterceptor to be the last one": {
-			clusterValidation:                     clusterutil.ClusterValidationConfig{Labels: []string{"cluster"}},
+			clusterValidation:                     clusterutil.ClusterValidationConfig{Label: "cluster"},
 			inputUnaryInterceptors:                inputUnaryInterceptors,
 			expectedUnaryInterceptors:             len(inputUnaryInterceptors) + 1,
 			expectedClusterUnaryClientInterceptor: true,
 		},
 		"if cluster validation label is set and there are input and implicit UnaryClientInterceptors we expect ClusterUnaryClientInterceptor to be the last one": {
-			clusterValidation:      clusterutil.ClusterValidationConfig{Labels: []string{"cluster"}},
+			clusterValidation:      clusterutil.ClusterValidationConfig{Label: "cluster"},
 			inputUnaryInterceptors: inputUnaryInterceptors,
 			// setting rateLimit creates an implicit UnaryClientInterceptor
 			rateLimit:                             10,

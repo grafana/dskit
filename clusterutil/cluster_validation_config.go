@@ -8,15 +8,15 @@ import (
 )
 
 type ClusterValidationConfig struct {
-	Label           string                  `yaml:"label" category:"experimental"`
-	Labels          flagext.StringSliceCSV  `yaml:"labels" category:"experimental"`
-	registeredFlags flagext.RegisteredFlags `yaml:"-"`
+	Label            string                  `yaml:"label" category:"experimental"`
+	AdditionalLabels flagext.StringSliceCSV  `yaml:"additional_labels" category:"experimental"`
+	registeredFlags  flagext.RegisteredFlags `yaml:"-"`
 }
 
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
-		f.StringVar(&cfg.Label, prefix+"label", "", "Cluster validation label (deprecated, use labels instead).")
-		f.Var(&cfg.Labels, prefix+"labels", "Comma-separated list of cluster validation labels.")
+		f.StringVar(&cfg.Label, prefix+"label", "", "Primary cluster validation label.")
+		f.Var(&cfg.AdditionalLabels, prefix+"additional-labels", "Comma-separated list of additional cluster validation labels for server-side validation.")
 	})
 }
 
@@ -25,20 +25,21 @@ func (cfg *ClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
 }
 
 // GetEffectiveLabels returns the effective cluster validation labels.
-// For backwards compatibility, if the deprecated Label field is used, it returns it as a single-element slice.
-// If both Label and Labels are set, it returns an error during validation.
+// It combines the primary Label with any AdditionalLabels.
+// The primary Label is always first if present, followed by AdditionalLabels.
 func (cfg *ClusterValidationConfig) GetEffectiveLabels() []string {
+	var labels []string
 	if cfg.Label != "" {
-		return []string{cfg.Label}
+		labels = append(labels, cfg.Label)
 	}
-	return cfg.Labels
+	labels = append(labels, cfg.AdditionalLabels...)
+	return labels
 }
 
-// Validate ensures that Label and Labels are not both set.
+// Validate ensures the cluster validation configuration is valid.
+// Both Label and AdditionalLabels can be set together.
 func (cfg *ClusterValidationConfig) Validate() error {
-	if cfg.Label != "" && len(cfg.Labels) > 0 {
-		return fmt.Errorf("cluster validation label and labels cannot both be set - use labels instead of the deprecated label flag")
-	}
+	// Both fields can be set - no validation errors
 	return nil
 }
 

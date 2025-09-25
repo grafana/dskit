@@ -110,7 +110,7 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 			grpcWithChainUnaryInterceptor = func(unaryInterceptors ...grpc.UnaryClientInterceptor) grpc.DialOption {
 				withChainUnaryInterceptorCalled = true
 				require.Len(t, unaryInterceptors, testCase.expectedUnaryInterceptors)
-				if len(cfg.ClusterValidation.GetEffectiveLabels()) == 0 {
+				if cfg.ClusterValidation.Label == "" {
 					require.Nil(t, cfg.clusterUnaryClientInterceptor)
 				} else {
 					require.NotNil(t, cfg.clusterUnaryClientInterceptor)

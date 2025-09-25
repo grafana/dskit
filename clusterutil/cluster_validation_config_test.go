@@ -31,49 +31,44 @@ func TestClusterValidationConfig_RegisteredFlags(t *testing.T) {
 
 func TestClusterValidationProtocolConfig_Validate(t *testing.T) {
 	testCases := map[string]struct {
-		labels         []string
+		label          string
 		enabled        bool
 		softValidation bool
 		expectedErr    error
 	}{
-		"soft validation cannot be done if cluster validation labels are not set": {
+		"soft validation cannot be done if cluster validation label is not set": {
 			softValidation: true,
-			expectedErr:    fmt.Errorf("testProtocol: validation cannot be enabled if cluster validation labels are not configured"),
+			expectedErr:    fmt.Errorf("testProtocol: validation cannot be enabled if cluster validation label is not configured"),
 		},
-		"cluster validation cannot be done if cluster validation labels are not set": {
+		"cluster validation cannot be done if cluster validation label is not set": {
 			enabled:     true,
-			expectedErr: fmt.Errorf("testProtocol: validation cannot be enabled if cluster validation labels are not configured"),
+			expectedErr: fmt.Errorf("testProtocol: validation cannot be enabled if cluster validation label is not configured"),
 		},
-		"cluster validation and soft validation can be disabled if cluster validation labels are not set": {
-			labels:         []string{},
+		"cluster validation and soft validation can be disabled if cluster validation label is not set": {
+			label:          "",
 			enabled:        false,
 			softValidation: false,
 		},
-		"cluster validation and soft validation can be disabled if cluster validation labels are set": {
-			labels:         []string{"my-cluster"},
+		"cluster validation and soft validation can be disabled if cluster validation label is set": {
+			label:          "my-cluster",
 			enabled:        false,
 			softValidation: false,
 		},
 		"soft validation cannot be enabled if cluster validation is disabled": {
-			labels:         []string{"my-cluster"},
+			label:          "my-cluster",
 			enabled:        false,
 			softValidation: true,
 			expectedErr:    fmt.Errorf("testProtocol: soft validation can be enabled only if cluster validation is enabled"),
 		},
 		"soft validation can be disabled if cluster validation is enabled": {
-			labels:         []string{"my-cluster"},
+			label:          "my-cluster",
 			enabled:        true,
 			softValidation: false,
 		},
 		"cluster validation and soft validation can be enabled at the same time": {
-			labels:         []string{"my-cluster"},
+			label:          "my-cluster",
 			enabled:        true,
 			softValidation: true,
-		},
-		"multiple cluster labels are supported": {
-			labels:         []string{"cluster-a", "cluster-b", "cluster-c"},
-			enabled:        true,
-			softValidation: false,
 		},
 	}
 	for testName, testCase := range testCases {
@@ -82,7 +77,7 @@ func TestClusterValidationProtocolConfig_Validate(t *testing.T) {
 				Enabled:        testCase.enabled,
 				SoftValidation: testCase.softValidation,
 			}
-			err := testProtocolCfg.Validate("testProtocol", testCase.labels)
+			err := testProtocolCfg.Validate("testProtocol", testCase.label)
 			require.Equal(t, testCase.expectedErr, err)
 		})
 	}
@@ -104,7 +99,7 @@ func TestServerClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	require.ElementsMatch(t, expectedFlags, slices.Collect(maps.Keys(registeredFlags.Flags)))
 }
 
-func TestClusterValidationConfig_GetEffectiveLabels(t *testing.T) {
+func TestClusterValidationConfig_GetAllowedClusterLabels(t *testing.T) {
 	testCases := map[string]struct {
 		label            string
 		additionalLabels []string
@@ -138,7 +133,7 @@ func TestClusterValidationConfig_GetEffectiveLabels(t *testing.T) {
 				Label:            testCase.label,
 				AdditionalLabels: testCase.additionalLabels,
 			}
-			effective := cfg.GetEffectiveLabels()
+			effective := cfg.GetAllowedClusterLabels()
 			require.Equal(t, testCase.expectedLabels, effective)
 		})
 	}
@@ -149,6 +144,7 @@ func TestClusterValidationConfig_Validate(t *testing.T) {
 		label            string
 		additionalLabels []string
 		expectError      bool
+		errorMsg         string
 	}{
 		"empty config is valid": {
 			label:            "",
@@ -160,10 +156,11 @@ func TestClusterValidationConfig_Validate(t *testing.T) {
 			additionalLabels: nil,
 			expectError:      false,
 		},
-		"only additional labels is valid": {
+		"only additional labels without primary label is invalid": {
 			label:            "",
 			additionalLabels: []string{"cluster-a", "cluster-b"},
-			expectError:      false,
+			expectError:      true,
+			errorMsg:         "additional cluster validation labels require primary label to be set",
 		},
 		"both primary label and additional labels set is valid": {
 			label:            "cluster-a",
@@ -181,6 +178,7 @@ func TestClusterValidationConfig_Validate(t *testing.T) {
 			err := cfg.Validate()
 			if testCase.expectError {
 				require.Error(t, err)
+				require.Equal(t, testCase.errorMsg, err.Error())
 			} else {
 				require.NoError(t, err)
 			}

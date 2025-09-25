@@ -146,10 +146,9 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 
 	// If cluster validation is enabled, ClusterUnaryClientInterceptor must be the last UnaryClientInterceptor
 	// to wrap the real call.
-	effectiveLabels := cfg.ClusterValidation.GetEffectiveLabels()
-	if len(effectiveLabels) > 0 {
-		// For client side, we use the first label as our cluster identity
-		cfg.clusterUnaryClientInterceptor = middleware.ClusterUnaryClientInterceptor(effectiveLabels[0], invalidClusterValidationReporter)
+	if cfg.ClusterValidation.Label != "" {
+		// For client side, we use the primary label as our cluster identity
+		cfg.clusterUnaryClientInterceptor = middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, invalidClusterValidationReporter)
 		unaryClientInterceptors = append(unaryClientInterceptors, cfg.clusterUnaryClientInterceptor)
 	}
 

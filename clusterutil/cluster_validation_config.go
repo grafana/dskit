@@ -16,7 +16,7 @@ type ClusterValidationConfig struct {
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
 		f.StringVar(&cfg.Label, prefix+"label", "", "Primary cluster validation label.")
-		f.Var(&cfg.AdditionalLabels, prefix+"additional-labels", "Comma-separated list of additional cluster validation labels for server-side validation.")
+		f.Var(&cfg.AdditionalLabels, prefix+"additional-labels", "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.")
 	})
 }
 
@@ -24,10 +24,10 @@ func (cfg *ClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
 	return cfg.registeredFlags
 }
 
-// GetEffectiveLabels returns the effective cluster validation labels.
+// GetAllowedClusterLabels returns the effective cluster validation labels.
 // It combines the primary Label with any AdditionalLabels.
 // The primary Label is always first if present, followed by AdditionalLabels.
-func (cfg *ClusterValidationConfig) GetEffectiveLabels() []string {
+func (cfg *ClusterValidationConfig) GetAllowedClusterLabels() []string {
 	var labels []string
 	if cfg.Label != "" {
 		labels = append(labels, cfg.Label)
@@ -37,9 +37,11 @@ func (cfg *ClusterValidationConfig) GetEffectiveLabels() []string {
 }
 
 // Validate ensures the cluster validation configuration is valid.
-// Both Label and AdditionalLabels can be set together.
+// AdditionalLabels requires Label to be set.
 func (cfg *ClusterValidationConfig) Validate() error {
-	// Both fields can be set - no validation errors
+	if len(cfg.AdditionalLabels) > 0 && cfg.Label == "" {
+		return fmt.Errorf("additional cluster validation labels require primary label to be set")
+	}
 	return nil
 }
 
@@ -56,14 +58,12 @@ func (cfg *ServerClusterValidationConfig) Validate() error {
 		return err
 	}
 
-	// Get the effective labels (either from deprecated Label or new Labels)
-	labels := cfg.GetEffectiveLabels()
-
-	err := cfg.GRPC.Validate("grpc", labels)
+	// Protocol validation only checks against the primary label
+	err := cfg.GRPC.Validate("grpc", cfg.Label)
 	if err != nil {
 		return err
 	}
-	return cfg.HTTP.Validate("http", labels)
+	return cfg.HTTP.Validate("http", cfg.Label)
 }
 
 func (cfg *ServerClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -83,10 +83,10 @@ type ClusterValidationProtocolConfig struct {
 	SoftValidation bool `yaml:"soft_validation" category:"experimental"`
 }
 
-func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, labels []string) error {
-	if len(labels) == 0 {
+func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, label string) error {
+	if label == "" {
 		if cfg.Enabled || cfg.SoftValidation {
-			return fmt.Errorf("%s: validation cannot be enabled if cluster validation labels are not configured", prefix)
+			return fmt.Errorf("%s: validation cannot be enabled if cluster validation label is not configured", prefix)
 		}
 		return nil
 	}

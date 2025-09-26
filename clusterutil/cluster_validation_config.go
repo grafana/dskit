@@ -28,7 +28,14 @@ func (cfg *ClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
 // It combines the primary Label with any AdditionalLabels.
 // The primary Label is always first if present, followed by AdditionalLabels.
 func (cfg *ClusterValidationConfig) GetAllowedClusterLabels() []string {
-	labels := []string{cfg.Label}
+	if cfg.Label == "" && len(cfg.AdditionalLabels) == 0 {
+		return nil
+	}
+
+	var labels []string
+	if cfg.Label != "" {
+		labels = append(labels, cfg.Label)
+	}
 	labels = append(labels, cfg.AdditionalLabels...)
 	return labels
 }

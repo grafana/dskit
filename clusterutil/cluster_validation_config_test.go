@@ -18,12 +18,14 @@ func TestClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterFlagsWithPrefix("prefix", fs)
 
-	// After we track registered flags, the label flag is returned.
+	// After we track registered flags, both label and additional-labels flags are returned.
 	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "prefix", registeredFlags.Prefix)
-	require.Len(t, registeredFlags.Flags, 1)
+	require.Len(t, registeredFlags.Flags, 2)
 	_, ok := registeredFlags.Flags["label"]
+	require.True(t, ok)
+	_, ok = registeredFlags.Flags["additional-labels"]
 	require.True(t, ok)
 }
 
@@ -89,10 +91,97 @@ func TestServerClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterFlagsWithPrefix("server.cluster-validation.", fs)
 
-	// After we track registered flags, label, grpc.enabled and grpc.soft-validation flags are returned.
+	// After we track registered flags, label, additional-labels, grpc.enabled and grpc.soft-validation flags are returned.
 	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "server.cluster-validation.", registeredFlags.Prefix)
-	expectedFlags := []string{"label", "grpc.enabled", "grpc.soft-validation", "http.enabled", "http.soft-validation", "http.excluded-paths", "http.excluded-user-agents"}
+	expectedFlags := []string{"label", "additional-labels", "grpc.enabled", "grpc.soft-validation", "http.enabled", "http.soft-validation", "http.excluded-paths", "http.excluded-user-agents"}
 	require.ElementsMatch(t, expectedFlags, slices.Collect(maps.Keys(registeredFlags.Flags)))
+}
+
+func TestClusterValidationConfig_GetAllowedClusterLabels(t *testing.T) {
+	testCases := map[string]struct {
+		label            string
+		additionalLabels []string
+		expectedLabels   []string
+	}{
+		"empty config returns nil slice": {
+			label:            "",
+			additionalLabels: nil,
+			expectedLabels:   nil,
+		},
+		"only primary label set": {
+			label:            "cluster-a",
+			additionalLabels: nil,
+			expectedLabels:   []string{"cluster-a"},
+		},
+		"only additional labels set": {
+			label:            "",
+			additionalLabels: []string{"cluster-a", "cluster-b"},
+			expectedLabels:   []string{"cluster-a", "cluster-b"},
+		},
+		"both primary label and additional labels set": {
+			label:            "primary-cluster",
+			additionalLabels: []string{"cluster-a", "cluster-b"},
+			expectedLabels:   []string{"primary-cluster", "cluster-a", "cluster-b"},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			cfg := ClusterValidationConfig{
+				Label:            testCase.label,
+				AdditionalLabels: testCase.additionalLabels,
+			}
+			effective := cfg.GetAllowedClusterLabels()
+			require.Equal(t, testCase.expectedLabels, effective)
+		})
+	}
+}
+
+func TestClusterValidationConfig_Validate(t *testing.T) {
+	testCases := map[string]struct {
+		label            string
+		additionalLabels []string
+		expectError      bool
+		errorMsg         string
+	}{
+		"empty config is valid": {
+			label:            "",
+			additionalLabels: nil,
+			expectError:      false,
+		},
+		"only primary label is valid": {
+			label:            "cluster-a",
+			additionalLabels: nil,
+			expectError:      false,
+		},
+		"only additional labels without primary label is invalid": {
+			label:            "",
+			additionalLabels: []string{"cluster-a", "cluster-b"},
+			expectError:      true,
+			errorMsg:         "additional cluster validation labels require primary label to be set",
+		},
+		"both primary label and additional labels set is valid": {
+			label:            "cluster-a",
+			additionalLabels: []string{"cluster-b"},
+			expectError:      false,
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			cfg := ClusterValidationConfig{
+				Label:            testCase.label,
+				AdditionalLabels: testCase.additionalLabels,
+			}
+			err := cfg.Validate()
+			if testCase.expectError {
+				require.Error(t, err)
+				require.Equal(t, testCase.errorMsg, err.Error())
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

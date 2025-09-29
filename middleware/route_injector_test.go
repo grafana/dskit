@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // Provenance-includes-location: https://github.com/weaveworks/common/blob/main/middleware/instrument_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Weaveworks Ltd.

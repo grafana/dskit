@@ -18,14 +18,12 @@ func TestClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterFlagsWithPrefix("prefix", fs)
 
-	// After we track registered flags, both label and additional-labels flags are returned.
+	// After we track registered flags, only label flag is returned (additional-labels moved to server config).
 	registeredFlags := cfg.RegisteredFlags()
 	require.NotEmpty(t, registeredFlags)
 	require.Equal(t, "prefix", registeredFlags.Prefix)
-	require.Len(t, registeredFlags.Flags, 2)
+	require.Len(t, registeredFlags.Flags, 1)
 	_, ok := registeredFlags.Flags["label"]
-	require.True(t, ok)
-	_, ok = registeredFlags.Flags["additional-labels"]
 	require.True(t, ok)
 }
 
@@ -99,7 +97,7 @@ func TestServerClusterValidationConfig_RegisteredFlags(t *testing.T) {
 	require.ElementsMatch(t, expectedFlags, slices.Collect(maps.Keys(registeredFlags.Flags)))
 }
 
-func TestClusterValidationConfig_GetAllowedClusterLabels(t *testing.T) {
+func TestServerClusterValidationConfig_GetAllowedClusterLabels(t *testing.T) {
 	testCases := map[string]struct {
 		label            string
 		additionalLabels []string
@@ -129,8 +127,10 @@ func TestClusterValidationConfig_GetAllowedClusterLabels(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			cfg := ClusterValidationConfig{
-				Label:            testCase.label,
+			cfg := ServerClusterValidationConfig{
+				ClusterValidationConfig: ClusterValidationConfig{
+					Label: testCase.label,
+				},
 				AdditionalLabels: testCase.additionalLabels,
 			}
 			effective := cfg.GetAllowedClusterLabels()
@@ -139,7 +139,7 @@ func TestClusterValidationConfig_GetAllowedClusterLabels(t *testing.T) {
 	}
 }
 
-func TestClusterValidationConfig_Validate(t *testing.T) {
+func TestServerClusterValidationConfig_Validate(t *testing.T) {
 	testCases := map[string]struct {
 		label            string
 		additionalLabels []string
@@ -171,8 +171,10 @@ func TestClusterValidationConfig_Validate(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			cfg := ClusterValidationConfig{
-				Label:            testCase.label,
+			cfg := ServerClusterValidationConfig{
+				ClusterValidationConfig: ClusterValidationConfig{
+					Label: testCase.label,
+				},
 				AdditionalLabels: testCase.additionalLabels,
 			}
 			err := cfg.Validate()

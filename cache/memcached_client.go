@@ -644,7 +644,14 @@ func (c *MemcachedClient) getMultiSingle(ctx context.Context, keys []string, opt
 	start := time.Now()
 	c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 
-	items, err = c.client.GetMulti(ctx, keys, opts...)
+	select {
+	case <-ctx.Done():
+		// Make sure our context hasn't been canceled before fetching cache items using
+		return nil, ctx.Err()
+	default:
+		// FIXME(v): always passing uncancelable context to investigate https://github.com/grafana/mimir/issues/12691
+		items, err = c.client.GetMulti(context.WithoutCancel(ctx), keys, opts...)
+	}
 
 	if err != nil {
 		level.Debug(c.logger).Log("msg", "failed to get multiple items from memcached", "err", err)

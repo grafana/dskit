@@ -24,6 +24,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 					Addr:      "addr-a",
 					Timestamp: now.Unix(),
 					Tokens:    []uint32{1000000, 3000000, 6000000},
+					Versions:  map[uint64]uint64{1: 2, 3: 4},
 				},
 				"2": {
 					Zone:      "zone-b",
@@ -31,11 +32,12 @@ func TestRingPageHandler_handle(t *testing.T) {
 					Addr:      "addr-b",
 					Timestamp: now.Unix(),
 					Tokens:    []uint32{2000000, 4000000, 5000000, 7000000},
+					Versions:  map[uint64]uint64{1: 3, 3: 5},
 				},
 			},
 		},
 	}
-	handler := newRingPageHandler(&ring, 10*time.Second, false)
+	handler := newRingPageHandler(&ring, 10*time.Second, false, false)
 
 	t.Run("displays instance info", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
@@ -54,6 +56,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
 			"<td>", "3", "</td>",
 			"<td>", "100%", "</td>",
+			"<td>", "1: v2", "<br/>", "3: v4", "<br/>", "</td>",
 		}, `\s*`))), recorder.Body.String())
 
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
@@ -66,6 +69,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
 			"<td>", "4", "</td>",
 			"<td>", "100%", "</td>",
+			"<td>", "1: v3", "<br/>", "3: v5", "<br/>", "</td>",
 		}, `\s*`))), recorder.Body.String())
 	})
 
@@ -103,7 +107,7 @@ func TestRingPageHandler_handle(t *testing.T) {
 		}, `\s*`))), recorder.Body.String())
 	})
 
-	tokenDisabledHandler := newRingPageHandler(&ring, 10*time.Second, true)
+	tokenDisabledHandler := newRingPageHandler(&ring, 10*time.Second, true, false)
 
 	t.Run("hides token columns when tokens are disabled", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
@@ -137,6 +141,28 @@ func TestRingPageHandler_handle(t *testing.T) {
 
 		assert.NotRegexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
 			`input type="button" value="Show Tokens"`,
+		}, `\s*`))), recorder.Body.String())
+	})
+
+	versionsDisabledHandler := newRingPageHandler(&ring, 10*time.Second, false, true)
+
+	t.Run("hides versions column when versions are disabled", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		versionsDisabledHandler.handle(recorder, httptest.NewRequest(http.MethodGet, "/ring", nil))
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
+
+		assert.NotRegexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<th>", "Versions", "</th>",
+		}, `\s*`))), recorder.Body.String())
+
+		assert.NotRegexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "1: v2", "<br/>", "3: v4", "<br/>", "</td>",
+		}, `\s*`))), recorder.Body.String())
+
+		assert.NotRegexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "1: v3", "<br/>", "3: v5", "<br/>", "</td>",
 		}, `\s*`))), recorder.Body.String())
 	})
 }

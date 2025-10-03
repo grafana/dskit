@@ -57,6 +57,8 @@ type LifecyclerConfig struct {
 	ListenPort int `yaml:"-"`
 	// HideTokensInStatusPage allows tokens to be hidden from management tools e.g. the status page, for use in contexts which do not utilize tokens.
 	HideTokensInStatusPage bool `yaml:"-"`
+	// ShowVersionsInStatusPage enables displaying versions on the status page.
+	ShowVersionsInStatusPage bool `yaml:"-"`
 
 	// If set, specifies the TokenGenerator implementation that will be used for generating tokens.
 	// Default value is nil, which means that RandomTokenGenerator is used.
@@ -1108,7 +1110,7 @@ func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(i, i.cfg.HeartbeatTimeout, i.cfg.HideTokensInStatusPage).handle(w, req)
+	newRingPageHandler(i, i.cfg.HeartbeatTimeout, i.cfg.HideTokensInStatusPage, !i.cfg.ShowVersionsInStatusPage).handle(w, req)
 }
 
 // unregister removes our entry from consul.

@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc/tap"
 )
 
+// unprocessedRequestCheckTimeout is large enough for a normal request to start processing,
+// and small enough to cleanup quickly if the request was cancelled and early aborted.
 const unprocessedRequestCheckTimeout = 10 * time.Second
 
 type GrpcInflightMethodLimiter interface {
@@ -74,7 +76,7 @@ func (g *grpcInflightLimitCheck) TapHandle(ctx context.Context, info *tap.Info) 
 	// Because of a shortcut introduced in https://github.com/grpc/grpc-go/pull/8439 this may not happen.
 	// We could create a goroutine that would watch ctx.Done() and call RPCCallFinished if the context is done and we have not started processing the headers yet.
 	// However, that would mean paying the cost of an extra goroutine for every single gRPC request, just in case the request's context is cancelled before we start processing it.
-	// Instead of that we schedule a cheaper timer that we will cancel in the happy case, which will run after 10s and perform the cleanup only when
+	// Instead of that we schedule a cheaper timer that we will cancel in the happy case, which will run after 10s and perform the cleanup only when needed.
 	state := &gprcInflightLimitCheckerState{
 		fullMethod:       info.FullMethodName,
 		timestamp:        time.Now(),

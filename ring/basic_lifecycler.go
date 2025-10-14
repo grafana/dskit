@@ -65,6 +65,9 @@ type BasicLifecyclerConfig struct {
 	// If set, specifies the TokenGenerator implementation that will be used for generating tokens.
 	// Default value is nil, which means that RandomTokenGenerator is used.
 	RingTokenGenerator TokenGenerator
+
+	// Versions are the component versions associated with this instance.
+	Versions InstanceVersions
 }
 
 /*
@@ -347,7 +350,7 @@ func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 		// Always overwrite the instance in the ring (even if already exists) because some properties
 		// may have changed (stated, tokens, zone, address) and even if they didn't the heartbeat at
 		// least did.
-		instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, tokens, state, registeredAt, readOnly, readOnlyUpdatedTimestamp)
+		instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, tokens, state, registeredAt, readOnly, readOnlyUpdatedTimestamp, l.cfg.Versions)
 		return ringDesc, true, nil
 	})
 
@@ -475,7 +478,7 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 			// registration timestamp to current time.
 			registeredAt := time.Now()
 			readOnly, readOnlyUpdatedTimestamp := l.GetReadOnlyState()
-			instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, l.GetTokens(), l.GetState(), registeredAt, readOnly, readOnlyUpdatedTimestamp)
+			instanceDesc = ringDesc.AddIngester(l.cfg.ID, l.cfg.Addr, l.cfg.Zone, l.GetTokens(), l.GetState(), registeredAt, readOnly, readOnlyUpdatedTimestamp, l.cfg.Versions)
 		}
 
 		prevTimestamp := instanceDesc.Timestamp

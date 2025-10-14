@@ -707,7 +707,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 					i.setState(ACTIVE)
 				}
 				ro, rots := i.GetReadOnlyState()
-				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), i.getRegisteredAt(), ro, rots)
+				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 				i.setTokens(tokensFromFile)
 				return ringDesc, true, nil
 			}
@@ -715,7 +715,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			// Either we are a new ingester, or consul must have restarted
 			level.Info(i.logger).Log("msg", "instance not found in ring, adding with no tokens", "ring", i.RingName)
 			ro, rots := i.GetReadOnlyState()
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState(), i.getRegisteredAt(), ro, rots)
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 			return ringDesc, true, nil
 		}
 
@@ -819,7 +819,7 @@ func (i *Lifecycler) verifyTokens(ctx context.Context) bool {
 			sort.Sort(ringTokens)
 
 			ro, rots := i.GetReadOnlyState()
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState(), i.getRegisteredAt(), ro, rots)
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 
 			i.setTokens(ringTokens)
 
@@ -928,7 +928,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) er
 		i.setTokens(myTokens)
 
 		ro, rots := i.GetReadOnlyState()
-		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt(), ro, rots)
+		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 		return ringDesc, true, nil
 	})
 
@@ -963,7 +963,7 @@ func (i *Lifecycler) updateConsul(ctx context.Context) error {
 		}
 
 		ro, rots := i.GetReadOnlyState()
-		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokens, i.GetState(), i.getRegisteredAt(), ro, rots)
+		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokens, i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 		return ringDesc, true, nil
 	})
 

@@ -69,9 +69,11 @@ type BasicLifecyclerConfig struct {
 	// Versions are the component versions associated with this instance.
 	Versions InstanceVersions
 
-	// ComponentNames are the names of the components in Versions, used for display on the status page.
+	// ComponentNames are the names of the components in Versions, used only for display on the status page.
 	// If a component in Versions has no name in ComponentNames, then the version will be shown on the status page
 	// without a name.
+	// Given the values are only used for display on the status page, it is safe to leave this empty,
+	// make changes between releases etc.
 	ComponentNames map[uint64]string
 }
 

@@ -53,10 +53,6 @@ type BasicLifecyclerConfig struct {
 	HeartbeatTimeout    time.Duration
 	TokensObservePeriod time.Duration
 	NumTokens           int
-	// HideTokensInStatusPage allows tokens to be hidden from management tools e.g. the status page, for use in contexts which do not utilize tokens.
-	HideTokensInStatusPage bool
-	// ShowVersionsInStatusPage enables displaying versions on the status page.
-	ShowVersionsInStatusPage bool
 
 	// If true lifecycler doesn't unregister instance from the ring when it's stopping. Default value is false,
 	// which means unregistering.
@@ -69,12 +65,7 @@ type BasicLifecyclerConfig struct {
 	// Versions are the component versions associated with this instance.
 	Versions InstanceVersions
 
-	// ComponentNames are the names of the components in Versions, used only for display on the status page.
-	// If a component in Versions has no name in ComponentNames, then the version will be shown on the status page
-	// without a name.
-	// Given the values are only used for display on the status page, it is safe to leave this empty,
-	// make changes between releases etc.
-	ComponentNames map[uint64]string
+	StatusPageConfig StatusPageConfig
 }
 
 /*
@@ -606,5 +597,5 @@ func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(l, l.cfg.HeartbeatTimeout, l.cfg.HideTokensInStatusPage, !l.cfg.ShowVersionsInStatusPage, l.cfg.ComponentNames).handle(w, req)
+	newRingPageHandler(l, l.cfg.HeartbeatTimeout, l.cfg.StatusPageConfig).handle(w, req)
 }

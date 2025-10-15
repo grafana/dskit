@@ -38,7 +38,11 @@ func TestRingPageHandler_handle(t *testing.T) {
 		},
 	}
 	componentNames := map[uint64]string{1: "Component X"}
-	handler := newRingPageHandler(&ring, 10*time.Second, false, false, componentNames)
+	handler := newRingPageHandler(&ring, 10*time.Second, StatusPageConfig{
+		HideTokensUIElements: false,
+		ShowVersions:         true,
+		ComponentNames:       componentNames,
+	})
 
 	t.Run("displays instance info", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
@@ -108,7 +112,11 @@ func TestRingPageHandler_handle(t *testing.T) {
 		}, `\s*`))), recorder.Body.String())
 	})
 
-	tokenDisabledHandler := newRingPageHandler(&ring, 10*time.Second, true, false, componentNames)
+	tokenDisabledHandler := newRingPageHandler(&ring, 10*time.Second, StatusPageConfig{
+		HideTokensUIElements: true,
+		ShowVersions:         true,
+		ComponentNames:       componentNames,
+	})
 
 	t.Run("hides token columns when tokens are disabled", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
@@ -145,7 +153,11 @@ func TestRingPageHandler_handle(t *testing.T) {
 		}, `\s*`))), recorder.Body.String())
 	})
 
-	versionsDisabledHandler := newRingPageHandler(&ring, 10*time.Second, false, true, componentNames)
+	versionsDisabledHandler := newRingPageHandler(&ring, 10*time.Second, StatusPageConfig{
+		HideTokensUIElements: false,
+		ShowVersions:         false,
+		ComponentNames:       componentNames,
+	})
 
 	t.Run("hides versions column when versions are disabled", func(t *testing.T) {
 		recorder := httptest.NewRecorder()

@@ -73,9 +73,9 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.PartitionRing().PartitionsCount() == 1
+		return watcher.PartitionRing().PartitionsCount() == 1 &&
+			delegate.PartitionState(1) == PartitionActive // Ensure delegate is updated
 	}, time.Second, 10*time.Millisecond)
-	require.Equal(t, PartitionActive, delegate.PartitionState(1))
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
@@ -93,9 +93,9 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.PartitionRing().PartitionsCount() == 2
+		return watcher.PartitionRing().PartitionsCount() == 2 &&
+			delegate.PartitionState(2) == PartitionInactive // Ensure delegate is updated
 	}, time.Second, 10*time.Millisecond)
-	require.Equal(t, PartitionInactive, delegate.PartitionState(2))
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
@@ -113,9 +113,9 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.PartitionRing().PartitionsCount() == 3
+		return watcher.PartitionRing().PartitionsCount() == 3 &&
+			delegate.PartitionState(3) == PartitionPending // Ensure delegate is updated
 	}, time.Second, 10*time.Millisecond)
-	require.Equal(t, PartitionPending, delegate.PartitionState(3))
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
@@ -133,9 +133,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return watcher.PartitionRing().Partitions()[1].State == PartitionInactive
+		return watcher.PartitionRing().Partitions()[1].State == PartitionInactive &&
+			delegate.PartitionState(1) == PartitionInactive // Ensure delegate is updated
 	}, time.Second, 10*time.Millisecond)
-
-	// Ensure delegate is called
-	require.Equal(t, PartitionInactive, delegate.PartitionState(1))
 }

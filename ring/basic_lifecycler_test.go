@@ -70,13 +70,17 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			registerState:  ACTIVE,
 			registerTokens: Tokens{1, 2, 3, 4, 5},
 		},
-		"initial ring contains the same instance with different state, tokens and address (new one is 127.0.0.1)": {
+		"initial ring contains the same instance with different state, tokens, version and address (new one is 127.0.0.1)": {
 			initialInstanceID: testInstanceID,
 			initialInstanceDesc: &InstanceDesc{
 				Addr:                "1.1.1.1",
 				State:               ACTIVE,
 				Tokens:              Tokens{6, 7, 8, 9, 10},
 				RegisteredTimestamp: time.Now().Add(-time.Hour).Unix(),
+				Versions: InstanceVersions{
+					1: 10,
+					2: 40,
+				},
 			},
 			registerState:  JOINING,
 			registerTokens: Tokens{1, 2, 3, 4, 5},
@@ -122,6 +126,11 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			ctx := context.Background()
 			cfg := prepareBasicLifecyclerConfig()
+			cfg.Versions = InstanceVersions{
+				1: 2,
+				3: 4,
+			}
+
 			lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
 			require.NoError(t, err)
 			defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
@@ -132,7 +141,7 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 					desc := testData.initialInstanceDesc
 
 					ringDesc := GetOrCreateRingDesc(in)
-					ringDesc.AddIngester(testData.initialInstanceID, desc.Addr, desc.Zone, desc.Tokens, desc.State, desc.GetRegisteredAt(), desc.ReadOnly, time.Unix(desc.ReadOnlyUpdatedTimestamp, 0))
+					ringDesc.AddIngester(testData.initialInstanceID, desc.Addr, desc.Zone, desc.Tokens, desc.State, desc.GetRegisteredAt(), desc.ReadOnly, time.Unix(desc.ReadOnlyUpdatedTimestamp, 0), desc.Versions)
 					return ringDesc, true, nil
 				}))
 			}
@@ -154,6 +163,7 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 					assert.Equal(t, testData.initialInstanceDesc.RegisteredTimestamp, instanceDesc.RegisteredTimestamp)
 					assert.Equal(t, testData.initialInstanceDesc.ReadOnly, instanceDesc.ReadOnly)
 					assert.Equal(t, testData.initialInstanceDesc.ReadOnlyUpdatedTimestamp, instanceDesc.ReadOnlyUpdatedTimestamp)
+					assert.Equal(t, testData.initialInstanceDesc.Versions, instanceDesc.Versions)
 				} else {
 					assert.False(t, instanceExists)
 				}
@@ -205,6 +215,7 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			assert.Equal(t, cfg.Zone, instanceDesc.GetZone())
 			assert.Equal(t, expectedReadOnly, instanceDesc.ReadOnly)
 			assert.Equal(t, expectedReadOnlyUpdatedTimestamp, instanceDesc.ReadOnlyUpdatedTimestamp)
+			assert.Equal(t, cfg.Versions, InstanceVersions(instanceDesc.Versions))
 
 			// The expected registered timestamp is "now" if the instance didn't exist in the ring yet
 			// or the already existing value.
@@ -553,7 +564,7 @@ func TestBasicLifecycler_TokensObservePeriod(t *testing.T) {
 		// Remove some tokens.
 		return store.CAS(ctx, testRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := GetOrCreateRingDesc(in)
-			ringDesc.AddIngester(testInstanceID, desc.Addr, desc.Zone, Tokens{4, 5}, desc.State, time.Now(), false, time.Time{})
+			ringDesc.AddIngester(testInstanceID, desc.Addr, desc.Zone, Tokens{4, 5}, desc.State, time.Now(), false, time.Time{}, nil)
 			return ringDesc, true, nil
 		}) == nil
 	})
@@ -571,6 +582,10 @@ func TestBasicLifecycler_updateInstance_ShouldAddInstanceToTheRingIfDoesNotExist
 			ctx := context.Background()
 			cfg := prepareBasicLifecyclerConfig()
 			cfg.HeartbeatPeriod = time.Hour // No heartbeat during the test.
+			cfg.Versions = InstanceVersions{
+				1: 2,
+				3: 5,
+			}
 
 			lifecycler, delegate, store, err := prepareBasicLifecycler(t, cfg)
 			require.NoError(t, err)
@@ -612,6 +627,7 @@ func TestBasicLifecycler_updateInstance_ShouldAddInstanceToTheRingIfDoesNotExist
 			readOnlyState, readOnlySince := desc.GetReadOnlyState()
 			assert.Equal(t, readOnly, readOnlyState)
 			assert.Equal(t, readOnly, !readOnlySince.IsZero())
+			assert.Equal(t, cfg.Versions, InstanceVersions(desc.Versions))
 		})
 	}
 }

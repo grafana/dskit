@@ -484,7 +484,7 @@ func TestSpreadMinimizingTokenGenerator_CanJoin(t *testing.T) {
 			state = PENDING
 			tokens = nil
 		}
-		ringDesc.AddIngester(instance, instance, zone, tokens, state, time.Now(), false, time.Time{})
+		ringDesc.AddIngester(instance, instance, zone, tokens, state, time.Now(), false, time.Time{}, nil)
 	}
 
 	instances := ringDesc.GetIngesters()

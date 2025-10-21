@@ -199,7 +199,7 @@ func BenchmarkPartitionInstanceRing_GetReplicationSetsForOperation(b *testing.B)
 
 		for _, zone := range zones {
 			instanceID := fmt.Sprintf("instance-zone-%s-%d", zone, partitionID)
-			instancesRing.ringDesc.AddIngester(instanceID, instanceID, zone, nil, ACTIVE, now, false, readOnlyUpdated)
+			instancesRing.ringDesc.AddIngester(instanceID, instanceID, zone, nil, ACTIVE, now, false, readOnlyUpdated, nil)
 			partitionsRing.AddOrUpdateOwner(instanceID, OwnerActive, int32(partitionID), now)
 		}
 	}

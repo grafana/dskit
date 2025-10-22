@@ -3397,7 +3397,7 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+			cfg := Config{KVStore: kv.Config{}, HeartbeatTimeout: 3 * time.Hour, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 			registry := prometheus.NewRegistry()
 			ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 			require.NoError(t, err)
@@ -3417,7 +3417,7 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 }
 
 func TestRing_ShuffleShardWithLookback_CachingAfterTopologyChange(t *testing.T) {
-	cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+	cfg := Config{KVStore: kv.Config{}, HeartbeatTimeout: 3 * time.Hour, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 	registry := prometheus.NewRegistry()
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
@@ -3479,7 +3479,7 @@ func makeReadOnly(desc InstanceDesc, ts time.Time) InstanceDesc {
 }
 
 func TestRing_ShuffleShardWithLookback_CachingAfterReadOnlyChange(t *testing.T) {
-	cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+	cfg := Config{KVStore: kv.Config{}, HeartbeatTimeout: 3 * time.Hour, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 	registry := prometheus.NewRegistry()
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
@@ -3532,7 +3532,7 @@ func TestRing_ShuffleShardWithLookback_CachingAfterReadOnlyChange(t *testing.T) 
 }
 
 func TestRing_ShuffleShardWithLookback_CachingAfterHeartbeatOrStateChange(t *testing.T) {
-	cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+	cfg := Config{KVStore: kv.Config{}, HeartbeatTimeout: 3 * time.Hour, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 	registry := prometheus.NewRegistry()
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
@@ -3893,6 +3893,8 @@ func generateRingInstanceWithInfo(id, zone string, tokens []uint32, registeredAt
 	if !registeredAt.IsZero() {
 		regts = registeredAt.Unix()
 	}
+	// Heartbeat timestamp should be recent (relative to test time), not the old registration time.
+	// Use time.Now() to simulate an instance that has recently sent a heartbeat.
 	return InstanceDesc{
 		Id:                  id,
 		Addr:                id,

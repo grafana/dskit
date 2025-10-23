@@ -257,10 +257,9 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 	const key = "test-key"
 
 	var (
-		c           = dataCodec{}
-		ctx         = context.Background()
-		logger      = log.NewNopLogger()
-		dnsProvider = &staticDNSProviderMock{}
+		c      = dataCodec{}
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
 	)
 
 	// Helper function to create a node configuration.
@@ -288,7 +287,7 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 	// Zone B: bridge-b, member-b-1, member-b-2
 
 	// Zone A bridge - create and start first.
-	bridgeA := NewKV(makeConfig(nil, "zone-a", "bridge"), logger, dnsProvider, prometheus.NewPedanticRegistry())
+	bridgeA := NewKV(makeConfig(nil, "zone-a", "bridge"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(ctx, bridgeA))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, bridgeA))
@@ -301,11 +300,11 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 	// Get the join address for bridgeA now since it's already started.
 	bridgeAAddr := []string{net.JoinHostPort(bridgeA.cfg.TCPTransport.BindAddrs[0], strconv.Itoa(bridgeA.GetListeningPort()))}
 
-	memberA1 := NewKV(makeConfig(bridgeAAddr, "zone-a", "member"), logger, dnsProvider, prometheus.NewPedanticRegistry())
-	memberA2 := NewKV(makeConfig(bridgeAAddr, "zone-a", "member"), logger, dnsProvider, prometheus.NewPedanticRegistry())
-	bridgeB := NewKV(makeConfig(bridgeAAddr, "zone-b", "bridge"), logger, dnsProvider, prometheus.NewPedanticRegistry())
-	memberB1 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), logger, dnsProvider, prometheus.NewPedanticRegistry())
-	memberB2 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), logger, dnsProvider, prometheus.NewPedanticRegistry())
+	memberA1 := NewKV(makeConfig(bridgeAAddr, "zone-a", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	memberA2 := NewKV(makeConfig(bridgeAAddr, "zone-a", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	bridgeB := NewKV(makeConfig(bridgeAAddr, "zone-b", "bridge"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	memberB1 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	memberB2 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
 	// Start all other nodes in parallel.
 	manager, err := services.NewManager(memberA1, memberA2, bridgeB, memberB1, memberB2)

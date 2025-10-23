@@ -138,7 +138,7 @@ func BenchmarkUpdateRingState(b *testing.B) {
 func benchmarkUpdateRingState(b *testing.B, numInstances, numTokens int, updateTokens bool) {
 	cfg := Config{
 		KVStore:              kv.Config{},
-		HeartbeatTimeout:     0, // get healthy stats
+		HeartbeatTimeout:     time.Hour, // long timeout to get healthy stats
 		ReplicationFactor:    3,
 		ZoneAwarenessEnabled: true,
 	}
@@ -1050,7 +1050,7 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 			expectedSetForWrite:     []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5"},
 			expectedSetForReporting: []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5"},
 		},
-		"should succeed on instances with old timestamps but heartbeat timeout disabled": {
+		"should succeed on instances with old timestamps but long heartbeat timeout": {
 			ringInstances: map[string]InstanceDesc{
 				"instance-1": {Addr: "127.0.0.1", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 				"instance-2": {Addr: "127.0.0.2", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
@@ -1058,7 +1058,7 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 				"instance-4": {Addr: "127.0.0.4", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 				"instance-5": {Addr: "127.0.0.5", State: ACTIVE, Timestamp: now.Add(-2 * time.Minute).Unix(), Tokens: gen.GenerateTokens(128, nil)},
 			},
-			ringHeartbeatTimeout:    0,
+			ringHeartbeatTimeout:    time.Hour,
 			ringReplicationFactor:   1,
 			expectedSetForRead:      []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5"},
 			expectedSetForWrite:     []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5"},
@@ -3397,7 +3397,7 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+			cfg := Config{KVStore: kv.Config{}, HeartbeatTimeout: 3 * time.Hour, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 			registry := prometheus.NewRegistry()
 			ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 			require.NoError(t, err)
@@ -3417,7 +3417,7 @@ func TestRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 }
 
 func TestRing_ShuffleShardWithLookback_CachingAfterTopologyChange(t *testing.T) {
-	cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+	cfg := Config{KVStore: kv.Config{}, HeartbeatTimeout: 3 * time.Hour, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 	registry := prometheus.NewRegistry()
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
@@ -3479,7 +3479,7 @@ func makeReadOnly(desc InstanceDesc, ts time.Time) InstanceDesc {
 }
 
 func TestRing_ShuffleShardWithLookback_CachingAfterReadOnlyChange(t *testing.T) {
-	cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+	cfg := Config{KVStore: kv.Config{}, HeartbeatTimeout: 3 * time.Hour, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 	registry := prometheus.NewRegistry()
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
@@ -3532,7 +3532,7 @@ func TestRing_ShuffleShardWithLookback_CachingAfterReadOnlyChange(t *testing.T) 
 }
 
 func TestRing_ShuffleShardWithLookback_CachingAfterHeartbeatOrStateChange(t *testing.T) {
-	cfg := Config{KVStore: kv.Config{}, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
+	cfg := Config{KVStore: kv.Config{}, HeartbeatTimeout: 3 * time.Hour, ReplicationFactor: 1, ZoneAwarenessEnabled: true}
 	registry := prometheus.NewRegistry()
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
@@ -3893,6 +3893,8 @@ func generateRingInstanceWithInfo(id, zone string, tokens []uint32, registeredAt
 	if !registeredAt.IsZero() {
 		regts = registeredAt.Unix()
 	}
+	// Heartbeat timestamp should be recent (relative to test time), not the old registration time.
+	// Use time.Now() to simulate an instance that has recently sent a heartbeat.
 	return InstanceDesc{
 		Id:                  id,
 		Addr:                id,
@@ -4028,6 +4030,7 @@ func startLifecycler(t *testing.T, cfg Config, heartbeat time.Duration, lifecycl
 		RingConfig:           cfg,
 		NumTokens:            16,
 		HeartbeatPeriod:      heartbeat,
+		HeartbeatTimeout:     time.Minute,
 		ObservePeriod:        0,
 		JoinAfter:            0,
 		Zone:                 fmt.Sprintf("zone-%d", lifecyclerID%zones),
@@ -4202,7 +4205,7 @@ func userToken(user, zone string, skip int) uint32 {
 func TestUpdateMetrics(t *testing.T) {
 	cfg := Config{
 		KVStore:              kv.Config{},
-		HeartbeatTimeout:     0, // get healthy stats
+		HeartbeatTimeout:     time.Hour, // long timeout to get healthy stats
 		ReplicationFactor:    3,
 		ZoneAwarenessEnabled: true,
 	}
@@ -4213,15 +4216,16 @@ func TestUpdateMetrics(t *testing.T) {
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
 
+	now := time.Now().Unix()
 	ringDesc := Desc{
 		Ingesters: map[string]InstanceDesc{
-			"A": {Addr: "127.0.0.1", Timestamp: 22, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
-			"B": {Addr: "127.0.0.2", Timestamp: 11, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}},
+			"A": {Addr: "127.0.0.1", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
+			"B": {Addr: "127.0.0.2", Timestamp: now - 22, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}},
 		},
 	}
 	ring.updateRingState(&ringDesc)
 
-	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
+	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(fmt.Sprintf(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
 		ring_members{name="test",state="ACTIVE"} 2
@@ -4231,7 +4235,7 @@ func TestUpdateMetrics(t *testing.T) {
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE"} 11
+		ring_oldest_member_timestamp{name="test",state="ACTIVE"} %d
 		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
@@ -4239,14 +4243,14 @@ func TestUpdateMetrics(t *testing.T) {
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 4
-	`))
+	`, now-22)))
 	assert.NoError(t, err)
 }
 
 func TestUpdateMetricsWithRemoval(t *testing.T) {
 	cfg := Config{
 		KVStore:              kv.Config{},
-		HeartbeatTimeout:     0, // get healthy stats
+		HeartbeatTimeout:     time.Hour, // long timeout to get healthy stats
 		ReplicationFactor:    3,
 		ZoneAwarenessEnabled: true,
 	}
@@ -4257,15 +4261,16 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
 	require.NoError(t, err)
 
+	now := time.Now().Unix()
 	ringDesc := Desc{
 		Ingesters: map[string]InstanceDesc{
-			"A": {Addr: "127.0.0.1", Timestamp: 22, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
-			"B": {Addr: "127.0.0.2", Timestamp: 11, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}},
+			"A": {Addr: "127.0.0.1", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
+			"B": {Addr: "127.0.0.2", Timestamp: now - 22, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}},
 		},
 	}
 	ring.updateRingState(&ringDesc)
 
-	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
+	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(fmt.Sprintf(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
 		ring_members{name="test",state="ACTIVE"} 2
@@ -4275,7 +4280,7 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE"} 11
+		ring_oldest_member_timestamp{name="test",state="ACTIVE"} %d
 		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
@@ -4283,17 +4288,17 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 4
-	`))
+	`, now-22)))
 	require.NoError(t, err)
 
 	ringDescNew := Desc{
 		Ingesters: map[string]InstanceDesc{
-			"A": {Addr: "127.0.0.1", Timestamp: 22, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
+			"A": {Addr: "127.0.0.1", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
 		},
 	}
 	ring.updateRingState(&ringDescNew)
 
-	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
+	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(fmt.Sprintf(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
 		ring_members{name="test",state="ACTIVE"} 1
@@ -4303,7 +4308,7 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE"} 22
+		ring_oldest_member_timestamp{name="test",state="ACTIVE"} %d
 		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
 		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
 		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
@@ -4311,7 +4316,7 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 2
-	`))
+	`, now-11)))
 	assert.NoError(t, err)
 }
 

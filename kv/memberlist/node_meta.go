@@ -80,4 +80,3 @@ func (e EncodedNodeMetadata) Zone() string {
 	// Safe because we're not modifying the underlying data.
 	return unsafe.String(&e[3], zoneLen)
 }
-

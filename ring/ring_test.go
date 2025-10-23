@@ -46,6 +46,24 @@ func newRingForTesting(cfg Config, createCacheMaps bool) *Ring {
 	return &ring
 }
 
+func setRingConsistencyLevelString(r *Ring, consistencyLevelStr string) {
+	consistencyLevel, err := ConvertConsistencyLevel(consistencyLevelStr)
+	if err != nil {
+		panic(err)
+	}
+	setRingConsistencyLevel(r, consistencyLevel)
+}
+
+func setRingConsistencyLevel(r *Ring, consistencyLevel ConsistencyLevel) {
+	newStrategy, err := withConsistency(r.strategy, consistencyLevel)
+	if err != nil {
+		panic(err)
+	}
+
+	r.strategy = newStrategy
+	r.consistencyLevel = consistencyLevel
+}
+
 func BenchmarkBatch10x100(b *testing.B) {
 	benchmarkBatch(b, 10, 100)
 }
@@ -1145,6 +1163,7 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 		unhealthyInstances          []string
 		expectedAddresses           []string
 		replicationFactor           int
+		readConsistencyLevel        string
 		expectedError               error
 		expectedMaxErrors           int
 		expectedMaxUnavailableZones int
@@ -1209,6 +1228,30 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 			},
 			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.3"},
 			replicationFactor:           3,
+			expectedMaxErrors:           0,
+			expectedMaxUnavailableZones: 1,
+		},
+		"RF=3, 3 zones, one instance per zone, ANY consistency": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.3"},
+			replicationFactor:           3,
+			readConsistencyLevel:        "any",
+			expectedMaxErrors:           0,
+			expectedMaxUnavailableZones: 2,
+		},
+		"RF=3, 3 zones, one instance per zone, RELAXED_QUORUM consistency": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			expectedAddresses:           []string{"127.0.0.1", "127.0.0.2", "127.0.0.3"},
+			replicationFactor:           3,
+			readConsistencyLevel:        "relaxed_quorum",
 			expectedMaxErrors:           0,
 			expectedMaxUnavailableZones: 1,
 		},
@@ -1335,6 +1378,79 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 			replicationFactor:  3,
 			expectedError:      ErrTooManyUnhealthyInstances,
 		},
+		"RF=4, 4 zones, two instances per zone except for one zone which has three": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-9": {Addr: "127.0.0.9", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			expectedAddresses: []string{
+				"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4", "127.0.0.5",
+				"127.0.0.6", "127.0.0.7", "127.0.0.8", "127.0.0.9",
+			},
+			replicationFactor:           4,
+			expectedMaxErrors:           0,
+			expectedMaxUnavailableZones: 2,
+		},
+		"RF=4, 4 zones, two instances per zone except for one zone which has three, 2 unhealthy nodes in same zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-9": {Addr: "127.0.0.9", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			expectedAddresses: []string{
+				"127.0.0.1", "127.0.0.2", "127.0.0.5",
+				"127.0.0.6", "127.0.0.7", "127.0.0.8", "127.0.0.9",
+			},
+			replicationFactor:           4,
+			unhealthyInstances:          []string{"instance-3", "instance-4"},
+			expectedMaxErrors:           0,
+			expectedMaxUnavailableZones: 1,
+		},
+		"RF=4, 4 zones, two instances per zone except for one zone which has three, 2 unhealthy nodes in separate zones": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-5": {Addr: "127.0.0.5", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-6": {Addr: "127.0.0.6", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-7": {Addr: "127.0.0.7", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-8": {Addr: "127.0.0.8", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-9": {Addr: "127.0.0.9", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			expectedAddresses: []string{
+				"127.0.0.1", "127.0.0.2",
+				"127.0.0.7", "127.0.0.8", "127.0.0.9",
+			},
+			replicationFactor:           4,
+			unhealthyInstances:          []string{"instance-3", "instance-5"},
+			expectedMaxErrors:           0,
+			expectedMaxUnavailableZones: 0,
+		},
+		"RF=4, 4 zones, one instances per zone, three unhealthy instances": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-d", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			unhealthyInstances: []string{"instance-2", "instance-4", "instance-3"},
+			replicationFactor:  4,
+			expectedError:      ErrTooManyUnhealthyInstances,
+		},
 		"RF=5, 5 zones, two instances per zone except for one zone which has three": {
 			ringInstances: map[string]InstanceDesc{
 				"instance-1":  {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
@@ -1409,6 +1525,32 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 			replicationFactor:  5,
 			expectedError:      ErrTooManyUnhealthyInstances,
 		},
+		"RF=3, 3 zones, one instance per zone, two instances unhealthy in separate zones, ANY consistency": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			expectedAddresses:           []string{"127.0.0.3"},
+			unhealthyInstances:          []string{"instance-1", "instance-2"},
+			replicationFactor:           3,
+			readConsistencyLevel:        "any",
+			expectedMaxErrors:           0,
+			expectedMaxUnavailableZones: 0,
+		},
+		"RF=3, 3 zones, one instance per zone, two instances unhealthy in separate zones, RELAXED_QUORUM consistency": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-b", Tokens: gen.GenerateTokens(128, nil)},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", Tokens: gen.GenerateTokens(128, nil)},
+			},
+			expectedAddresses:           []string{"127.0.0.3"},
+			unhealthyInstances:          []string{"instance-1", "instance-2"},
+			replicationFactor:           3,
+			readConsistencyLevel:        "relaxed_quorum",
+			expectedMaxErrors:           0,
+			expectedMaxUnavailableZones: 0,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1435,10 +1577,12 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 				ZoneAwarenessEnabled: true,
 				ReplicationFactor:    testData.replicationFactor,
 			}, false)
+			setRingConsistencyLevelString(ring, testData.readConsistencyLevel)
 			ring.setRingStateFromDesc(ringDesc, false, false, false)
 
 			// Check the replication set has the correct settings
 			replicationSet, err := ring.GetReplicationSetForOperation(Read)
+
 			if testData.expectedError != nil {
 				require.Equal(t, testData.expectedError, err)
 				return
@@ -2028,6 +2172,53 @@ func TestRing_ShuffleShard_Stability(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestRing_ShuffleShardWithConsistency(t *testing.T) {
+	var (
+		numInstances      = 50
+		numZones          = 3
+		consistencyLevels = []ConsistencyLevel{ConsistencyQuorum, ConsistencyRelaxedQuorum, ConsistencyAny}
+	)
+
+	for _, ringConsistency := range consistencyLevels {
+		// Initialise the ring.
+		ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(t), numInstances, numZones, 128)}
+		ring := newRingForTesting(Config{
+			HeartbeatTimeout:     time.Hour,
+			ZoneAwarenessEnabled: true,
+		}, true)
+		ring.setRingStateFromDesc(ringDesc, false, false, false)
+		setRingConsistencyLevel(ring, ringConsistency)
+		checkConsistencyLevel(t, ring, ringConsistency) // sanity check
+
+		r := ring.ShuffleShard("user", 3).(*Ring)
+		expected, err := r.GetAllHealthy(Read)
+		require.NoError(t, err)
+		checkConsistencyLevel(t, r, ringConsistency)
+		require.NotSame(t, ring, r)
+
+		for _, shuffleShardConsistency := range consistencyLevels {
+			rc := ring.ShuffleShardWithConsistency("user", 3, shuffleShardConsistency).(*Ring)
+			checkConsistencyLevel(t, rc, shuffleShardConsistency)
+
+			if shuffleShardConsistency == ringConsistency {
+				assert.Same(t, r, rc, "when consistency levels match, the same ring instance should be returned")
+			} else {
+				actual, err := rc.GetAllHealthy(Read)
+				require.NoError(t, err)
+				assert.ElementsMatch(t, expected.Instances, actual.Instances)
+			}
+		}
+	}
+}
+
+func checkConsistencyLevel(t *testing.T, r *Ring, expected ConsistencyLevel) {
+	t.Helper()
+
+	assert.Equal(t, expected, r.consistencyLevel, "ring has unexpected consistency level")
+	defaultStrategy := r.strategy.(*defaultReplicationStrategy)
+	assert.Equal(t, expected, defaultStrategy.consistencyLevel, "ring strategy has unexpected consistency level")
 }
 
 func initTokenGenerator(t testing.TB) TokenGenerator {
@@ -2865,7 +3056,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 						currTime := time.Now().Add(lookbackPeriod).Add(time.Minute)
 
 						// Add the initial shard to the history.
-						rs, err := ring.shuffleShard(userID, shardSize, 0, currTime).GetReplicationSetForOperation(Read)
+						rs, err := ring.shuffleShard(userID, shardSize, 0, currTime, ring.consistencyLevel).GetReplicationSetForOperation(Read)
 						require.NoError(t, err)
 
 						type historyEntry struct {
@@ -2967,7 +3158,7 @@ func TestRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.T) {
 							}
 
 							// Add the current shard to the history.
-							rs, err = ring.shuffleShard(userID, shardSize, 0, currTime).GetReplicationSetForOperation(Read)
+							rs, err = ring.shuffleShard(userID, shardSize, 0, currTime, ring.consistencyLevel).GetReplicationSetForOperation(Read)
 							require.NoError(t, err)
 							history[eventID] = historyEntry{rs, shardSize, currTime}
 
@@ -4170,6 +4361,14 @@ func TestRing_ShuffleShard_Caching(t *testing.T) {
 	subring = newSubring
 	newSubring = ring.ShuffleShard("user", 1)
 	require.Same(t, subring, newSubring)
+
+	// Verify that getting the same subring with same consistency uses cached instance.
+	newSubring = ring.ShuffleShardWithConsistency("user", 1, ConsistencyQuorum)
+	require.Same(t, subring, newSubring)
+
+	// Verify that getting the same subring with different consistency does not use cached instance.
+	newSubring = ring.ShuffleShardWithConsistency("user", 1, ConsistencyAny)
+	require.NotSame(t, subring, newSubring)
 
 	// But after cleanup, it doesn't.
 	ring.CleanupShuffleShardCache("user")

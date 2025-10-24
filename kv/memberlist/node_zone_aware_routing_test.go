@@ -231,131 +231,153 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 	const key = "test-key"
 
-	var (
-		c      = dataCodec{}
-		ctx    = context.Background()
-		logger = log.NewNopLogger()
-	)
-
-	// Helper function to create a node configuration.
-	makeConfig := func(seedNodes []string, zone, role string) KVConfig {
-		var cfg KVConfig
-		flagext.DefaultValues(&cfg)
-		cfg.NodeName = fmt.Sprintf("%s-%s", zone, role)
-		cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
-		cfg.TCPTransport.BindPort = 0
-		cfg.Codecs = append(cfg.Codecs, c)
-		cfg.GossipInterval = 100 * time.Millisecond // Gossip frequently for a faster test run.
-		cfg.LeaveTimeout = 100 * time.Millisecond   // Leave quickly. We don't care about a clean shutdown.
-		cfg.PushPullInterval = 0                    // Disable push/pull to make sure changes are propagated by gossiping them.
-		cfg.JoinMembers = seedNodes
-		cfg.ZoneAwareRouting = ZoneAwareRoutingConfig{
-			Enabled: true,
-			Zone:    zone,
-			Role:    role,
-		}
-		return cfg
+	tests := map[string]struct {
+		gossipInterval   time.Duration
+		pushPullInterval time.Duration
+	}{
+		"state sync via broadcast updates": {
+			gossipInterval:   50 * time.Millisecond,
+			pushPullInterval: 0,
+		},
+		"state sync via push/pull": {
+			gossipInterval:   1 * time.Hour,
+			pushPullInterval: 50 * time.Millisecond,
+		},
 	}
 
-	// Create a cluster with 2 zones, each with 1 bridge and 2 members.
-	// Zone A: bridge-a, member-a-1, member-a-2
-	// Zone B: bridge-b, member-b-1, member-b-2
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var (
+				c      = dataCodec{}
+				ctx    = context.Background()
+				logger = log.NewNopLogger()
+			)
 
-	// Zone A bridge - create and start first.
-	bridgeA := NewKV(makeConfig(nil, "zone-a", "bridge"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
-	require.NoError(t, services.StartAndAwaitRunning(ctx, bridgeA))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, bridgeA))
-	})
+			// Helper function to create a node configuration.
+			makeConfig := func(seedNodes []string, zone, role string) KVConfig {
+				var cfg KVConfig
+				flagext.DefaultValues(&cfg)
+				cfg.NodeName = fmt.Sprintf("%s-%s", zone, role)
+				cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
+				cfg.TCPTransport.BindPort = 0
+				cfg.Codecs = append(cfg.Codecs, c)
+				cfg.GossipInterval = tc.gossipInterval
+				cfg.PushPullInterval = tc.pushPullInterval
+				cfg.JoinMembers = seedNodes
+				cfg.ZoneAwareRouting = ZoneAwareRoutingConfig{
+					Enabled: true,
+					Zone:    zone,
+					Role:    role,
+				}
 
-	kvBridgeA, err := NewClient(bridgeA, c)
-	require.NoError(t, err)
+				// Leave quickly. We don't care about a clean shutdown.
+				cfg.LeaveTimeout = 100 * time.Millisecond
+				cfg.BroadcastTimeoutForLocalUpdatesOnShutdown = 100 * time.Millisecond
 
-	// Create all other nodes (but don't start them yet).
-	// Get the join address for bridgeA now since it's already started.
-	bridgeAAddr := []string{net.JoinHostPort(bridgeA.cfg.TCPTransport.BindAddrs[0], strconv.Itoa(bridgeA.GetListeningPort()))}
+				return cfg
+			}
 
-	memberA1 := NewKV(makeConfig(bridgeAAddr, "zone-a", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
-	memberA2 := NewKV(makeConfig(bridgeAAddr, "zone-a", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
-	bridgeB := NewKV(makeConfig(bridgeAAddr, "zone-b", "bridge"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
-	memberB1 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
-	memberB2 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			// Create a cluster with 2 zones, each with 1 bridge and 2 members.
+			// Zone A: bridge-a, member-a-1, member-a-2
+			// Zone B: bridge-b, member-b-1, member-b-2
 
-	// Start all other nodes in parallel.
-	manager, err := services.NewManager(memberA1, memberA2, bridgeB, memberB1, memberB2)
-	require.NoError(t, err)
-	require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, manager))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopManagerAndAwaitStopped(ctx, manager))
-	})
+			// Zone A bridge - create and start first.
+			bridgeA := NewKV(makeConfig(nil, "zone-a", "bridge"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			require.NoError(t, services.StartAndAwaitRunning(ctx, bridgeA))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, bridgeA))
+			})
 
-	// Create clients for all nodes.
-	clientMemberA1, err := NewClient(memberA1, c)
-	require.NoError(t, err)
+			kvBridgeA, err := NewClient(bridgeA, c)
+			require.NoError(t, err)
 
-	clientMemberA2, err := NewClient(memberA2, c)
-	require.NoError(t, err)
+			// Create all other nodes (but don't start them yet).
+			// Get the join address for bridgeA now since it's already started.
+			bridgeAAddr := []string{net.JoinHostPort(bridgeA.cfg.TCPTransport.BindAddrs[0], strconv.Itoa(bridgeA.GetListeningPort()))}
 
-	kvBridgeB, err := NewClient(bridgeB, c)
-	require.NoError(t, err)
+			memberA1 := NewKV(makeConfig(bridgeAAddr, "zone-a", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			memberA2 := NewKV(makeConfig(bridgeAAddr, "zone-a", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			bridgeB := NewKV(makeConfig(bridgeAAddr, "zone-b", "bridge"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			memberB1 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			memberB2 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), logger, &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
-	clientMemberB1, err := NewClient(memberB1, c)
-	require.NoError(t, err)
+			// Start all other nodes in parallel.
+			manager, err := services.NewManager(memberA1, memberA2, bridgeB, memberB1, memberB2)
+			require.NoError(t, err)
+			require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, manager))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopManagerAndAwaitStopped(ctx, manager))
+			})
 
-	clientMemberB2, err := NewClient(memberB2, c)
-	require.NoError(t, err)
+			// Create clients for all nodes.
+			clientMemberA1, err := NewClient(memberA1, c)
+			require.NoError(t, err)
 
-	// Create slices with all nodes for easier iteration.
-	allNodes := []*KV{bridgeA, memberA1, memberA2, bridgeB, memberB1, memberB2}
-	allClients := []*Client{kvBridgeA, clientMemberA1, clientMemberA2, kvBridgeB, clientMemberB1, clientMemberB2}
+			clientMemberA2, err := NewClient(memberA2, c)
+			require.NoError(t, err)
 
-	// Wait for cluster to stabilize - all nodes should see all other nodes.
-	for _, node := range allNodes {
-		t.Logf("waiting for node %s in zone %s with role %s to see all other nodes", node.memberlist.LocalNode().Name, node.cfg.ZoneAwareRouting.Zone, node.cfg.ZoneAwareRouting.Role)
-		test.Poll(t, 2*time.Second, 6, func() interface{} {
-			return node.memberlist.NumMembers()
+			kvBridgeB, err := NewClient(bridgeB, c)
+			require.NoError(t, err)
+
+			clientMemberB1, err := NewClient(memberB1, c)
+			require.NoError(t, err)
+
+			clientMemberB2, err := NewClient(memberB2, c)
+			require.NoError(t, err)
+
+			// Create slices with all nodes for easier iteration.
+			allNodes := []*KV{bridgeA, memberA1, memberA2, bridgeB, memberB1, memberB2}
+			allClients := []*Client{kvBridgeA, clientMemberA1, clientMemberA2, kvBridgeB, clientMemberB1, clientMemberB2}
+
+			// Wait for cluster to stabilize - all nodes should see all other nodes.
+			for _, node := range allNodes {
+				t.Logf("waiting for node %s in zone %s with role %s to see all other nodes", node.memberlist.LocalNode().Name, node.cfg.ZoneAwareRouting.Zone, node.cfg.ZoneAwareRouting.Role)
+				test.Poll(t, 2*time.Second, 6, func() interface{} {
+					return node.memberlist.NumMembers()
+				})
+			}
+			t.Log("all nodes see each other")
+
+			// Write data from a member in zone A.
+			err = clientMemberA1.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+				return &data{
+					Members: map[string]member{
+						"test-member": {
+							Timestamp: time.Now().Unix(),
+							Tokens:    []uint32{1, 2, 3},
+							State:     ACTIVE,
+						},
+					},
+				}, true, nil
+			})
+			require.NoError(t, err)
+
+			// Verify that all nodes (in both zones) receive the update.
+			checkValue := func(kv *Client) func() interface{} {
+				return func() interface{} {
+					val, err := kv.Get(ctx, key)
+					if err != nil || val == nil {
+						return nil
+					}
+					d, ok := val.(*data)
+					if !ok {
+						return nil
+					}
+					if m, exists := d.Members["test-member"]; exists && m.State == ACTIVE {
+						return "ok"
+					}
+					return nil
+				}
+			}
+
+			// Poll all nodes to ensure they all received the update.
+			for idx, node := range allNodes {
+				t.Logf("waiting for node %s in zone %s with role %s to receive the update", node.memberlist.LocalNode().Name, node.cfg.ZoneAwareRouting.Zone, node.cfg.ZoneAwareRouting.Role)
+
+				client := allClients[idx]
+				test.Poll(t, 2*time.Second, "ok", checkValue(client))
+			}
+			t.Log("all nodes received the update")
 		})
 	}
-	t.Log("all nodes see each other")
-
-	// Write data from a member in zone A.
-	err = clientMemberA1.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
-		return &data{
-			Members: map[string]member{
-				"test-member": {
-					Timestamp: time.Now().Unix(),
-					Tokens:    []uint32{1, 2, 3},
-					State:     ACTIVE,
-				},
-			},
-		}, true, nil
-	})
-	require.NoError(t, err)
-
-	// Verify that all nodes (in both zones) receive the update.
-	checkValue := func(kv *Client) func() interface{} {
-		return func() interface{} {
-			val, err := kv.Get(ctx, key)
-			if err != nil || val == nil {
-				return nil
-			}
-			d, ok := val.(*data)
-			if !ok {
-				return nil
-			}
-			if m, exists := d.Members["test-member"]; exists && m.State == ACTIVE {
-				return "ok"
-			}
-			return nil
-		}
-	}
-
-	// Poll all nodes to ensure they all received the update.
-	for idx, node := range allNodes {
-		t.Logf("waiting for node %s in zone %s with role %s to receive the update", node.memberlist.LocalNode().Name, node.cfg.ZoneAwareRouting.Zone, node.cfg.ZoneAwareRouting.Role)
-
-		client := allClients[idx]
-		test.Poll(t, 2*time.Second, "ok", checkValue(client))
-	}
-	t.Log("all nodes received the update")
 }

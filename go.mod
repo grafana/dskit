@@ -25,7 +25,7 @@ require (
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-metrics v0.5.4
-	github.com/hashicorp/go-sockaddr v1.0.5
+	github.com/hashicorp/go-sockaddr v1.0.7
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/memberlist v0.5.2
 	github.com/miekg/dns v1.1.63

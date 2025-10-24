@@ -125,12 +125,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	}
 
 	t.Run("local node is member", func(t *testing.T) {
-		cfg := ZoneAwareRoutingConfig{
-			Enabled: true,
-			Zone:    "zone-a",
-			Role:    "member",
-		}
-		delegate := newZoneAwareNodeSelectionDelegate(cfg)
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a")
 
 		// Member in the same zone: should be selected but not preferred.
 		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
@@ -159,12 +154,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	})
 
 	t.Run("local node is bridge", func(t *testing.T) {
-		cfg := ZoneAwareRoutingConfig{
-			Enabled: true,
-			Zone:    "zone-a",
-			Role:    "bridge",
-		}
-		delegate := newZoneAwareNodeSelectionDelegate(cfg)
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a")
 
 		// Member in the same zone: should be selected but not preferred.
 		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
@@ -198,12 +188,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	})
 
 	t.Run("local node has empty zone", func(t *testing.T) {
-		cfg := ZoneAwareRoutingConfig{
-			Enabled: false,
-			Zone:    "",
-			Role:    "member",
-		}
-		delegate := newZoneAwareNodeSelectionDelegate(cfg)
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "")
 
 		// Any node should be selected but not preferred when local zone is empty.
 		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
@@ -216,12 +201,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	})
 
 	t.Run("node with empty metadata", func(t *testing.T) {
-		cfg := ZoneAwareRoutingConfig{
-			Enabled: true,
-			Zone:    "zone-a",
-			Role:    "member",
-		}
-		delegate := newZoneAwareNodeSelectionDelegate(cfg)
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a")
 
 		// Node with no metadata (empty Meta field).
 		node := memberlist.Node{
@@ -234,12 +214,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	})
 
 	t.Run("node with invalid metadata", func(t *testing.T) {
-		cfg := ZoneAwareRoutingConfig{
-			Enabled: true,
-			Zone:    "zone-a",
-			Role:    "member",
-		}
-		delegate := newZoneAwareNodeSelectionDelegate(cfg)
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a")
 
 		// Node with invalid metadata (too short).
 		node := memberlist.Node{

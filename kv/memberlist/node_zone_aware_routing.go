@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/hashicorp/memberlist"
 )
 
@@ -82,13 +84,15 @@ func (cfg *ZoneAwareRoutingConfig) Validate() error {
 type zoneAwareNodeSelectionDelegate struct {
 	localRole NodeRole
 	localZone string
+	logger    log.Logger
 }
 
 // newZoneAwareNodeSelectionDelegate creates a new zone-aware node selection delegate.
-func newZoneAwareNodeSelectionDelegate(localRole NodeRole, localZone string) *zoneAwareNodeSelectionDelegate {
+func newZoneAwareNodeSelectionDelegate(localRole NodeRole, localZone string, logger log.Logger) *zoneAwareNodeSelectionDelegate {
 	return &zoneAwareNodeSelectionDelegate{
 		localRole: localRole,
 		localZone: localZone,
+		logger:    logger,
 	}
 }
 
@@ -128,6 +132,8 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNode(node memberlist.Node) (selec
 		return false, false
 
 	default:
+		level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is running with an unknown role", "role", d.localRole)
+
 		// Unknown role: select but don't prefer (should never happen).
 		return true, false
 	}

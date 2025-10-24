@@ -125,7 +125,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	}
 
 	t.Run("local node is member", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a")
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
 
 		// Member in the same zone: should be selected but not preferred.
 		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
@@ -154,7 +154,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	})
 
 	t.Run("local node is bridge", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a")
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger())
 
 		// Member in the same zone: should be selected but not preferred.
 		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
@@ -188,7 +188,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	})
 
 	t.Run("local node has empty zone", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "")
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "", log.NewNopLogger())
 
 		// Any node should be selected but not preferred when local zone is empty.
 		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
@@ -201,7 +201,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	})
 
 	t.Run("node with empty metadata", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a")
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
 
 		// Node with no metadata (empty Meta field).
 		node := memberlist.Node{
@@ -214,7 +214,7 @@ func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
 	})
 
 	t.Run("node with invalid metadata", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a")
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
 
 		// Node with invalid metadata (too short).
 		node := memberlist.Node{

@@ -18,15 +18,15 @@ require (
 	github.com/golang/protobuf v1.5.4
 	github.com/golang/snappy v0.0.4
 	github.com/google/go-cmp v0.7.0
-	github.com/gorilla/mux v1.8.0
+	github.com/gorilla/mux v1.8.1
 	github.com/grafana/gomemcache v0.0.0-20251008140118-65a671e12fdf
 	github.com/grafana/otel-profiling-go v0.5.1
-	github.com/grafana/pyroscope-go/godeltaprof v0.1.8
+	github.com/grafana/pyroscope-go/godeltaprof v0.1.9
 	github.com/hashicorp/consul/api v1.15.3
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-metrics v0.5.4
 	github.com/hashicorp/go-sockaddr v1.0.5
-	github.com/hashicorp/golang-lru/v2 v2.0.5
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/memberlist v0.5.2
 	github.com/miekg/dns v1.1.63
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
@@ -136,4 +136,4 @@ require (
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet.
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251023033718-14677246f173
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251024121533-a7f5f8dad077

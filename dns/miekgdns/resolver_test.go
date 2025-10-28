@@ -132,6 +132,41 @@ func TestResolver_LookupSRV(t *testing.T) {
 		require.Empty(t, res)
 	})
 
+	// Some DNS resolvers include A or AAAA records in queries for SRV records.
+	// Ignoring these records matches the behavior of the built-in go resolver.
+	// See https://github.com/grafana/mimir/issues/12713
+	t.Run("non-SRV answer", func(t *testing.T) {
+		response := newSrvDNSResponse("_cache._tcp.example.com.", "cache01.example.com.")
+		response.Answer = append(response.Answer, &dns.A{
+			Hdr: dns.RR_Header{
+				Name:     "cache01.example.com.",
+				Rrtype:   dns.TypeA,
+				Class:    dns.ClassINET,
+				Ttl:      30,
+				Rdlength: 4,
+			},
+			A: net.ParseIP("127.0.0.1"),
+		})
+
+		cfgPath := writeResovConf(t, tmpDir, resolvConfContents)
+		client := newMockClient()
+		client.res["127.0.0.53:53"] = []*dns.Msg{response}
+
+		resolver := NewResolverWithClient(cfgPath, logger, period, client)
+		t.Cleanup(resolver.Stop)
+		_, res, err := resolver.LookupSRV(context.Background(), "cache", "tcp", "example.com")
+
+		require.NoError(t, err)
+		require.Equal(t, []*net.SRV{
+			{
+				Target:   "cache01.example.com.",
+				Port:     11211,
+				Priority: 10,
+				Weight:   100,
+			},
+		}, res)
+	})
+
 	t.Run("truncated", func(t *testing.T) {
 		response := newSrvDNSResponse("_cache._tcp.example.com.", "cache01.example.com.")
 		response.Truncated = true

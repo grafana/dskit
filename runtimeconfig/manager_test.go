@@ -320,6 +320,34 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
 	require.Equal(t, 1234, conf.Overrides["user1"].Limit1)
 }
 
+func TestOverridesManagerMultipleIncompatibleFiles(t *testing.T) {
+	tempFiles, err := generateRuntimeFiles(t,
+		[]string{
+			`
+overrides:
+  "123":
+    limit1: 100
+`,
+			`
+overrides:
+  456:
+    limit1: 1234
+`})
+	require.NoError(t, err)
+
+	overridesManagerConfig := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     flagext.StringSliceCSV(generateLoadPath(tempFiles)),
+		Loader:       testLoadOverrides,
+	}
+
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	err = services.StartAndAwaitRunning(context.Background(), overridesManager)
+	require.Error(t, err)
+	require.ErrorContains(t, err, `conflicting types for ".overrides": map[string]interface {} != map[interface {}]interface {}`)
+}
+
 func TestOverridesManagerMultipleFilesWithEmptyFile(t *testing.T) {
 	tempFiles, err := generateRuntimeFiles(t,
 		[]string{`overrides:

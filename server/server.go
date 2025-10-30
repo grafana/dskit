@@ -85,6 +85,8 @@ type Config struct {
 	// https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#HistogramOpts
 	// for details. A generally useful value is 1.1.
 	MetricsNativeHistogramFactor float64 `yaml:"-"`
+	// Same as MetricsNativeHistogramFactor, but for old metrics like response_message_bytes, request_message_bytes
+	MetricsOldNativeHistogramFactor float64 `yaml:"-"`
 
 	HTTPListenNetwork           string `yaml:"http_listen_network"`
 	HTTPListenAddress           string `yaml:"http_listen_address"`

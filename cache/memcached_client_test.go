@@ -130,6 +130,32 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
 		require.Equal(t, 1, backend.allocations)
 	})
+
+	t.Run("multiple batches", func(t *testing.T) {
+		client, backend, err := setupDefaultMemcachedClient()
+		client.config.MaxGetMultiBatchSize = 2
+
+		require.NoError(t, err)
+		client.SetMultiAsync(map[string][]byte{
+			"foo1": []byte("bar1"),
+			"foo2": []byte("bar2"),
+			"foo3": []byte("bar3"),
+			"foo4": []byte("bar4"),
+			"foo5": []byte("bar5"),
+		}, 10*time.Second)
+		require.NoError(t, client.wait())
+
+		ctx := context.Background()
+		res := client.GetMulti(ctx, []string{"foo1", "foo2", "foo3", "foo4", "foo5"})
+		require.Equal(t, map[string][]byte{
+			"foo1": []byte("bar1"),
+			"foo2": []byte("bar2"),
+			"foo3": []byte("bar3"),
+			"foo4": []byte("bar4"),
+			"foo5": []byte("bar5"),
+		}, res)
+		require.Equal(t, 0, backend.allocations)
+	})
 }
 
 func TestMemcachedClient_Increment(t *testing.T) {
@@ -344,7 +370,16 @@ func setupDefaultMemcachedClient() (*MemcachedClient, *mockMemcachedClientBacken
 	client, err := newMemcachedClient(
 		log.NewNopLogger(),
 		backend,
-		&mockServerSelector{},
+		&mockServerSelector{
+			servers: []mockServer{
+				{
+					addr: "127.0.0.1:11211",
+				},
+				{
+					addr: "127.0.0.2:11211",
+				},
+			},
+		},
 		MemcachedClientConfig{
 			Addresses:           []string{"localhost"},
 			MaxAsyncConcurrency: 1,

@@ -278,7 +278,7 @@ func mergeConfigMaps(a, b map[string]interface{}, path string) (_ map[string]int
 		if v, ok := v.(map[string]interface{}); ok {
 			if bv, ok := out[k]; ok {
 				if bv, ok := bv.(map[string]interface{}); ok {
-					out[k], err = mergeConfigMaps(bv, v, "."+k)
+					out[k], err = mergeConfigMaps(bv, v, path+"."+k)
 					if err != nil {
 						return nil, err
 					}

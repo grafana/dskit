@@ -32,6 +32,10 @@ type Metrics struct {
 func NewServerMetrics(cfg Config) *Metrics {
 	reg := cfg.registererOrDefault()
 	factory := promauto.With(reg)
+	messageSizeNativeHistogramFactor := float64(0)
+	if cfg.MetricsMessageSizeNativeHistograms {
+		messageSizeNativeHistogramFactor = cfg.MetricsNativeHistogramFactor
+	}
 
 	return &Metrics{
 		TCPConnections: factory.NewGaugeVec(prometheus.GaugeOpts{
@@ -77,7 +81,7 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Name:                            "request_message_bytes",
 			Help:                            "Size (in bytes) of messages received in the request.",
 			Buckets:                         middleware.BodySizeBuckets,
-			NativeHistogramBucketFactor:     cfg.MetricsOldNativeHistogramFactor,
+			NativeHistogramBucketFactor:     messageSizeNativeHistogramFactor,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),
@@ -86,7 +90,7 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Name:                            "response_message_bytes",
 			Help:                            "Size (in bytes) of messages sent in response.",
 			Buckets:                         middleware.BodySizeBuckets,
-			NativeHistogramBucketFactor:     cfg.MetricsOldNativeHistogramFactor,
+			NativeHistogramBucketFactor:     messageSizeNativeHistogramFactor,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),

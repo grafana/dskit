@@ -11,6 +11,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -150,12 +151,12 @@ func (c *MemcachedClientConfig) Validate() error {
 }
 
 type MemcachedClient struct {
-	*baseClient
-
 	logger   log.Logger
 	config   MemcachedClientConfig
 	client   memcachedClientBackend
 	selector updatableServerSelector
+	metrics  *clientMetrics
+	queue    *asyncQueue
 
 	// Name provides an identifier for the instantiated Client
 	name string
@@ -252,7 +253,8 @@ func newMemcachedClient(
 	metrics := newClientMetrics(reg)
 
 	c := &MemcachedClient{
-		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
+		metrics:         metrics,
+		queue:           newAsyncQueue(config.MaxAsyncBufferSize, config.MaxAsyncConcurrency),
 		logger:          log.With(logger, "name", name),
 		config:          config,
 		client:          client,
@@ -289,7 +291,7 @@ func (c *MemcachedClient) Stop() {
 	close(c.stop)
 
 	// Stop running async operations.
-	c.asyncQueue.stop()
+	c.queue.stop()
 
 	// Stop the underlying client.
 	c.client.Close()
@@ -559,6 +561,131 @@ func (c *MemcachedClient) FlushAll(ctx context.Context) error {
 	}
 
 	return err
+}
+
+func (c *MemcachedClient) setMultiAsync(data map[string][]byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) {
+	for key, val := range data {
+		c.setAsync(key, val, ttl, f)
+	}
+}
+
+func (c *MemcachedClient) setAsync(key string, value []byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) {
+	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
+		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
+		return
+	}
+
+	err := c.queue.submit(func() {
+		// Because this operation is executed in a separate goroutine: We run the operation without
+		// a context (it is expected to keep running no matter what happens) and we don't return the
+		// error (it will be tracked via metrics instead of being returned to the caller).
+		_ = c.storeOperation(context.Background(), key, value, ttl, opSet, func(_ context.Context, key string, value []byte, ttl time.Duration) error {
+			return f(key, value, ttl)
+		})
+	})
+
+	if err != nil {
+		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
+		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "err", err, "size", c.config.MaxAsyncBufferSize)
+	}
+}
+
+func (c *MemcachedClient) storeOperation(ctx context.Context, key string, value []byte, ttl time.Duration, operation string, f func(ctx context.Context, key string, value []byte, ttl time.Duration) error) error {
+	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
+		c.metrics.skipped.WithLabelValues(operation, reasonMaxItemSize).Inc()
+		return nil
+	}
+
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(operation).Inc()
+
+	err := f(ctx, key, value, ttl)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to store item to cache",
+			"operation", operation,
+			"key", key,
+			"sizeBytes", len(value),
+			"err", err,
+		)
+		c.trackError(operation, err)
+	}
+
+	c.metrics.dataSize.WithLabelValues(operation).Observe(float64(len(value)))
+	c.metrics.duration.WithLabelValues(operation).Observe(time.Since(start).Seconds())
+	return err
+}
+
+// wait submits an async task and blocks until it completes. This can be used during
+// tests to ensure that async "sets" have completed before attempting to read them.
+func (c *MemcachedClient) wait() error {
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	err := c.queue.submit(func() {
+		wg.Done()
+	})
+	if err != nil {
+		return err
+	}
+
+	wg.Wait()
+	return nil
+}
+
+func (c *MemcachedClient) delete(ctx context.Context, key string, f func(ctx context.Context, key string) error) error {
+	errCh := make(chan error, 1)
+
+	enqueueErr := c.queue.submit(func() {
+		start := time.Now()
+		c.metrics.operations.WithLabelValues(opDelete).Inc()
+
+		err := f(ctx, key)
+		if err != nil {
+			level.Debug(c.logger).Log(
+				"msg", "failed to delete cache item",
+				"key", key,
+				"err", err,
+			)
+			c.trackError(opDelete, err)
+		} else {
+			c.metrics.duration.WithLabelValues(opDelete).Observe(time.Since(start).Seconds())
+		}
+		errCh <- err
+	})
+
+	if errors.Is(enqueueErr, errAsyncQueueFull) {
+		c.metrics.skipped.WithLabelValues(opDelete, reasonAsyncBufferFull).Inc()
+		level.Debug(c.logger).Log("msg", "failed to delete cache item because the async buffer is full", "err", enqueueErr, "size", c.config.MaxAsyncBufferSize)
+		return enqueueErr
+	}
+	// Wait for the delete operation to complete.
+	return <-errCh
+}
+
+func (c *MemcachedClient) trackError(op string, err error) {
+	var connErr *memcache.ConnectTimeoutError
+	var netErr net.Error
+	switch {
+	case errors.As(err, &connErr):
+		c.metrics.failures.WithLabelValues(op, reasonConnectTimeout).Inc()
+	case errors.As(err, &netErr):
+		if netErr.Timeout() {
+			c.metrics.failures.WithLabelValues(op, reasonTimeout).Inc()
+		} else {
+			c.metrics.failures.WithLabelValues(op, reasonNetworkError).Inc()
+		}
+	case errors.Is(err, ErrNotStored):
+		c.metrics.failures.WithLabelValues(op, reasonNotStored).Inc()
+	case errors.Is(err, ErrInvalidTTL):
+		c.metrics.failures.WithLabelValues(op, reasonInvalidTTL).Inc()
+	case errors.Is(err, memcache.ErrMalformedKey):
+		c.metrics.failures.WithLabelValues(op, reasonMalformedKey).Inc()
+	case errors.Is(err, memcache.ErrServerError):
+		c.metrics.failures.WithLabelValues(op, reasonServerError).Inc()
+	default:
+		c.metrics.failures.WithLabelValues(op, reasonOther).Inc()
+	}
 }
 
 func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {

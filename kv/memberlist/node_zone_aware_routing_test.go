@@ -312,8 +312,8 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 			memberB2 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), log.WithPrefix(logger, "instance", "member-zone-b-2"), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
 			// Start services in what we consider the worst case scenario:
-			// zone-b members first, so they don't see any zone-b bridge at startup,
-			// but they're also not allowed to initiate a push/pull to any zone-a member or bridge.
+			// zone-b members first, so they don't see any zone-b bridge at startup, but they're also
+			// not allowed to initiate a push/pull or gossip to any zone-a member or bridge.
 			zoneBMembers, err := services.NewManager(memberB1, memberB2)
 			require.NoError(t, err)
 			require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, zoneBMembers))
@@ -321,7 +321,7 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 				require.NoError(t, services.StopManagerAndAwaitStopped(ctx, zoneBMembers))
 			})
 
-			// The start other nodes.
+			// Then start other nodes.
 			otherMembers, err := services.NewManager(memberA1, memberA2, bridgeB)
 			require.NoError(t, err)
 			require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, otherMembers))

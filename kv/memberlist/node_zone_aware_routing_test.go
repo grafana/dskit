@@ -235,14 +235,22 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 	tests := map[string]struct {
 		gossipInterval   time.Duration
 		pushPullInterval time.Duration
+		rejoinInterval   time.Duration
 	}{
 		"state sync via broadcast updates": {
 			gossipInterval:   50 * time.Millisecond,
 			pushPullInterval: 0,
+			rejoinInterval:   0,
 		},
 		"state sync via push/pull": {
 			gossipInterval:   1 * time.Hour,
 			pushPullInterval: 50 * time.Millisecond,
+
+			// If gossiping is disabled (should not in a real world scenario) we may end up in a split brain
+			// situation because (a) bridges always push/pull to the other zone bridges and (b) if zone-b
+			// members don't discover zone-b bridges at startup, they will never discover them (unless periodic
+			// rejoin is enabled).
+			rejoinInterval: 250 * time.Millisecond,
 		},
 	}
 
@@ -264,6 +272,7 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 				cfg.Codecs = append(cfg.Codecs, c)
 				cfg.GossipInterval = tc.gossipInterval
 				cfg.PushPullInterval = tc.pushPullInterval
+				cfg.RejoinInterval = tc.rejoinInterval
 				cfg.JoinMembers = seedNodes
 				cfg.ZoneAwareRouting = ZoneAwareRoutingConfig{
 					Enabled: true,
@@ -302,12 +311,22 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 			memberB1 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), log.WithPrefix(logger, "instance", "member-zone-b-1"), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 			memberB2 := NewKV(makeConfig(bridgeAAddr, "zone-b", "member"), log.WithPrefix(logger, "instance", "member-zone-b-2"), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
-			// Start all other nodes in parallel.
-			manager, err := services.NewManager(memberA1, memberA2, bridgeB, memberB1, memberB2)
+			// Start services in what we consider the worst case scenario:
+			// zone-b members first, so they don't see any zone-b bridge at startup, but they're also
+			// not allowed to initiate a push/pull or gossip to any zone-a member or bridge.
+			zoneBMembers, err := services.NewManager(memberB1, memberB2)
 			require.NoError(t, err)
-			require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, manager))
+			require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, zoneBMembers))
 			t.Cleanup(func() {
-				require.NoError(t, services.StopManagerAndAwaitStopped(ctx, manager))
+				require.NoError(t, services.StopManagerAndAwaitStopped(ctx, zoneBMembers))
+			})
+
+			// Then start other nodes.
+			otherMembers, err := services.NewManager(memberA1, memberA2, bridgeB)
+			require.NoError(t, err)
+			require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, otherMembers))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopManagerAndAwaitStopped(ctx, otherMembers))
 			})
 
 			// Create clients for all nodes.

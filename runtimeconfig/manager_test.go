@@ -376,6 +376,43 @@ func TestOverridesManagerMultipleFilesWithEmptyFile(t *testing.T) {
 	require.Equal(t, 100, conf.Overrides["user1"].Limit1)
 }
 
+func TestOverridesManagerMultipleFilesWithNilValues(t *testing.T) {
+	tempFiles, err := generateRuntimeFiles(t,
+		[]string{
+			`overrides:
+  "123": null
+  "456":
+    limit1: 200
+  "789": null
+  "other": {}
+`,
+			`overrides:
+  "123":
+    limit1: 200
+  "456": null
+  "789": {}
+  "other": null
+`})
+	require.NoError(t, err)
+
+	overridesManagerConfig := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     flagext.StringSliceCSV(generateLoadPath(tempFiles)),
+		Loader:       testLoadOverrides,
+	}
+
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	err = services.StartAndAwaitRunning(context.Background(), overridesManager)
+	require.NoError(t, err)
+
+	conf := overridesManager.GetConfig().(*testOverrides)
+	require.Equal(t, 200, conf.Overrides["123"].Limit1)
+	require.Equal(t, 200, conf.Overrides["456"].Limit1)
+	require.Equal(t, 100, conf.Overrides["789"].Limit1)
+	require.Equal(t, 100, conf.Overrides["other"].Limit1)
+}
+
 func TestOverridesManagerPreprocessor(t *testing.T) {
 	tempFiles, err := generateRuntimeFiles(t,
 		[]string{`overrides:

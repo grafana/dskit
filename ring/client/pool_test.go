@@ -140,12 +140,12 @@ func TestCleanUnhealthy(t *testing.T) {
 		t.Run(fmt.Sprintf("max concurrent %d", tc.maxConcurrent), func(t *testing.T) {
 			goodAddrs := []string{"good1", "good2"}
 			badAddrs := []string{"bad1", "bad2"}
-			clients := map[string]PoolClient{}
+			clients := map[string]*poolMember{}
 			for _, addr := range goodAddrs {
-				clients[addr] = mockClient{happy: true, status: grpc_health_v1.HealthCheckResponse_SERVING}
+				clients[addr] = &poolMember{client: mockClient{happy: true, status: grpc_health_v1.HealthCheckResponse_SERVING}}
 			}
 			for _, addr := range badAddrs {
-				clients[addr] = mockClient{happy: false, status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}
+				clients[addr] = &poolMember{client: mockClient{happy: false, status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}}
 			}
 
 			cfg := PoolConfig{
@@ -154,21 +154,63 @@ func TestCleanUnhealthy(t *testing.T) {
 				HealthCheckTimeout:        5 * time.Millisecond,
 			}
 			pool := NewPool("test", cfg, nil, nil, nil, log.NewNopLogger())
-			pool.clients = clients
+			pool.members = clients
 			pool.cleanUnhealthy()
 
 			for _, addr := range badAddrs {
-				if _, ok := pool.clients[addr]; ok {
+				if _, ok := pool.members[addr]; ok {
 					t.Errorf("Found bad client after clean: %s\n", addr)
 				}
 			}
 			for _, addr := range goodAddrs {
-				if _, ok := pool.clients[addr]; !ok {
+				if _, ok := pool.members[addr]; !ok {
 					t.Errorf("Could not find good client after clean: %s\n", addr)
 				}
 			}
 		})
 	}
+}
+
+func TestCleanUnhealthyWithGracePeriod(t *testing.T) {
+	const alwaysGood = "always-good"
+	const flapping = "flapping"
+	const neverGood = "never-good"
+	flappingClient := &mockClient{happy: true, status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}
+
+	clients := map[string]*poolMember{
+		alwaysGood: {client: &mockClient{happy: true, status: grpc_health_v1.HealthCheckResponse_SERVING}},
+		flapping:   {client: flappingClient},
+		neverGood:  {client: &mockClient{happy: true, status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}},
+	}
+
+	cfg := PoolConfig{
+		CheckInterval:          500 * time.Millisecond,
+		HealthCheckTimeout:     5 * time.Millisecond,
+		HealthCheckGracePeriod: time.Second,
+	}
+
+	pool := NewPool("test", cfg, nil, nil, nil, log.NewNopLogger())
+	pool.members = clients
+
+	pool.cleanUnhealthy()
+	require.ElementsMatch(t, []string{alwaysGood, flapping, neverGood}, pool.RegisteredAddresses(), "no clients should be removed before minimum failure period has expired")
+
+	time.Sleep(cfg.HealthCheckGracePeriod / 2)
+	pool.cleanUnhealthy()
+	require.ElementsMatch(t, []string{alwaysGood, flapping, neverGood}, pool.RegisteredAddresses(), "no clients should be removed before minimum failure period has expired, even after a subsequent failure")
+
+	flappingClient.status = grpc_health_v1.HealthCheckResponse_SERVING
+	time.Sleep((cfg.HealthCheckGracePeriod / 2) + time.Millisecond)
+	pool.cleanUnhealthy()
+	require.ElementsMatch(t, []string{alwaysGood, flapping}, pool.RegisteredAddresses(), "only client that has consistently failed all health checks during minimum failure period should be removed")
+
+	flappingClient.status = grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	pool.cleanUnhealthy()
+	require.ElementsMatch(t, []string{alwaysGood, flapping}, pool.RegisteredAddresses(), "no clients should be removed if they have just become unhealthy")
+
+	time.Sleep(cfg.HealthCheckGracePeriod + time.Millisecond)
+	pool.cleanUnhealthy()
+	require.ElementsMatch(t, []string{alwaysGood}, pool.RegisteredAddresses(), "client should be removed if still unhealthy after minimum failure period has expired")
 }
 
 func TestRemoveClient(t *testing.T) {

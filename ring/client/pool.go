@@ -279,14 +279,19 @@ func (p *Pool) cleanUnhealthy() {
 		}
 
 		if time.Since(member.firstFailedHealthCheck) >= p.cfg.HealthCheckGracePeriod {
-			level.Warn(p.logger).Log("msg", fmt.Sprintf("removing %s failing healthcheck", p.clientName), "addr", addr, "reason", err)
+			level.Warn(p.logger).Log(
+				"msg", fmt.Sprintf("removing %s failing healthcheck", p.clientName),
+				"addr", addr,
+				"reason", err,
+				"first_failed_at", member.firstFailedHealthCheck,
+			)
 			p.RemoveClientFor(addr)
 		} else {
 			level.Debug(p.logger).Log(
 				"msg", fmt.Sprintf("%s failed healthcheck within grace period, not removing", p.clientName),
 				"addr", addr,
 				"reason", err,
-				"first_failure", member.firstFailedHealthCheck,
+				"first_failed_at", member.firstFailedHealthCheck,
 			)
 		}
 

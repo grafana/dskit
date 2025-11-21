@@ -41,7 +41,14 @@
                 </td>
                 <td>
                     {{ range $ownerID := $partition.OwnerIDs }}
-                        {{$ownerID}} <br />
+                        {{$ownerID}}
+                        <form action="" method="POST" style="display:inline;" onsubmit="return confirm('Do you confirm you want to remove owner {{$ownerID}} from partition {{$partition.ID}}?');">
+                            <input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">
+                            <input type="hidden" name="partition_id" value="{{ $partition.ID }}">
+                            <input type="hidden" name="owner_id" value="{{ $ownerID }}">
+                            <button name="action" value="remove_owner" type="submit">Remove</button>
+                        </form>
+                        <br />
                     {{ end }}
                 </td>
                 <td>{{ .NumTokens }}</td>

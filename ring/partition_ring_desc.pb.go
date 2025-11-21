@@ -159,6 +159,8 @@ type PartitionDesc struct {
 	State PartitionState `protobuf:"varint,2,opt,name=state,proto3,enum=ring.PartitionState" json:"state,omitempty"`
 	// Unix timestamp (with seconds precision) of when has the state changed last time for this partition.
 	StateTimestamp int64 `protobuf:"varint,3,opt,name=stateTimestamp,proto3" json:"stateTimestamp,omitempty"`
+	// Metadata is a map of key-value pairs for storing additional partition information.
+	Metadata map[string]string `protobuf:"bytes,5,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 
 func (m *PartitionDesc) Reset()      { *m = PartitionDesc{} }
@@ -221,6 +223,86 @@ func (m *PartitionDesc) GetStateTimestamp() int64 {
 	return 0
 }
 
+func (m *PartitionDesc) GetMetadata() map[string]string {
+	if m != nil {
+		return m.Metadata
+	}
+	return nil
+}
+
+// PartitionDesc holds the state of a single partition.
+type PartitionDescNoMetadata struct {
+	// The partition ID. This value is the same as the key in the partitions map in PartitionRingDesc.
+	Id int32 `protobuf:"varint,4,opt,name=id,proto3" json:"id,omitempty"`
+	// Unique tokens, generated with deterministic token generator. Tokens MUST be immutable:
+	// if tokens get changed, the change will not be propagated via memberlist.
+	Tokens []uint32 `protobuf:"varint,1,rep,packed,name=tokens,proto3" json:"tokens,omitempty"`
+	// The state of the partition.
+	State PartitionState `protobuf:"varint,2,opt,name=state,proto3,enum=ring.PartitionState" json:"state,omitempty"`
+	// Unix timestamp (with seconds precision) of when has the state changed last time for this partition.
+	StateTimestamp int64 `protobuf:"varint,3,opt,name=stateTimestamp,proto3" json:"stateTimestamp,omitempty"`
+}
+
+func (m *PartitionDescNoMetadata) Reset()      { *m = PartitionDescNoMetadata{} }
+func (*PartitionDescNoMetadata) ProtoMessage() {}
+func (*PartitionDescNoMetadata) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4df2762174d93dc4, []int{2}
+}
+func (m *PartitionDescNoMetadata) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PartitionDescNoMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PartitionDescNoMetadata.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PartitionDescNoMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PartitionDescNoMetadata.Merge(m, src)
+}
+func (m *PartitionDescNoMetadata) XXX_Size() int {
+	return m.Size()
+}
+func (m *PartitionDescNoMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_PartitionDescNoMetadata.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PartitionDescNoMetadata proto.InternalMessageInfo
+
+func (m *PartitionDescNoMetadata) GetId() int32 {
+	if m != nil {
+		return m.Id
+	}
+	return 0
+}
+
+func (m *PartitionDescNoMetadata) GetTokens() []uint32 {
+	if m != nil {
+		return m.Tokens
+	}
+	return nil
+}
+
+func (m *PartitionDescNoMetadata) GetState() PartitionState {
+	if m != nil {
+		return m.State
+	}
+	return PartitionUnknown
+}
+
+func (m *PartitionDescNoMetadata) GetStateTimestamp() int64 {
+	if m != nil {
+		return m.StateTimestamp
+	}
+	return 0
+}
+
 // OwnerDesc holds the information of a partition owner.
 type OwnerDesc struct {
 	// Partition that belongs to this owner. A owner can own only 1 partition, but 1 partition can be
@@ -237,7 +319,7 @@ type OwnerDesc struct {
 func (m *OwnerDesc) Reset()      { *m = OwnerDesc{} }
 func (*OwnerDesc) ProtoMessage() {}
 func (*OwnerDesc) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4df2762174d93dc4, []int{2}
+	return fileDescriptor_4df2762174d93dc4, []int{3}
 }
 func (m *OwnerDesc) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -294,45 +376,50 @@ func init() {
 	proto.RegisterMapType((map[string]OwnerDesc)(nil), "ring.PartitionRingDesc.OwnersEntry")
 	proto.RegisterMapType((map[int32]PartitionDesc)(nil), "ring.PartitionRingDesc.PartitionsEntry")
 	proto.RegisterType((*PartitionDesc)(nil), "ring.PartitionDesc")
+	proto.RegisterMapType((map[string]string)(nil), "ring.PartitionDesc.MetadataEntry")
+	proto.RegisterType((*PartitionDescNoMetadata)(nil), "ring.PartitionDescNoMetadata")
 	proto.RegisterType((*OwnerDesc)(nil), "ring.OwnerDesc")
 }
 
 func init() { proto.RegisterFile("partition_ring_desc.proto", fileDescriptor_4df2762174d93dc4) }
 
 var fileDescriptor_4df2762174d93dc4 = []byte{
-	// 497 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x74, 0x93, 0x31, 0x6f, 0xd3, 0x40,
-	0x14, 0xc7, 0x7d, 0x76, 0x12, 0xa9, 0x2f, 0x34, 0x39, 0xae, 0x05, 0x99, 0x0c, 0x47, 0x14, 0x44,
-	0x09, 0x91, 0x48, 0xa5, 0xc0, 0x80, 0xd8, 0x52, 0x95, 0x01, 0x24, 0x44, 0x65, 0x60, 0xae, 0x9c,
-	0xf8, 0x30, 0xa7, 0x34, 0x77, 0x91, 0x7d, 0x6e, 0xd5, 0x05, 0xb1, 0x31, 0xb0, 0xf0, 0x31, 0xf8,
-	0x22, 0x48, 0x1d, 0x33, 0x76, 0x42, 0xc4, 0x59, 0x18, 0xfb, 0x11, 0x90, 0xcf, 0xae, 0x63, 0xbb,
-	0xea, 0x76, 0xef, 0x7f, 0xef, 0xfd, 0xfe, 0xff, 0x3b, 0x9f, 0xe1, 0xc1, 0xc2, 0x0d, 0x14, 0x57,
-	0x5c, 0x8a, 0xe3, 0x80, 0x0b, 0xff, 0xd8, 0x63, 0xe1, 0x74, 0xb8, 0x08, 0xa4, 0x92, 0xa4, 0x96,
-	0x08, 0x9d, 0x67, 0x3e, 0x57, 0x5f, 0xa2, 0xc9, 0x70, 0x2a, 0xe7, 0xfb, 0xbe, 0xf4, 0xe5, 0xbe,
-	0xde, 0x9c, 0x44, 0x9f, 0x75, 0xa5, 0x0b, 0xbd, 0x4a, 0x87, 0x7a, 0xbf, 0x4d, 0xb8, 0x7b, 0x74,
-	0x8d, 0x74, 0xb8, 0xf0, 0x0f, 0x59, 0x38, 0x25, 0xef, 0x00, 0x72, 0x9f, 0xd0, 0x46, 0x5d, 0xab,
-	0xdf, 0x1c, 0x3d, 0x19, 0x26, 0xfc, 0xe1, 0x8d, 0xe6, 0x8d, 0x12, 0xbe, 0x16, 0x2a, 0x38, 0x3f,
-	0xa8, 0x5d, 0xfc, 0x79, 0x68, 0x38, 0x05, 0x00, 0x19, 0x43, 0x43, 0x9e, 0x09, 0x16, 0x84, 0xb6,
-	0xa9, 0x51, 0x8f, 0x6e, 0x43, 0xbd, 0xd7, 0x5d, 0x45, 0x4c, 0x36, 0xd8, 0x71, 0xa0, 0x5d, 0xf1,
-	0x21, 0x18, 0xac, 0x19, 0x3b, 0xb7, 0x51, 0x17, 0xf5, 0xeb, 0x4e, 0xb2, 0x24, 0x4f, 0xa1, 0x7e,
-	0xea, 0x9e, 0x44, 0xcc, 0x36, 0xbb, 0xa8, 0xdf, 0x1c, 0xed, 0x54, 0x6c, 0x12, 0x0b, 0x27, 0xed,
-	0x78, 0x65, 0xbe, 0x44, 0x9d, 0xb7, 0xd0, 0x2c, 0x18, 0x16, 0x79, 0x5b, 0x29, 0xef, 0x71, 0x99,
-	0xd7, 0x4e, 0x79, 0x7a, 0xa6, 0xc2, 0xea, 0xfd, 0x40, 0xb0, 0x5d, 0x32, 0x22, 0x2d, 0x30, 0xb9,
-	0x67, 0xd7, 0x74, 0x3a, 0x93, 0x7b, 0xe4, 0x3e, 0x34, 0x94, 0x9c, 0xb1, 0xec, 0x3e, 0xb7, 0x9d,
-	0xac, 0x22, 0x03, 0xa8, 0x87, 0xca, 0x55, 0xa9, 0x49, 0x6b, 0xb4, 0x5b, 0x09, 0xfd, 0x21, 0xd9,
-	0x73, 0xd2, 0x16, 0xb2, 0x07, 0x2d, 0xbd, 0xf8, 0xc8, 0xe7, 0x2c, 0x54, 0xee, 0x7c, 0x61, 0x5b,
-	0x5d, 0xd4, 0xb7, 0x9c, 0x8a, 0xda, 0xfb, 0x8e, 0x60, 0x2b, 0x8f, 0x99, 0x4c, 0x25, 0xb7, 0xe8,
-	0xe5, 0xcc, 0xec, 0xce, 0x2a, 0x2a, 0xd9, 0x2b, 0x27, 0xc1, 0x85, 0xe3, 0x96, 0x52, 0x0c, 0x00,
-	0x47, 0x0b, 0xcf, 0x55, 0xcc, 0xab, 0xe6, 0xb8, 0xa1, 0x0f, 0xbe, 0x42, 0xab, 0x7c, 0x14, 0xb2,
-	0x0b, 0x38, 0x57, 0x3e, 0x89, 0x99, 0x90, 0x67, 0x02, 0x1b, 0x25, 0xf5, 0x88, 0x09, 0x8f, 0x0b,
-	0x1f, 0x23, 0xb2, 0x53, 0xf8, 0xea, 0xe3, 0xa9, 0xe2, 0xa7, 0x0c, 0x9b, 0xe4, 0x5e, 0xe1, 0xc5,
-	0xbe, 0x11, 0x6e, 0x2a, 0x5b, 0x25, 0xc2, 0x21, 0x3b, 0x61, 0x8a, 0x79, 0xb8, 0x36, 0x18, 0x03,
-	0x6c, 0x0e, 0x40, 0x30, 0xdc, 0xd1, 0xd5, 0xc6, 0xb7, 0x9d, 0xbd, 0x81, 0x8c, 0x8e, 0xf2, 0x96,
-	0x6b, 0x84, 0x79, 0xf0, 0x62, 0xb9, 0xa2, 0xc6, 0xe5, 0x8a, 0x1a, 0x57, 0x2b, 0x8a, 0xbe, 0xc5,
-	0x14, 0xfd, 0x8a, 0x29, 0xba, 0x88, 0x29, 0x5a, 0xc6, 0x14, 0xfd, 0x8d, 0x29, 0xfa, 0x17, 0x53,
-	0xe3, 0x2a, 0xa6, 0xe8, 0xe7, 0x9a, 0x1a, 0xcb, 0x35, 0x35, 0x2e, 0xd7, 0xd4, 0x98, 0x34, 0xf4,
-	0xff, 0xf5, 0xfc, 0x7f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xc9, 0xd1, 0xa7, 0xbd, 0xb1, 0x03, 0x00,
-	0x00,
+	// 552 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xc4, 0x94, 0x31, 0x6f, 0xd3, 0x40,
+	0x14, 0xc7, 0x7d, 0x4e, 0x52, 0x91, 0x17, 0x92, 0x98, 0x6b, 0x00, 0x93, 0xe1, 0x08, 0x41, 0x94,
+	0x10, 0x89, 0x54, 0x0a, 0x0c, 0x08, 0xc4, 0x90, 0xaa, 0x0c, 0x20, 0x15, 0x2a, 0x03, 0x73, 0xe5,
+	0xc4, 0x87, 0x39, 0xa5, 0xb9, 0x8b, 0xec, 0x4b, 0xab, 0x2e, 0x88, 0xad, 0x2b, 0x0b, 0xdf, 0x81,
+	0x2f, 0x82, 0xd4, 0x31, 0x63, 0x27, 0x44, 0x9c, 0x85, 0xb1, 0x1f, 0x01, 0xf9, 0xec, 0x38, 0xb6,
+	0x5b, 0x66, 0xb6, 0x7b, 0xff, 0x7b, 0xef, 0xf7, 0x7f, 0xf7, 0x7c, 0x67, 0xb8, 0x33, 0xb5, 0x3d,
+	0xc9, 0x24, 0x13, 0xfc, 0xc0, 0x63, 0xdc, 0x3d, 0x70, 0xa8, 0x3f, 0xea, 0x4d, 0x3d, 0x21, 0x05,
+	0x2e, 0x86, 0x42, 0xf3, 0xb1, 0xcb, 0xe4, 0xe7, 0xd9, 0xb0, 0x37, 0x12, 0x93, 0x6d, 0x57, 0xb8,
+	0x62, 0x5b, 0x6d, 0x0e, 0x67, 0x9f, 0x54, 0xa4, 0x02, 0xb5, 0x8a, 0x8a, 0xda, 0x3f, 0x75, 0xb8,
+	0xb1, 0xbf, 0x42, 0x5a, 0x8c, 0xbb, 0xbb, 0xd4, 0x1f, 0xe1, 0x3d, 0x80, 0xc4, 0xc7, 0x37, 0x51,
+	0xab, 0xd0, 0xa9, 0xf4, 0x1f, 0xf6, 0x42, 0x7e, 0xef, 0x52, 0xf2, 0x5a, 0xf1, 0x5f, 0x71, 0xe9,
+	0x9d, 0xec, 0x14, 0xcf, 0x7e, 0xdd, 0xd5, 0xac, 0x14, 0x00, 0x0f, 0x60, 0x43, 0x1c, 0x73, 0xea,
+	0xf9, 0xa6, 0xae, 0x50, 0xf7, 0xff, 0x85, 0x7a, 0xa7, 0xb2, 0xd2, 0x98, 0xb8, 0xb0, 0x69, 0x41,
+	0x3d, 0xe7, 0x83, 0x0d, 0x28, 0x8c, 0xe9, 0x89, 0x89, 0x5a, 0xa8, 0x53, 0xb2, 0xc2, 0x25, 0x7e,
+	0x04, 0xa5, 0x23, 0xfb, 0x70, 0x46, 0x4d, 0xbd, 0x85, 0x3a, 0x95, 0xfe, 0x66, 0xce, 0x26, 0xb4,
+	0xb0, 0xa2, 0x8c, 0xe7, 0xfa, 0x33, 0xd4, 0x7c, 0x03, 0x95, 0x94, 0x61, 0x9a, 0x57, 0x8e, 0x78,
+	0x0f, 0xb2, 0xbc, 0x7a, 0xc4, 0x53, 0x35, 0x39, 0x56, 0xfb, 0x54, 0x87, 0x6a, 0xc6, 0x08, 0xd7,
+	0x40, 0x67, 0x8e, 0x59, 0x54, 0xdd, 0xe9, 0xcc, 0xc1, 0xb7, 0x60, 0x43, 0x8a, 0x31, 0x8d, 0xe7,
+	0x59, 0xb5, 0xe2, 0x08, 0x77, 0xa1, 0xe4, 0x4b, 0x5b, 0x46, 0x26, 0xb5, 0x7e, 0x23, 0xd7, 0xf4,
+	0xfb, 0x70, 0xcf, 0x8a, 0x52, 0xf0, 0x16, 0xd4, 0xd4, 0xe2, 0x03, 0x9b, 0x50, 0x5f, 0xda, 0x93,
+	0xa9, 0x59, 0x68, 0xa1, 0x4e, 0xc1, 0xca, 0xa9, 0xf8, 0x25, 0x5c, 0x9b, 0x50, 0x69, 0x3b, 0xb6,
+	0xb4, 0xcd, 0x92, 0x1a, 0xf9, 0xbd, 0x2b, 0x66, 0xd1, 0xdb, 0x8b, 0x73, 0xd4, 0xf9, 0xad, 0xa4,
+	0xa4, 0xf9, 0x02, 0xaa, 0x99, 0xad, 0x2b, 0x46, 0xd3, 0x48, 0x8f, 0xa6, 0x9c, 0x9e, 0xc4, 0x77,
+	0x04, 0xb7, 0x33, 0x36, 0x6f, 0xc5, 0x0a, 0xf6, 0x3f, 0x67, 0xd2, 0x3e, 0x45, 0x50, 0x4e, 0x3e,
+	0x5d, 0x58, 0x15, 0xde, 0x2c, 0x27, 0x61, 0xc6, 0xf7, 0x28, 0xa7, 0xe2, 0xad, 0x6c, 0x27, 0x46,
+	0xea, 0x0a, 0x64, 0xba, 0xe8, 0x82, 0x31, 0x9b, 0x3a, 0xb6, 0xa4, 0x4e, 0xbe, 0x8f, 0x4b, 0x7a,
+	0xf7, 0x0b, 0xd4, 0xb2, 0x47, 0xc1, 0x0d, 0x30, 0x12, 0xe5, 0x23, 0x1f, 0x73, 0x71, 0xcc, 0x0d,
+	0x2d, 0xa3, 0xee, 0x53, 0xee, 0x30, 0xee, 0x1a, 0x08, 0x6f, 0xa6, 0x5e, 0xc2, 0x60, 0x24, 0xd9,
+	0x11, 0x35, 0x74, 0x7c, 0x33, 0xf5, 0x8a, 0x5f, 0x73, 0x3b, 0x92, 0x0b, 0x19, 0xc2, 0x2e, 0x3d,
+	0xa4, 0x92, 0x3a, 0x46, 0xb1, 0x3b, 0x00, 0x58, 0x1f, 0x00, 0x1b, 0x70, 0x5d, 0x45, 0x6b, 0xdf,
+	0x7a, 0xfc, 0x2e, 0x62, 0x3a, 0x4a, 0x52, 0x56, 0x08, 0x7d, 0xe7, 0xe9, 0x7c, 0x41, 0xb4, 0xf3,
+	0x05, 0xd1, 0x2e, 0x16, 0x04, 0x7d, 0x0d, 0x08, 0xfa, 0x11, 0x10, 0x74, 0x16, 0x10, 0x34, 0x0f,
+	0x08, 0xfa, 0x1d, 0x10, 0xf4, 0x27, 0x20, 0xda, 0x45, 0x40, 0xd0, 0xb7, 0x25, 0xd1, 0xe6, 0x4b,
+	0xa2, 0x9d, 0x2f, 0x89, 0x36, 0xdc, 0x50, 0xff, 0x9c, 0x27, 0x7f, 0x03, 0x00, 0x00, 0xff, 0xff,
+	0x06, 0xd1, 0x4b, 0xd9, 0xc5, 0x04, 0x00, 0x00,
 }
 
 func (x PartitionState) String() string {
@@ -398,6 +485,52 @@ func (this *PartitionDesc) Equal(that interface{}) bool {
 	that1, ok := that.(*PartitionDesc)
 	if !ok {
 		that2, ok := that.(PartitionDesc)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Id != that1.Id {
+		return false
+	}
+	if len(this.Tokens) != len(that1.Tokens) {
+		return false
+	}
+	for i := range this.Tokens {
+		if this.Tokens[i] != that1.Tokens[i] {
+			return false
+		}
+	}
+	if this.State != that1.State {
+		return false
+	}
+	if this.StateTimestamp != that1.StateTimestamp {
+		return false
+	}
+	if len(this.Metadata) != len(that1.Metadata) {
+		return false
+	}
+	for i := range this.Metadata {
+		if this.Metadata[i] != that1.Metadata[i] {
+			return false
+		}
+	}
+	return true
+}
+func (this *PartitionDescNoMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PartitionDescNoMetadata)
+	if !ok {
+		that2, ok := that.(PartitionDescNoMetadata)
 		if ok {
 			that1 = &that2
 		} else {
@@ -497,8 +630,34 @@ func (this *PartitionDesc) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 8)
+	s := make([]string, 0, 9)
 	s = append(s, "&ring.PartitionDesc{")
+	s = append(s, "Id: "+fmt.Sprintf("%#v", this.Id)+",\n")
+	s = append(s, "Tokens: "+fmt.Sprintf("%#v", this.Tokens)+",\n")
+	s = append(s, "State: "+fmt.Sprintf("%#v", this.State)+",\n")
+	s = append(s, "StateTimestamp: "+fmt.Sprintf("%#v", this.StateTimestamp)+",\n")
+	keysForMetadata := make([]string, 0, len(this.Metadata))
+	for k, _ := range this.Metadata {
+		keysForMetadata = append(keysForMetadata, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForMetadata)
+	mapStringForMetadata := "map[string]string{"
+	for _, k := range keysForMetadata {
+		mapStringForMetadata += fmt.Sprintf("%#v: %#v,", k, this.Metadata[k])
+	}
+	mapStringForMetadata += "}"
+	if this.Metadata != nil {
+		s = append(s, "Metadata: "+mapStringForMetadata+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PartitionDescNoMetadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&ring.PartitionDescNoMetadata{")
 	s = append(s, "Id: "+fmt.Sprintf("%#v", this.Id)+",\n")
 	s = append(s, "Tokens: "+fmt.Sprintf("%#v", this.Tokens)+",\n")
 	s = append(s, "State: "+fmt.Sprintf("%#v", this.State)+",\n")
@@ -615,6 +774,25 @@ func (m *PartitionDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.Metadata) > 0 {
+		for k := range m.Metadata {
+			v := m.Metadata[k]
+			baseI := i
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintPartitionRingDesc(dAtA, i, uint64(len(v)))
+			i--
+			dAtA[i] = 0x12
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintPartitionRingDesc(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintPartitionRingDesc(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x2a
+		}
+	}
 	if m.Id != 0 {
 		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.Id))
 		i--
@@ -645,6 +823,62 @@ func (m *PartitionDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i -= j3
 		copy(dAtA[i:], dAtA4[:j3])
 		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(j3))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PartitionDescNoMetadata) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PartitionDescNoMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PartitionDescNoMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Id != 0 {
+		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.Id))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.StateTimestamp != 0 {
+		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.StateTimestamp))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.State != 0 {
+		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(m.State))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Tokens) > 0 {
+		dAtA6 := make([]byte, len(m.Tokens)*10)
+		var j5 int
+		for _, num := range m.Tokens {
+			for num >= 1<<7 {
+				dAtA6[j5] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j5++
+			}
+			dAtA6[j5] = uint8(num)
+			j5++
+		}
+		i -= j5
+		copy(dAtA[i:], dAtA6[:j5])
+		i = encodeVarintPartitionRingDesc(dAtA, i, uint64(j5))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -749,6 +983,39 @@ func (m *PartitionDesc) Size() (n int) {
 	if m.Id != 0 {
 		n += 1 + sovPartitionRingDesc(uint64(m.Id))
 	}
+	if len(m.Metadata) > 0 {
+		for k, v := range m.Metadata {
+			_ = k
+			_ = v
+			mapEntrySize := 1 + len(k) + sovPartitionRingDesc(uint64(len(k))) + 1 + len(v) + sovPartitionRingDesc(uint64(len(v)))
+			n += mapEntrySize + 1 + sovPartitionRingDesc(uint64(mapEntrySize))
+		}
+	}
+	return n
+}
+
+func (m *PartitionDescNoMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Tokens) > 0 {
+		l = 0
+		for _, e := range m.Tokens {
+			l += sovPartitionRingDesc(uint64(e))
+		}
+		n += 1 + sovPartitionRingDesc(uint64(l)) + l
+	}
+	if m.State != 0 {
+		n += 1 + sovPartitionRingDesc(uint64(m.State))
+	}
+	if m.StateTimestamp != 0 {
+		n += 1 + sovPartitionRingDesc(uint64(m.StateTimestamp))
+	}
+	if m.Id != 0 {
+		n += 1 + sovPartitionRingDesc(uint64(m.Id))
+	}
 	return n
 }
 
@@ -811,7 +1078,31 @@ func (this *PartitionDesc) String() string {
 	if this == nil {
 		return "nil"
 	}
+	keysForMetadata := make([]string, 0, len(this.Metadata))
+	for k, _ := range this.Metadata {
+		keysForMetadata = append(keysForMetadata, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForMetadata)
+	mapStringForMetadata := "map[string]string{"
+	for _, k := range keysForMetadata {
+		mapStringForMetadata += fmt.Sprintf("%v: %v,", k, this.Metadata[k])
+	}
+	mapStringForMetadata += "}"
 	s := strings.Join([]string{`&PartitionDesc{`,
+		`Tokens:` + fmt.Sprintf("%v", this.Tokens) + `,`,
+		`State:` + fmt.Sprintf("%v", this.State) + `,`,
+		`StateTimestamp:` + fmt.Sprintf("%v", this.StateTimestamp) + `,`,
+		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
+		`Metadata:` + mapStringForMetadata + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PartitionDescNoMetadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PartitionDescNoMetadata{`,
 		`Tokens:` + fmt.Sprintf("%v", this.Tokens) + `,`,
 		`State:` + fmt.Sprintf("%v", this.State) + `,`,
 		`StateTimestamp:` + fmt.Sprintf("%v", this.StateTimestamp) + `,`,
@@ -1164,6 +1455,319 @@ func (m *PartitionDesc) Unmarshal(dAtA []byte) error {
 		}
 		if fieldNum <= 0 {
 			return fmt.Errorf("proto: PartitionDesc: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType == 0 {
+				var v uint32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowPartitionRingDesc
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.Tokens = append(m.Tokens, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowPartitionRingDesc
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthPartitionRingDesc
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthPartitionRingDesc
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.Tokens) == 0 {
+					m.Tokens = make([]uint32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowPartitionRingDesc
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.Tokens = append(m.Tokens, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field Tokens", wireType)
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field State", wireType)
+			}
+			m.State = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPartitionRingDesc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.State |= PartitionState(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StateTimestamp", wireType)
+			}
+			m.StateTimestamp = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPartitionRingDesc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StateTimestamp |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+			}
+			m.Id = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPartitionRingDesc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Id |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPartitionRingDesc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPartitionRingDesc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPartitionRingDesc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Metadata == nil {
+				m.Metadata = make(map[string]string)
+			}
+			var mapkey string
+			var mapvalue string
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowPartitionRingDesc
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowPartitionRingDesc
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthPartitionRingDesc
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthPartitionRingDesc
+					}
+					if postStringIndexmapkey > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var stringLenmapvalue uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowPartitionRingDesc
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapvalue |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapvalue := int(stringLenmapvalue)
+					if intStringLenmapvalue < 0 {
+						return ErrInvalidLengthPartitionRingDesc
+					}
+					postStringIndexmapvalue := iNdEx + intStringLenmapvalue
+					if postStringIndexmapvalue < 0 {
+						return ErrInvalidLengthPartitionRingDesc
+					}
+					if postStringIndexmapvalue > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = string(dAtA[iNdEx:postStringIndexmapvalue])
+					iNdEx = postStringIndexmapvalue
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipPartitionRingDesc(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if skippy < 0 {
+						return ErrInvalidLengthPartitionRingDesc
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.Metadata[mapkey] = mapvalue
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPartitionRingDesc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthPartitionRingDesc
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthPartitionRingDesc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PartitionDescNoMetadata) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPartitionRingDesc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PartitionDescNoMetadata: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PartitionDescNoMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:

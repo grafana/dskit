@@ -136,4 +136,4 @@ require (
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet.
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251024121533-a7f5f8dad077
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251124144104-7fbd6a14cf2b

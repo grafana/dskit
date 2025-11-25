@@ -357,6 +357,8 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 }
 
 func (r *Ring) starting(ctx context.Context) error {
+	r.initializeRingMetrics()
+
 	// Get the initial ring state so that, as soon as the service will be running, the in-memory
 	// ring would be already populated and there's no race condition between when the service is
 	// running and the WatchKey() callback is called for the first time.
@@ -781,6 +783,15 @@ func (r *Desc) CountTokens() map[string]int64 {
 	}
 
 	return owned
+}
+
+// initializeRingMetrics, to be called on ring startup.
+func (r *Ring) initializeRingMetrics() {
+	emptyZone := ""
+	for _, state := range []string{unhealthy, ACTIVE.String(), LEAVING.String(), PENDING.String(), JOINING.String()} {
+		r.numMembersGaugeVec.WithLabelValues(state, emptyZone).Set(0)
+		r.oldestTimestampGaugeVec.WithLabelValues(state, emptyZone).Set(0)
+	}
 }
 
 // updateRingMetrics updates ring metrics. Caller must be holding the Write lock!

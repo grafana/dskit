@@ -4302,6 +4302,45 @@ func TestUpdateMetricsWithZone(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestUpdateMetricsInitialization(t *testing.T) {
+	inmem, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	cfg := Config{
+		KVStore:              kv.Config{Mock: inmem},
+		HeartbeatTimeout:     1 * time.Minute,
+		ReplicationFactor:    3,
+		ZoneAwarenessEnabled: false,
+	}
+
+	registry := prometheus.NewRegistry()
+
+	ring, err := New(cfg, testRingName, testRingKey, log.NewNopLogger(), registry)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ring))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), ring)
+	})
+
+	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(`
+		# HELP ring_members Number of members in the ring
+		# TYPE ring_members gauge
+		ring_members{name="test",state="ACTIVE", zone=""} 0
+		ring_members{name="test",state="JOINING", zone=""} 0
+		ring_members{name="test",state="LEAVING", zone=""} 0
+		ring_members{name="test",state="PENDING", zone=""} 0
+		ring_members{name="test",state="Unhealthy", zone=""} 0
+		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
+		# TYPE ring_oldest_member_timestamp gauge
+		ring_oldest_member_timestamp{name="test",state="ACTIVE", zone=""} 0
+		ring_oldest_member_timestamp{name="test",state="JOINING", zone=""} 0
+		ring_oldest_member_timestamp{name="test",state="LEAVING", zone=""} 0
+		ring_oldest_member_timestamp{name="test",state="PENDING", zone=""} 0
+		ring_oldest_member_timestamp{name="test",state="Unhealthy", zone=""} 0
+	`), "ring_members", "ring_oldest_member_timestamp")
+	assert.NoError(t, err)
+}
+
 func TestUpdateMetricsWithRemoval(t *testing.T) {
 	cfg := Config{
 		KVStore:              kv.Config{},

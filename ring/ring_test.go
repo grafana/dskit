@@ -4228,77 +4228,22 @@ func TestUpdateMetrics(t *testing.T) {
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(fmt.Sprintf(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
-		ring_members{name="test",state="ACTIVE", zone=""} 2
-		ring_members{name="test",state="JOINING", zone=""} 0
-		ring_members{name="test",state="LEAVING", zone=""} 0
-		ring_members{name="test",state="PENDING", zone=""} 0
-		ring_members{name="test",state="Unhealthy", zone=""} 0
+		ring_members{name="test",state="ACTIVE"} 2
+		ring_members{name="test",state="JOINING"} 0
+		ring_members{name="test",state="LEAVING"} 0
+		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE", zone=""} %d
-		ring_oldest_member_timestamp{name="test",state="JOINING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="LEAVING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="PENDING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="Unhealthy", zone=""} 0
+		ring_oldest_member_timestamp{name="test",state="ACTIVE"} %d
+		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
+		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
+		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 4
 	`, now-22)))
-	assert.NoError(t, err)
-}
-
-func TestUpdateMetricsWithZone(t *testing.T) {
-	cfg := Config{
-		KVStore:              kv.Config{},
-		HeartbeatTimeout:     time.Hour, // long timeout to get healthy stats
-		ReplicationFactor:    3,
-		ZoneAwarenessEnabled: true,
-	}
-
-	registry := prometheus.NewRegistry()
-
-	// create the ring to set up metrics, but do not start
-	ring, err := NewWithStoreClientAndStrategy(cfg, testRingName, testRingKey, nil, NewDefaultReplicationStrategy(), registry, log.NewNopLogger())
-	require.NoError(t, err)
-
-	now := time.Now().Unix()
-	ringDesc := Desc{
-		Ingesters: map[string]InstanceDesc{
-			"A": {Addr: "127.0.0.1", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}, Zone: "a"},
-			"B": {Addr: "127.0.0.2", Timestamp: now - 22, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}, Zone: "b"},
-		},
-	}
-	ring.updateRingState(&ringDesc)
-
-	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(fmt.Sprintf(`
-		# HELP ring_members Number of members in the ring
-		# TYPE ring_members gauge
-		ring_members{name="test",state="ACTIVE", zone="a"} 1
-		ring_members{name="test",state="JOINING", zone="a"} 0
-		ring_members{name="test",state="LEAVING", zone="a"} 0
-		ring_members{name="test",state="PENDING", zone="a"} 0
-		ring_members{name="test",state="Unhealthy", zone="a"} 0
-		ring_members{name="test",state="ACTIVE", zone="b"} 1
-		ring_members{name="test",state="JOINING", zone="b"} 0
-		ring_members{name="test",state="LEAVING", zone="b"} 0
-		ring_members{name="test",state="PENDING", zone="b"} 0
-		ring_members{name="test",state="Unhealthy", zone="b"} 0
-		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
-		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE", zone="a"} %d
-		ring_oldest_member_timestamp{name="test",state="JOINING", zone="a"} 0
-		ring_oldest_member_timestamp{name="test",state="LEAVING", zone="a"} 0
-		ring_oldest_member_timestamp{name="test",state="PENDING", zone="a"} 0
-		ring_oldest_member_timestamp{name="test",state="Unhealthy", zone="a"} 0
-		ring_oldest_member_timestamp{name="test",state="ACTIVE", zone="b"} %d
-		ring_oldest_member_timestamp{name="test",state="JOINING", zone="b"} 0
-		ring_oldest_member_timestamp{name="test",state="LEAVING", zone="b"} 0
-		ring_oldest_member_timestamp{name="test",state="PENDING", zone="b"} 0
-		ring_oldest_member_timestamp{name="test",state="Unhealthy", zone="b"} 0
-		# HELP ring_tokens_total Number of tokens in the ring
-		# TYPE ring_tokens_total gauge
-		ring_tokens_total{name="test"} 4
-	`, now-11, now-22)))
 	assert.NoError(t, err)
 }
 
@@ -4328,18 +4273,18 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(fmt.Sprintf(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
-		ring_members{name="test",state="ACTIVE", zone=""} 2
-		ring_members{name="test",state="JOINING", zone=""} 0
-		ring_members{name="test",state="LEAVING", zone=""} 0
-		ring_members{name="test",state="PENDING", zone=""} 0
-		ring_members{name="test",state="Unhealthy", zone=""} 0
+		ring_members{name="test",state="ACTIVE"} 2
+		ring_members{name="test",state="JOINING"} 0
+		ring_members{name="test",state="LEAVING"} 0
+		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE", zone=""} %d
-		ring_oldest_member_timestamp{name="test",state="JOINING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="LEAVING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="PENDING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="Unhealthy", zone=""} 0
+		ring_oldest_member_timestamp{name="test",state="ACTIVE"} %d
+		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
+		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
+		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 4
@@ -4356,18 +4301,18 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 	err = testutil.GatherAndCompare(registry, bytes.NewBufferString(fmt.Sprintf(`
 		# HELP ring_members Number of members in the ring
 		# TYPE ring_members gauge
-		ring_members{name="test",state="ACTIVE", zone=""} 1
-		ring_members{name="test",state="JOINING", zone=""} 0
-		ring_members{name="test",state="LEAVING", zone=""} 0
-		ring_members{name="test",state="PENDING", zone=""} 0
-		ring_members{name="test",state="Unhealthy", zone=""} 0
+		ring_members{name="test",state="ACTIVE"} 1
+		ring_members{name="test",state="JOINING"} 0
+		ring_members{name="test",state="LEAVING"} 0
+		ring_members{name="test",state="PENDING"} 0
+		ring_members{name="test",state="Unhealthy"} 0
 		# HELP ring_oldest_member_timestamp Timestamp of the oldest member in the ring.
 		# TYPE ring_oldest_member_timestamp gauge
-		ring_oldest_member_timestamp{name="test",state="ACTIVE", zone=""} %d
-		ring_oldest_member_timestamp{name="test",state="JOINING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="LEAVING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="PENDING", zone=""} 0
-		ring_oldest_member_timestamp{name="test",state="Unhealthy", zone=""} 0
+		ring_oldest_member_timestamp{name="test",state="ACTIVE"} %d
+		ring_oldest_member_timestamp{name="test",state="JOINING"} 0
+		ring_oldest_member_timestamp{name="test",state="LEAVING"} 0
+		ring_oldest_member_timestamp{name="test",state="PENDING"} 0
+		ring_oldest_member_timestamp{name="test",state="Unhealthy"} 0
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 2

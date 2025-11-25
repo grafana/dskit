@@ -338,7 +338,8 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
 			ConstLabels: map[string]string{"name": name},
-		}, []string{"state", "zone"}),
+		},
+			[]string{"state"}),
 		totalTokensGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name:        "ring_tokens_total",
 			Help:        "Number of tokens in the ring",
@@ -348,7 +349,8 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 			Name:        "ring_oldest_member_timestamp",
 			Help:        "Timestamp of the oldest member in the ring.",
 			ConstLabels: map[string]string{"name": name},
-		}, []string{"state", "zone"}),
+		},
+			[]string{"state"}),
 		logger: logger,
 	}
 
@@ -785,22 +787,13 @@ func (r *Desc) CountTokens() map[string]int64 {
 
 // updateRingMetrics updates ring metrics. Caller must be holding the Write lock!
 func (r *Ring) updateRingMetrics() {
-	type metricsByStateAndZone struct {
-		total           int
-		oldestTimestamp int64
-	}
-
-	numByState := map[string]map[string]*metricsByStateAndZone{}
+	numByState := map[string]int{}
+	oldestTimestampByState := map[string]int64{}
 
 	// Initialized to zero so we emit zero-metrics (instead of not emitting anything)
-	for _, state := range []string{unhealthy, ACTIVE.String(), LEAVING.String(), PENDING.String(), JOINING.String()} {
-		numByState[state] = map[string]*metricsByStateAndZone{}
-		for _, zone := range r.ringZones {
-			numByState[state][zone] = &metricsByStateAndZone{
-				total:           0,
-				oldestTimestamp: 0,
-			}
-		}
+	for _, s := range []string{unhealthy, ACTIVE.String(), LEAVING.String(), PENDING.String(), JOINING.String()} {
+		numByState[s] = 0
+		oldestTimestampByState[s] = 0
 	}
 
 	for _, instance := range r.ringDesc.Ingesters {
@@ -808,18 +801,17 @@ func (r *Ring) updateRingMetrics() {
 		if !r.IsHealthy(&instance, Reporting, time.Now()) {
 			s = unhealthy
 		}
-		count := numByState[s][instance.Zone]
-		count.total++
-		if count.oldestTimestamp == 0 || instance.Timestamp < count.oldestTimestamp {
-			count.oldestTimestamp = instance.Timestamp
+		numByState[s]++
+		if oldestTimestampByState[s] == 0 || instance.Timestamp < oldestTimestampByState[s] {
+			oldestTimestampByState[s] = instance.Timestamp
 		}
 	}
 
-	for state, byZone := range numByState {
-		for zone, metrics := range byZone {
-			r.numMembersGaugeVec.WithLabelValues(state, zone).Set(float64(metrics.total))
-			r.oldestTimestampGaugeVec.WithLabelValues(state, zone).Set(float64(metrics.oldestTimestamp))
-		}
+	for state, count := range numByState {
+		r.numMembersGaugeVec.WithLabelValues(state).Set(float64(count))
+	}
+	for state, timestamp := range oldestTimestampByState {
+		r.oldestTimestampGaugeVec.WithLabelValues(state).Set(float64(timestamp))
 	}
 
 	r.totalTokensGauge.Set(float64(len(r.ringTokens)))

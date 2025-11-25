@@ -235,22 +235,14 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 	tests := map[string]struct {
 		gossipInterval   time.Duration
 		pushPullInterval time.Duration
-		rejoinInterval   time.Duration
 	}{
 		"state sync via broadcast updates": {
 			gossipInterval:   50 * time.Millisecond,
 			pushPullInterval: 0,
-			rejoinInterval:   0,
 		},
 		"state sync via push/pull": {
 			gossipInterval:   1 * time.Hour,
 			pushPullInterval: 50 * time.Millisecond,
-
-			// If gossiping is disabled (should not in a real world scenario) we may end up in a split brain
-			// situation because (a) bridges always push/pull to the other zone bridges and (b) if zone-b
-			// members don't discover zone-b bridges at startup, they will never discover them (unless periodic
-			// rejoin is enabled).
-			rejoinInterval: 250 * time.Millisecond,
 		},
 	}
 
@@ -272,7 +264,7 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 				cfg.Codecs = append(cfg.Codecs, c)
 				cfg.GossipInterval = tc.gossipInterval
 				cfg.PushPullInterval = tc.pushPullInterval
-				cfg.RejoinInterval = tc.rejoinInterval
+				cfg.RejoinInterval = 0 // Never rejoin, but just rely on gossiping messages or periodic push/pull operations.
 				cfg.JoinMembers = seedNodes
 				cfg.ZoneAwareRouting = ZoneAwareRoutingConfig{
 					Enabled: true,

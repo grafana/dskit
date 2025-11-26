@@ -114,118 +114,142 @@ func TestZoneAwareRoutingConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestZoneAwareNodeSelectionDelegate_SelectNode(t *testing.T) {
+func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 	// Helper function to create a node with metadata.
-	createNode := func(t *testing.T, name string, role NodeRole, zone string) memberlist.Node {
+	createNode := func(t *testing.T, name string, role NodeRole, zone string) *memberlist.Node {
 		meta, err := EncodeNodeMetadata(role, zone)
 		require.NoError(t, err)
-		return memberlist.Node{
+		return &memberlist.Node{
 			Name: name,
 			Meta: meta,
 		}
 	}
 
+	// Helper function to check if a node is in the selected slice.
+	containsNode := func(nodes []*memberlist.Node, name string) bool {
+		for _, n := range nodes {
+			if n.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+
 	t.Run("local node is member", func(t *testing.T) {
 		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
 
-		// Member in the same zone: should be selected but not preferred.
-		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		nodes := []*memberlist.Node{
+			createNode(t, "member-zone-a", NodeRoleMember, "zone-a"),
+			createNode(t, "bridge-zone-a", NodeRoleBridge, "zone-a"),
+			createNode(t, "member-zone-b", NodeRoleMember, "zone-b"),
+			createNode(t, "bridge-zone-b", NodeRoleBridge, "zone-b"),
+			createNode(t, "member-no-zone", NodeRoleMember, ""),
+		}
 
-		// Bridge in the same zone: should be selected but not preferred.
-		selected, preferred = delegate.SelectNode(createNode(t, "bridge-zone-a", NodeRoleBridge, "zone-a"))
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		selected, preferred := delegate.SelectNodes(nodes)
 
-		// Member in a different zone: should NOT be selected.
-		selected, preferred = delegate.SelectNode(createNode(t, "member-zone-b", NodeRoleMember, "zone-b"))
-		assert.False(t, selected)
-		assert.False(t, preferred)
+		// Should select: member-zone-a, bridge-zone-a, member-no-zone
+		assert.Len(t, selected, 3)
+		assert.True(t, containsNode(selected, "member-zone-a"))
+		assert.True(t, containsNode(selected, "bridge-zone-a"))
+		assert.True(t, containsNode(selected, "member-no-zone"))
+		assert.False(t, containsNode(selected, "member-zone-b"))
+		assert.False(t, containsNode(selected, "bridge-zone-b"))
 
-		// Bridge in a different zone: should NOT be selected.
-		selected, preferred = delegate.SelectNode(createNode(t, "bridge-zone-b", NodeRoleBridge, "zone-b"))
-		assert.False(t, selected)
-		assert.False(t, preferred)
-
-		// Node with empty zone: should be selected but not preferred.
-		selected, preferred = delegate.SelectNode(createNode(t, "member-no-zone", NodeRoleMember, ""))
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		// Members never have preferred candidates.
+		assert.Nil(t, preferred)
 	})
 
 	t.Run("local node is bridge", func(t *testing.T) {
 		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger())
 
-		// Member in the same zone: should be selected but not preferred.
-		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		nodes := []*memberlist.Node{
+			createNode(t, "member-zone-a", NodeRoleMember, "zone-a"),
+			createNode(t, "bridge-zone-a", NodeRoleBridge, "zone-a"),
+			createNode(t, "member-zone-b", NodeRoleMember, "zone-b"),
+			createNode(t, "bridge-zone-b", NodeRoleBridge, "zone-b"),
+			createNode(t, "bridge-zone-c", NodeRoleBridge, "zone-c"),
+			createNode(t, "member-no-zone", NodeRoleMember, ""),
+		}
 
-		// Bridge in the same zone: should be selected but not preferred.
-		selected, preferred = delegate.SelectNode(createNode(t, "bridge-zone-a", NodeRoleBridge, "zone-a"))
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		selected, preferred := delegate.SelectNodes(nodes)
 
-		// Member in a different zone: should NOT be selected.
-		selected, preferred = delegate.SelectNode(createNode(t, "member-zone-b", NodeRoleMember, "zone-b"))
-		assert.False(t, selected)
-		assert.False(t, preferred)
+		// Should select: member-zone-a, bridge-zone-a, bridge-zone-b, bridge-zone-c, member-no-zone
+		assert.Len(t, selected, 5)
+		assert.True(t, containsNode(selected, "member-zone-a"))
+		assert.True(t, containsNode(selected, "bridge-zone-a"))
+		assert.True(t, containsNode(selected, "bridge-zone-b"))
+		assert.True(t, containsNode(selected, "bridge-zone-c"))
+		assert.True(t, containsNode(selected, "member-no-zone"))
+		assert.False(t, containsNode(selected, "member-zone-b"))
 
-		// Bridge in a different zone: should be selected AND preferred.
-		selected, preferred = delegate.SelectNode(createNode(t, "bridge-zone-b", NodeRoleBridge, "zone-b"))
-		assert.True(t, selected)
-		assert.True(t, preferred)
-
-		// Bridge in another different zone: should be selected AND preferred.
-		selected, preferred = delegate.SelectNode(createNode(t, "bridge-zone-c", NodeRoleBridge, "zone-c"))
-		assert.True(t, selected)
-		assert.True(t, preferred)
-
-		// Node with empty zone: should be selected but not preferred.
-		selected, preferred = delegate.SelectNode(createNode(t, "member-no-zone", NodeRoleMember, ""))
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		// Preferred should be one of the cross-zone bridges.
+		assert.NotNil(t, preferred)
+		assert.True(t, preferred.Name == "bridge-zone-b" || preferred.Name == "bridge-zone-c")
 	})
 
 	t.Run("local node has empty zone", func(t *testing.T) {
 		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "", log.NewNopLogger())
 
-		// Any node should be selected but not preferred when local zone is empty.
-		selected, preferred := delegate.SelectNode(createNode(t, "member-zone-a", NodeRoleMember, "zone-a"))
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		nodes := []*memberlist.Node{
+			createNode(t, "member-zone-a", NodeRoleMember, "zone-a"),
+			createNode(t, "bridge-zone-b", NodeRoleBridge, "zone-b"),
+		}
 
-		selected, preferred = delegate.SelectNode(createNode(t, "bridge-zone-b", NodeRoleBridge, "zone-b"))
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		selected, preferred := delegate.SelectNodes(nodes)
+
+		// Any node should be selected but not preferred when local zone is empty.
+		assert.Len(t, selected, 2)
+		assert.True(t, containsNode(selected, "member-zone-a"))
+		assert.True(t, containsNode(selected, "bridge-zone-b"))
+		assert.Nil(t, preferred)
 	})
 
 	t.Run("node with empty metadata", func(t *testing.T) {
 		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
 
 		// Node with no metadata (empty Meta field).
-		node := memberlist.Node{
-			Name: "node-no-meta",
-			Meta: nil,
+		nodes := []*memberlist.Node{
+			{
+				Name: "node-no-meta",
+				Meta: nil,
+			},
 		}
-		selected, preferred := delegate.SelectNode(node)
-		assert.True(t, selected)
-		assert.False(t, preferred)
+
+		selected, preferred := delegate.SelectNodes(nodes)
+		assert.Len(t, selected, 1)
+		assert.True(t, containsNode(selected, "node-no-meta"))
+		assert.Nil(t, preferred)
 	})
 
 	t.Run("node with invalid metadata", func(t *testing.T) {
 		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
 
 		// Node with invalid metadata (too short).
-		node := memberlist.Node{
-			Name: "node-invalid-meta",
-			Meta: []byte{1, 2}, // Too short to be valid.
+		nodes := []*memberlist.Node{
+			{
+				Name: "node-invalid-meta",
+				Meta: []byte{1, 2}, // Too short to be valid.
+			},
 		}
-		selected, preferred := delegate.SelectNode(node)
+
+		selected, preferred := delegate.SelectNodes(nodes)
 		// Invalid metadata results in empty zone, so should be selected but not preferred.
-		assert.True(t, selected)
-		assert.False(t, preferred)
+		assert.Len(t, selected, 1)
+		assert.True(t, containsNode(selected, "node-invalid-meta"))
+		assert.Nil(t, preferred)
+	})
+
+	t.Run("empty input", func(t *testing.T) {
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger())
+
+		selected, preferred := delegate.SelectNodes(nil)
+		assert.Empty(t, selected)
+		assert.Nil(t, preferred)
+
+		selected, preferred = delegate.SelectNodes([]*memberlist.Node{})
+		assert.Empty(t, selected)
+		assert.Nil(t, preferred)
 	})
 }
 
@@ -391,5 +415,56 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 			}
 			t.Log("all nodes received the update")
 		})
+	}
+}
+
+func BenchmarkZoneAwareNodeSelectionDelegate_SelectNodes(b *testing.B) {
+	// Create a delegate for a bridge node in zone-a.
+	delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger())
+
+	// Helper function to create a node with metadata.
+	createNode := func(name string, role NodeRole, zone string) *memberlist.Node {
+		meta, _ := EncodeNodeMetadata(role, zone)
+		return &memberlist.Node{
+			Name: name,
+			Meta: meta,
+		}
+	}
+
+	// Create 10K nodes: ~5K per zone, with 3 bridges per zone.
+	const (
+		totalNodes       = 10000
+		bridgesPerZone   = 3
+		membersPerZone   = (totalNodes - bridgesPerZone*2) / 2
+	)
+
+	nodes := make([]*memberlist.Node, 0, totalNodes)
+
+	// Add bridges for zone-a.
+	for i := 0; i < bridgesPerZone; i++ {
+		nodes = append(nodes, createNode(fmt.Sprintf("bridge-zone-a-%d", i), NodeRoleBridge, "zone-a"))
+	}
+	// Add bridges for zone-b.
+	for i := 0; i < bridgesPerZone; i++ {
+		nodes = append(nodes, createNode(fmt.Sprintf("bridge-zone-b-%d", i), NodeRoleBridge, "zone-b"))
+	}
+	// Add members for zone-a.
+	for i := 0; i < membersPerZone; i++ {
+		nodes = append(nodes, createNode(fmt.Sprintf("member-zone-a-%d", i), NodeRoleMember, "zone-a"))
+	}
+	// Add members for zone-b.
+	for i := 0; i < membersPerZone; i++ {
+		nodes = append(nodes, createNode(fmt.Sprintf("member-zone-b-%d", i), NodeRoleMember, "zone-b"))
+	}
+
+	// Pre-allocate a copy for each iteration since SelectNodes modifies the input slice.
+	nodesCopy := make([]*memberlist.Node, len(nodes))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		copy(nodesCopy, nodes)
+		_, _ = delegate.SelectNodes(nodesCopy)
 	}
 }

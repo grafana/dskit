@@ -3,6 +3,7 @@ package memberlist
 import (
 	"flag"
 	"fmt"
+	"math/rand"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -96,14 +97,46 @@ func newZoneAwareNodeSelectionDelegate(localRole NodeRole, localZone string, log
 	}
 }
 
-// SelectNode implements memberlist.NodeSelectionDelegate.
-// It determines whether a remote node should be selected for gossip operations and whether it should be preferred.
-func (d *zoneAwareNodeSelectionDelegate) SelectNode(node memberlist.Node) (selected, preferred bool) {
-	// Decode remote node metadata.
-	remoteMeta := EncodedNodeMetadata(node.Meta)
-	remoteZone := remoteMeta.Zone()
-	remoteRole := remoteMeta.Role()
+// SelectNodes implements memberlist.NodeSelectionDelegate.
+// It determines which remote nodes should be selected for gossip operations and which one should be preferred.
+func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.Node) (selected []*memberlist.Node, preferred *memberlist.Node) {
+	if d.localRole != NodeRoleMember && d.localRole != NodeRoleBridge {
+		level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is running with an unknown role", "role", d.localRole)
+	}
 
+	selectedCount := 0  // Write index for selected nodes.
+	preferredCount := 0 // Count of preferred candidates seen (for reservoir sampling).
+
+	for i := 0; i < len(nodes); i++ {
+		node := nodes[i]
+		remoteMeta := EncodedNodeMetadata(node.Meta)
+		remoteZone := remoteMeta.Zone()
+		remoteRole := remoteMeta.Role()
+
+		isSelected, isPreferred := d.selectNode(remoteZone, remoteRole)
+
+		if isSelected {
+			// Reuse input slice.
+			nodes[selectedCount] = node
+			selectedCount++
+
+			if isPreferred {
+				preferredCount++
+
+				// Reservoir sampling: select this node with a probability of 1/preferredCount.
+				if rand.Intn(preferredCount) == 0 {
+					preferred = node
+				}
+			}
+		}
+	}
+
+	return nodes[:selectedCount], preferred
+}
+
+// selectNode determines whether a remote node should be selected for gossip operations
+// and whether it should be considered a preferred candidate.
+func (d *zoneAwareNodeSelectionDelegate) selectNode(remoteZone string, remoteRole NodeRole) (selected, preferredCandidate bool) {
 	// If either the local zone or the remote zone are unknown, select the node but don't prefer it.
 	// This prevents network partitioning: if every other memberlist node filters it out, then that
 	// remote node would not receive updates and would get isolated.
@@ -132,8 +165,6 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNode(node memberlist.Node) (selec
 		return false, false
 
 	default:
-		level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is running with an unknown role", "role", d.localRole)
-
 		// Unknown role: select but don't prefer (should never happen).
 		return true, false
 	}

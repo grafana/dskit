@@ -82,7 +82,7 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
 .tools/bin/golangci-lint: .tools
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b .tools/bin v2.0.2
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b .tools/bin v2.6.2
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")

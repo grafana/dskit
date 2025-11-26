@@ -202,4 +202,3 @@ func (d *zoneAwareNodeSelectionDelegate) selectNode(remoteZone string, remoteRol
 		return true, false
 	}
 }
-

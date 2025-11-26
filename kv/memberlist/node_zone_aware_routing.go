@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -104,6 +105,12 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.Node) (
 		level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is running with an unknown role", "role", d.localRole)
 	}
 
+	// Skip zone-aware routing if any zone has members but no alive bridges.
+	// This prevents network partitioning when bridges are missing or dead.
+	if d.hasZoneWithoutAliveBridge(nodes) {
+		return nodes, nil
+	}
+
 	selectedCount := 0  // Write index for selected nodes.
 	preferredCount := 0 // Count of preferred candidates seen (for reservoir sampling).
 
@@ -168,4 +175,47 @@ func (d *zoneAwareNodeSelectionDelegate) selectNode(remoteZone string, remoteRol
 		// Unknown role: select but don't prefer (should never happen).
 		return true, false
 	}
+}
+
+// hasZoneWithoutAliveBridge returns true if any zone has members but no alive bridges.
+func (d *zoneAwareNodeSelectionDelegate) hasZoneWithoutAliveBridge(nodes []*memberlist.Node) bool {
+	// Pre-allocate backing arrays on the stack for up to 5 zones (common case).
+	// Slices will grow on the heap only if more zones are encountered.
+	var zonesWithMembersBacking [5]string
+	zonesWithMembers := zonesWithMembersBacking[:0]
+
+	var zonesWithAliveBridgesBacking [5]string
+	zonesWithAliveBridges := zonesWithAliveBridgesBacking[:0]
+
+	for _, node := range nodes {
+		remoteMeta := EncodedNodeMetadata(node.Meta)
+		remoteZone := remoteMeta.Zone()
+		remoteRole := remoteMeta.Role()
+
+		// Skip nodes with unknown zone.
+		if remoteZone == "" {
+			continue
+		}
+
+		if remoteRole == NodeRoleBridge {
+			// Only count alive bridges.
+			if node.State == memberlist.StateAlive {
+				if !slices.Contains(zonesWithAliveBridges, remoteZone) {
+					zonesWithAliveBridges = append(zonesWithAliveBridges, remoteZone)
+				}
+			}
+		} else {
+			if !slices.Contains(zonesWithMembers, remoteZone) {
+				zonesWithMembers = append(zonesWithMembers, remoteZone)
+			}
+		}
+	}
+
+	// Check that all zones with members also have alive bridges.
+	for _, zone := range zonesWithMembers {
+		if !slices.Contains(zonesWithAliveBridges, zone) {
+			return true
+		}
+	}
+	return false
 }

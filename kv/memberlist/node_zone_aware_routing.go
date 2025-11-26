@@ -9,6 +9,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/hashicorp/memberlist"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // NodeRole represents the role of a node in the memberlist cluster.
@@ -87,26 +89,45 @@ type zoneAwareNodeSelectionDelegate struct {
 	localRole NodeRole
 	localZone string
 	logger    log.Logger
+
+	// Metrics
+	selectNodesCalls        prometheus.Counter
+	selectNodesCallsSkipped prometheus.Counter
 }
 
 // newZoneAwareNodeSelectionDelegate creates a new zone-aware node selection delegate.
-func newZoneAwareNodeSelectionDelegate(localRole NodeRole, localZone string, logger log.Logger) *zoneAwareNodeSelectionDelegate {
+func newZoneAwareNodeSelectionDelegate(localRole NodeRole, localZone string, logger log.Logger, registerer prometheus.Registerer) *zoneAwareNodeSelectionDelegate {
+	const subsystem = "memberlist_client_zone_aware_routing"
+
 	return &zoneAwareNodeSelectionDelegate{
 		localRole: localRole,
 		localZone: localZone,
 		logger:    logger,
+		selectNodesCalls: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Subsystem: subsystem,
+			Name:      "select_nodes_total",
+			Help:      "Total number of times memberlist attempted to select node candidates for gossiping (tracked only when when zone-aware routing is enabled).",
+		}),
+		selectNodesCallsSkipped: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Subsystem: subsystem,
+			Name:      "select_nodes_skipped_total",
+			Help:      "Total number of times memberlist zone-aware routing was skipped because the local zone is unknown or a zone has no alive bridges.",
+		}),
 	}
 }
 
 // SelectNodes implements memberlist.NodeSelectionDelegate.
 // It determines which remote nodes should be selected for gossip operations and which one should be preferred.
 func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.NodeState) (selected []*memberlist.NodeState, preferred *memberlist.NodeState) {
+	d.selectNodesCalls.Inc()
+
 	if d.localRole != NodeRoleMember && d.localRole != NodeRoleBridge {
 		level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is running with an unknown role", "role", d.localRole)
 	}
 
 	// Skip zone-aware routing if local zone is not set.
 	if d.localZone == "" {
+		d.selectNodesCallsSkipped.Inc()
 		return nodes, nil
 	}
 
@@ -157,6 +178,7 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.NodeSta
 	// This prevents network partitioning when bridges are missing or dead.
 	for _, zone := range zonesWithMembers {
 		if !slices.Contains(zonesWithAliveBridges, zone) {
+			d.selectNodesCallsSkipped.Inc()
 			level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is skipped because a zone has no alive bridge", "zone", zone)
 			return nodes, nil
 		}

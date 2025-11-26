@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -139,7 +140,8 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 	}
 
 	t.Run("local node is member", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger(), reg)
 
 		nodes := []*memberlist.NodeState{
 			createNode(t, "member-zone-a", NodeRoleMember, "zone-a"), // Same zone member: selected, not preferred.
@@ -161,10 +163,15 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 
 		// Members never have preferred candidates.
 		assert.Nil(t, preferred)
+
+		// Assert metrics.
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(0), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 
 	t.Run("local node is bridge", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger(), reg)
 
 		nodes := []*memberlist.NodeState{
 			createNode(t, "member-zone-a", NodeRoleMember, "zone-a"), // Same zone member: selected, not preferred.
@@ -189,10 +196,15 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		// Preferred should be one of the cross-zone bridges.
 		assert.NotNil(t, preferred)
 		assert.True(t, preferred.Name == "bridge-zone-b" || preferred.Name == "bridge-zone-c")
+
+		// Assert metrics.
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(0), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 
 	t.Run("local node has empty zone", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "", log.NewNopLogger(), reg)
 
 		nodes := []*memberlist.NodeState{
 			createNode(t, "member-zone-a", NodeRoleMember, "zone-a"), // Selected, not preferred.
@@ -206,10 +218,15 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		assert.True(t, containsNode(selected, "member-zone-a"))
 		assert.True(t, containsNode(selected, "bridge-zone-b"))
 		assert.Nil(t, preferred)
+
+		// Assert metrics - this case skips zone-aware routing.
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 
 	t.Run("node with empty metadata", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger(), reg)
 
 		// Node with no metadata (empty Meta field).
 		nodes := []*memberlist.NodeState{
@@ -225,10 +242,15 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		assert.Len(t, selected, 1)
 		assert.True(t, containsNode(selected, "node-no-meta"))
 		assert.Nil(t, preferred)
+
+		// Assert metrics.
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(0), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 
 	t.Run("node with invalid metadata", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger(), reg)
 
 		// Node with invalid metadata (too short).
 		nodes := []*memberlist.NodeState{
@@ -245,10 +267,15 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		assert.Len(t, selected, 1)
 		assert.True(t, containsNode(selected, "node-invalid-meta"))
 		assert.Nil(t, preferred)
+
+		// Assert metrics.
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(0), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 
 	t.Run("empty input", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger(), reg)
 
 		selected, preferred := delegate.SelectNodes(nil)
 		assert.Empty(t, selected)
@@ -257,10 +284,15 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		selected, preferred = delegate.SelectNodes([]*memberlist.NodeState{})
 		assert.Empty(t, selected)
 		assert.Nil(t, preferred)
+
+		// Assert metrics (called twice).
+		assert.Equal(t, float64(2), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(0), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 
 	t.Run("skip zone-aware routing when zone has no alive bridge", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger(), reg)
 
 		// Zone-b has members but no alive bridge (bridge is dead).
 		nodes := []*memberlist.NodeState{
@@ -276,10 +308,15 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		// Should return all nodes (zone-aware routing skipped).
 		assert.Len(t, selected, 4)
 		assert.Nil(t, preferred)
+
+		// Assert metrics - this case skips zone-aware routing due to missing alive bridge.
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 
 	t.Run("skip zone-aware routing when zone has no bridge at all", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger(), reg)
 
 		// Zone-b has members but no bridge.
 		nodes := []*memberlist.NodeState{
@@ -293,10 +330,15 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		// Should return all nodes (zone-aware routing skipped).
 		assert.Len(t, selected, 3)
 		assert.Nil(t, preferred)
+
+		// Assert metrics - this case skips zone-aware routing due to missing bridge.
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 
 	t.Run("skip zone-aware routing when bridge is suspect", func(t *testing.T) {
-		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger())
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "zone-a", log.NewNopLogger(), reg)
 
 		// Zone-b has members but bridge is suspect.
 		nodes := []*memberlist.NodeState{
@@ -312,6 +354,10 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		// Should return all nodes (zone-aware routing skipped).
 		assert.Len(t, selected, 4)
 		assert.Nil(t, preferred)
+
+		// Assert metrics - this case skips zone-aware routing due to suspect bridge.
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
+		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
 }
 
@@ -482,7 +528,8 @@ func TestZoneAwareRouting_EndToEnd(t *testing.T) {
 
 func BenchmarkZoneAwareNodeSelectionDelegate_SelectNodes(b *testing.B) {
 	// Create a delegate for a bridge node in zone-a.
-	delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger())
+	// Pass nil registerer to avoid metric registration overhead in benchmarks.
+	delegate := newZoneAwareNodeSelectionDelegate(NodeRoleBridge, "zone-a", log.NewNopLogger(), nil)
 
 	// Helper function to create a node with metadata.
 	createNode := func(name string, role NodeRole, zone string, state memberlist.NodeStateType) *memberlist.NodeState {

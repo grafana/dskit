@@ -100,7 +100,7 @@ func newZoneAwareNodeSelectionDelegate(localRole NodeRole, localZone string, log
 
 // SelectNodes implements memberlist.NodeSelectionDelegate.
 // It determines which remote nodes should be selected for gossip operations and which one should be preferred.
-func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.Node) (selected []*memberlist.Node, preferred *memberlist.Node) {
+func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.NodeState) (selected []*memberlist.NodeState, preferred *memberlist.NodeState) {
 	if d.localRole != NodeRoleMember && d.localRole != NodeRoleBridge {
 		level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is running with an unknown role", "role", d.localRole)
 	}
@@ -116,11 +116,10 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.Node) (
 		return nodes, nil
 	}
 
-	selectedCount := 0  // Write index for selected nodes.
+	selected = make([]*memberlist.NodeState, 0, len(nodes))
 	preferredCount := 0 // Count of preferred candidates seen (for reservoir sampling).
 
-	for i := 0; i < len(nodes); i++ {
-		node := nodes[i]
+	for _, node := range nodes {
 		remoteMeta := EncodedNodeMetadata(node.Meta)
 		remoteZone := remoteMeta.Zone()
 		remoteRole := remoteMeta.Role()
@@ -128,9 +127,7 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.Node) (
 		isSelected, isPreferred := d.selectNode(remoteZone, remoteRole)
 
 		if isSelected {
-			// Reuse input slice.
-			nodes[selectedCount] = node
-			selectedCount++
+			selected = append(selected, node)
 
 			if isPreferred {
 				preferredCount++
@@ -143,7 +140,7 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.Node) (
 		}
 	}
 
-	return nodes[:selectedCount], preferred
+	return selected, preferred
 }
 
 // selectNode determines whether a remote node should be selected for gossip operations
@@ -183,7 +180,7 @@ func (d *zoneAwareNodeSelectionDelegate) selectNode(remoteZone string, remoteRol
 }
 
 // hasZoneWithoutAliveBridge returns true if any zone has members but no alive bridges.
-func (d *zoneAwareNodeSelectionDelegate) hasZoneWithoutAliveBridge(nodes []*memberlist.Node) bool {
+func (d *zoneAwareNodeSelectionDelegate) hasZoneWithoutAliveBridge(nodes []*memberlist.NodeState) bool {
 	// Pre-allocate backing arrays on the stack for up to 5 zones (common case).
 	// Slices will grow on the heap only if more zones are encountered.
 	var zonesWithMembersBacking [5]string

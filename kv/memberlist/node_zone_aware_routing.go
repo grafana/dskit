@@ -105,6 +105,11 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.Node) (
 		level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is running with an unknown role", "role", d.localRole)
 	}
 
+	// Skip zone-aware routing if local zone is not set.
+	if d.localZone == "" {
+		return nodes, nil
+	}
+
 	// Skip zone-aware routing if any zone has members but no alive bridges.
 	// This prevents network partitioning when bridges are missing or dead.
 	if d.hasZoneWithoutAliveBridge(nodes) {
@@ -144,10 +149,10 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.Node) (
 // selectNode determines whether a remote node should be selected for gossip operations
 // and whether it should be considered a preferred candidate.
 func (d *zoneAwareNodeSelectionDelegate) selectNode(remoteZone string, remoteRole NodeRole) (selected, preferredCandidate bool) {
-	// If either the local zone or the remote zone are unknown, select the node but don't prefer it.
+	// If the remote zone is unknown, select the node but don't prefer it.
 	// This prevents network partitioning: if every other memberlist node filters it out, then that
 	// remote node would not receive updates and would get isolated.
-	if d.localZone == "" || remoteZone == "" {
+	if remoteZone == "" {
 		return true, false
 	}
 

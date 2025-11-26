@@ -97,21 +97,17 @@ type zoneAwareNodeSelectionDelegate struct {
 
 // newZoneAwareNodeSelectionDelegate creates a new zone-aware node selection delegate.
 func newZoneAwareNodeSelectionDelegate(localRole NodeRole, localZone string, logger log.Logger, registerer prometheus.Registerer) *zoneAwareNodeSelectionDelegate {
-	const subsystem = "memberlist_client_zone_aware_routing"
-
 	return &zoneAwareNodeSelectionDelegate{
 		localRole: localRole,
 		localZone: localZone,
 		logger:    logger,
 		selectNodesCalls: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Subsystem: subsystem,
-			Name:      "select_nodes_total",
-			Help:      "Total number of times memberlist attempted to select node candidates for gossiping (tracked only when when zone-aware routing is enabled).",
+			Name: "memberlist_client_zone_aware_routing_select_nodes_total",
+			Help: "Total number of times memberlist attempted to select node candidates for gossiping (tracked only when when zone-aware routing is enabled).",
 		}),
 		selectNodesCallsSkipped: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Subsystem: subsystem,
-			Name:      "select_nodes_skipped_total",
-			Help:      "Total number of times memberlist zone-aware routing was skipped because the local zone is unknown or a zone has no alive bridges.",
+			Name: "memberlist_client_zone_aware_routing_select_nodes_skipped_total",
+			Help: "Total number of times memberlist zone-aware routing was skipped because the local zone is unknown or a zone has no alive bridges.",
 		}),
 	}
 }

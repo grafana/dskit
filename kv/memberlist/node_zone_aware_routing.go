@@ -110,12 +110,14 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.NodeSta
 		return nodes, nil
 	}
 
-	// Skip zone-aware routing if any zone has members but no alive bridges.
-	// This prevents network partitioning when bridges are missing or dead.
-	if d.hasZoneWithoutAliveBridge(nodes) {
-		return nodes, nil
-	}
+	// Pre-allocate backing arrays on the stack for up to 5 zones (common case).
+	// Slices will grow on the heap only if more zones are encountered.
+	var zonesWithMembersBacking [5]string
+	zonesWithMembers := zonesWithMembersBacking[:0]
+	var zonesWithAliveBridgesBacking [5]string
+	zonesWithAliveBridges := zonesWithAliveBridgesBacking[:0]
 
+	// Build selected slice and track zones in a single pass.
 	selected = make([]*memberlist.NodeState, 0, len(nodes))
 	preferredCount := 0 // Count of preferred candidates seen (for reservoir sampling).
 
@@ -124,19 +126,41 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.NodeSta
 		remoteZone := remoteMeta.Zone()
 		remoteRole := remoteMeta.Role()
 
-		isSelected, isPreferred := d.selectNode(remoteZone, remoteRole)
+		// Track zones to check if any zone has members but no alive bridges.
+		if remoteZone != "" {
+			if remoteRole == NodeRoleBridge {
+				// Only count alive bridges.
+				if node.State == memberlist.StateAlive {
+					if !slices.Contains(zonesWithAliveBridges, remoteZone) {
+						zonesWithAliveBridges = append(zonesWithAliveBridges, remoteZone)
+					}
+				}
+			} else {
+				if !slices.Contains(zonesWithMembers, remoteZone) {
+					zonesWithMembers = append(zonesWithMembers, remoteZone)
+				}
+			}
+		}
 
+		// Apply zone-aware selection.
+		isSelected, isPreferred := d.selectNode(remoteZone, remoteRole)
 		if isSelected {
 			selected = append(selected, node)
-
 			if isPreferred {
 				preferredCount++
-
 				// Reservoir sampling: select this node with a probability of 1/preferredCount.
 				if rand.Intn(preferredCount) == 0 {
 					preferred = node
 				}
 			}
+		}
+	}
+
+	// Skip zone-aware routing if any zone has members but no alive bridges.
+	// This prevents network partitioning when bridges are missing or dead.
+	for _, zone := range zonesWithMembers {
+		if !slices.Contains(zonesWithAliveBridges, zone) {
+			return nodes, nil
 		}
 	}
 
@@ -179,45 +203,3 @@ func (d *zoneAwareNodeSelectionDelegate) selectNode(remoteZone string, remoteRol
 	}
 }
 
-// hasZoneWithoutAliveBridge returns true if any zone has members but no alive bridges.
-func (d *zoneAwareNodeSelectionDelegate) hasZoneWithoutAliveBridge(nodes []*memberlist.NodeState) bool {
-	// Pre-allocate backing arrays on the stack for up to 5 zones (common case).
-	// Slices will grow on the heap only if more zones are encountered.
-	var zonesWithMembersBacking [5]string
-	zonesWithMembers := zonesWithMembersBacking[:0]
-
-	var zonesWithAliveBridgesBacking [5]string
-	zonesWithAliveBridges := zonesWithAliveBridgesBacking[:0]
-
-	for _, node := range nodes {
-		remoteMeta := EncodedNodeMetadata(node.Meta)
-		remoteZone := remoteMeta.Zone()
-		remoteRole := remoteMeta.Role()
-
-		// Skip nodes with unknown zone.
-		if remoteZone == "" {
-			continue
-		}
-
-		if remoteRole == NodeRoleBridge {
-			// Only count alive bridges.
-			if node.State == memberlist.StateAlive {
-				if !slices.Contains(zonesWithAliveBridges, remoteZone) {
-					zonesWithAliveBridges = append(zonesWithAliveBridges, remoteZone)
-				}
-			}
-		} else {
-			if !slices.Contains(zonesWithMembers, remoteZone) {
-				zonesWithMembers = append(zonesWithMembers, remoteZone)
-			}
-		}
-	}
-
-	// Check that all zones with members also have alive bridges.
-	for _, zone := range zonesWithMembers {
-		if !slices.Contains(zonesWithAliveBridges, zone) {
-			return true
-		}
-	}
-	return false
-}

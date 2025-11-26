@@ -111,11 +111,8 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.NodeSta
 	}
 
 	// Pre-allocate backing arrays on the stack for up to 5 zones (common case).
-	// Slices will grow on the heap only if more zones are encountered.
-	var zonesWithMembersBacking [5]string
-	zonesWithMembers := zonesWithMembersBacking[:0]
-	var zonesWithAliveBridgesBacking [5]string
-	zonesWithAliveBridges := zonesWithAliveBridgesBacking[:0]
+	zonesWithMembers := make([]string, 0, 5)
+	zonesWithAliveBridges := make([]string, 0, 5)
 
 	// Build selected slice and track zones in a single pass.
 	selected = make([]*memberlist.NodeState, 0, len(nodes))
@@ -160,6 +157,7 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.NodeSta
 	// This prevents network partitioning when bridges are missing or dead.
 	for _, zone := range zonesWithMembers {
 		if !slices.Contains(zonesWithAliveBridges, zone) {
+			level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is skipped because a zone has no alive bridge", "zone", zone)
 			return nodes, nil
 		}
 	}

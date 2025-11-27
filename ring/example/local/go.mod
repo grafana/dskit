@@ -6,7 +6,7 @@ toolchain go1.25.4
 
 require (
 	github.com/go-kit/log v0.2.1
-	github.com/grafana/dskit v0.0.0-20251126112016-9344c08f119e
+	github.com/grafana/dskit v0.0.0-20251127072816-7721010609ce
 	github.com/prometheus/client_golang v1.23.2
 )
 

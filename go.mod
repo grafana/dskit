@@ -41,7 +41,7 @@ require (
 	github.com/prometheus/exporter-toolkit v0.15.0
 	github.com/sercand/kuberesolver/v6 v6.0.1
 	github.com/stretchr/testify v1.11.1
-	github.com/uber/jaeger-client-go v2.28.0+incompatible
+	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	go.etcd.io/etcd/api/v3 v3.6.6
 	go.etcd.io/etcd/client/pkg/v3 v3.5.0

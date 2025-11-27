@@ -104,6 +104,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251125151730-2125cd96c917
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
 
 replace github.com/grafana/dskit => ../../../

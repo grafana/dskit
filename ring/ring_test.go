@@ -36,8 +36,9 @@ const (
 
 func newRingForTesting(cfg Config, createCacheMaps bool) *Ring {
 	ring := Ring{
-		cfg:      cfg,
-		strategy: NewDefaultReplicationStrategy(),
+		cfg:              cfg,
+		trackedRingZones: make(map[string]struct{}),
+		strategy:         NewDefaultReplicationStrategy(),
 	}
 	if createCacheMaps {
 		ring.shuffledSubringCache = map[subringCacheKey]*Ring{}
@@ -4219,8 +4220,8 @@ func TestUpdateMetrics(t *testing.T) {
 	now := time.Now().Unix()
 	ringDesc := Desc{
 		Ingesters: map[string]InstanceDesc{
-			"A": {Addr: "127.0.0.1", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
-			"B": {Addr: "127.0.0.2", Timestamp: now - 22, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}},
+			"A": {Addr: "127.0.0.1", Zone: "a", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
+			"B": {Addr: "127.0.0.2", Zone: "b", Timestamp: now - 22, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}},
 		},
 	}
 	ring.updateRingState(&ringDesc)
@@ -4243,6 +4244,18 @@ func TestUpdateMetrics(t *testing.T) {
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 4
+		# HELP ring_zone_members Number of ring members for each zone/state pair
+		# TYPE ring_zone_members gauge
+		ring_zone_members{name="test",state="ACTIVE",zone="a"} 1
+		ring_zone_members{name="test",state="ACTIVE",zone="b"} 1
+		ring_zone_members{name="test",state="JOINING",zone="a"} 0
+		ring_zone_members{name="test",state="JOINING",zone="b"} 0
+		ring_zone_members{name="test",state="LEAVING",zone="a"} 0
+		ring_zone_members{name="test",state="LEAVING",zone="b"} 0
+		ring_zone_members{name="test",state="PENDING",zone="a"} 0
+		ring_zone_members{name="test",state="PENDING",zone="b"} 0
+		ring_zone_members{name="test",state="Unhealthy",zone="a"} 0
+		ring_zone_members{name="test",state="Unhealthy",zone="b"} 0
 	`, now-22)))
 	assert.NoError(t, err)
 }
@@ -4264,8 +4277,8 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 	now := time.Now().Unix()
 	ringDesc := Desc{
 		Ingesters: map[string]InstanceDesc{
-			"A": {Addr: "127.0.0.1", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
-			"B": {Addr: "127.0.0.2", Timestamp: now - 22, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}},
+			"A": {Addr: "127.0.0.1", Zone: "a", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
+			"B": {Addr: "127.0.0.2", Zone: "b", Timestamp: now - 22, Tokens: []uint32{(math.MaxUint32 / 4) * 2, math.MaxUint32}},
 		},
 	}
 	ring.updateRingState(&ringDesc)
@@ -4288,12 +4301,24 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 4
+		# HELP ring_zone_members Number of ring members for each zone/state pair
+		# TYPE ring_zone_members gauge
+		ring_zone_members{name="test",state="ACTIVE",zone="a"} 1
+		ring_zone_members{name="test",state="ACTIVE",zone="b"} 1
+		ring_zone_members{name="test",state="JOINING",zone="a"} 0
+		ring_zone_members{name="test",state="JOINING",zone="b"} 0
+		ring_zone_members{name="test",state="LEAVING",zone="a"} 0
+		ring_zone_members{name="test",state="LEAVING",zone="b"} 0
+		ring_zone_members{name="test",state="PENDING",zone="a"} 0
+		ring_zone_members{name="test",state="PENDING",zone="b"} 0
+		ring_zone_members{name="test",state="Unhealthy",zone="a"} 0
+		ring_zone_members{name="test",state="Unhealthy",zone="b"} 0
 	`, now-22)))
 	require.NoError(t, err)
 
 	ringDescNew := Desc{
 		Ingesters: map[string]InstanceDesc{
-			"A": {Addr: "127.0.0.1", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
+			"A": {Addr: "127.0.0.1", Zone: "a", Timestamp: now - 11, Tokens: []uint32{math.MaxUint32 / 4, (math.MaxUint32 / 4) * 3}},
 		},
 	}
 	ring.updateRingState(&ringDescNew)
@@ -4316,6 +4341,18 @@ func TestUpdateMetricsWithRemoval(t *testing.T) {
 		# HELP ring_tokens_total Number of tokens in the ring
 		# TYPE ring_tokens_total gauge
 		ring_tokens_total{name="test"} 2
+		# HELP ring_zone_members Number of ring members for each zone/state pair
+		# TYPE ring_zone_members gauge
+		ring_zone_members{name="test",state="ACTIVE",zone="a"} 1
+		ring_zone_members{name="test",state="ACTIVE",zone="b"} 0
+		ring_zone_members{name="test",state="JOINING",zone="a"} 0
+		ring_zone_members{name="test",state="JOINING",zone="b"} 0
+		ring_zone_members{name="test",state="LEAVING",zone="a"} 0
+		ring_zone_members{name="test",state="LEAVING",zone="b"} 0
+		ring_zone_members{name="test",state="PENDING",zone="a"} 0
+		ring_zone_members{name="test",state="PENDING",zone="b"} 0
+		ring_zone_members{name="test",state="Unhealthy",zone="a"} 0
+		ring_zone_members{name="test",state="Unhealthy",zone="b"} 0
 	`, now-11)))
 	assert.NoError(t, err)
 }

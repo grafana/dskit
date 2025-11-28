@@ -62,14 +62,14 @@ func TestOTelTracing(t *testing.T) {
 	// regardless of whether the request is routed through the gRPC Handle method first
 	expectedOpNameHelloHTTPSpan := "HTTP " + httpMethod + " - " + expectedHelloRouteLabel
 	expectedAttrsHelloHTTPSpan := []attribute.KeyValue{
-		attribute.String("http.target", helloRouteURL.Path),
-		attribute.String("http.method", httpMethod),
+		attribute.String("url.path", helloRouteURL.Path),
+		attribute.String("http.request.method", httpMethod),
 		attribute.String("http.route", helloRouteName),
 	}
 	expectedOpNameHelloPathParamHTTPSpan := "HTTP " + httpMethod + " - " + expectedHelloPathParamRouteLabel
 	expectedAttrsHelloPathParamHTTPSpan := []attribute.KeyValue{
-		attribute.String("http.target", helloPathParamRouteURL.Path),
-		attribute.String("http.method", httpMethod),
+		attribute.String("url.path", helloPathParamRouteURL.Path),
+		attribute.String("http.request.method", httpMethod),
 		attribute.String("http.route", expectedHelloPathParamRouteLabel),
 	}
 
@@ -97,7 +97,11 @@ func TestOTelTracing(t *testing.T) {
 					attribute.String("http.method", httpMethod),
 					attribute.String("http.route", helloRouteName),
 				},
-				expectedOpNameHelloHTTPSpan: expectedAttrsHelloHTTPSpan,
+				expectedOpNameHelloHTTPSpan: {
+					attribute.String("http.target", helloRouteURL.Path),
+					attribute.String("http.method", httpMethod),
+					attribute.String("http.route", helloRouteName),
+				},
 			},
 		},
 		"HTTP direct request: named route with no params in path template": {
@@ -120,7 +124,11 @@ func TestOTelTracing(t *testing.T) {
 					attribute.String("http.method", httpMethod),
 					attribute.String("http.route", expectedHelloPathParamRouteLabel),
 				},
-				expectedOpNameHelloPathParamHTTPSpan: expectedAttrsHelloPathParamHTTPSpan,
+				expectedOpNameHelloPathParamHTTPSpan: {
+					attribute.String("http.target", helloPathParamRouteURL.Path),
+					attribute.String("http.method", httpMethod),
+					attribute.String("http.route", expectedHelloPathParamRouteLabel),
+				},
 			},
 		},
 		"HTTP direct request: unnamed route with params in path template": {

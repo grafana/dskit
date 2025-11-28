@@ -29,9 +29,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
         with:
-          go-version: '1.24.x'
+          go-version: '1.25.x'
       - name: Go mod check
         run: make mod-check
       - name: Lint
@@ -51,14 +51,14 @@ jobs:
       matrix:
         # We want to make sure dskit can support multiple golang versions
         # by ensuring the test would pass using all these supported versions.
-        go-version: ['1.22.x', '1.23.x', '1.24.x', '1.25.x']
+        go-version: ['1.24.x', '1.25.x']
       fail-fast: false
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
         with:
           persist-credentials: false
       - name: Set up Go ${{ matrix.go-version }}
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
         with:
           go-version: ${{ matrix.go-version }}
       - name: Display Go version

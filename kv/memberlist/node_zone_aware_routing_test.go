@@ -359,6 +359,32 @@ func TestZoneAwareNodeSelectionDelegate_SelectNodes(t *testing.T) {
 		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCalls))
 		assert.Equal(t, float64(1), testutil.ToFloat64(delegate.selectNodesCallsSkipped))
 	})
+
+	t.Run("zone names ending with digits", func(t *testing.T) {
+		// This test verifies that zone names ending with non-alphabetic characters
+		// (like digits) don't cause a panic in containsZone(). Zone names like
+		// "us-east-1" have a last character ('1') with ASCII value less than 'a',
+		// which could cause a negative index if not handled properly.
+		reg := prometheus.NewRegistry()
+		delegate := newZoneAwareNodeSelectionDelegate(NodeRoleMember, "us-east-1", log.NewNopLogger(), reg)
+
+		nodes := []*memberlist.NodeState{
+			createNode(t, "member-us-east-1", NodeRoleMember, "us-east-1"),
+			createNode(t, "bridge-us-east-1", NodeRoleBridge, "us-east-1"),
+			createNode(t, "member-us-east-2", NodeRoleMember, "us-east-2"),
+			createNode(t, "bridge-us-east-2", NodeRoleBridge, "us-east-2"),
+		}
+
+		selected, preferred := delegate.SelectNodes(nodes)
+
+		// Should select same-zone nodes without panicking.
+		assert.Len(t, selected, 2)
+		assert.True(t, containsNode(selected, "member-us-east-1"))
+		assert.True(t, containsNode(selected, "bridge-us-east-1"))
+		assert.False(t, containsNode(selected, "member-us-east-2"))
+		assert.False(t, containsNode(selected, "bridge-us-east-2"))
+		assert.Nil(t, preferred)
+	})
 }
 
 func TestZoneAwareRouting_EndToEnd(t *testing.T) {

@@ -92,16 +92,8 @@ func TestOTelTracing(t *testing.T) {
 			routeTmpl:       helloRouteTmpl,
 			reqURL:          helloRouteURLRaw,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
-				"httpgrpc.HTTP/Handle": {
-					attribute.String("http.target", helloRouteURL.Path),
-					attribute.String("http.method", httpMethod),
-					attribute.String("http.route", helloRouteName),
-				},
-				expectedOpNameHelloHTTPSpan: {
-					attribute.String("http.target", helloRouteURL.Path),
-					attribute.String("http.method", httpMethod),
-					attribute.String("http.route", helloRouteName),
-				},
+				"httpgrpc.HTTP/Handle":      expectedAttrsHelloHTTPSpan,
+				expectedOpNameHelloHTTPSpan: expectedAttrsHelloHTTPSpan,
 			},
 		},
 		"HTTP direct request: named route with no params in path template": {
@@ -120,15 +112,11 @@ func TestOTelTracing(t *testing.T) {
 			reqURL:          helloPathParamRouteURLRaw,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
 				"httpgrpc.HTTP/Handle": {
-					attribute.String("http.target", helloPathParamRouteURL.Path),
-					attribute.String("http.method", httpMethod),
+					attribute.String("url.path", helloPathParamRouteURL.Path),
+					attribute.String("http.request.method", httpMethod),
 					attribute.String("http.route", expectedHelloPathParamRouteLabel),
 				},
-				expectedOpNameHelloPathParamHTTPSpan: {
-					attribute.String("http.target", helloPathParamRouteURL.Path),
-					attribute.String("http.method", httpMethod),
-					attribute.String("http.route", expectedHelloPathParamRouteLabel),
-				},
+				expectedOpNameHelloPathParamHTTPSpan: expectedAttrsHelloPathParamHTTPSpan,
 			},
 		},
 		"HTTP direct request: unnamed route with params in path template": {

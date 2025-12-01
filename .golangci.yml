@@ -12,10 +12,19 @@ output:
       colors: false
 linters:
   enable:
+    - depguard
     - loggercheck
     - misspell
     - revive
   settings:
+    depguard:
+      rules:
+        yaml:
+          deny:
+            - pkg: gopkg.in/yaml.v2
+              desc: use go.yaml.in/yaml/v4 instead
+            - pkg: gopkg.in/yaml.v3
+              desc: use go.yaml.in/yaml/v4 instead
     errcheck:
       # path to a file containing a list of functions to exclude from checking
       # see https://github.com/kisielk/errcheck#excluding-functions for details

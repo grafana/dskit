@@ -1,14 +1,10 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
+    "github>grafana/grafana-renovate-config//presets/base"],
     "schedule:daily"
   ],
   "baseBranchPatterns": ["main"],
-  "postUpdateOptions": [
-    "gomodTidy",
-    "gomodUpdateImportPaths"
-  ],
   "packageRules": [
     {
       "description": "Don't update replace directives",

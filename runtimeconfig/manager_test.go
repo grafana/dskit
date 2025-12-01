@@ -51,7 +51,7 @@ func testLoadOverrides(r io.Reader) (interface{}, error) {
 	var overrides = &testOverrides{}
 
 	decoder := yaml.NewDecoder(r)
-	decoder.SetStrict(true)
+	decoder.KnownFields(true)
 	if err := decoder.Decode(&overrides); err != nil {
 		return nil, err
 	}

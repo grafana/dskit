@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
@@ -51,7 +51,7 @@ func testLoadOverrides(r io.Reader) (interface{}, error) {
 	var overrides = &testOverrides{}
 
 	decoder := yaml.NewDecoder(r)
-	decoder.SetStrict(true)
+	decoder.KnownFields(true)
 	if err := decoder.Decode(&overrides); err != nil {
 		return nil, err
 	}

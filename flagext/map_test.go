@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 var fakeFloat64Validator = func(_ string, v float64) error {
@@ -198,7 +198,7 @@ key2: 20
 				err := yaml.Unmarshal([]byte(tt.input), &lm)
 				if tt.error != "" {
 					require.Error(t, err)
-					require.Equal(t, tt.error, err.Error())
+					require.ErrorContains(t, err, tt.error)
 				} else {
 					require.NoError(t, err)
 					require.Equal(t, tt.expected, lm.data)
@@ -247,7 +247,7 @@ key2: def
 				err := yaml.Unmarshal([]byte(tt.input), &lm)
 				if tt.error != "" {
 					require.Error(t, err)
-					require.Equal(t, tt.error, err.Error())
+					require.ErrorContains(t, err, tt.error)
 				} else {
 					require.NoError(t, err)
 					require.Equal(t, tt.expected, lm.data)

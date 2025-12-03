@@ -59,17 +59,13 @@ type Manager struct {
 	listenersMtx sync.Mutex
 	listeners    []chan interface{}
 
-	configPtr atomic.Pointer[configPtr]
+	configPtr atomic.Pointer[any]
 
 	configLoadSuccess prometheus.Gauge
 	configHash        *prometheus.GaugeVec
 
 	// Maps path to hash. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes map[string]string
-}
-
-type configPtr struct {
-	config any
 }
 
 // New creates an instance of Manager. Manager is a services.Service, and must be explicitly started to perform any work.
@@ -309,7 +305,7 @@ func mergeConfigMaps(a, b map[string]interface{}, path string) (_ map[string]int
 }
 
 func (om *Manager) setConfig(config any) {
-	om.configPtr.Store(&configPtr{config: config})
+	om.configPtr.Store(&config)
 }
 
 func (om *Manager) callListeners(newValue interface{}) {
@@ -340,5 +336,8 @@ func (om *Manager) stopping(_ error) error {
 
 // GetConfig returns last loaded config value, possibly nil.
 func (om *Manager) GetConfig() any {
-	return om.configPtr.Load().config
+	if p := om.configPtr.Load(); p != nil {
+		return *p
+	}
+	return nil
 }

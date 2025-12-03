@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/dskit/flagext"
@@ -58,14 +59,17 @@ type Manager struct {
 	listenersMtx sync.Mutex
 	listeners    []chan interface{}
 
-	configMtx sync.RWMutex
-	config    interface{}
+	configPtr atomic.Pointer[configPtr]
 
 	configLoadSuccess prometheus.Gauge
 	configHash        *prometheus.GaugeVec
 
 	// Maps path to hash. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes map[string]string
+}
+
+type configPtr struct {
+	config any
 }
 
 // New creates an instance of Manager. Manager is a services.Service, and must be explicitly started to perform any work.
@@ -304,10 +308,8 @@ func mergeConfigMaps(a, b map[string]interface{}, path string) (_ map[string]int
 	return out, nil
 }
 
-func (om *Manager) setConfig(config interface{}) {
-	om.configMtx.Lock()
-	defer om.configMtx.Unlock()
-	om.config = config
+func (om *Manager) setConfig(config any) {
+	om.configPtr.Store(&configPtr{config: config})
 }
 
 func (om *Manager) callListeners(newValue interface{}) {
@@ -337,9 +339,6 @@ func (om *Manager) stopping(_ error) error {
 }
 
 // GetConfig returns last loaded config value, possibly nil.
-func (om *Manager) GetConfig() interface{} {
-	om.configMtx.RLock()
-	defer om.configMtx.RUnlock()
-
-	return om.config
+func (om *Manager) GetConfig() any {
+	return om.configPtr.Load().config
 }

@@ -733,3 +733,12 @@ func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
 	assert.Equal(t, mods+1, int(loadCounter.Load())) // + 1 for initial load, before modifications
 	assert.Equal(t, mods+1, len(ch))                 // Loaded values
 }
+
+func TestManager_GetConfigNilBeforeStarting(t *testing.T) {
+	cfg := newTestOverridesManagerConfig(t, time.Second, valueLoader)
+
+	overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+	// We haven't started the manager yet, so the config should be nil. Which is legal.
+	require.NoError(t, err)
+	require.Nil(t, overridesManager.GetConfig())
+}

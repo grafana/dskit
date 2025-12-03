@@ -59,7 +59,7 @@ type Manager struct {
 	listenersMtx sync.Mutex
 	listeners    []chan interface{}
 
-	configPtr atomic.Pointer[any]
+	configPtr atomic.Pointer[interface{}]
 
 	configLoadSuccess prometheus.Gauge
 	configHash        *prometheus.GaugeVec
@@ -304,7 +304,7 @@ func mergeConfigMaps(a, b map[string]interface{}, path string) (_ map[string]int
 	return out, nil
 }
 
-func (om *Manager) setConfig(config any) {
+func (om *Manager) setConfig(config interface{}) {
 	om.configPtr.Store(&config)
 }
 
@@ -335,7 +335,7 @@ func (om *Manager) stopping(_ error) error {
 }
 
 // GetConfig returns last loaded config value, possibly nil.
-func (om *Manager) GetConfig() any {
+func (om *Manager) GetConfig() interface{} {
 	if p := om.configPtr.Load(); p != nil {
 		return *p
 	}

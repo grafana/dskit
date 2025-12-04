@@ -79,20 +79,6 @@ func (g *mockTransactionGatherer) Gather() (_ []*dto.MetricFamily, done func(), 
 	return mfs, func() { g.doneInvoked++ }, err
 }
 
-func readCompressedBody(r io.Reader, comp promhttp.Compression) (string, error) {
-	switch comp {
-	case promhttp.Gzip:
-		reader, err := gzip.NewReader(r)
-		if err != nil {
-			return "", err
-		}
-		defer reader.Close()
-		got, err := io.ReadAll(reader)
-		return string(got), err
-	}
-	return "", errors.New("Unsupported compression")
-}
-
 func TestHandlerErrorHandling(t *testing.T) {
 	// Create a registry that collects a MetricFamily with two elements,
 	// another with one, and reports an error. Further down, we'll use the

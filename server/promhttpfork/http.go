@@ -215,7 +215,7 @@ func HandlerForTransactional(reg prometheus.TransactionalGatherer, opts promhttp
 			return false
 		}
 
-		// Build metric name filter set from query params (if any)Add a comment on  lines R252 to R256Add diff commentMarkdown input:  edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a reviewReturn to code
+		// Build metric name filter set from query params (if any)
 		var metricFilter map[string]struct{}
 		if metricNames := req.URL.Query()["name[]"]; len(metricNames) > 0 {
 			metricFilter = make(map[string]struct{}, len(metricNames))

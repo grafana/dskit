@@ -44,6 +44,7 @@ import (
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/server/promhttpfork"
 	"github.com/grafana/dskit/signals"
 )
 
@@ -568,7 +569,7 @@ func RegisterInstrumentation(router *mux.Router) {
 
 // RegisterInstrumentationWithGatherer on the given router.
 func RegisterInstrumentationWithGatherer(router *mux.Router, gatherer prometheus.Gatherer) {
-	router.Handle("/metrics", promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
+	router.Handle("/metrics", promhttpfork.HandlerFor(gatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	}))
 	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)

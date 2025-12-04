@@ -15,10 +15,8 @@ package promhttpfork
 
 import (
 	"bytes"
-	"compress/gzip"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"

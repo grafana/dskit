@@ -14,6 +14,8 @@
 // Package promhttpfork is a fork of github.com/prometheus/client_golang/prometheus/promhttp
 // with the PR https://github.com/prometheus/client_golang/pull/1925 applied.
 // It is expected to disappear once that PR is merged and released, and we can switch back to the upstream package.
+//
+//lint:file-ignore faillint // This code was copied, plus the linter rule doesn't even make sense to me.
 package promhttpfork
 
 import (

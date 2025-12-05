@@ -62,14 +62,14 @@ func TestOTelTracing(t *testing.T) {
 	// regardless of whether the request is routed through the gRPC Handle method first
 	expectedOpNameHelloHTTPSpan := "HTTP " + httpMethod + " - " + expectedHelloRouteLabel
 	expectedAttrsHelloHTTPSpan := []attribute.KeyValue{
-		attribute.String("http.target", helloRouteURL.Path),
-		attribute.String("http.method", httpMethod),
+		attribute.String("url.path", helloRouteURL.Path),
+		attribute.String("http.request.method", httpMethod),
 		attribute.String("http.route", helloRouteName),
 	}
 	expectedOpNameHelloPathParamHTTPSpan := "HTTP " + httpMethod + " - " + expectedHelloPathParamRouteLabel
 	expectedAttrsHelloPathParamHTTPSpan := []attribute.KeyValue{
-		attribute.String("http.target", helloPathParamRouteURL.Path),
-		attribute.String("http.method", httpMethod),
+		attribute.String("url.path", helloPathParamRouteURL.Path),
+		attribute.String("http.request.method", httpMethod),
 		attribute.String("http.route", expectedHelloPathParamRouteLabel),
 	}
 
@@ -92,11 +92,7 @@ func TestOTelTracing(t *testing.T) {
 			routeTmpl:       helloRouteTmpl,
 			reqURL:          helloRouteURLRaw,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
-				"httpgrpc.HTTP/Handle": {
-					attribute.String("http.target", helloRouteURL.Path),
-					attribute.String("http.method", httpMethod),
-					attribute.String("http.route", helloRouteName),
-				},
+				"httpgrpc.HTTP/Handle":      expectedAttrsHelloHTTPSpan,
 				expectedOpNameHelloHTTPSpan: expectedAttrsHelloHTTPSpan,
 			},
 		},
@@ -116,8 +112,8 @@ func TestOTelTracing(t *testing.T) {
 			reqURL:          helloPathParamRouteURLRaw,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
 				"httpgrpc.HTTP/Handle": {
-					attribute.String("http.target", helloPathParamRouteURL.Path),
-					attribute.String("http.method", httpMethod),
+					attribute.String("url.path", helloPathParamRouteURL.Path),
+					attribute.String("http.request.method", httpMethod),
 					attribute.String("http.route", expectedHelloPathParamRouteLabel),
 				},
 				expectedOpNameHelloPathParamHTTPSpan: expectedAttrsHelloPathParamHTTPSpan,

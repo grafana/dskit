@@ -504,6 +504,31 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 	}
 }
 
+func TestPartitionRingDesc_Merge_StateChangeLocked(t *testing.T) {
+	now := time.Now()
+
+	// Initial state: locked=false
+	r1 := NewPartitionRingDesc()
+	r1.AddPartition(1, PartitionActive, now)
+	r1.UpdatePartitionStateChangeLock(1, false, now)
+
+	r2 := NewPartitionRingDesc()
+	r2.AddPartition(1, PartitionActive, now)
+	r2.UpdatePartitionStateChangeLock(1, true, now.Add(time.Second))
+
+	// Merge r2 into r1
+	merged, err := r1.Merge(r2, false)
+	assert.NoError(t, err)
+	assert.NotNil(t, merged)
+
+	// Verify r1 is updated
+	assert.True(t, r1.Partitions[1].StateChangeLocked)
+	assert.Equal(t, now.Add(time.Second).Unix(), r1.Partitions[1].StateChangeLockedTimestamp)
+
+	change := merged.(*PartitionRingDesc)
+	assert.True(t, change.Partitions[1].StateChangeLocked)
+}
+
 func TestPartitionRingDesc_Merge_RemovePartition(t *testing.T) {
 	now := time.Unix(10000, 0)
 
@@ -1111,6 +1136,44 @@ func TestPartitionRingDesc_RemoveTombstones(t *testing.T) {
 		assert.Equal(t, 1, removed)
 		assert.False(t, desc.HasPartition(3))
 		assert.False(t, desc.HasOwner("owner-3"))
+	})
+}
+
+func TestPartitionRingDesc_UpdatePartitionState(t *testing.T) {
+	now := time.Now()
+
+	t.Run("should return error when state change is locked", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(1, PartitionActive, now)
+		desc.UpdatePartitionStateChangeLock(1, true, now)
+
+		changed, err := desc.UpdatePartitionState(1, PartitionInactive, now.Add(time.Second))
+		require.ErrorIs(t, err, ErrPartitionStateChangeLocked)
+		assert.False(t, changed)
+		// State should not be changed
+		assert.Equal(t, PartitionActive, desc.Partitions[1].State)
+		assert.Equal(t, now.Unix(), desc.Partitions[1].StateTimestamp)
+	})
+
+	t.Run("should update state after lock is released", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(1, PartitionActive, now)
+
+		// Lock the state change
+		desc.UpdatePartitionStateChangeLock(1, true, now)
+
+		// Try to update state - should fail
+		changed, err := desc.UpdatePartitionState(1, PartitionInactive, now.Add(time.Second))
+		require.ErrorIs(t, err, ErrPartitionStateChangeLocked)
+		assert.False(t, changed)
+
+		desc.UpdatePartitionStateChangeLock(1, false, now.Add(2*time.Second))
+
+		// Try to update state - should succeed
+		changed, err = desc.UpdatePartitionState(1, PartitionInactive, now.Add(3*time.Second))
+		require.NoError(t, err)
+		assert.True(t, changed)
+		assert.Equal(t, PartitionInactive, desc.Partitions[1].State)
 	})
 }
 

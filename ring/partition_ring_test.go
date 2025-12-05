@@ -389,12 +389,12 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 			case switchPendingPartitionToActive:
 				// Switch to first pending partition to active.
 				desc := &(ring.desc)
-				desc.UpdatePartitionState(ring.PendingPartitionIDs()[0], PartitionActive, time.Now())
+				_, _ = desc.UpdatePartitionState(ring.PendingPartitionIDs()[0], PartitionActive, time.Now())
 				ring = NewPartitionRing(*desc)
 			case switchActivePartitionToInactive:
 				// Switch to first active partition to inactive.
 				desc := &(ring.desc)
-				desc.UpdatePartitionState(ring.ActivePartitionIDs()[0], PartitionInactive, time.Now())
+				_, _ = desc.UpdatePartitionState(ring.ActivePartitionIDs()[0], PartitionInactive, time.Now())
 				ring = NewPartitionRing(*desc)
 			case removeActivePartition:
 				// Remove the first active partition.
@@ -711,7 +711,7 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 						partitionIDToSwitch := pendingIDs[rnd.Intn(len(pendingIDs))]
 
 						desc := &(ring.desc)
-						desc.UpdatePartitionState(partitionIDToSwitch, PartitionActive, currTime)
+						_, _ = desc.UpdatePartitionState(partitionIDToSwitch, PartitionActive, currTime)
 						ring = NewPartitionRing(*desc)
 						t.Logf("- Switched partition %d from pending to active state", partitionIDToSwitch)
 					}
@@ -724,7 +724,7 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 						partitionIDToSwitch := activeIDs[rnd.Intn(len(activeIDs))]
 
 						desc := &(ring.desc)
-						desc.UpdatePartitionState(partitionIDToSwitch, PartitionInactive, currTime)
+						_, _ = desc.UpdatePartitionState(partitionIDToSwitch, PartitionInactive, currTime)
 						ring = NewPartitionRing(*desc)
 						t.Logf("- Switched partition %d from active to inactive", partitionIDToSwitch)
 					}

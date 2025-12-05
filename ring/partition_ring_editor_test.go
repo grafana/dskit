@@ -85,3 +85,35 @@ func TestPartitionRingEditor_RemoveMultiPartitionOwner(t *testing.T) {
 		2: {multiPartitionOwnerInstanceID("instance-1", 2), multiPartitionOwnerInstanceID("instance-2", 2)},
 	}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
 }
+
+func TestPartitionRingEditor_LockPartitionStateChange(t *testing.T) {
+	ctx := context.Background()
+
+	store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	// Init the ring.
+	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := GetOrCreatePartitionRingDesc(in)
+		desc.AddPartition(1, PartitionActive, time.Now())
+		return desc, true, nil
+	}))
+
+	editor := NewPartitionRingEditor(ringKey, store)
+
+	require.Equal(t, PartitionActive, getPartitionStateFromStore(t, store, ringKey, 1))
+
+	// Lock the partition state change.
+	require.NoError(t, editor.LockPartitionStateChange(ctx, 1, true))
+
+	// Try to change state, should fail.
+	require.ErrorIs(t, editor.ChangePartitionState(ctx, 1, PartitionInactive), ErrPartitionStateChangeLocked)
+	require.Equal(t, PartitionActive, getPartitionStateFromStore(t, store, ringKey, 1))
+
+	// Unlock the partition state change.
+	require.NoError(t, editor.LockPartitionStateChange(ctx, 1, false))
+
+	// Try to change state, should succeed.
+	require.NoError(t, editor.ChangePartitionState(ctx, 1, PartitionInactive))
+	require.Equal(t, PartitionInactive, getPartitionStateFromStore(t, store, ringKey, 1))
+}

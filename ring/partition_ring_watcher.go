@@ -121,6 +121,8 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 	}
 
 	// Update partition lock metrics.
+	w.partitionLockStateGaugeVec.Reset()
+	w.partitionLockTimestampGaugeVec.Reset()
 	for partitionID, partition := range desc.Partitions {
 		state := partition.GetState().CleanName()
 		partitionIDStr := strconv.Itoa(int(partitionID))

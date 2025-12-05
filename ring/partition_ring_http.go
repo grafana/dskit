@@ -151,7 +151,7 @@ func (h *PartitionRingPageHandler) handlePostRequest(w http.ResponseWriter, req 
 		}
 	} else if req.FormValue("action") == "change_state_and_lock" {
 		// NOTE: To avoid playing Whac-a-Mole with rollout-operator (or other actors) reverting the state to active BEFORE the operator
-		// is able to lock the partition state change, we offer this method which attempts to change the state and lock immediatly.
+		// is able to lock the partition state change, we offer this method which attempts to change the state and lock immediately.
 		// This currently contains a race. But since usually this endpoint is served by many replicas, fixing the race would require
 		// some work. We believe it's not worth it to add the additional complexity and we rely on the user using this to ensure
 		// that the state change is locked in the desired state.

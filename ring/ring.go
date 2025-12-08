@@ -1130,6 +1130,7 @@ func (r *Ring) buildRingForTheShard(shard map[string]InstanceDesc) *Ring {
 	ring := &Ring{
 		cfg:                                     r.cfg,
 		strategy:                                r.strategy,
+		logger:                                  r.logger,
 		ringDesc:                                shardDesc,
 		ringTokens:                              shardTokens,
 		ringTokensByZone:                        shardTokensByZone,

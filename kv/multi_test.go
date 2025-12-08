@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
-	"go.yaml.in/yaml/v3"
+	"gopkg.in/yaml.v3"
 )
 
 func boolPtr(b bool) *bool {

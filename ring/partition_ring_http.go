@@ -29,6 +29,7 @@ var partitionRingPageTemplate = template.Must(template.New("webpage").Funcs(temp
 
 type PartitionRingUpdater interface {
 	ChangePartitionState(ctx context.Context, partitionID int32, toState PartitionState) error
+	RemovePartitionOwner(ctx context.Context, ownerID string, partitionID int32) error
 }
 
 type PartitionRingPageHandler struct {
@@ -130,7 +131,8 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 }
 
 func (h *PartitionRingPageHandler) handlePostRequest(w http.ResponseWriter, req *http.Request) {
-	if req.FormValue("action") == "change_state" {
+	switch req.FormValue("action") {
+	case "change_state":
 		partitionID, err := strconv.Atoi(req.FormValue("partition_id"))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("invalid partition ID: %s", err.Error()), http.StatusBadRequest)
@@ -145,6 +147,24 @@ func (h *PartitionRingPageHandler) handlePostRequest(w http.ResponseWriter, req 
 
 		if err := h.updater.ChangePartitionState(req.Context(), int32(partitionID), PartitionState(toState)); err != nil {
 			http.Error(w, fmt.Sprintf("failed to change partition state: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+
+	case "remove_owner":
+		partitionID, err := strconv.Atoi(req.FormValue("partition_id"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid partition ID: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+
+		ownerID := req.FormValue("owner_id")
+		if ownerID == "" {
+			http.Error(w, "missing owner ID", http.StatusBadRequest)
+			return
+		}
+
+		if err := h.updater.RemovePartitionOwner(req.Context(), ownerID, int32(partitionID)); err != nil {
+			http.Error(w, fmt.Sprintf("failed to remove partition owner: %s", err.Error()), http.StatusBadRequest)
 			return
 		}
 	}

@@ -38,6 +38,12 @@ func (l *PartitionRingEditor) RemoveMultiPartitionOwner(ctx context.Context, ins
 	})
 }
 
+func (l *PartitionRingEditor) RemovePartitionOwner(ctx context.Context, ownerID string, partitionID int32) error {
+	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
+		return ring.RemoveOwner(ownerID), nil
+	})
+}
+
 func (l *PartitionRingEditor) updateRing(ctx context.Context, update func(ring *PartitionRingDesc) (bool, error)) error {
 	return l.store.CAS(ctx, l.ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := GetOrCreatePartitionRingDesc(in)

@@ -182,6 +182,25 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
 		require.NoError(t, cacheErr)
 	})
+
+	t.Run("with error out cleared on success", func(t *testing.T) {
+		client, backend, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		client.SetAsync("foo", []byte("bar"), 10*time.Second)
+		require.NoError(t, client.wait())
+
+		// First call fails
+		backend.err = errors.New("connection refused")
+		var cacheErr error
+		_ = client.GetMulti(context.Background(), []string{"foo"}, WithErrorOut(&cacheErr))
+		require.Error(t, cacheErr)
+
+		// Second call succeeds - error should be cleared
+		backend.err = nil
+		res := client.GetMulti(context.Background(), []string{"foo"}, WithErrorOut(&cacheErr))
+		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
+		require.NoError(t, cacheErr)
+	})
 }
 
 func TestMemcachedClient_Increment(t *testing.T) {

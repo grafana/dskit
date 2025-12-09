@@ -417,6 +417,9 @@ func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 	}
 
 	options, mcOpts := toMemcacheOptions(opts...)
+	if options.ErrOut != nil {
+		*options.ErrOut = nil
+	}
 
 	c.metrics.requests.Add(float64(len(keys)))
 	batches, err := c.getMultiBatched(ctx, keys, mcOpts...)

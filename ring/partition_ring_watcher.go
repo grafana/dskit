@@ -56,7 +56,7 @@ func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, 
 		}, []string{"partition_id", "state"}),
 		partitionLockTimestampGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "partition_ring_partition_state_change_locked_timestamp_seconds",
-			Help:        "Unix timestamp (seconds) of when the partition state change lock was last modified. 0 if unlocked.",
+			Help:        "Unix timestamp (seconds) of when the partition state was locked the last time. 0 if unlocked.",
 			ConstLabels: map[string]string{"name": name},
 		}, []string{"partition_id", "state"}),
 	}

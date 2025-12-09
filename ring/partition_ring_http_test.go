@@ -248,7 +248,7 @@ func TestPartitionRingPageHandler_ChangePartitionState(t *testing.T) {
 		require.Equal(t, PartitionActive, getPartitionStateFromStore(t, store, ringKey, 2))
 	})
 
-	t.Run("should also lock the state change if 'change_lock' is used", func(t *testing.T) {
+	t.Run("should also update the state change lock if 'state_change_lock' is used", func(t *testing.T) {
 		// Reset partition 1 to Active and state_change=unlocked
 		require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			desc := GetOrCreatePartitionRingDesc(in)
@@ -263,7 +263,7 @@ func TestPartitionRingPageHandler_ChangePartitionState(t *testing.T) {
 
 		reqTest := func(lock bool) (*httptest.ResponseRecorder, *http.Request) {
 			data := url.Values{}
-			data.Set("action", "change_lock")
+			data.Set("action", "state_change_lock")
 			data.Set("partition_id", "1")
 			data.Set("locked", strconv.FormatBool(lock))
 

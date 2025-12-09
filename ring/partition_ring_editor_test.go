@@ -86,7 +86,7 @@ func TestPartitionRingEditor_RemoveMultiPartitionOwner(t *testing.T) {
 	}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
 }
 
-func TestPartitionRingEditor_LockPartitionStateChange(t *testing.T) {
+func TestPartitionRingEditor_SetPartitionStateChangeLock(t *testing.T) {
 	ctx := context.Background()
 
 	store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
@@ -104,14 +104,14 @@ func TestPartitionRingEditor_LockPartitionStateChange(t *testing.T) {
 	require.Equal(t, PartitionActive, getPartitionStateFromStore(t, store, ringKey, 1))
 
 	// Lock the partition state change.
-	require.NoError(t, editor.LockPartitionStateChange(ctx, 1, true))
+	require.NoError(t, editor.SetPartitionStateChangeLock(ctx, 1, true))
 
 	// Try to change state, should fail.
 	require.ErrorIs(t, editor.ChangePartitionState(ctx, 1, PartitionInactive), ErrPartitionStateChangeLocked)
 	require.Equal(t, PartitionActive, getPartitionStateFromStore(t, store, ringKey, 1))
 
 	// Unlock the partition state change.
-	require.NoError(t, editor.LockPartitionStateChange(ctx, 1, false))
+	require.NoError(t, editor.SetPartitionStateChangeLock(ctx, 1, false))
 
 	// Try to change state, should succeed.
 	require.NoError(t, editor.ChangePartitionState(ctx, 1, PartitionInactive))

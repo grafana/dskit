@@ -29,7 +29,7 @@ var partitionRingPageTemplate = template.Must(template.New("webpage").Funcs(temp
 
 type PartitionRingUpdater interface {
 	ChangePartitionState(ctx context.Context, partitionID int32, toState PartitionState) error
-	LockPartitionStateChange(ctx context.Context, partitionID int32, locked bool) error
+	SetPartitionStateChangeLock(ctx context.Context, partitionID int32, locked bool) error
 }
 
 type PartitionRingPageHandler struct {
@@ -172,7 +172,7 @@ func (h *PartitionRingPageHandler) handlePostRequest(w http.ResponseWriter, req 
 			return
 		}
 
-		if err := h.updater.LockPartitionStateChange(req.Context(), int32(partitionID), true); err != nil {
+		if err := h.updater.SetPartitionStateChangeLock(req.Context(), int32(partitionID), true); err != nil {
 			http.Error(w, fmt.Sprintf("failed to lock partition state change: %s", err.Error()), http.StatusBadRequest)
 			return
 		}
@@ -189,7 +189,7 @@ func (h *PartitionRingPageHandler) handlePostRequest(w http.ResponseWriter, req 
 			return
 		}
 
-		if err := h.updater.LockPartitionStateChange(req.Context(), int32(partitionID), locked); err != nil {
+		if err := h.updater.SetPartitionStateChangeLock(req.Context(), int32(partitionID), locked); err != nil {
 			http.Error(w, fmt.Sprintf("failed to lock partition state change: %s", err.Error()), http.StatusBadRequest)
 			return
 		}

@@ -176,7 +176,7 @@ func (h *PartitionRingPageHandler) handlePostRequest(w http.ResponseWriter, req 
 			http.Error(w, fmt.Sprintf("failed to lock partition state change: %s", err.Error()), http.StatusBadRequest)
 			return
 		}
-	} else if req.FormValue("action") == "lock_state_change" {
+	} else if req.FormValue("action") == "change_lock" {
 		partitionID, err := strconv.Atoi(req.FormValue("partition_id"))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("invalid partition ID: %s", err.Error()), http.StatusBadRequest)

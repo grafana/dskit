@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"hash/crc32"
@@ -155,6 +156,31 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 			"foo5": []byte("bar5"),
 		}, res)
 		require.Equal(t, 0, backend.allocations)
+	})
+
+	t.Run("with error out", func(t *testing.T) {
+		client, backend, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+
+		expectedErr := errors.New("connection refused")
+		backend.err = expectedErr
+
+		var cacheErr error
+		res := client.GetMulti(context.Background(), []string{"foo"}, WithErrorOut(&cacheErr))
+		require.Nil(t, res)
+		require.ErrorIs(t, cacheErr, expectedErr)
+	})
+
+	t.Run("with error out no error", func(t *testing.T) {
+		client, _, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		client.SetAsync("foo", []byte("bar"), 10*time.Second)
+		require.NoError(t, client.wait())
+
+		var cacheErr error
+		res := client.GetMulti(context.Background(), []string{"foo"}, WithErrorOut(&cacheErr))
+		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
+		require.NoError(t, cacheErr)
 	})
 }
 
@@ -395,6 +421,7 @@ func setupDefaultMemcachedClient() (*MemcachedClient, *mockMemcachedClientBacken
 type mockMemcachedClientBackend struct {
 	allocations int
 	values      map[string]*memcache.Item
+	err         error
 }
 
 func newMockMemcachedClientBackend() *mockMemcachedClientBackend {
@@ -411,6 +438,10 @@ func (m *mockMemcachedClientBackend) GetMulti(ctx context.Context, keys []string
 
 	if options.Alloc != nil {
 		m.allocations++
+	}
+
+	if m.err != nil {
+		return nil, m.err
 	}
 
 	out := make(map[string]*memcache.Item)

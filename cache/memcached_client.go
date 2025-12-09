@@ -397,11 +397,7 @@ func toSeconds(d time.Duration) (int32, bool) {
 	return secs, true
 }
 
-func toMemcacheOptions(opts ...Option) []memcache.Option {
-	if len(opts) == 0 {
-		return nil
-	}
-
+func toMemcacheOptions(opts ...Option) (*Options, []memcache.Option) {
 	base := &Options{}
 	for _, opt := range opts {
 		opt(base)
@@ -412,7 +408,7 @@ func toMemcacheOptions(opts ...Option) []memcache.Option {
 		out = append(out, memcache.WithAllocator(base.Alloc))
 	}
 
-	return out
+	return base, out
 }
 
 func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
@@ -420,10 +416,14 @@ func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 		return nil
 	}
 
+	options, mcOpts := toMemcacheOptions(opts...)
+
 	c.metrics.requests.Add(float64(len(keys)))
-	options := toMemcacheOptions(opts...)
-	batches, err := c.getMultiBatched(ctx, keys, options...)
+	batches, err := c.getMultiBatched(ctx, keys, mcOpts...)
 	if err != nil {
+		if options.ErrOut != nil {
+			*options.ErrOut = err
+		}
 		if errors.Is(err, context.Canceled) {
 			return nil
 		}

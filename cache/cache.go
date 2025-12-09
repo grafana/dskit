@@ -60,6 +60,9 @@ type Cache interface {
 // to a client method to a default Options instance.
 type Options struct {
 	Alloc Allocator
+	// ErrOut, if set, will receive any error encountered during the cache operation.
+	// This allows callers to observe errors that are otherwise only logged/tracked.
+	ErrOut *error
 }
 
 // Option is a callback used to modify the Options that a particular client
@@ -71,6 +74,14 @@ type Option func(opts *Options)
 func WithAllocator(alloc Allocator) Option {
 	return func(opts *Options) {
 		opts.Alloc = alloc
+	}
+}
+
+// WithErrorOut returns an Option that stores any error encountered during
+// the cache operation in the provided pointer.
+func WithErrorOut(err *error) Option {
+	return func(opts *Options) {
+		opts.ErrOut = err
 	}
 }
 

@@ -158,6 +158,68 @@ func TestMemcachedClient_GetMulti(t *testing.T) {
 	})
 }
 
+func TestMemcachedClient_GetMultiWithError(t *testing.T) {
+	t.Run("returns error from backend", func(t *testing.T) {
+		backendErr := fmt.Errorf("connection failed")
+		backend := &erroringMockMemcachedClientBackend{
+			mockMemcachedClientBackend: newMockMemcachedClientBackend(),
+			err:                        backendErr,
+		}
+		client, err := newMemcachedClient(
+			log.NewNopLogger(),
+			backend,
+			&mockServerSelector{
+				servers: []mockServer{
+					{addr: "127.0.0.1:11211"},
+				},
+			},
+			MemcachedClientConfig{
+				Addresses:           []string{"localhost"},
+				MaxAsyncConcurrency: 1,
+				MaxAsyncBufferSize:  10,
+			},
+			prometheus.NewPedanticRegistry(),
+			"test",
+		)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		res, err := client.GetMultiWithError(ctx, []string{"foo"})
+		require.ErrorIs(t, err, backendErr)
+		require.Empty(t, res)
+	})
+
+	t.Run("returns partial results with error", func(t *testing.T) {
+		// First set up some data, then configure error
+		backend := newMockMemcachedClientBackend()
+		client, err := newMemcachedClient(
+			log.NewNopLogger(),
+			backend,
+			&mockServerSelector{
+				servers: []mockServer{
+					{addr: "127.0.0.1:11211"},
+				},
+			},
+			MemcachedClientConfig{
+				Addresses:           []string{"localhost"},
+				MaxAsyncConcurrency: 1,
+				MaxAsyncBufferSize:  10,
+			},
+			prometheus.NewPedanticRegistry(),
+			"test",
+		)
+		require.NoError(t, err)
+
+		client.SetAsync("foo", []byte("bar"), 10*time.Second)
+		require.NoError(t, client.wait())
+
+		ctx := context.Background()
+		res, err := client.GetMultiWithError(ctx, []string{"foo"})
+		require.NoError(t, err)
+		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
+	})
+}
+
 func TestMemcachedClient_Increment(t *testing.T) {
 	client, _, err := setupDefaultMemcachedClient()
 	require.NoError(t, err)
@@ -472,6 +534,18 @@ func (m *mockMemcachedClientBackend) FlushAll() error {
 }
 
 func (m *mockMemcachedClientBackend) Close() {}
+
+// erroringMockMemcachedClientBackend wraps mockMemcachedClientBackend and returns
+// a configurable error from GetMulti.
+type erroringMockMemcachedClientBackend struct {
+	*mockMemcachedClientBackend
+	err error
+}
+
+func (m *erroringMockMemcachedClientBackend) GetMulti(ctx context.Context, keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error) {
+	result, _ := m.mockMemcachedClientBackend.GetMulti(ctx, keys, opts...)
+	return result, m.err
+}
 
 type mockServer struct {
 	addr string

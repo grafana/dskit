@@ -14,6 +14,7 @@ import (
 var (
 	_ Cache = (*MockCache)(nil)
 	_ Cache = (*InstrumentedMockCache)(nil)
+	_ Cache = (*ErroringMockCache)(nil)
 )
 
 type MockCache struct {
@@ -212,4 +213,29 @@ func (m *InstrumentedMockCache) CountFetchCalls() int {
 
 func (m *InstrumentedMockCache) CountDeleteCalls() int {
 	return int(m.deleteCount.Load())
+}
+
+// ErroringMockCache is a mock cache that can be configured to return errors
+// from GetMultiWithError. Useful for testing error propagation through cache wrappers.
+type ErroringMockCache struct {
+	*MockCache
+	GetMultiErr error
+}
+
+// NewErroringMockCache creates a new ErroringMockCache with the given error.
+func NewErroringMockCache(err error) *ErroringMockCache {
+	return &ErroringMockCache{
+		MockCache:   NewMockCache(),
+		GetMultiErr: err,
+	}
+}
+
+func (m *ErroringMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	result, _ := m.GetMultiWithError(ctx, keys, opts...)
+	return result
+}
+
+func (m *ErroringMockCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	result, _ := m.MockCache.GetMultiWithError(ctx, keys, opts...)
+	return result, m.GetMultiErr
 }

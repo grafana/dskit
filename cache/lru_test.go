@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -126,4 +127,39 @@ func TestLRUCache_SetAdd(t *testing.T) {
 	item, ok := lru.lru.Get("key_1")
 	require.True(t, ok, "expected to fetch %s from inner LRU cache, got %+v", "key_1", item)
 	require.Equal(t, []byte("value_1"), item.Data)
+}
+
+func TestLRUCache_GetMultiWithError(t *testing.T) {
+	mock := NewMockCache()
+	ctx := context.Background()
+	mock.SetMultiAsync(map[string][]byte{"backend": []byte("backend-value")}, time.Hour)
+
+	reg := prometheus.NewPedanticRegistry()
+	lru, err := WrapWithLRUCache(mock, "test", reg, 10000, 2*time.Hour)
+	require.NoError(t, err)
+
+	lru.SetMultiAsync(map[string][]byte{
+		"lru": []byte("lru-value"),
+	}, time.Minute)
+
+	result, err := lru.GetMultiWithError(ctx, []string{"lru", "backend", "missing"})
+	require.NoError(t, err)
+	require.Equal(t, map[string][]byte{
+		"lru":     []byte("lru-value"),
+		"backend": []byte("backend-value"),
+	}, result)
+}
+
+func TestLRUCache_GetMultiWithError_PropagatesError(t *testing.T) {
+	backendErr := errors.New("backend error")
+	backend := NewErroringMockCache(backendErr)
+
+	reg := prometheus.NewPedanticRegistry()
+	lru, err := WrapWithLRUCache(backend, "test", reg, 10000, 2*time.Hour)
+	require.NoError(t, err)
+
+	// Key not in LRU, so it will fetch from backend which returns an error
+	result, err := lru.GetMultiWithError(context.Background(), []string{"missing"})
+	require.Empty(t, result)
+	require.ErrorIs(t, err, backendErr)
 }

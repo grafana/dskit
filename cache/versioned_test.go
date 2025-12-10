@@ -2,12 +2,12 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestVersioned(t *testing.T) {
@@ -48,5 +48,25 @@ func TestVersioned(t *testing.T) {
 		require.NoError(t, err)
 		resV2 = v2.GetMulti(context.Background(), []string{"hit", "miss"})
 		assert.Equal(t, map[string][]uint8{}, resV2)
+	})
+
+	t.Run("GetMultiWithError works correctly", func(t *testing.T) {
+		cache := NewMockCache()
+		v1 := NewVersioned(cache, 1)
+		data := map[string][]byte{"hit": []byte(`data`)}
+		v1.SetMultiAsync(data, time.Minute)
+		res, err := v1.GetMultiWithError(context.Background(), []string{"hit", "miss"})
+		require.NoError(t, err)
+		assert.Equal(t, data, res)
+	})
+
+	t.Run("GetMultiWithError propagates backend errors", func(t *testing.T) {
+		backendErr := errors.New("backend error")
+		backend := NewErroringMockCache(backendErr)
+		v1 := NewVersioned(backend, 1)
+
+		result, err := v1.GetMultiWithError(context.Background(), []string{"key"})
+		assert.Empty(t, result)
+		assert.ErrorIs(t, err, backendErr)
 	})
 }

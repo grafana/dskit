@@ -128,7 +128,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	// Change state of partition to Inactive
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePartitionRingDesc(in)
-		desc.UpdatePartitionState(1, PartitionInactive, time.Now())
+		_, _ = desc.UpdatePartitionState(1, PartitionInactive, time.Now())
 		return desc, true, nil
 	}))
 

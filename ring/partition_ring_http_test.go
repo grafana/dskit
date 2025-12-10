@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -245,5 +246,86 @@ func TestPartitionRingPageHandler_ChangePartitionState(t *testing.T) {
 
 		require.Equal(t, PartitionInactive, getPartitionStateFromStore(t, store, ringKey, 1))
 		require.Equal(t, PartitionActive, getPartitionStateFromStore(t, store, ringKey, 2))
+	})
+
+	t.Run("should also update the state change lock if 'state_change_lock' is used", func(t *testing.T) {
+		// Reset partition 1 to Active and state_change=unlocked
+		require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			desc := GetOrCreatePartitionRingDesc(in)
+			desc.Partitions[1] = PartitionDesc{
+				Id:             1,
+				State:          PartitionActive,
+				StateTimestamp: time.Now().Unix(),
+				Tokens:         desc.Partitions[1].Tokens,
+			}
+			return desc, true, nil
+		}))
+
+		reqTest := func(lock bool) (*httptest.ResponseRecorder, *http.Request) {
+			data := url.Values{}
+			data.Set("action", "state_change_lock")
+			data.Set("partition_id", "1")
+			data.Set("locked", strconv.FormatBool(lock))
+
+			req := httptest.NewRequest(http.MethodPost, "/partition-ring", strings.NewReader(data.Encode()))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			return httptest.NewRecorder(), req
+		}
+
+		// Test lock
+		recorder, reqLock := reqTest(true)
+
+		handler.ServeHTTP(recorder, reqLock)
+		assert.Equal(t, http.StatusFound, recorder.Code)
+
+		desc := getPartitionRingFromStore(t, store, ringKey)
+		require.True(t, desc.Partitions[1].StateChangeLocked)
+
+		// Test unlock
+		recorder, reqUnlock := reqTest(false)
+
+		handler.ServeHTTP(recorder, reqUnlock)
+		assert.Equal(t, http.StatusFound, recorder.Code)
+
+		desc = getPartitionRingFromStore(t, store, ringKey)
+		require.False(t, desc.Partitions[1].StateChangeLocked)
+
+	})
+
+	t.Run("should also lock the state change if 'change_state_and_lock' is used", func(t *testing.T) {
+		// Reset partition 1 to Active and state_change=unlocked
+		require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			desc := GetOrCreatePartitionRingDesc(in)
+			desc.Partitions[1] = PartitionDesc{
+				Id:             1,
+				State:          PartitionActive,
+				StateTimestamp: time.Now().Unix(),
+				Tokens:         desc.Partitions[1].Tokens,
+			}
+			return desc, true, nil
+		}))
+
+		data := url.Values{}
+		data.Set("action", "change_state_and_lock")
+		data.Set("partition_id", "1")
+		data.Set("partition_state", PartitionInactive.String())
+
+		req := httptest.NewRequest(http.MethodPost, "/partition-ring", strings.NewReader(data.Encode()))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+		recorder := httptest.NewRecorder()
+
+		// Pre-condition check.
+		require.Equal(t, PartitionActive, getPartitionStateFromStore(t, store, ringKey, 1))
+
+		handler.ServeHTTP(recorder, req)
+		assert.Equal(t, http.StatusFound, recorder.Code)
+
+		require.Equal(t, PartitionInactive, getPartitionStateFromStore(t, store, ringKey, 1))
+
+		// Check if locked
+		desc := getPartitionRingFromStore(t, store, ringKey)
+		require.True(t, desc.Partitions[1].StateChangeLocked)
 	})
 }

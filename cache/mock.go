@@ -63,7 +63,12 @@ func (m *MockCache) Add(_ context.Context, key string, value []byte, ttl time.Du
 	return nil
 }
 
-func (m *MockCache) GetMulti(_ context.Context, keys []string, _ ...Option) map[string][]byte {
+func (m *MockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	result, _ := m.GetMultiWithError(ctx, keys, opts...)
+	return result
+}
+
+func (m *MockCache) GetMultiWithError(_ context.Context, keys []string, _ ...Option) (map[string][]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -77,7 +82,7 @@ func (m *MockCache) GetMulti(_ context.Context, keys []string, _ ...Option) map[
 		}
 	}
 
-	return found
+	return found, nil
 }
 
 func (m *MockCache) GetItems() map[string]Item {
@@ -163,6 +168,11 @@ func (m *InstrumentedMockCache) Add(ctx context.Context, key string, value []byt
 func (m *InstrumentedMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	m.fetchCount.Inc()
 	return m.cache.GetMulti(ctx, keys, opts...)
+}
+
+func (m *InstrumentedMockCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	m.fetchCount.Inc()
+	return m.cache.GetMultiWithError(ctx, keys, opts...)
 }
 
 func (m *InstrumentedMockCache) Name() string {

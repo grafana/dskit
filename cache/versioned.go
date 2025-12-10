@@ -45,16 +45,21 @@ func (c *Versioned) Add(ctx context.Context, key string, value []byte, ttl time.
 }
 
 func (c *Versioned) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	result, _ := c.GetMultiWithError(ctx, keys, opts...)
+	return result
+}
+
+func (c *Versioned) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
 	versionedKeys := make([]string, len(keys))
 	for i, k := range keys {
 		versionedKeys[i] = c.addVersion(k)
 	}
-	versionedRes := c.cache.GetMulti(ctx, versionedKeys, opts...)
+	versionedRes, err := c.cache.GetMultiWithError(ctx, versionedKeys, opts...)
 	res := make(map[string][]byte, len(versionedRes))
 	for k, v := range versionedRes {
 		res[c.removeVersion(k)] = v
 	}
-	return res
+	return res, err
 }
 
 func (c *Versioned) Name() string {

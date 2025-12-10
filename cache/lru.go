@@ -139,6 +139,11 @@ func (l *LRUCache) Add(ctx context.Context, key string, value []byte, ttl time.D
 }
 
 func (l *LRUCache) GetMulti(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
+	result, _ = l.GetMultiWithError(ctx, keys, opts...)
+	return result
+}
+
+func (l *LRUCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte, err error) {
 	l.requests.Add(float64(len(keys)))
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -165,7 +170,7 @@ func (l *LRUCache) GetMulti(ctx context.Context, keys []string, opts ...Option) 
 	l.hits.Add(float64(len(found)))
 
 	if len(miss) > 0 {
-		result = l.c.GetMulti(ctx, miss, opts...)
+		result, err = l.c.GetMultiWithError(ctx, miss, opts...)
 		for k, v := range result {
 			// we don't know the ttl of the result, so we use the default one.
 			l.lru.Add(k, &Item{
@@ -176,7 +181,7 @@ func (l *LRUCache) GetMulti(ctx context.Context, keys []string, opts ...Option) 
 		}
 	}
 
-	return found
+	return found, err
 }
 
 func (l *LRUCache) Name() string {

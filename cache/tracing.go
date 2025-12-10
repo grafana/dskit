@@ -40,11 +40,16 @@ func (t *SpanlessTracingCache) Add(ctx context.Context, key string, value []byte
 }
 
 func (t *SpanlessTracingCache) GetMulti(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
+	result, _ = t.GetMultiWithError(ctx, keys, opts...)
+	return
+}
+
+func (t *SpanlessTracingCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte, err error) {
 	var (
 		bytes  int
 		logger = spanlogger.FromContext(ctx, t.logger, t.resolver)
 	)
-	result = t.next.GetMulti(ctx, keys, opts...)
+	result, err = t.next.GetMultiWithError(ctx, keys, opts...)
 
 	for _, v := range result {
 		bytes += len(v)

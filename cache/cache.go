@@ -30,7 +30,8 @@ type Cache interface {
 	GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
 	// GetMultiWithError fetches multiple keys at once from a cache and returns an error
-	// if the operation failed. One or more Option instances may be passed to modify the
+	// if the operation failed. It may return both results and an error if there are only partial
+	// failures. One or more Option instances may be passed to modify the
 	// behavior of this GetMultiWithError call.
 	GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error)
 

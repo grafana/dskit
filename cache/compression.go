@@ -100,20 +100,24 @@ func (s *SnappyCache) GetMulti(ctx context.Context, keys []string, opts ...Optio
 
 // GetMultiWithError implements Cache.
 func (s *SnappyCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	errs := []error{}
+
 	found, err := s.next.GetMultiWithError(ctx, keys, opts...)
+	errs = append(errs, err)
 	decoded := make(map[string][]byte, len(found))
 
 	for key, encodedValue := range found {
 		decodedValue, decodeErr := snappy.Decode(nil, encodedValue)
 		if decodeErr != nil {
 			level.Error(s.logger).Log("msg", "failed to decode cache entry", "err", decodeErr)
+			errs = append(errs, fmt.Errorf("failed to decode cache entry for key %s: %w", key, decodeErr))
 			continue
 		}
 
 		decoded[key] = decodedValue
 	}
 
-	return decoded, err
+	return decoded, errors.Join(errs...)
 }
 
 // Stop implements Cache.

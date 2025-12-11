@@ -108,11 +108,13 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 		w.numPartitionsGaugeVec.WithLabelValues(state.CleanName()).Set(float64(count))
 	}
 
-	// Check partitions whose state change is locked and log them.
+	// Check partitions whose state change lock status has changed and log them.
 	for partitionID, partition := range desc.Partitions {
 		state := partition.GetState().CleanName()
 		partitionIDStr := strconv.Itoa(int(partitionID))
-		if partition.StateChangeLocked {
+
+		oldPartition, existedBefore := oldRing.desc.Partitions[partitionID]
+		if partition.StateChangeLocked && (!existedBefore || !oldPartition.StateChangeLocked) {
 			level.Warn(w.logger).Log("msg", "partition state change is locked", "partition_id", partitionIDStr, "partition_state", state)
 		}
 	}

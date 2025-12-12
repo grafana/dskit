@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -100,6 +101,30 @@ func TestSnappyCache(t *testing.T) {
 		// Should return an error for the invalid entry
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode cache entry for key invalid")
+	})
+
+	t.Run("GetMulti() should log errors for snappy decoding", func(t *testing.T) {
+		backend := NewMockCache()
+		// Use a logger that writes to a buffer we can inspect.
+		buffer := bytes.NewBuffer(nil)
+		logger := log.NewLogfmtLogger(buffer)
+
+		c := NewSnappy(backend, logger)
+
+		// Set valid snappy-encoded value via SnappyCache
+		c.SetMultiAsync(map[string][]byte{"valid": []byte("valid-value")}, time.Hour)
+
+		// Set invalid (non-snappy) value directly to backend
+		backend.SetMultiAsync(map[string][]byte{"invalid": []byte("not-snappy-encoded")}, time.Hour)
+
+		result := c.GetMulti(ctx, []string{"valid", "invalid"})
+
+		// Should return the valid entry
+		assert.Equal(t, map[string][]byte{"valid": []byte("valid-value")}, result)
+
+		// The log buffer should contain an error about the invalid entry
+		logs := buffer.String()
+		assert.Contains(t, logs, "failed to decode cache entry")
 	})
 
 	t.Run("GetMultiWithError() should propagate backend errors", func(t *testing.T) {

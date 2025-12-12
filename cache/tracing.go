@@ -40,7 +40,10 @@ func (t *SpanlessTracingCache) Add(ctx context.Context, key string, value []byte
 }
 
 func (t *SpanlessTracingCache) GetMulti(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
-	result, _ = t.GetMultiWithError(ctx, keys, opts...)
+	result, err := t.GetMultiWithError(ctx, keys, opts...)
+	if err != nil {
+		level.Warn(t.logger).Log("msg", "failed to get items from cache", "err", err)
+	}
 	return
 }
 

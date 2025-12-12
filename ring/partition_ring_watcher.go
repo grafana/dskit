@@ -115,7 +115,7 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 		if !existedBefore || partition.StateChangeLocked != oldPartition.StateChangeLocked {
 			if partition.StateChangeLocked {
 				level.Warn(w.logger).Log("msg", "partition state change is locked", "partition_id", partitionID, "partition_state", state)
-			} else {
+			} else if existedBefore {
 				level.Info(w.logger).Log("msg", "partition state change is unlocked", "partition_id", partitionID, "partition_state", state)
 			}
 		}

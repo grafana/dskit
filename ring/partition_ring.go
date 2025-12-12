@@ -43,8 +43,8 @@ type PartitionRing struct {
 	activePartitionsCount int
 }
 
-func NewPartitionRing(desc PartitionRingDesc) (*PartitionRing, error) {
-	shuffleShardCache, err := newPartitionRingShuffleShardCache()
+func NewPartitionRing(desc PartitionRingDesc, shuffleShardCacheSize ...int) (*PartitionRing, error) {
+	shuffleShardCache, err := newPartitionRingShuffleShardCache(128) // Make this configurable
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
 	}

@@ -119,7 +119,8 @@ func TestPartitionRing_ActivePartitionForKey(t *testing.T) {
 			for pIdx, p := range testCase.partitions {
 				desc.AddPartition(int32(pIdx), p.state, time.Now())
 			}
-			pr := NewPartitionRing(*desc)
+			pr, err := NewPartitionRing(*desc)
+			require.NoError(t, err)
 
 			partitionID, err := pr.ActivePartitionForKey(testCase.key)
 
@@ -318,7 +319,8 @@ func TestPartitionRing_Sorting(t *testing.T) {
 		desc.AddPartition(int32(i), PartitionState(i)%3+PartitionPending, time.Now())
 	}
 
-	pr := NewPartitionRing(*desc)
+	pr, err := NewPartitionRing(*desc)
+	require.NoError(t, err)
 
 	require.Equal(t, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, pr.PartitionIDs())
 	require.Equal(t, []int32{0, 3, 6, 9}, pr.PendingPartitionIDs())
@@ -381,31 +383,37 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 			}
 
 			// Update the ring.
+			var err error
 			switch s.ringChange {
 			case addActivePartition:
 				desc := &(ring.desc)
 				desc.AddPartition(int32(s.numPartitions+1), PartitionActive, time.Now())
-				ring = NewPartitionRing(*desc)
+				ring, err = NewPartitionRing(*desc)
+				require.NoError(t, err)
 			case switchPendingPartitionToActive:
 				// Switch to first pending partition to active.
 				desc := &(ring.desc)
 				_, _ = desc.UpdatePartitionState(ring.PendingPartitionIDs()[0], PartitionActive, time.Now())
-				ring = NewPartitionRing(*desc)
+				ring, err = NewPartitionRing(*desc)
+				require.NoError(t, err)
 			case switchActivePartitionToInactive:
 				// Switch to first active partition to inactive.
 				desc := &(ring.desc)
 				_, _ = desc.UpdatePartitionState(ring.ActivePartitionIDs()[0], PartitionInactive, time.Now())
-				ring = NewPartitionRing(*desc)
+				ring, err = NewPartitionRing(*desc)
+				require.NoError(t, err)
 			case removeActivePartition:
 				// Remove the first active partition.
 				desc := &(ring.desc)
 				desc.RemovePartition(ring.ActivePartitionIDs()[0])
-				ring = NewPartitionRing(*desc)
+				ring, err = NewPartitionRing(*desc)
+				require.NoError(t, err)
 			case removeInactivePartition:
 				// Remove the first inactive partition.
 				desc := &(ring.desc)
 				desc.RemovePartition(ring.InactivePartitionIDs()[0])
-				ring = NewPartitionRing(*desc)
+				ring, err = NewPartitionRing(*desc)
+				require.NoError(t, err)
 			}
 
 			// Compute the updated shard for each tenant and compare it with the initial one.
@@ -629,7 +637,8 @@ func TestPartitionRing_ShuffleShardWithLookback(t *testing.T) {
 					delete(ringDesc.Partitions, event.partitionID)
 				case test:
 					// Create a new ring for every test so that it can create its own
-					ring := NewPartitionRing(*ringDesc)
+					ring, err := NewPartitionRing(*ringDesc)
+					require.NoError(t, err, "step %d", ix)
 					shuffledRing, err := ring.ShuffleShardWithLookback(userID, event.shardSize, lookbackPeriod, now)
 					assert.NoError(t, err, "step %d", ix)
 					assert.ElementsMatch(t, event.expected, maps.Keys(shuffledRing.desc.Partitions), "step %d", ix)
@@ -698,7 +707,8 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 					// Add a pending partition.
 					desc := &(ring.desc)
 					desc.AddPartition(int32(nextPartitionID), PartitionPending, currTime)
-					ring = NewPartitionRing(*desc)
+					ring, err = NewPartitionRing(*desc)
+					require.NoError(t, err)
 					t.Logf("- Added partition %d in pending state", nextPartitionID)
 
 					nextPartitionID++
@@ -712,7 +722,8 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 
 						desc := &(ring.desc)
 						_, _ = desc.UpdatePartitionState(partitionIDToSwitch, PartitionActive, currTime)
-						ring = NewPartitionRing(*desc)
+						ring, err = NewPartitionRing(*desc)
+						require.NoError(t, err)
 						t.Logf("- Switched partition %d from pending to active state", partitionIDToSwitch)
 					}
 				case r < 80:
@@ -725,7 +736,8 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 
 						desc := &(ring.desc)
 						_, _ = desc.UpdatePartitionState(partitionIDToSwitch, PartitionInactive, currTime)
-						ring = NewPartitionRing(*desc)
+						ring, err = NewPartitionRing(*desc)
+						require.NoError(t, err)
 						t.Logf("- Switched partition %d from active to inactive", partitionIDToSwitch)
 					}
 				case r < 90:
@@ -738,7 +750,8 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 
 						desc := &(ring.desc)
 						desc.RemovePartition(partitionIDToRemove)
-						ring = NewPartitionRing(*desc)
+						ring, err = NewPartitionRing(*desc)
+						require.NoError(t, err)
 						t.Logf("- Removed inactive partition %d", partitionIDToRemove)
 
 						// Remove the partition from the history.
@@ -804,7 +817,8 @@ func TestPartitionRing_ShuffleShardWithLookback_Caching(t *testing.T) {
 	desc.AddPartition(4, PartitionActive, now.Add(-6*time.Hour))
 	desc.AddPartition(5, PartitionActive, now.Add(-6*time.Hour))
 	desc.AddPartition(6, PartitionActive, now.Add(-6*time.Hour))
-	ring := NewPartitionRing(*desc)
+	ring, err := NewPartitionRing(*desc)
+	require.NoError(t, err)
 
 	t.Run("identical requests", func(t *testing.T) {
 		first, err := ring.ShuffleShardWithLookback(tenantID, subringSize, time.Minute, now)
@@ -984,8 +998,8 @@ func TestPartitionRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T)
 	wg.Wait()
 
 	// Ensure the cache was populated.
-	assert.NotEmpty(t, ring.shuffleShardCache.cacheWithLookback)
-	assert.Empty(t, ring.shuffleShardCache.cacheWithoutLookback)
+	assert.Greater(t, ring.shuffleShardCache.cacheWithLookback.Len(), 0)
+	assert.Equal(t, 0, ring.shuffleShardCache.cacheWithoutLookback.Len())
 }
 
 func TestPartitionRingGetTokenRangesForPartition(t *testing.T) {
@@ -1057,7 +1071,8 @@ func TestPartitionRingGetTokenRangesForPartition(t *testing.T) {
 				}
 			}
 
-			r := NewPartitionRing(ringDesc)
+			r, err := NewPartitionRing(ringDesc)
+			require.NoError(t, err)
 
 			for id, exp := range testData.expected {
 				ranges, err := r.GetTokenRangesForPartition(int32(id))
@@ -1135,7 +1150,7 @@ func preparePartitionRingWithActivePartitions(partitions int) *PartitionRing {
 	for pid := 0; pid < partitions; pid++ {
 		prd.AddPartition(int32(pid), PartitionActive, time.Time{}) // benchmark doesn't use state or time.
 	}
-	pr = NewPartitionRing(*prd)
+	pr, _ = NewPartitionRing(*prd)
 	cachedRings[partitions] = pr
 	return pr
 }
@@ -1281,7 +1296,8 @@ func TestPartitionRing_MultiPartitionOwnerIDs(t *testing.T) {
 	// instance2 owns 1 and 2
 	desc.AddOrUpdateOwner(multiPartitionOwnerInstanceID(instance2, 1), OwnerActive, 1, now)
 	desc.AddOrUpdateOwner(multiPartitionOwnerInstanceID(instance2, 2), OwnerActive, 2, now)
-	ring := NewPartitionRing(*desc)
+	ring, err := NewPartitionRing(*desc)
+	require.NoError(t, err)
 
 	// Check ownership.
 	require.ElementsMatch(t, []string{instance1}, ring.MultiPartitionOwnerIDs(0, nil))
@@ -1309,7 +1325,8 @@ func createPartitionRingWithPartitions(numActive, numInactive, numPending int) *
 		desc.AddPartition(int32(i), PartitionPending, time.Now())
 	}
 
-	return NewPartitionRing(*desc)
+	ring, _ := NewPartitionRing(*desc)
+	return ring
 }
 
 // comparePartitionIDs returns the list of partition IDs which differ between the two lists.

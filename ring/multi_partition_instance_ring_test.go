@@ -169,7 +169,8 @@ func TestMultiPartitionInstanceRing_GetReplicationSetForPartitionAndOperation_Hi
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			partitionsRing := NewPartitionRing(testData.partitionsRing)
+			partitionsRing, err := NewPartitionRing(testData.partitionsRing)
+			require.NoError(t, err)
 			instancesRing := &Ring{ringDesc: testData.instancesRing}
 			r := NewMultiPartitionInstanceRing(newStaticPartitionRingReader(partitionsRing), instancesRing, heartbeatTimeout)
 

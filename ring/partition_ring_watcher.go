@@ -36,11 +36,13 @@ type PartitionRingWatcherDelegate interface {
 }
 
 func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, reg prometheus.Registerer) *PartitionRingWatcher {
+	// Create an empty partition ring. This should never fail since we're using an empty descriptor.
+	emptyRing, _ := NewPartitionRing(*NewPartitionRingDesc())
 	r := &PartitionRingWatcher{
 		key:    key,
 		kv:     kv,
 		logger: logger,
-		ring:   NewPartitionRing(*NewPartitionRingDesc()),
+		ring:   emptyRing,
 		numPartitionsGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "partition_ring_partitions",
 			Help:        "Number of partitions by state in the partitions ring.",
@@ -92,7 +94,11 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 }
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
-	newRing := NewPartitionRing(*desc)
+	newRing, err := NewPartitionRing(*desc)
+	if err != nil {
+		level.Error(w.logger).Log("msg", "failed to create partition ring from descriptor", "err", err)
+		return
+	}
 	w.ringMx.Lock()
 	oldRing := w.ring
 	w.ring = newRing

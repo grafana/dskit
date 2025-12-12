@@ -15,12 +15,12 @@ type partitionRingShuffleShardCache struct {
 	cacheWithLookback    *lru.Cache[subringCacheKey, cachedSubringWithLookback[*PartitionRing]]
 }
 
-func newPartitionRingShuffleShardCache() (*partitionRingShuffleShardCache, error) {
-	cacheWithoutLookback, err := lru.New[subringCacheKey, *PartitionRing](128)
+func newPartitionRingShuffleShardCache(size int) (*partitionRingShuffleShardCache, error) {
+	cacheWithoutLookback, err := lru.New[subringCacheKey, *PartitionRing](size)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create without lookback cache: %w", err)
 	}
-	cacheWithLookback, err := lru.New[subringCacheKey, cachedSubringWithLookback[*PartitionRing]](128)
+	cacheWithLookback, err := lru.New[subringCacheKey, cachedSubringWithLookback[*PartitionRing]](size)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create with lookback cache: %w", err)
 	}

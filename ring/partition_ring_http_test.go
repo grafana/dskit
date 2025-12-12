@@ -56,7 +56,7 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 						OwnedPartition: 3,
 					},
 				},
-			}),
+			}, nil),
 		),
 		nil,
 	)

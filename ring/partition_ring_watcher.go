@@ -41,7 +41,7 @@ func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, 
 		key:    key,
 		kv:     kv,
 		logger: logger,
-		ring:   NewPartitionRing(*NewPartitionRingDesc()),
+		ring:   NewPartitionRing(*NewPartitionRingDesc(), logger),
 		numPartitionsGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "partition_ring_partitions",
 			Help:        "Number of partitions by state in the partitions ring.",
@@ -93,7 +93,7 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 }
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
-	newRing := NewPartitionRing(*desc)
+	newRing := NewPartitionRing(*desc, w.logger)
 	w.ringMx.Lock()
 	oldRing := w.ring
 	w.ring = newRing

@@ -43,15 +43,19 @@ type PartitionRing struct {
 	activePartitionsCount int
 }
 
-func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
+func NewPartitionRing(desc PartitionRingDesc) (*PartitionRing, error) {
+	shuffleShardCache, err := newPartitionRingShuffleShardCache()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
+	}
 	return &PartitionRing{
 		desc:                  desc,
 		ringTokens:            desc.tokens(),
 		partitionByToken:      desc.partitionByToken(),
 		ownersByPartition:     desc.ownersByPartition(),
 		activePartitionsCount: desc.activePartitionsCount(),
-		shuffleShardCache:     newPartitionRingShuffleShardCache(),
-	}
+		shuffleShardCache:     shuffleShardCache,
+	}, nil
 }
 
 // ActivePartitionForKey returns partition for the given key. Only active partitions are considered.
@@ -255,7 +259,12 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 		}
 	}
 
-	return NewPartitionRing(r.desc.WithPartitions(result)), nil
+	ring, err := NewPartitionRing(r.desc.WithPartitions(result))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create partition ring: %w", err)
+	}
+
+	return ring, nil
 }
 
 // PartitionsCount returns the number of partitions in the ring.

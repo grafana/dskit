@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -21,7 +22,7 @@ func TestLRUCache_StoreFetchDelete(t *testing.T) {
 	mock.SetMultiAsync(map[string][]byte{"buzz": []byte("buzz")}, time.Hour)
 
 	reg := prometheus.NewPedanticRegistry()
-	lru, err := WrapWithLRUCache(mock, "test", reg, 10000, 2*time.Hour)
+	lru, err := WrapWithLRUCache(mock, "test", reg, 10000, 2*time.Hour, log.NewNopLogger())
 	require.NoError(t, err)
 
 	lru.SetMultiAsync(map[string][]byte{
@@ -80,7 +81,7 @@ func TestLRUCache_Evictions(t *testing.T) {
 	const maxItems = 2
 
 	reg := prometheus.NewPedanticRegistry()
-	lru, err := WrapWithLRUCache(NewMockCache(), "test", reg, maxItems, 2*time.Hour)
+	lru, err := WrapWithLRUCache(NewMockCache(), "test", reg, maxItems, 2*time.Hour, log.NewNopLogger())
 	require.NoError(t, err)
 
 	lru.SetMultiAsync(map[string][]byte{
@@ -101,7 +102,7 @@ func TestLRUCache_SetAdd(t *testing.T) {
 
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	lru, err := WrapWithLRUCache(NewMockCache(), "test", reg, maxItems, 2*time.Hour)
+	lru, err := WrapWithLRUCache(NewMockCache(), "test", reg, maxItems, 2*time.Hour, log.NewNopLogger())
 	require.NoError(t, err)
 
 	// Trying to .Add() a key that already exists should result in an error
@@ -135,7 +136,7 @@ func TestLRUCache_GetMultiWithError(t *testing.T) {
 	mock.SetMultiAsync(map[string][]byte{"backend": []byte("backend-value")}, time.Hour)
 
 	reg := prometheus.NewPedanticRegistry()
-	lru, err := WrapWithLRUCache(mock, "test", reg, 10000, 2*time.Hour)
+	lru, err := WrapWithLRUCache(mock, "test", reg, 10000, 2*time.Hour, log.NewNopLogger())
 	require.NoError(t, err)
 
 	lru.SetMultiAsync(map[string][]byte{
@@ -155,7 +156,7 @@ func TestLRUCache_GetMultiWithError_PropagatesError(t *testing.T) {
 	backend := NewErroringMockCache(backendErr)
 
 	reg := prometheus.NewPedanticRegistry()
-	lru, err := WrapWithLRUCache(backend, "test", reg, 10000, 2*time.Hour)
+	lru, err := WrapWithLRUCache(backend, "test", reg, 10000, 2*time.Hour, log.NewNopLogger())
 	require.NoError(t, err)
 
 	// Key not in LRU, so it will fetch from backend which returns an error

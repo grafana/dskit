@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 var _ Cache = (*Versioned)(nil)
@@ -13,13 +16,15 @@ var _ Cache = (*Versioned)(nil)
 // This allows cache keys to be changed in a newer version of the code (after a bugfix or a cached data format change).
 type Versioned struct {
 	cache         Cache
+	logger        log.Logger
 	versionPrefix string
 }
 
 // NewVersioned creates a new Versioned cache.
-func NewVersioned(c Cache, version uint) *Versioned {
+func NewVersioned(c Cache, version uint, logger log.Logger) *Versioned {
 	return &Versioned{
 		cache:         c,
+		logger:        logger,
 		versionPrefix: fmt.Sprintf("%d@", version),
 	}
 }
@@ -45,7 +50,10 @@ func (c *Versioned) Add(ctx context.Context, key string, value []byte, ttl time.
 }
 
 func (c *Versioned) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
-	result, _ := c.GetMultiWithError(ctx, keys, opts...)
+	result, err := c.GetMultiWithError(ctx, keys, opts...)
+	if err != nil {
+		level.Warn(c.logger).Log("msg", "failed to get items from cache", "err", err)
+	}
 	return result
 }
 

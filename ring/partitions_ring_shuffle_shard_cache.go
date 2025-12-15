@@ -3,14 +3,12 @@ package ring
 import (
 	"fmt"
 	"math"
-	"sync"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 type partitionRingShuffleShardCache struct {
-	mtx                  sync.RWMutex
 	cacheWithoutLookback *lru.Cache[subringCacheKey, *PartitionRing]
 	cacheWithLookback    *lru.Cache[subringCacheKey, cachedSubringWithLookback[*PartitionRing]]
 }
@@ -35,16 +33,10 @@ func (r *partitionRingShuffleShardCache) setSubring(identifier string, size int,
 		return
 	}
 
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-
 	r.cacheWithoutLookback.Add(subringCacheKey{identifier: identifier, shardSize: size}, subring)
 }
 
 func (r *partitionRingShuffleShardCache) getSubring(identifier string, size int) *PartitionRing {
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
-
 	cached, ok := r.cacheWithoutLookback.Get(subringCacheKey{identifier: identifier, shardSize: size})
 	if !ok {
 		return nil
@@ -71,9 +63,6 @@ func (r *partitionRingShuffleShardCache) setSubringWithLookback(identifier strin
 		}
 	}
 
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-
 	// Only update cache if subring's lookback window starts later than the previously cached subring for this identifier,
 	// if there is one. This prevents cache thrashing due to different calls competing if their lookback windows start
 	// before and after the time a partition state has changed.
@@ -89,9 +78,6 @@ func (r *partitionRingShuffleShardCache) setSubringWithLookback(identifier strin
 }
 
 func (r *partitionRingShuffleShardCache) getSubringWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) *PartitionRing {
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
-
 	cached, ok := r.cacheWithLookback.Get(subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod})
 	if !ok {
 		return nil

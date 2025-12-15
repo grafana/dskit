@@ -43,8 +43,35 @@ type PartitionRing struct {
 	activePartitionsCount int
 }
 
-func NewPartitionRing(desc PartitionRingDesc, shuffleShardCacheSize ...int) (*PartitionRing, error) {
-	shuffleShardCache, err := newPartitionRingShuffleShardCache(128) // Make this configurable
+// PartitionRingOptions holds optional configuration parameters for creating a PartitionRing.
+type PartitionRingOptions struct {
+	// ShuffleShardCacheSize is the size of the cache used for shuffle sharding.
+	// If not specified (or negative), defaults to DefaultShuffleShardCacheSize.
+	ShuffleShardCacheSize int
+}
+
+const DefaultShuffleShardCacheSize = 128
+
+// DefaultPartitionRingOptions returns the default options for creating a PartitionRing.
+func DefaultPartitionRingOptions() PartitionRingOptions {
+	return PartitionRingOptions{
+		ShuffleShardCacheSize: DefaultShuffleShardCacheSize,
+	}
+}
+
+// NewPartitionRing creates a new PartitionRing with default options.
+func NewPartitionRing(desc PartitionRingDesc) (*PartitionRing, error) {
+	return NewPartitionRingWithOptions(desc, DefaultPartitionRingOptions())
+}
+
+// NewPartitionRingWithOptions creates a new PartitionRing with custom options.
+func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptions) (*PartitionRing, error) {
+	cacheSize := opts.ShuffleShardCacheSize
+	if cacheSize <= 0 {
+		cacheSize = DefaultShuffleShardCacheSize
+	}
+
+	shuffleShardCache, err := newPartitionRingShuffleShardCache(cacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
 	}

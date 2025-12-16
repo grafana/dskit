@@ -36,8 +36,10 @@ type PartitionRingWatcherDelegate interface {
 }
 
 func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, reg prometheus.Registerer) *PartitionRingWatcher {
-	// Create an empty partition ring. This should never fail since we're using an empty descriptor.
-	emptyRing, _ := NewPartitionRing(*NewPartitionRingDesc())
+	emptyRing, err := NewPartitionRing(*NewPartitionRingDesc())
+	if err != nil {
+		panic(err) // This should never executes since we're using an empty descriptor.
+	}
 	r := &PartitionRingWatcher{
 		key:    key,
 		kv:     kv,

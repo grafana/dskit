@@ -205,7 +205,9 @@ func BenchmarkPartitionInstanceRing_GetReplicationSetsForOperation(b *testing.B)
 		}
 	}
 
-	partRing, _ := NewPartitionRing(*partitionsRing)
+	partRing, err := NewPartitionRing(*partitionsRing)
+	require.NoError(b, err)
+
 	r := NewPartitionInstanceRing(newStaticPartitionRingReader(partRing), instancesRing, time.Hour)
 
 	b.ResetTimer()
@@ -238,7 +240,9 @@ func TestPartitionInstanceRing_ShuffleShard(t *testing.T) {
 		"instance-3": {Id: "instance-3", State: ACTIVE, Timestamp: time.Now().Unix()},
 	}}
 
-	partRing, _ := NewPartitionRing(*partitionsRing)
+	partRing, err := NewPartitionRing(*partitionsRing)
+	require.NoError(t, err)
+
 	r := NewPartitionInstanceRing(newStaticPartitionRingReader(partRing), &Ring{ringDesc: instancesRing}, 0)
 
 	t.Run("ShuffleShard()", func(t *testing.T) {

@@ -37,7 +37,7 @@ type PartitionRing struct {
 	ownersByPartition map[int32][]string
 
 	// shuffleShardCache is used to cache subrings generated with shuffle sharding.
-	shuffleShardCache *partitionRingShuffleShardCache
+	shuffleShardCache partitionRingShuffleShardCache
 
 	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
 	activePartitionsCount int
@@ -46,16 +46,15 @@ type PartitionRing struct {
 // PartitionRingOptions holds optional configuration parameters for creating a PartitionRing.
 type PartitionRingOptions struct {
 	// ShuffleShardCacheSize is the size of the cache used for shuffle sharding.
-	// If not specified (or negative), defaults to DefaultShuffleShardCacheSize.
+	// If zero or negative, an unbounded map-based cache is used.
+	// If positive, an LRU cache with the specified size is used.
 	ShuffleShardCacheSize int
 }
-
-const DefaultShuffleShardCacheSize = 128
 
 // DefaultPartitionRingOptions returns the default options for creating a PartitionRing.
 func DefaultPartitionRingOptions() PartitionRingOptions {
 	return PartitionRingOptions{
-		ShuffleShardCacheSize: DefaultShuffleShardCacheSize,
+		ShuffleShardCacheSize: 0,
 	}
 }
 
@@ -66,15 +65,17 @@ func NewPartitionRing(desc PartitionRingDesc) (*PartitionRing, error) {
 
 // NewPartitionRingWithOptions creates a new PartitionRing with custom options.
 func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptions) (*PartitionRing, error) {
-	cacheSize := opts.ShuffleShardCacheSize
-	if cacheSize <= 0 {
-		cacheSize = DefaultShuffleShardCacheSize
+	var shuffleShardCache partitionRingShuffleShardCache
+	if opts.ShuffleShardCacheSize > 0 {
+		cache, err := newPartitionRingShuffleShardLRUCache(opts.ShuffleShardCacheSize)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
+		}
+		shuffleShardCache = cache
+	} else {
+		shuffleShardCache = newPartitionRingShuffleShardMapCache()
 	}
 
-	shuffleShardCache, err := newPartitionRingShuffleShardCache(cacheSize)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
-	}
 	return &PartitionRing{
 		desc:                  desc,
 		ringTokens:            desc.tokens(),

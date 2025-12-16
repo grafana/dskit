@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -190,8 +191,12 @@ func TestMemcachedClient_GetMultiWithError(t *testing.T) {
 	})
 
 	t.Run("returns partial results with error", func(t *testing.T) {
-		// First set up some data, then configure error
-		backend := newMockMemcachedClientBackend()
+		backendErr := fmt.Errorf("connection failed")
+		backend := &selectiveErrorMockMemcachedClientBackend{
+			mockMemcachedClientBackend: newMockMemcachedClientBackend(),
+			failOnCalls:                map[int]error{2: backendErr}, // Fail on 2nd batch
+		}
+
 		client, err := newMemcachedClient(
 			log.NewNopLogger(),
 			backend,
@@ -201,22 +206,28 @@ func TestMemcachedClient_GetMultiWithError(t *testing.T) {
 				},
 			},
 			MemcachedClientConfig{
-				Addresses:           []string{"localhost"},
-				MaxAsyncConcurrency: 1,
-				MaxAsyncBufferSize:  10,
+				Addresses:            []string{"localhost"},
+				MaxAsyncConcurrency:  1,
+				MaxAsyncBufferSize:   10,
+				MaxGetMultiBatchSize: 1, // Force each key into its own batch
 			},
 			prometheus.NewPedanticRegistry(),
 			"test",
 		)
 		require.NoError(t, err)
 
-		client.SetAsync("foo", []byte("bar"), 10*time.Second)
-		require.NoError(t, client.wait())
+		// Set up 3 keys
+		backend.values["foo"] = &memcache.Item{Key: "foo", Value: []byte("bar")}
+		backend.values["baz"] = &memcache.Item{Key: "baz", Value: []byte("qux")}
+		backend.values["abc"] = &memcache.Item{Key: "abc", Value: []byte("def")}
 
 		ctx := context.Background()
-		res, err := client.GetMultiWithError(ctx, []string{"foo"})
-		require.NoError(t, err)
-		require.Equal(t, map[string][]byte{"foo": []byte("bar")}, res)
+		res, err := client.GetMultiWithError(ctx, []string{"foo", "baz", "abc"})
+
+		// Should have error from the failed batch
+		require.ErrorIs(t, err, backendErr)
+		// Should have partial results from successful batches (2 out of 3)
+		require.Len(t, res, 2)
 	})
 }
 
@@ -545,6 +556,26 @@ type erroringMockMemcachedClientBackend struct {
 func (m *erroringMockMemcachedClientBackend) GetMulti(ctx context.Context, keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error) {
 	result, _ := m.mockMemcachedClientBackend.GetMulti(ctx, keys, opts...)
 	return result, m.err
+}
+
+// selectiveErrorMockMemcachedClientBackend fails GetMulti on specific call numbers.
+type selectiveErrorMockMemcachedClientBackend struct {
+	*mockMemcachedClientBackend
+	failOnCalls map[int]error // map of call number -> error to return
+	callCount   int
+	mu          sync.Mutex
+}
+
+func (m *selectiveErrorMockMemcachedClientBackend) GetMulti(ctx context.Context, keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error) {
+	m.mu.Lock()
+	m.callCount++
+	currentCall := m.callCount
+	m.mu.Unlock()
+
+	if err, shouldFail := m.failOnCalls[currentCall]; shouldFail {
+		return nil, err
+	}
+	return m.mockMemcachedClientBackend.GetMulti(ctx, keys, opts...)
 }
 
 type mockServer struct {

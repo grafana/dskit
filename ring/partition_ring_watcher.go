@@ -76,28 +76,33 @@ func (w *PartitionRingWatcher) starting(ctx context.Context) error {
 		value = NewPartitionRingDesc()
 	}
 
-	w.updatePartitionRing(value.(*PartitionRingDesc))
+	if err := w.updatePartitionRing(value.(*PartitionRingDesc)); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (w *PartitionRingWatcher) loop(ctx context.Context) error {
+	var watchErr error
 	w.kv.WatchKey(ctx, w.key, func(value interface{}) bool {
 		if value == nil {
 			level.Info(w.logger).Log("msg", "partition ring doesn't exist in KV store yet")
 			return true
 		}
 
-		w.updatePartitionRing(value.(*PartitionRingDesc))
+		if err := w.updatePartitionRing(value.(*PartitionRingDesc)); err != nil {
+			watchErr = err
+			return false
+		}
 		return true
 	})
-	return nil
+	return watchErr
 }
 
-func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
+func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) error {
 	newRing, err := NewPartitionRing(*desc)
 	if err != nil {
-		level.Error(w.logger).Log("msg", "failed to create partition ring from descriptor", "err", err)
-		return
+		return errors.Wrap(err, "failed to create partition ring from descriptor")
 	}
 	w.ringMx.Lock()
 	oldRing := w.ring
@@ -126,6 +131,7 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 			}
 		}
 	}
+	return nil
 }
 
 // PartitionRing returns the most updated snapshot of the PartitionRing. The returned instance

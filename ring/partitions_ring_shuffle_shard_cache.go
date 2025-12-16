@@ -21,7 +21,10 @@ type partitionRingShuffleShardCacheStorage interface {
 }
 
 // partitionRingShuffleShardCache delegates storage operations to a cache storage implementation.
+// All cache operations are protected by a mutex to ensure thread-safety for compound operations
+// like check-then-act patterns (e.g., in setSubringWithLookback).
 type partitionRingShuffleShardCache struct {
+	mtx   sync.RWMutex
 	cache partitionRingShuffleShardCacheStorage
 }
 
@@ -49,10 +52,16 @@ func (r *partitionRingShuffleShardCache) setSubring(identifier string, size int,
 		return
 	}
 
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
 	r.cache.set(subringCacheKey{identifier: identifier, shardSize: size}, subring)
 }
 
 func (r *partitionRingShuffleShardCache) getSubring(identifier string, size int) *PartitionRing {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
 	cached, ok := r.cache.get(subringCacheKey{identifier: identifier, shardSize: size})
 	if !ok {
 		return nil
@@ -84,6 +93,9 @@ func (r *partitionRingShuffleShardCache) setSubringWithLookback(identifier strin
 	// before and after the time a partition state has changed.
 	key := subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}
 
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
 	if existingEntry, haveCached := r.cache.getWithLookback(key); !haveCached || existingEntry.validForLookbackWindowsStartingAfter < lookbackWindowStart {
 		r.cache.setWithLookback(key, cachedSubringWithLookback[*PartitionRing]{
 			subring:                               subring,
@@ -94,6 +106,9 @@ func (r *partitionRingShuffleShardCache) setSubringWithLookback(identifier strin
 }
 
 func (r *partitionRingShuffleShardCache) getSubringWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) *PartitionRing {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
 	cached, ok := r.cache.getWithLookback(subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod})
 	if !ok {
 		return nil
@@ -109,16 +124,23 @@ func (r *partitionRingShuffleShardCache) getSubringWithLookback(identifier strin
 }
 
 func (r *partitionRingShuffleShardCache) lenWithLookback() int {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
 	return r.cache.lenWithLookback()
 }
 
 func (r *partitionRingShuffleShardCache) lenWithoutLookback() int {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
 	return r.cache.lenWithoutLookback()
 }
 
 // partitionRingMapCache is a map-based implementation of partitionRingShuffleShardCacheStorage.
+// Note: This implementation does not have its own mutex because thread-safety is guaranteed
+// by the mutex in partitionRingShuffleShardCache.
 type partitionRingMapCache struct {
-	mtx                  sync.RWMutex
 	cacheWithoutLookback map[subringCacheKey]*PartitionRing
 	cacheWithLookback    map[subringCacheKey]cachedSubringWithLookback[*PartitionRing]
 }
@@ -133,44 +155,28 @@ func newPartitionRingMapCache() *partitionRingMapCache {
 }
 
 func (s *partitionRingMapCache) get(key subringCacheKey) (*PartitionRing, bool) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-
 	cached, ok := s.cacheWithoutLookback[key]
 	return cached, ok
 }
 
 func (s *partitionRingMapCache) set(key subringCacheKey, value *PartitionRing) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
 	s.cacheWithoutLookback[key] = value
 }
 
 func (s *partitionRingMapCache) getWithLookback(key subringCacheKey) (cachedSubringWithLookback[*PartitionRing], bool) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-
 	cached, ok := s.cacheWithLookback[key]
 	return cached, ok
 }
 
 func (s *partitionRingMapCache) setWithLookback(key subringCacheKey, value cachedSubringWithLookback[*PartitionRing]) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
 	s.cacheWithLookback[key] = value
 }
 
 func (s *partitionRingMapCache) lenWithLookback() int {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
 	return len(s.cacheWithLookback)
 }
 
 func (s *partitionRingMapCache) lenWithoutLookback() int {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
 	return len(s.cacheWithoutLookback)
 }
 

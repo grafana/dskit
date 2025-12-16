@@ -37,7 +37,7 @@ type PartitionRing struct {
 	ownersByPartition map[int32][]string
 
 	// shuffleShardCache is used to cache subrings generated with shuffle sharding.
-	shuffleShardCache partitionRingShuffleShardCache
+	shuffleShardCache *partitionRingShuffleShardCache
 
 	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
 	activePartitionsCount int
@@ -65,15 +65,9 @@ func NewPartitionRing(desc PartitionRingDesc) (*PartitionRing, error) {
 
 // NewPartitionRingWithOptions creates a new PartitionRing with custom options.
 func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptions) (*PartitionRing, error) {
-	var shuffleShardCache partitionRingShuffleShardCache
-	if opts.ShuffleShardCacheSize > 0 {
-		cache, err := newPartitionRingShuffleShardLRUCache(opts.ShuffleShardCacheSize)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
-		}
-		shuffleShardCache = cache
-	} else {
-		shuffleShardCache = newPartitionRingShuffleShardMapCache()
+	shuffleShardCache, err := newPartitionRingShuffleShardCache(opts.ShuffleShardCacheSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
 	}
 
 	return &PartitionRing{

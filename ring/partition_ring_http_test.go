@@ -22,42 +22,43 @@ import (
 )
 
 func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
-	handler := NewPartitionRingPageHandler(
-		newStaticPartitionRingReader(
-			NewPartitionRing(PartitionRingDesc{
-				Partitions: map[int32]PartitionDesc{
-					1: {
-						State:          PartitionActive,
-						StateTimestamp: time.Now().Unix(),
-						Tokens:         []uint32{1000000, 3000000, 6000000},
-					},
-					2: {
-						State:          PartitionInactive,
-						StateTimestamp: time.Now().Unix(),
-						Tokens:         []uint32{2000000, 4000000, 5000000, 7000000},
-					},
-				},
-				Owners: map[string]OwnerDesc{
-					"ingester-zone-a-0": {
-						OwnedPartition: 1,
-					},
-					"ingester-zone-a-1": {
-						OwnedPartition: 2,
-					},
-					"ingester-zone-b-0": {
-						OwnedPartition: 1,
-					},
-					"ingester-zone-b-1": {
-						OwnedPartition: 2,
-					},
+	partRing, err := NewPartitionRing(PartitionRingDesc{
+		Partitions: map[int32]PartitionDesc{
+			1: {
+				State:          PartitionActive,
+				StateTimestamp: time.Now().Unix(),
+				Tokens:         []uint32{1000000, 3000000, 6000000},
+			},
+			2: {
+				State:          PartitionInactive,
+				StateTimestamp: time.Now().Unix(),
+				Tokens:         []uint32{2000000, 4000000, 5000000, 7000000},
+			},
+		},
+		Owners: map[string]OwnerDesc{
+			"ingester-zone-a-0": {
+				OwnedPartition: 1,
+			},
+			"ingester-zone-a-1": {
+				OwnedPartition: 2,
+			},
+			"ingester-zone-b-0": {
+				OwnedPartition: 1,
+			},
+			"ingester-zone-b-1": {
+				OwnedPartition: 2,
+			},
 
-					// Simulate a corrupted partition, with a dangling owner but no partition.
-					"ingester-zone-b-2": {
-						OwnedPartition: 3,
-					},
-				},
-			}),
-		),
+			// Simulate a corrupted partition, with a dangling owner but no partition.
+			"ingester-zone-b-2": {
+				OwnedPartition: 3,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	handler := NewPartitionRingPageHandler(
+		newStaticPartitionRingReader(partRing),
 		nil,
 	)
 

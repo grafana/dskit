@@ -78,10 +78,7 @@ func (w *PartitionRingWatcher) starting(ctx context.Context) error {
 		value = NewPartitionRingDesc()
 	}
 
-	if err := w.updatePartitionRing(value.(*PartitionRingDesc)); err != nil {
-		return err
-	}
-	return nil
+	return w.updatePartitionRing(value.(*PartitionRingDesc))
 }
 
 func (w *PartitionRingWatcher) loop(ctx context.Context) error {

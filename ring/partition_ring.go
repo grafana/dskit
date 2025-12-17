@@ -281,12 +281,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 		}
 	}
 
-	ring, err := NewPartitionRing(r.desc.WithPartitions(result))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create partition ring: %w", err)
-	}
-
-	return ring, nil
+	return NewPartitionRing(r.desc.WithPartitions(result))
 }
 
 // PartitionsCount returns the number of partitions in the ring.

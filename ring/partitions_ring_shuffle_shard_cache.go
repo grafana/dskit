@@ -159,16 +159,16 @@ func newMapCacheStorage[V any]() *mapCacheStorage[V] {
 	}
 }
 
-func (s *mapCacheStorage[V]) get(key subringCacheKey) (V, bool) {
+func (s *mapCacheStorage[V]) get(key subringCacheKey) (V, bool) { //nolint:unused
 	cached, ok := s.cache[key]
 	return cached, ok
 }
 
-func (s *mapCacheStorage[V]) set(key subringCacheKey, value V) {
+func (s *mapCacheStorage[V]) set(key subringCacheKey, value V) { //nolint:unused
 	s.cache[key] = value
 }
 
-func (s *mapCacheStorage[V]) len() int {
+func (s *mapCacheStorage[V]) len() int { //nolint:unused
 	return len(s.cache)
 }
 
@@ -187,14 +187,14 @@ func newLRUCacheStorage[V any](size int) (*lruCacheStorage[V], error) {
 	return &lruCacheStorage[V]{cache: cache}, nil
 }
 
-func (s *lruCacheStorage[V]) get(key subringCacheKey) (V, bool) {
+func (s *lruCacheStorage[V]) get(key subringCacheKey) (V, bool) { //nolint:unused
 	return s.cache.Get(key)
 }
 
-func (s *lruCacheStorage[V]) set(key subringCacheKey, value V) {
+func (s *lruCacheStorage[V]) set(key subringCacheKey, value V) { //nolint:unused
 	s.cache.Add(key, value)
 }
 
-func (s *lruCacheStorage[V]) len() int {
+func (s *lruCacheStorage[V]) len() int { //nolint:unused
 	return s.cache.Len()
 }

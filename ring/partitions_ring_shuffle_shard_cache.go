@@ -9,41 +9,48 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
-// partitionRingShuffleShardCacheStorage is the interface for the underlying storage mechanism.
+// shuffleShardCacheStorage is a generic interface for cache storage.
 // This abstracts the difference between map-based and LRU-based storage.
-type partitionRingShuffleShardCacheStorage interface {
-	get(key subringCacheKey) (*PartitionRing, bool)
-	set(key subringCacheKey, value *PartitionRing)
-	getWithLookback(key subringCacheKey) (cachedSubringWithLookback[*PartitionRing], bool)
-	setWithLookback(key subringCacheKey, value cachedSubringWithLookback[*PartitionRing])
-	lenWithLookback() int
-	lenWithoutLookback() int
+type shuffleShardCacheStorage[V any] interface {
+	get(key subringCacheKey) (V, bool)
+	set(key subringCacheKey, value V)
+	len() int
 }
 
-// partitionRingShuffleShardCache delegates storage operations to a cache storage implementation.
+// partitionRingShuffleShardCache delegates storage operations to two generic cache storage implementations.
 // All cache operations are protected by a mutex to ensure thread-safety for compound operations
 // like check-then-act patterns (e.g., in setSubringWithLookback).
 type partitionRingShuffleShardCache struct {
-	mtx   sync.RWMutex
-	cache partitionRingShuffleShardCacheStorage
+	mtx                  sync.RWMutex
+	cacheWithoutLookback shuffleShardCacheStorage[*PartitionRing]
+	cacheWithLookback    shuffleShardCacheStorage[cachedSubringWithLookback[*PartitionRing]]
 }
 
 // newPartitionRingShuffleShardCache creates a new partition ring shuffle shard cache.
 // If size <= 0 an unbounded map-based cache is used.
 // If size > 0, an LRU cache with the specified size is used.
 func newPartitionRingShuffleShardCache(size int) (*partitionRingShuffleShardCache, error) {
-	var cache partitionRingShuffleShardCacheStorage
+	var cacheWithoutLookback shuffleShardCacheStorage[*PartitionRing]
+	var cacheWithLookback shuffleShardCacheStorage[cachedSubringWithLookback[*PartitionRing]]
+
 	if size > 0 {
-		lruCache, err := newPartitionRingLRUStorage(size)
+		var err error
+		cacheWithoutLookback, err = newLRUCacheStorage[*PartitionRing](size)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create without lookback cache: %w", err)
 		}
-		cache = lruCache
+		cacheWithLookback, err = newLRUCacheStorage[cachedSubringWithLookback[*PartitionRing]](size)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create with lookback cache: %w", err)
+		}
 	} else {
-		cache = newPartitionRingMapCache()
+		cacheWithoutLookback = newMapCacheStorage[*PartitionRing]()
+		cacheWithLookback = newMapCacheStorage[cachedSubringWithLookback[*PartitionRing]]()
 	}
+
 	return &partitionRingShuffleShardCache{
-		cache: cache,
+		cacheWithoutLookback: cacheWithoutLookback,
+		cacheWithLookback:    cacheWithLookback,
 	}, nil
 }
 
@@ -55,14 +62,14 @@ func (r *partitionRingShuffleShardCache) setSubring(identifier string, size int,
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
-	r.cache.set(subringCacheKey{identifier: identifier, shardSize: size}, subring)
+	r.cacheWithoutLookback.set(subringCacheKey{identifier: identifier, shardSize: size}, subring)
 }
 
 func (r *partitionRingShuffleShardCache) getSubring(identifier string, size int) *PartitionRing {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
-	cached, ok := r.cache.get(subringCacheKey{identifier: identifier, shardSize: size})
+	cached, ok := r.cacheWithoutLookback.get(subringCacheKey{identifier: identifier, shardSize: size})
 	if !ok {
 		return nil
 	}
@@ -96,8 +103,8 @@ func (r *partitionRingShuffleShardCache) setSubringWithLookback(identifier strin
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
-	if existingEntry, haveCached := r.cache.getWithLookback(key); !haveCached || existingEntry.validForLookbackWindowsStartingAfter < lookbackWindowStart {
-		r.cache.setWithLookback(key, cachedSubringWithLookback[*PartitionRing]{
+	if existingEntry, haveCached := r.cacheWithLookback.get(key); !haveCached || existingEntry.validForLookbackWindowsStartingAfter < lookbackWindowStart {
+		r.cacheWithLookback.set(key, cachedSubringWithLookback[*PartitionRing]{
 			subring:                               subring,
 			validForLookbackWindowsStartingAfter:  lookbackWindowStart,
 			validForLookbackWindowsStartingBefore: validForLookbackWindowsStartingBefore,
@@ -109,7 +116,7 @@ func (r *partitionRingShuffleShardCache) getSubringWithLookback(identifier strin
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
-	cached, ok := r.cache.getWithLookback(subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod})
+	cached, ok := r.cacheWithLookback.get(subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod})
 	if !ok {
 		return nil
 	}
@@ -127,102 +134,67 @@ func (r *partitionRingShuffleShardCache) lenWithLookback() int {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
-	return r.cache.lenWithLookback()
+	return r.cacheWithLookback.len()
 }
 
 func (r *partitionRingShuffleShardCache) lenWithoutLookback() int {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
-	return r.cache.lenWithoutLookback()
+	return r.cacheWithoutLookback.len()
 }
 
-// partitionRingMapCache is a map-based implementation of partitionRingShuffleShardCacheStorage.
+// mapCacheStorage is a generic map-based implementation of shuffleShardCacheStorage.
 // Note: This implementation does not have its own mutex because thread-safety is guaranteed
 // by the mutex in partitionRingShuffleShardCache.
-type partitionRingMapCache struct {
-	cacheWithoutLookback map[subringCacheKey]*PartitionRing
-	cacheWithLookback    map[subringCacheKey]cachedSubringWithLookback[*PartitionRing]
+type mapCacheStorage[V any] struct {
+	cache map[subringCacheKey]V
 }
 
-var _ partitionRingShuffleShardCacheStorage = (*partitionRingMapCache)(nil)
+var _ shuffleShardCacheStorage[*PartitionRing] = (*mapCacheStorage[*PartitionRing])(nil)
 
-func newPartitionRingMapCache() *partitionRingMapCache {
-	return &partitionRingMapCache{
-		cacheWithoutLookback: map[subringCacheKey]*PartitionRing{},
-		cacheWithLookback:    map[subringCacheKey]cachedSubringWithLookback[*PartitionRing]{},
+func newMapCacheStorage[V any]() *mapCacheStorage[V] {
+	return &mapCacheStorage[V]{
+		cache: make(map[subringCacheKey]V),
 	}
 }
 
-func (s *partitionRingMapCache) get(key subringCacheKey) (*PartitionRing, bool) {
-	cached, ok := s.cacheWithoutLookback[key]
+func (s *mapCacheStorage[V]) get(key subringCacheKey) (V, bool) {
+	cached, ok := s.cache[key]
 	return cached, ok
 }
 
-func (s *partitionRingMapCache) set(key subringCacheKey, value *PartitionRing) {
-	s.cacheWithoutLookback[key] = value
+func (s *mapCacheStorage[V]) set(key subringCacheKey, value V) {
+	s.cache[key] = value
 }
 
-func (s *partitionRingMapCache) getWithLookback(key subringCacheKey) (cachedSubringWithLookback[*PartitionRing], bool) {
-	cached, ok := s.cacheWithLookback[key]
-	return cached, ok
+func (s *mapCacheStorage[V]) len() int {
+	return len(s.cache)
 }
 
-func (s *partitionRingMapCache) setWithLookback(key subringCacheKey, value cachedSubringWithLookback[*PartitionRing]) {
-	s.cacheWithLookback[key] = value
+// lruCacheStorage is a generic LRU-based implementation of shuffleShardCacheStorage.
+type lruCacheStorage[V any] struct {
+	cache *lru.Cache[subringCacheKey, V]
 }
 
-func (s *partitionRingMapCache) lenWithLookback() int {
-	return len(s.cacheWithLookback)
-}
+var _ shuffleShardCacheStorage[*PartitionRing] = (*lruCacheStorage[*PartitionRing])(nil)
 
-func (s *partitionRingMapCache) lenWithoutLookback() int {
-	return len(s.cacheWithoutLookback)
-}
-
-// partitionRingLRUStorage is an LRU-based implementation of partitionRingShuffleShardCacheStorage.
-type partitionRingLRUStorage struct {
-	cacheWithoutLookback *lru.Cache[subringCacheKey, *PartitionRing]
-	cacheWithLookback    *lru.Cache[subringCacheKey, cachedSubringWithLookback[*PartitionRing]]
-}
-
-var _ partitionRingShuffleShardCacheStorage = (*partitionRingLRUStorage)(nil)
-
-func newPartitionRingLRUStorage(size int) (*partitionRingLRUStorage, error) {
-	cacheWithoutLookback, err := lru.New[subringCacheKey, *PartitionRing](size)
+func newLRUCacheStorage[V any](size int) (*lruCacheStorage[V], error) {
+	cache, err := lru.New[subringCacheKey, V](size)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create without lookback cache: %w", err)
+		return nil, err
 	}
-	cacheWithLookback, err := lru.New[subringCacheKey, cachedSubringWithLookback[*PartitionRing]](size)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create with lookback cache: %w", err)
-	}
-	return &partitionRingLRUStorage{
-		cacheWithoutLookback: cacheWithoutLookback,
-		cacheWithLookback:    cacheWithLookback,
-	}, nil
+	return &lruCacheStorage[V]{cache: cache}, nil
 }
 
-func (s *partitionRingLRUStorage) get(key subringCacheKey) (*PartitionRing, bool) {
-	return s.cacheWithoutLookback.Get(key)
+func (s *lruCacheStorage[V]) get(key subringCacheKey) (V, bool) {
+	return s.cache.Get(key)
 }
 
-func (s *partitionRingLRUStorage) set(key subringCacheKey, value *PartitionRing) {
-	s.cacheWithoutLookback.Add(key, value)
+func (s *lruCacheStorage[V]) set(key subringCacheKey, value V) {
+	s.cache.Add(key, value)
 }
 
-func (s *partitionRingLRUStorage) getWithLookback(key subringCacheKey) (cachedSubringWithLookback[*PartitionRing], bool) {
-	return s.cacheWithLookback.Get(key)
-}
-
-func (s *partitionRingLRUStorage) setWithLookback(key subringCacheKey, value cachedSubringWithLookback[*PartitionRing]) {
-	s.cacheWithLookback.Add(key, value)
-}
-
-func (s *partitionRingLRUStorage) lenWithLookback() int {
-	return s.cacheWithLookback.Len()
-}
-
-func (s *partitionRingLRUStorage) lenWithoutLookback() int {
-	return s.cacheWithoutLookback.Len()
+func (s *lruCacheStorage[V]) len() int {
+	return s.cache.Len()
 }

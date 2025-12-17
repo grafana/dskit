@@ -138,7 +138,7 @@ func TestPartitionRing_ActivePartitionForKey_NoMemoryAllocations(t *testing.T) {
 		numInactivePartitions = 10
 	)
 
-	ring := createPartitionRingWithPartitions(PartitionRingOptions{}, numActivePartitions, numInactivePartitions, 0)
+	ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numActivePartitions, numInactivePartitions, 0)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	numAllocs := testing.AllocsPerRun(10, func() {
@@ -157,7 +157,7 @@ func BenchmarkPartitionRing_ActivePartitionForKey(b *testing.B) {
 		numInactivePartitions = 10
 	)
 
-	ring := createPartitionRingWithPartitions(PartitionRingOptions{}, numActivePartitions, numInactivePartitions, 0)
+	ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numActivePartitions, numInactivePartitions, 0)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	b.ResetTimer()
@@ -174,7 +174,7 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 	t.Run("should honor the shard size", func(t *testing.T) {
 		const numActivePartitions = 5
 
-		ring := createPartitionRingWithPartitions(PartitionRingOptions{}, numActivePartitions, 0, 0)
+		ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numActivePartitions, 0, 0)
 
 		// Request a shard size up to the number of existing partitions.
 		for shardSize := 1; shardSize <= numActivePartitions; shardSize++ {
@@ -198,7 +198,7 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 			numPendingPartitions  = 5
 		)
 
-		ring := createPartitionRingWithPartitions(PartitionRingOptions{}, numActivePartitions, numInactivePartitions, numPendingPartitions)
+		ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numActivePartitions, numInactivePartitions, numPendingPartitions)
 
 		// We test negative values of shardSize as well as sizes above current number of partition count.
 		for shardSize := -5; shardSize <= ring.PartitionsCount()+5; shardSize++ {
@@ -225,7 +225,7 @@ func TestPartitionRing_ShuffleShard_Stability(t *testing.T) {
 	)
 
 	// Initialise the ring.
-	ring := createPartitionRingWithPartitions(PartitionRingOptions{}, numActivePartitions, numInactivePartitions, numPendingPartitions)
+	ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numActivePartitions, numInactivePartitions, numPendingPartitions)
 
 	for i := 1; i <= numTenants; i++ {
 		tenantID := fmt.Sprintf("%d", i)
@@ -265,7 +265,7 @@ func TestPartitionRing_ShuffleShard_Shuffling(t *testing.T) {
 	)
 
 	// Initialise the ring.
-	ring := createPartitionRingWithPartitions(PartitionRingOptions{}, numActivePartitions, 0, 0)
+	ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numActivePartitions, 0, 0)
 
 	// Compute the shard for each tenant.
 	partitionsByTenant := map[string][]int32{}
@@ -369,7 +369,7 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 			t.Parallel()
 
 			// Always include 5 inactive and pending partitions.
-			ring := createPartitionRingWithPartitions(PartitionRingOptions{}, s.numPartitions, 5, 5)
+			ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), s.numPartitions, 5, 5)
 			require.Equal(t, s.numPartitions, len(ring.ActivePartitionIDs()))
 			require.Equal(t, 5, len(ring.InactivePartitionIDs()))
 			require.Equal(t, 5, len(ring.PendingPartitionIDs()))
@@ -433,7 +433,7 @@ func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *tes
 }
 
 func TestPartitionRing_ShuffleShard_ConsistencyOnShardSizeChanged(t *testing.T) {
-	ring := createPartitionRingWithPartitions(PartitionRingOptions{}, 30, 0, 0)
+	ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 30, 0, 0)
 
 	// Get the replication set with shard size = 3.
 	firstShard, err := ring.ShuffleShard("tenant-id", 3)
@@ -670,7 +670,7 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 			t.Log("random generator seed:", seed)
 
 			// Initialise the ring.
-			ring := createPartitionRingWithPartitions(PartitionRingOptions{}, numPartitions, 0, 0)
+			ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numPartitions, 0, 0)
 
 			// The simulation starts with the minimum shard size. Random events can later increase it.
 			shardSize := 1
@@ -1200,7 +1200,7 @@ func TestActivePartitionBatchRing(t *testing.T) {
 
 func TestActivePartitionBatchRing_InstancesCount(t *testing.T) {
 	t.Run("should return the number of ACTIVE partitions", func(t *testing.T) {
-		activeRing := NewActivePartitionBatchRing(createPartitionRingWithPartitions(PartitionRingOptions{}, 10, 3, 2))
+		activeRing := NewActivePartitionBatchRing(createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 10, 3, 2))
 		assert.Equal(t, 10, activeRing.InstancesCount())
 	})
 }
@@ -1208,7 +1208,7 @@ func TestActivePartitionBatchRing_InstancesCount(t *testing.T) {
 func TestActivePartitionBatchRing_Get(t *testing.T) {
 	const numRuns = 1000
 
-	ring := createPartitionRingWithPartitions(PartitionRingOptions{}, 10, 5, 5)
+	ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 10, 5, 5)
 	activeRing := NewActivePartitionBatchRing(ring)
 	buf := [GetBufferSize]InstanceDesc{}
 
@@ -1261,13 +1261,13 @@ func BenchmarkActivePartitionBatchRing_Get(b *testing.B) {
 		ring *ActivePartitionBatchRing
 	}{
 		"ACTIVE partitions only": {
-			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(PartitionRingOptions{}, 100, 0, 0)),
+			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 100, 0, 0)),
 		},
 		"ACTIVE and INACTIVE partitions": {
-			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(PartitionRingOptions{}, 100, 10, 0)),
+			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 100, 10, 0)),
 		},
 		"ACTIVE, INACTIVE and PENDING partitions": {
-			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(PartitionRingOptions{}, 100, 10, 10)),
+			ring: NewActivePartitionBatchRing(createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 100, 10, 10)),
 		},
 	}
 

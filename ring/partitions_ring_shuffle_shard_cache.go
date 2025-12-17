@@ -130,20 +130,6 @@ func (r *partitionRingShuffleShardCache) getSubringWithLookback(identifier strin
 	return cached.subring
 }
 
-func (r *partitionRingShuffleShardCache) lenWithLookback() int {
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
-
-	return r.cacheWithLookback.len()
-}
-
-func (r *partitionRingShuffleShardCache) lenWithoutLookback() int {
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
-
-	return r.cacheWithoutLookback.len()
-}
-
 // mapCacheStorage is a generic map-based implementation of shuffleShardCacheStorage.
 // Note: This implementation does not have its own mutex because thread-safety is guaranteed
 // by the mutex in partitionRingShuffleShardCache.

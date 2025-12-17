@@ -1011,8 +1011,8 @@ func TestPartitionRing_ShuffleShardWithLookback_CachingConcurrency(t *testing.T)
 			wg.Wait()
 
 			// Ensure the cache was populated.
-			assert.Greater(t, ring.shuffleShardCache.lenWithLookback(), 0)
-			assert.Equal(t, 0, ring.shuffleShardCache.lenWithoutLookback())
+			assert.Greater(t, ring.shuffleShardCache.cacheWithLookback.len(), 0)
+			assert.Equal(t, 0, ring.shuffleShardCache.cacheWithoutLookback.len())
 		})
 	}
 }

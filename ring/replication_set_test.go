@@ -1715,7 +1715,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 						assert.ErrorIs(t, ctx.Err(), context.Canceled)
 
 						// Depending on timing we may either get the actual error or quorum not reached.
-						assert.Contains(t, []string{errMock.Error(), "context canceled: quorum cannot be reached"}, context.Cause(ctx).Error())
+						assert.Contains(t, []string{fmt.Sprintf("request canceled because quorum was not reached in another replication set due to error: %s", errMock.Error()), "context canceled: quorum cannot be reached"}, context.Cause(ctx).Error())
 						return "", ctx.Err()
 					case <-time.After(time.Second):
 						t.Error("expected the context to get canceled but it wasn't")
@@ -1728,7 +1728,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 				assert.Nil(t, results)
 
 				assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
-				assert.EqualError(t, context.Cause(workersCtx), errMock.Error())
+				assert.ErrorContains(t, context.Cause(workersCtx), errMock.Error())
 
 				// Ensure all callback functions terminated.
 				callbacksEnded.Wait()
@@ -1756,7 +1756,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 				select {
 				case <-ctx.Done():
 					assert.ErrorIs(t, ctx.Err(), context.Canceled)
-					assert.EqualError(t, context.Cause(ctx), expectedErr)
+					assert.ErrorContains(t, context.Cause(ctx), expectedErr)
 					return "", ctx.Err()
 				case <-time.After(time.Second):
 					t.Error("expected the context to get canceled but it wasn't")
@@ -1772,7 +1772,7 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		assert.Nil(t, results)
 
 		assert.ErrorIs(t, workersCtx.Err(), context.Canceled)
-		assert.EqualError(t, context.Cause(workersCtx), expectedErr)
+		assert.ErrorContains(t, context.Cause(workersCtx), expectedErr)
 	})
 
 	t.Run("should interrupt execution if caller context is canceled", func(t *testing.T) {

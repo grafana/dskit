@@ -16,7 +16,7 @@ Main benefits of this model are:
 
 As the user of the service, here is what you need to know:
 Each service starts in the New state.
-In this state, the service is not yet doing anything. It is only instantiated, and ready to be started.
+In this state, the service is only instantiated, and ready to be started.
 
 A Service is started by calling its `StartAsync` method. This will make the service transition to the `Starting` state, and eventually to the `Running` state, if starting is successful.
 Starting is done asynchronously, so that a client can do other work while the service is starting, for example starting more services.

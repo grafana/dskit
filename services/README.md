@@ -23,7 +23,7 @@ Starting is done asynchronously, so that a client can do other work while the se
 
 A service spends most of its time in the `Running` state, in which it provides it services to the clients. What exactly it does depends on the service itself. Typical examples include responding to HTTP requests, running periodic background tasks, etc.
 
-Clients can stop the service by calling `StopAsync`, which tells the service to stop. `Service` will transition to the `Stopping` state (in which it does the necessary cleanup) and eventually the `Terminated` state.
+Clients can stop the service by calling `StopAsync`, which tells the service to stop. The service transitions to the `Stopping` state (in which it does the necessary cleanup) and eventually the `Terminated` state.
 If a service fails in its `Starting`, `Running` or `Stopping` state, it will end up in the `Failed` state instead of Terminated.
 
 Once a service is in a `Terminated` or `Failed` state, it cannot be restarted, these states are terminal.

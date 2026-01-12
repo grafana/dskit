@@ -15,7 +15,7 @@ Main benefits of this model are:
 ## Service interface
 
 As the user of the service, here is what you need to know:
-Each service starts in the New state.
+Each service starts in the `New` state.
 In this state, the service is only instantiated, and ready to be started.
 
 Start a service by calling its `StartAsync` method. This makes the service transition to the `Starting` state, and eventually to the `Running` state, if starting is successful.

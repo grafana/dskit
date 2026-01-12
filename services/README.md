@@ -21,7 +21,7 @@ In this state, the service is only instantiated, and ready to be started.
 Start a service by calling its `StartAsync` method. This makes the service transition to the `Starting` state, and eventually to the `Running` state, if starting is successful.
 Starting is done asynchronously, so that a client can do other work while the service is starting, for example, starting more services.
 
-A Service spends most of its time in the `Running` state, in which it provides it services to the clients. What exactly it does depends on the service itself. Typical examples include responding to HTTP requests, running periodic background tasks, etc.
+A service spends most of its time in the `Running` state, in which it provides it services to the clients. What exactly it does depends on the service itself. Typical examples include responding to HTTP requests, running periodic background tasks, etc.
 
 Clients can stop the service by calling `StopAsync`, which tells the service to stop. `Service` will transition to the `Stopping` state (in which it does the necessary cleanup) and eventually the `Terminated` state.
 If a service fails in its `Starting`, `Running` or `Stopping` state, it will end up in the `Failed` state instead of Terminated.

@@ -64,7 +64,7 @@ As a developer who wants to implement your own service, there are several possib
 ### Using `NewService`
 
 The easiest possible way to create a service is using the `NewService` function with three functions called `StartingFn`, `RunningFn` and `StoppingFn`.
-The returned service will be in the `New` state.
+The returned service is in the `New` state.
 When it transitions to the `Starting` state (by calling `StartAsync`), `StartingFn` is called.
 When `StartingFn` finishes with no error, the service transitions to the `Running` state and `RunningFn` is called.
 When `RunningFn` finishes, services transition to the `Stopping` state, and `StoppingFn` is called.

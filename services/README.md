@@ -74,8 +74,8 @@ Any of the functions can be `nil`, in which case the service simply moves to the
 
 ### Using `NewIdleService`
 
-The Idle service is a service that needs to run custom code during `Starting` or `Stopping` states, but not in the `Running` state.
-The service will remain in the `Running` state until explicitly stopped via `StopAsync`.
+The Idle service needs to run custom code during `Starting` or `Stopping` states, but not in the `Running` state.
+The service remains in the `Running` state until explicitly stopped using `StopAsync`.
 
 Example usage is a service that registers some HTTP or gRPC handlers.
 

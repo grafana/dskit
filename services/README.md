@@ -54,8 +54,8 @@ The API, states, and semantics are implemented to correspond to the [Service cla
 Multiple services can be managed via a `Manager` (corresponds to the [ServiceManager](https://guava.dev/releases/snapshot/api/docs/com/google/common/util/concurrent/ServiceManager.html) in Guava library).
 A Manager is initialized with a list of New services.
 It can start the services, and wait until all services are running (= "Healthy" state).
-A Manager can also be stopped – which triggers the stopping of all its services.
-When all services are in their terminal states (Terminated or Final), the manager is said to be Stopped.
+A Manager can also be stopped, which also stops all of its services.
+When all services are in their `Terminated` or `Final` states, the manager is said to be `Stopped`.
 
 ## Implementing custom Service
 

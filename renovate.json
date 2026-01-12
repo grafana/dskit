@@ -7,6 +7,12 @@
   "baseBranchPatterns": ["main"],
   "packageRules": [
     {
+      "description": "Group Go module updates across all go.mod files",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["go.mod", "ring/example/local/go.mod"],
+      "groupName": "go-dependencies"
+    },
+    {
       "description": "Don't update replace directives",
       "matchPackageNames": [
         "github.com/hashicorp/memberlist"

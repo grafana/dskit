@@ -81,8 +81,8 @@ Example usage is a service that registers some HTTP or gRPC handlers.
 
 ### Using `NewTimerService`
 
-The Timer service runs a supplied function on every tick. If this function returns an error, the service will fail.
-Otherwise the service will continue calling the supplied function until stopped via `StopAsync`.
+The Timer service runs a supplied function on every tick. If this function returns an error, the service fails.
+Otherwise, the service continues calling the supplied function until stopped using `StopAsync`.
 
 ### Using `BasicService` struct
 

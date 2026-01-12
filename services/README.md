@@ -18,8 +18,8 @@ As the user of the service, here is what you need to know:
 Each service starts in the New state.
 In this state, the service is only instantiated, and ready to be started.
 
-A Service is started by calling its `StartAsync` method. This will make the service transition to the `Starting` state, and eventually to the `Running` state, if starting is successful.
-Starting is done asynchronously, so that a client can do other work while the service is starting, for example starting more services.
+Start a service by calling its `StartAsync` method. This makes the service transition to the `Starting` state, and eventually to the `Running` state, if starting is successful.
+Starting is done asynchronously, so that a client can do other work while the service is starting, for example, starting more services.
 
 A Service spends most of its time in the `Running` state, in which it provides it services to the clients. What exactly it does depends on the service itself. Typical examples include responding to HTTP requests, running periodic background tasks, etc.
 

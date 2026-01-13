@@ -105,6 +105,10 @@ func (r *RingMock) ZonesCount() int {
 	return 0
 }
 
+func (r *RingMock) Zones() []string {
+	return nil
+}
+
 func createStartingRing() *Ring {
 	// Init the ring.
 	ringDesc := &Desc{Ingesters: map[string]InstanceDesc{

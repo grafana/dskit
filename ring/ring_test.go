@@ -4569,3 +4569,59 @@ func (e mockError) isClientError() bool {
 func (e mockError) Error() string {
 	return e.message
 }
+
+func TestRing_Zones(t *testing.T) {
+	tests := map[string]struct {
+		ringInstances map[string]InstanceDesc
+		expectedZones []string
+	}{
+		"empty ring": {
+			ringInstances: nil,
+			expectedZones: nil,
+		},
+		"single zone": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-a", State: ACTIVE},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: LEAVING},
+			},
+			expectedZones: []string{"zone-a"},
+		},
+		"multiple zones in alphabetical order": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-c", State: ACTIVE},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: ACTIVE},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-b", State: ACTIVE},
+			},
+			expectedZones: []string{"zone-a", "zone-b", "zone-c"},
+		},
+		"zones with different instance states": {
+			ringInstances: map[string]InstanceDesc{
+				"instance-1": {Addr: "127.0.0.1", Zone: "zone-b", State: ACTIVE},
+				"instance-2": {Addr: "127.0.0.2", Zone: "zone-a", State: LEAVING},
+				"instance-3": {Addr: "127.0.0.3", Zone: "zone-c", State: PENDING},
+				"instance-4": {Addr: "127.0.0.4", Zone: "zone-d", State: JOINING},
+			},
+			expectedZones: []string{"zone-a", "zone-b", "zone-c", "zone-d"},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// Init the ring.
+			ringDesc := &Desc{Ingesters: testData.ringInstances}
+			for id, instance := range ringDesc.Ingesters {
+				instance.Timestamp = time.Now().Unix()
+				ringDesc.Ingesters[id] = instance
+			}
+
+			ring := newRingForTesting(Config{
+				HeartbeatTimeout:     time.Hour,
+				ZoneAwarenessEnabled: true,
+			}, false)
+			ring.setRingStateFromDesc(ringDesc, false, false, false)
+
+			assert.Equal(t, testData.expectedZones, ring.Zones())
+			assert.Equal(t, len(testData.expectedZones), ring.ZonesCount())
+		})
+	}
+}

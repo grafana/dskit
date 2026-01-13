@@ -558,9 +558,17 @@ func (l *BasicLifecycler) changeReadOnlyState(ctx context.Context, readOnly bool
 	if err != nil {
 		from, _ := l.GetReadOnlyState()
 		level.Warn(l.logger).Log("msg", "failed to change instance read-only state in the ring", "from", from, "to", readOnly, "err", err)
+		return err
 	}
 
-	return err
+	// Update the metric to reflect the current state.
+	if readOnly {
+		l.metrics.readOnly.Set(1)
+	} else {
+		l.metrics.readOnly.Set(0)
+	}
+
+	return nil
 }
 
 // run a function within the lifecycler service goroutine.

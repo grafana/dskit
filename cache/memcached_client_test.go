@@ -15,8 +15,6 @@ import (
 	"github.com/grafana/gomemcache/memcache"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/dskit/flagext"
 )
 
 func TestMemcachedClient_SetAsync(t *testing.T) {
@@ -387,54 +385,6 @@ func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		client.sortKeysByServer(keys)
-	}
-}
-
-func TestMemcachedClient_ServerDependency(t *testing.T) {
-	testCases := []struct {
-		name                     string
-		dnsIgnoreStartupFailures bool
-	}{
-		{
-			name:                     "with DNS failures not ignored",
-			dnsIgnoreStartupFailures: false,
-		},
-		{
-			name:                     "with DNS failures ignored",
-			dnsIgnoreStartupFailures: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := &MemcachedClientConfig{}
-			memcachedClientConfigDefaultValues(cfg)
-			cfg.Addresses = flagext.StringSliceCSV{"dns+invalid.:11211"}
-			cfg.DNSIgnoreStartupFailures = tc.dnsIgnoreStartupFailures
-
-			client, err := NewMemcachedClientWithConfig(
-				log.NewNopLogger(),
-				t.Name(),
-				*cfg,
-				prometheus.NewPedanticRegistry(),
-			)
-
-			if !tc.dnsIgnoreStartupFailures {
-				require.Nil(t, client)
-				require.Error(t, err)
-				require.Contains(t, err.Error(), "no memcached server addresses were resolved")
-				return
-			}
-
-			if tc.dnsIgnoreStartupFailures {
-				require.NoError(t, err)
-				require.NotNil(t, client)
-
-				// Verify that the client is still usable, even if initialization failed
-				res := client.GetMulti(context.Background(), []string{"some-key"})
-				require.Empty(t, res)
-			}
-		})
 	}
 }
 

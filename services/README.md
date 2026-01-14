@@ -151,7 +151,7 @@ s.AwaitTerminated(context.Background())
 // Now the service is finished, and we can access s.log.
 ```
 
-After a service is stopped (in the `Terminated` or `Failed` states, although here the `RunningFn` function doesn't return an error, so only the `Terminated` state is possible), all collected messages can be read from the `log` field.
+After a service is stopped, i.e. in the `Terminated` or `Failed` state, all collected messages can be read from the `log` field. However in this case the `RunningFn` function doesn't return an error, so only the `Terminated` state is possible.
 Notice that no further synchronization is necessary in this case; when the service is stopped and a client has observed that via `AwaitTerminated`, any access to `log` is safe.
 
 (This example is adapted from the unit tests in `basic_service_test.go`)

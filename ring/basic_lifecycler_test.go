@@ -184,6 +184,7 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 			assert.False(t, lifecycler.IsRegistered())
 			assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.tokensOwned))
 			assert.Equal(t, float64(cfg.NumTokens), testutil.ToFloat64(lifecycler.metrics.tokensToOwn))
+			assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.readOnly))
 			assert.Zero(t, lifecycler.GetRegisteredAt())
 			readOnly, readOnlySince := lifecycler.GetReadOnlyState()
 			assert.False(t, readOnly)
@@ -203,6 +204,11 @@ func TestBasicLifecycler_RegisterOnStart(t *testing.T) {
 				assert.Equal(t, expectedReadOnlyUpdatedTimestamp, readOnlySince.Unix())
 			} else {
 				assert.Zero(t, readOnlySince)
+			}
+			if expectedReadOnly {
+				assert.Equal(t, float64(1), testutil.ToFloat64(lifecycler.metrics.readOnly))
+			} else {
+				assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.readOnly))
 			}
 
 			// Assert on the instance registered within the ring.
@@ -490,6 +496,7 @@ func TestBasicLifecycler_ChangeReadOnlyState(t *testing.T) {
 		readOnly, readOnlySince := lifecycler.GetReadOnlyState()
 		require.False(t, readOnly)
 		require.Zero(t, readOnlySince)
+		assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.readOnly))
 
 		// Assert on the instance read-only state read from the ring.
 		desc, ok := getInstanceFromStore(t, store, testInstanceID)
@@ -504,6 +511,7 @@ func TestBasicLifecycler_ChangeReadOnlyState(t *testing.T) {
 		readOnlyChange := time.Now()
 		err := lifecycler.ChangeReadOnlyState(context.Background(), true)
 		require.NoError(t, err)
+		assert.Equal(t, float64(1), testutil.ToFloat64(lifecycler.metrics.readOnly))
 
 		// Assert on the instance read-only state read from the ring.
 		desc, ok := getInstanceFromStore(t, store, testInstanceID)
@@ -524,6 +532,7 @@ func TestBasicLifecycler_ChangeReadOnlyState(t *testing.T) {
 
 		err := lifecycler.ChangeReadOnlyState(context.Background(), false)
 		require.NoError(t, err)
+		assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.readOnly))
 
 		// Assert on the instance read-only state read from the ring.
 		desc, ok := getInstanceFromStore(t, store, testInstanceID)
@@ -628,6 +637,13 @@ func TestBasicLifecycler_updateInstance_ShouldAddInstanceToTheRingIfDoesNotExist
 			assert.Equal(t, readOnly, readOnlyState)
 			assert.Equal(t, readOnly, !readOnlySince.IsZero())
 			assert.Equal(t, cfg.Versions, InstanceVersions(desc.Versions))
+
+			// Assert on the read-only metric.
+			if readOnly {
+				assert.Equal(t, float64(1), testutil.ToFloat64(lifecycler.metrics.readOnly))
+			} else {
+				assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.readOnly))
+			}
 		})
 	}
 }

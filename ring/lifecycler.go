@@ -541,7 +541,7 @@ func (i *Lifecycler) Zones() []string {
 func (i *Lifecycler) loop(ctx context.Context) error {
 	// First, see if we exist in the cluster, update our state to match if we do,
 	// and add ourselves (without tokens) if we don't.
-	if err := i.initRing(ctx); err != nil {
+	if err := i.initRing(context.Background()); err != nil {
 		return errors.Wrapf(err, "failed to join the ring %s", i.RingName)
 	}
 

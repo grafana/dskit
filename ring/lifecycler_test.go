@@ -1773,33 +1773,29 @@ func TestWaitBeforeJoining(t *testing.T) {
 			l, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			l.canJoinTimeout = canJoinTimeout
-			require.NoError(t, services.StartAndAwaitRunning(ctx, l))
+
+			// Emulate running loop() method control flow;
+			// there is no starting method and all stages of the service happens in running method.
+			// The different stages cannot be tested without race conditions if using StartAndAwaitRunning.
+			require.NoError(t, l.initRing(context.Background()))
+
+			start := time.Now()
 
 			if testData.errorRequired {
 				cancel()
 			}
-			start := time.Now()
 			err = l.waitBeforeJoining(ctx)
-			if testData.errorRequired {
-				require.ErrorIs(t, err, context.Canceled)
-			} else {
-				require.NoError(t, err)
 
-				if testData.timeoutRequired {
-					require.GreaterOrEqual(t, time.Since(start), canJoinTimeout)
-				} else {
-					require.Less(t, time.Since(start), canJoinTimeout)
-				}
-			}
-			err = services.StopAndAwaitTerminated(context.Background(), l)
 			if testData.errorRequired {
-				// Error from canceled running func propagates as the failure case
-				// when stopping and awaiting service state.
-				require.ErrorContains(t, err, "failed to pick tokens")
-				// Error should be wrapped in the top-level cause, which is context cancellation.
 				require.ErrorIs(t, err, context.Canceled)
 			} else {
 				require.NoError(t, err)
+			}
+
+			if testData.timeoutRequired {
+				require.GreaterOrEqual(t, time.Since(start), canJoinTimeout)
+			} else {
+				require.Less(t, time.Since(start), canJoinTimeout)
 			}
 
 			cancel()

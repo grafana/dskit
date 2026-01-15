@@ -1763,36 +1763,43 @@ func TestWaitBeforeJoining(t *testing.T) {
 		},
 	}
 
-	for _, testData := range tests {
-		ctx, cancel := context.WithCancel(context.Background())
-		targetInstanceID := testData.targetInstanceID
-		cfg := testLifecyclerConfig(ringConfig, targetInstanceID)
-		cfg.NumTokens = optimalTokensPerInstance
-		cfg.RingTokenGenerator = testData.tokenGenerator
-		l, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
-		require.NoError(t, err)
-		l.canJoinTimeout = canJoinTimeout
-		require.NoError(t, services.StartAndAwaitRunning(ctx, l))
-
-		if testData.errorRequired {
-			cancel()
-		}
-		start := time.Now()
-		err = l.waitBeforeJoining(ctx)
-		if testData.errorRequired {
-			require.Error(t, err)
-		} else {
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			targetInstanceID := testData.targetInstanceID
+			cfg := testLifecyclerConfig(ringConfig, targetInstanceID)
+			cfg.NumTokens = optimalTokensPerInstance
+			cfg.RingTokenGenerator = testData.tokenGenerator
+			l, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", ringKey, true, log.NewNopLogger(), nil)
 			require.NoError(t, err)
+			l.canJoinTimeout = canJoinTimeout
+
+			// Emulate running loop() method control flow;
+			// there is no starting method and all stages of the service happens in running method.
+			// The different stages cannot be tested without race conditions if using StartAndAwaitRunning.
+			require.NoError(t, l.initRing(context.Background()))
+
+			start := time.Now()
+
+			if testData.errorRequired {
+				cancel()
+			}
+			err = l.waitBeforeJoining(ctx)
+
+			if testData.errorRequired {
+				require.ErrorIs(t, err, context.Canceled)
+			} else {
+				require.NoError(t, err)
+			}
 
 			if testData.timeoutRequired {
 				require.GreaterOrEqual(t, time.Since(start), canJoinTimeout)
 			} else {
 				require.Less(t, time.Since(start), canJoinTimeout)
 			}
-		}
-		err = services.StopAndAwaitTerminated(context.Background(), l)
-		require.NoError(t, err)
-		cancel()
+
+			cancel()
+		})
 	}
 }
 

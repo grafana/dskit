@@ -22,6 +22,7 @@ type PartitionRingWatcher struct {
 	kv       kv.Client
 	delegate PartitionRingWatcherDelegate
 	logger   log.Logger
+	opts     PartitionRingOptions
 
 	ringMx sync.Mutex
 	ring   *PartitionRing
@@ -48,6 +49,7 @@ func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts Par
 		key:    key,
 		kv:     kv,
 		logger: logger,
+		opts:   opts,
 		ring:   emptyRing,
 		numPartitionsGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "partition_ring_partitions",
@@ -103,7 +105,7 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 }
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) error {
-	newRing, err := NewPartitionRing(*desc)
+	newRing, err := NewPartitionRingWithOptions(*desc, w.opts)
 	if err != nil {
 		return errors.Wrap(err, "failed to create partition ring from descriptor")
 	}

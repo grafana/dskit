@@ -28,6 +28,9 @@ type PartitionRingWatcher struct {
 
 	// Metrics.
 	numPartitionsGaugeVec *prometheus.GaugeVec
+
+	// opts is used to propagate the options each time the ring is updated.
+	opts PartitionRingOptions
 }
 
 type PartitionRingWatcherDelegate interface {
@@ -54,6 +57,7 @@ func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts Par
 			Help:        "Number of partitions by state in the partitions ring.",
 			ConstLabels: map[string]string{"name": name},
 		}, []string{"state"}),
+		opts: opts,
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.loop, nil).WithName("partitions-ring-watcher")
@@ -103,7 +107,7 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 }
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) error {
-	newRing, err := NewPartitionRing(*desc)
+	newRing, err := NewPartitionRingWithOptions(*desc, w.opts)
 	if err != nil {
 		return errors.Wrap(err, "failed to create partition ring from descriptor")
 	}

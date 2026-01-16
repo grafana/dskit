@@ -36,7 +36,11 @@ type PartitionRingWatcherDelegate interface {
 }
 
 func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, reg prometheus.Registerer) *PartitionRingWatcher {
-	emptyRing, err := NewPartitionRing(*NewPartitionRingDesc())
+	return NewPartitionRingWatcherWithOptions(name, key, kv, DefaultPartitionRingOptions(), logger, reg)
+}
+
+func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts PartitionRingOptions, logger log.Logger, reg prometheus.Registerer) *PartitionRingWatcher {
+	emptyRing, err := NewPartitionRingWithOptions(*NewPartitionRingDesc(), opts)
 	if err != nil {
 		panic(err) // This should never executes.
 	}

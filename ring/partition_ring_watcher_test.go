@@ -45,7 +45,10 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	delegate := &ringWatcherDelegateStub{}
-	watcher := NewPartitionRingWatcher("test", ringKey, store, logger, reg).WithDelegate(delegate)
+	opts := DefaultPartitionRingOptions()
+	// Set a size so we can assert the options are preserved on update.
+	opts.ShuffleShardCacheSize = 1
+	watcher := NewPartitionRingWatcherWithOptions("test", ringKey, store, opts, logger, reg).WithDelegate(delegate)
 
 	// PartitionRing should never return nil, even if the watcher hasn't been started yet.
 	assert.NotNil(t, watcher.PartitionRing())
@@ -76,6 +79,8 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 		return watcher.PartitionRing().PartitionsCount() == 1 &&
 			delegate.PartitionState(1) == PartitionActive // Ensure delegate is updated
 	}, time.Second, 10*time.Millisecond)
+	// Assert that the options are preserved on update.
+	require.Equal(t, opts, watcher.PartitionRing().opts)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.

@@ -174,7 +174,10 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 	t.Run("should honor the shard size", func(t *testing.T) {
 		const numActivePartitions = 5
 
-		ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numActivePartitions, 0, 0)
+		opts := DefaultPartitionRingOptions()
+		// Set a size so we can assert the options are preserved on update.
+		opts.ShuffleShardCacheSize = 1
+		ring := createPartitionRingWithPartitions(opts, numActivePartitions, 0, 0)
 
 		// Request a shard size up to the number of existing partitions.
 		for shardSize := 1; shardSize <= numActivePartitions; shardSize++ {
@@ -189,6 +192,7 @@ func TestPartitionRing_ShuffleShard(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, numActivePartitions, subring.PartitionsCount())
 		assert.Equal(t, subring.PartitionsCount(), ring.ShuffleShardSize(numActivePartitions+1))
+		assert.Equal(t, opts, subring.opts)
 	})
 
 	t.Run("should never return INACTIVE or PENDING partitions", func(t *testing.T) {

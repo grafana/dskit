@@ -3805,11 +3805,13 @@ func BenchmarkRing_Get_OneZoneLeaving(b *testing.B) {
 		b.Run(fmt.Sprintf("one zone leaving = %t", oneZoneLeaving), func(b *testing.B) {
 			ringDesc := &Desc{Ingesters: generateRingInstances(initTokenGenerator(b), instances, zones, numTokens)}
 
-			// Go through the last zone and set the instances as leaving.
-			for id, inst := range ringDesc.Ingesters {
-				if inst.Zone == "zone-2" {
-					inst.State = LEAVING
-					ringDesc.Ingesters[id] = inst
+			if oneZoneLeaving {
+				// Go through the last zone and set the instances as leaving.
+				for id, inst := range ringDesc.Ingesters {
+					if inst.Zone == "zone-2" {
+						inst.State = LEAVING
+						ringDesc.Ingesters[id] = inst
+					}
 				}
 			}
 
@@ -3828,7 +3830,7 @@ func BenchmarkRing_Get_OneZoneLeaving(b *testing.B) {
 
 			expectedInstances := zones
 			if oneZoneLeaving {
-				expectedInstances--
+				expectedInstances = zones - 1
 			}
 
 			b.ResetTimer()

@@ -623,7 +623,7 @@ func (i *Lifecycler) stopping(runningError error) error {
 	if runningError != nil {
 		// previously lifecycler just called os.Exit (from loop method)...
 		// now it stops more gracefully, but also without doing any cleanup
-		level.Error(i.logger).Log("msg", "lifecycler loop() exited with error", "err", runningError)
+		level.Error(i.logger).Log("msg", "lifecycler loop() exited with error", "ring", i.RingName, "err", runningError)
 		return runningError
 	}
 

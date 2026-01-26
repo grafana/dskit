@@ -596,7 +596,7 @@ func TestStringSet(t *testing.T) {
 
 	t.Run("zero capacity buffer switches to map immediately on first add", func(t *testing.T) {
 		t.Parallel()
-		buf := make([]string, 0, 0)
+		buf := make([]string, 0)
 		s := newStringSet(buf)
 
 		// First add should immediately switch to map

@@ -1543,7 +1543,7 @@ func (op Operation) IsInstanceInStateHealthy(s InstanceState) bool {
 // returns false for its state (e. g. [Write], which only allows ACTIVE replicas).
 //
 // This allows the ring to make sure the operation is handled by replicas in
-// a healthy state, while still possibly being handled other, secondary replicas
+// a healthy state, while still possibly being handled by other, secondary replicas
 // (e. g. [Read], which allows PENDING replicas but still requires ACTIVE or
 // LEAVING replicas to handle the operation).
 func (op Operation) ShouldExtendReplicaSetOnState(s InstanceState) bool {

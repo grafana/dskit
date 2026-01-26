@@ -499,3 +499,169 @@ func BenchmarkSearchToken(b *testing.B) {
 		})
 	}
 }
+
+func TestStringSet(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty set with buffer returns zero length and contains nothing", func(t *testing.T) {
+		t.Parallel()
+		buf := make([]string, 0, 5)
+		s := newStringSet(buf)
+
+		assert.Equal(t, 0, s.len())
+		assert.False(t, s.contains("anything"))
+	})
+
+	t.Run("empty set with nil buffer returns zero length and contains nothing", func(t *testing.T) {
+		t.Parallel()
+		s := newStringSet(nil)
+
+		assert.Equal(t, 0, s.len())
+		assert.False(t, s.contains("anything"))
+	})
+
+	t.Run("slice mode add and contains work correctly within buffer capacity", func(t *testing.T) {
+		t.Parallel()
+		s := newStringSet(make([]string, 0, 5))
+
+		// Add elements within capacity
+		elements := []string{"one", "two", "three"}
+		for _, elem := range elements {
+			assert.False(t, s.contains(elem))
+			s.add(elem)
+			assert.True(t, s.contains(elem))
+		}
+
+		assert.Equal(t, 3, s.len())
+
+		// Verify all elements are still present
+		for _, elem := range elements {
+			assert.True(t, s.contains(elem))
+		}
+
+		// Verify non-existent element
+		assert.False(t, s.contains("four"))
+
+		// Confirm still in slice mode (map should be nil)
+		assert.Nil(t, s.setMap)
+	})
+
+	t.Run("transitions from slice to map when buffer is full", func(t *testing.T) {
+		t.Parallel()
+		s := newStringSet(make([]string, 0, 3))
+
+		// Fill the slice to capacity
+		s.add("one")
+		s.add("two")
+		s.add("three")
+		assert.Nil(t, s.setMap, "should still be in slice mode")
+
+		// Adding one more should trigger transition to map
+		s.add("four")
+		assert.NotNil(t, s.setMap, "should have switched to map mode")
+
+		// Verify all elements are preserved
+		assert.Equal(t, 4, s.len())
+		assert.True(t, s.contains("one"))
+		assert.True(t, s.contains("two"))
+		assert.True(t, s.contains("three"))
+		assert.True(t, s.contains("four"))
+	})
+
+	t.Run("map mode add and contains work correctly after transition", func(t *testing.T) {
+		t.Parallel()
+		s := newStringSet(make([]string, 0, 2))
+
+		// Fill and transition to map
+		s.add("one")
+		s.add("two")
+		s.add("three") // triggers map mode
+
+		assert.NotNil(t, s.setMap)
+
+		// Add more elements in map mode
+		s.add("four")
+		s.add("five")
+
+		assert.Equal(t, 5, s.len())
+
+		// Verify all elements
+		for _, elem := range []string{"one", "two", "three", "four", "five"} {
+			assert.True(t, s.contains(elem))
+		}
+
+		// Verify non-existent element
+		assert.False(t, s.contains("six"))
+	})
+
+	t.Run("zero capacity buffer switches to map immediately on first add", func(t *testing.T) {
+		t.Parallel()
+		buf := make([]string, 0, 0)
+		s := newStringSet(buf)
+
+		// First add should immediately switch to map
+		// since len(0) < cap(0) is false
+		s.add("one")
+
+		assert.NotNil(t, s.setMap, "should switch to map immediately")
+		assert.Equal(t, 1, s.len())
+		assert.True(t, s.contains("one"))
+	})
+
+	t.Run("nil buffer switches to map immediately on first add", func(t *testing.T) {
+		t.Parallel()
+		s := newStringSet(nil)
+
+		// First add should immediately switch to map
+		s.add("one")
+
+		assert.NotNil(t, s.setMap, "should switch to map immediately")
+		assert.Equal(t, 1, s.len())
+		assert.True(t, s.contains("one"))
+	})
+
+	t.Run("single element buffer transitions to map on second add", func(t *testing.T) {
+		t.Parallel()
+		s := newStringSet(make([]string, 0, 1))
+
+		// First element stays in slice
+		s.add("one")
+		assert.Nil(t, s.setMap)
+		assert.Equal(t, 1, s.len())
+		assert.True(t, s.contains("one"))
+
+		// Second element triggers map
+		s.add("two")
+		assert.NotNil(t, s.setMap)
+		assert.Equal(t, 2, s.len())
+		assert.True(t, s.contains("one"))
+		assert.True(t, s.contains("two"))
+	})
+
+	t.Run("handles large number of elements correctly", func(t *testing.T) {
+		t.Parallel()
+		buf := make([]string, 0, 10)
+		s := newStringSet(buf)
+
+		// Add many elements
+		numElements := 1000
+		for i := 0; i < numElements; i++ {
+			elem := fmt.Sprintf("element-%d", i)
+			if !s.contains(elem) {
+				s.add(elem)
+			}
+		}
+
+		assert.Equal(t, numElements, s.len())
+		assert.NotNil(t, s.setMap, "should be in map mode for large sets")
+
+		// Verify all elements are present
+		for i := 0; i < numElements; i++ {
+			elem := fmt.Sprintf("element-%d", i)
+			assert.True(t, s.contains(elem), "should contain %s", elem)
+		}
+
+		// Verify non-existent element
+		assert.False(t, s.contains("nonexistent"))
+	})
+}

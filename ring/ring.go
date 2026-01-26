@@ -564,15 +564,23 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 
 		// These slices are indexed by the zone index, that is the index of a zone in r.ringZones.
 		// We use this technique – instead of a map – to optimize the lookup of the number of hosts by zones.
-		totalHostsPerZone    = make([]int, len(r.ringZones))
-		examinedHostsPerZone = make([]int, len(r.ringZones))
-		foundHostsPerZone    = make([]int, len(r.ringZones))
+		totalHostsPerZone    []int
+		examinedHostsPerZone []int
+		foundHostsPerZone    []int
 		targetHostsPerZone   = max(1, replicationFactor/maxZones)
 	)
 
-	// Pre-populate the total number of hosts per zone.
-	for zoneIndex, zone := range r.ringZones {
-		totalHostsPerZone[zoneIndex] = r.instancesCountPerZone[zone]
+	if r.cfg.ZoneAwarenessEnabled {
+		// Initialize the per-zone hosts counters only if zone-awareness is enabled.
+		// If zone-awareness is disabled and these slices get used by mistake, the code will intentionally panic.
+		totalHostsPerZone = make([]int, len(r.ringZones))
+		examinedHostsPerZone = make([]int, len(r.ringZones))
+		foundHostsPerZone = make([]int, len(r.ringZones))
+
+		// Pre-populate the total number of hosts per zone.
+		for zoneIndex, zone := range r.ringZones {
+			totalHostsPerZone[zoneIndex] = r.instancesCountPerZone[zone]
+		}
 	}
 
 	for i := start; distinctHosts.len() < min(maxInstances, n) && iterations < len(r.ringTokens); i++ {

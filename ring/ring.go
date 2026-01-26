@@ -548,10 +548,10 @@ func (r *Ring) getReplicationSetForKey(key uint32, op Operation, bufDescs []Inst
 // This function needs to be called with read lock on the ring.
 func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, replicationFactor int, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]InstanceDesc, error) {
 	var (
-		n          = replicationFactor
-		instances  = bufDescs[:0]
-		start      = searchToken(r.ringTokens, key)
-		iterations = 0
+		replicaSetSize = replicationFactor
+		instances      = bufDescs[:0]
+		start          = searchToken(r.ringTokens, key)
+		iterations     = 0
 		// The configured replication factor is treated as the expected number of zones
 		// when zone-awareness is enabled. Per-call replication factor may increase the
 		// number of instances selected per zone, but the number of inferred zones does
@@ -569,7 +569,7 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		targetHostsPerZone   = max(1, replicationFactor/maxZones)
 	)
 
-	for i := start; len(distinctHosts) < min(maxInstances, n) && iterations < len(r.ringTokens); i++ {
+	for i := start; len(distinctHosts) < min(maxInstances, replicaSetSize) && iterations < len(r.ringTokens); i++ {
 		// If we have the target number of instances or have looked at all instances in each zone, stop looking
 		if r.cfg.ZoneAwarenessEnabled && r.canStopLooking(foundHostsPerZone, examinedHostsPerZone, targetHostsPerZone) {
 			break
@@ -609,7 +609,7 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		// Check whether the replica set should be extended given we're including
 		// this instance.
 		if op.ShouldExtendReplicaSetOnState(instance.State) {
-			n++
+			replicaSetSize++
 		} else if r.cfg.ZoneAwarenessEnabled && info.Zone != "" {
 			// We should only increment the count for this zone if we are not going to
 			// extend, as we want to extend the instance in the same AZ.
@@ -1507,7 +1507,8 @@ func (r *Ring) readOnlyInstanceCount() int {
 // Implemented as bitmap, with upper 16-bits used for encoding extendReplicaSet, and lower 16-bits used for encoding healthy states.
 type Operation uint32
 
-// NewOp constructs new Operation with given "healthy" states for operation, and optional function to extend replica set.
+// NewOp constructs new Operation with given "healthy" states for operation, and optional function to extend replica set
+// (see [Operation.ShouldExtendReplicaSetOnState]).
 // Result of calling shouldExtendReplicaSet is cached.
 func NewOp(healthyStates []InstanceState, shouldExtendReplicaSet func(s InstanceState) bool) Operation {
 	op := Operation(0)
@@ -1532,8 +1533,19 @@ func (op Operation) IsInstanceInStateHealthy(s InstanceState) bool {
 }
 
 // ShouldExtendReplicaSetOnState returns true if given a state of instance that's going to be
-// added to the replica set, the replica set size should be extended by 1
-// more instance for the given operation.
+// added to the replica set, the instance should still tentatively added to the
+// replica set, but shouldn't count towards fulfilling the replication factor.
+//
+// The ring will then continue finding instances to handle the operation as if
+// this instance wasn't picked.
+//
+// The instance will then be removed from the set if [Operation.IsInstanceInStateHealthy]
+// returns false for its state (e. g. [Write], which only allows ACTIVE replicas).
+//
+// This allows the ring to make sure the operation is handled by replicas in
+// a healthy state, while still possibly being handled other, secondary replicas
+// (e. g. [Read], which allows PENDING replicas but still requires ACTIVE or
+// LEAVING replicas to handle the operation).
 func (op Operation) ShouldExtendReplicaSetOnState(s InstanceState) bool {
 	return op&(0x10000<<s) > 0
 }

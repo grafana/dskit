@@ -424,7 +424,6 @@ var (
 	// if merge fails because of CAS version mismatch, this error is returned. CAS operation reacts on it
 	errVersionMismatch     = errors.New("version mismatch")
 	errNoChangeDetected    = errors.New("no change detected")
-	errTooManyRetries      = errors.New("too many retries")
 	emptySnappyEncodedData = snappy.Encode(nil, []byte{})
 )
 
@@ -1302,10 +1301,9 @@ outer:
 
 		return nil
 	}
-
 	if errors.Is(lastError, errVersionMismatch) {
-		// this is more likely error than version mismatch.
-		lastError = errors.Wrap(lastError, errTooManyRetries.Error())
+		// Version mismatch err on CAS would have been retried up to the limit
+		lastError = errors.Wrap(lastError, "too many retries")
 	}
 
 	m.casFailures.Inc()

@@ -562,6 +562,13 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		// distinctHosts tracks which instances we've already examined.
 		distinctHosts = newStringSet(bufHosts)
 
+		// Fixed-size buffers for zone tracking slices. Using arrays with a fixed size allows
+		// the compiler to allocate them on the stack, avoiding heap allocations. The size of 5
+		// is chosen as a reasonable upper bound for zones (most deployments use 3).
+		totalHostsPerZoneBuf    [5]int
+		examinedHostsPerZoneBuf [5]int
+		foundHostsPerZoneBuf    [5]int
+
 		// These slices are indexed by the zone index, that is the index of a zone in r.ringZones.
 		// We use this technique – instead of a map – to optimize the lookup of the number of hosts by zones.
 		totalHostsPerZone    []int
@@ -573,9 +580,15 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 	if r.cfg.ZoneAwarenessEnabled {
 		// Initialize the per-zone hosts counters only if zone-awareness is enabled.
 		// If zone-awareness is disabled and these slices get used by mistake, the code will intentionally panic.
-		totalHostsPerZone = make([]int, len(r.ringZones))
-		examinedHostsPerZone = make([]int, len(r.ringZones))
-		foundHostsPerZone = make([]int, len(r.ringZones))
+		if numZones := len(r.ringZones); numZones <= len(totalHostsPerZoneBuf) {
+			totalHostsPerZone = totalHostsPerZoneBuf[:numZones]
+			examinedHostsPerZone = examinedHostsPerZoneBuf[:numZones]
+			foundHostsPerZone = foundHostsPerZoneBuf[:numZones]
+		} else {
+			totalHostsPerZone = make([]int, numZones)
+			examinedHostsPerZone = make([]int, numZones)
+			foundHostsPerZone = make([]int, numZones)
+		}
 
 		// Pre-populate the total number of hosts per zone.
 		for zoneIndex, zone := range r.ringZones {

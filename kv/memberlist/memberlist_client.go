@@ -5,7 +5,6 @@ import (
 	"context"
 	crypto_rand "crypto/rand"
 	"encoding/binary"
-	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -18,6 +17,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/hashicorp/memberlist"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -1305,7 +1305,7 @@ outer:
 
 	if errors.Is(lastError, errVersionMismatch) {
 		// this is more likely error than version mismatch.
-		lastError = errTooManyRetries
+		lastError = errors.Wrap(lastError, errTooManyRetries.Error())
 	}
 
 	m.casFailures.Inc()

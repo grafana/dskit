@@ -524,6 +524,8 @@ func TestStringSet(t *testing.T) {
 		t.Parallel()
 		s := newStringSet(make([]string, 0, 5))
 
+		assert.Nil(t, s.setMap, "should start in slice mode")
+
 		// Add elements within capacity
 		elements := []string{"one", "two", "three"}
 		for _, elem := range elements {
@@ -550,6 +552,8 @@ func TestStringSet(t *testing.T) {
 		t.Parallel()
 		s := newStringSet(make([]string, 0, 3))
 
+		assert.Nil(t, s.setMap, "should start in slice mode")
+
 		// Fill the slice to capacity
 		s.add("one")
 		s.add("two")
@@ -571,6 +575,8 @@ func TestStringSet(t *testing.T) {
 	t.Run("map mode add and contains work correctly after transition", func(t *testing.T) {
 		t.Parallel()
 		s := newStringSet(make([]string, 0, 2))
+
+		assert.Nil(t, s.setMap, "should start in slice mode")
 
 		// Fill and transition to map
 		s.add("one")
@@ -599,6 +605,8 @@ func TestStringSet(t *testing.T) {
 		buf := make([]string, 0)
 		s := newStringSet(buf)
 
+		assert.Nil(t, s.setMap, "should start in slice mode")
+
 		// First add should immediately switch to map
 		// since len(0) < cap(0) is false
 		s.add("one")
@@ -612,6 +620,8 @@ func TestStringSet(t *testing.T) {
 		t.Parallel()
 		s := newStringSet(nil)
 
+		assert.Nil(t, s.setMap, "should start in slice mode")
+
 		// First add should immediately switch to map
 		s.add("one")
 
@@ -623,6 +633,8 @@ func TestStringSet(t *testing.T) {
 	t.Run("single element buffer transitions to map on second add", func(t *testing.T) {
 		t.Parallel()
 		s := newStringSet(make([]string, 0, 1))
+
+		assert.Nil(t, s.setMap, "should start in slice mode")
 
 		// First element stays in slice
 		s.add("one")
@@ -642,6 +654,8 @@ func TestStringSet(t *testing.T) {
 		t.Parallel()
 		buf := make([]string, 0, 10)
 		s := newStringSet(buf)
+
+		assert.Nil(t, s.setMap, "should start in slice mode")
 
 		// Add many elements
 		numElements := 1000

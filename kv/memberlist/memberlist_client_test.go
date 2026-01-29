@@ -1462,6 +1462,10 @@ func TestRejoin(t *testing.T) {
 
 	mkv1 := NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+	t.Cleanup(func() {
+		// Ignore error since we explicitly stop this instance mid-test
+		_ = services.StopAndAwaitTerminated(context.Background(), mkv1)
+	})
 
 	mkv2 := NewKV(cfg2, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
@@ -1482,13 +1486,13 @@ func TestRejoin(t *testing.T) {
 	require.Eventually(t, expectMembers(1), 10*time.Second, 100*time.Millisecond, "expected 1 member in the cluster")
 
 	// Let's start first KV again. It is not configured to join the cluster, but KV2 is rejoining.
-	mkv1 = NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+	mkv1Restarted := NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1Restarted))
 	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1))
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1Restarted))
 	})
 
-	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 member in the cluster")
+	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 members in the cluster")
 }
 
 func TestRejoinWithDifferentSeedNodes(t *testing.T) {

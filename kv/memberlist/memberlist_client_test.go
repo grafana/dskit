@@ -1462,6 +1462,9 @@ func TestRejoin(t *testing.T) {
 
 	mkv1 := NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1))
+	})
 
 	mkv2 := NewKV(cfg2, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))

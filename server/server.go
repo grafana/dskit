@@ -606,7 +606,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		middleware.RouteInjector{
 			RouteMatcher: router,
 		},
-		middleware.NewTracer(sourceIPs, cfg.TraceRequestHeaders, strings.Split(cfg.TraceRequestExcludeHeadersList, ","), cfg.PublicEndpointFn),
+		middleware.NewTracer(sourceIPs, cfg.TraceRequestHeaders, strings.Split(cfg.TraceRequestExcludeHeadersList, ","), publicEndpointFn),
 		defaultLogMiddleware,
 		middleware.Instrument{
 			Duration:          metrics.RequestDuration,

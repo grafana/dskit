@@ -1446,10 +1446,8 @@ func TestRejoin(t *testing.T) {
 
 	var cfg1 KVConfig
 	flagext.DefaultValues(&cfg1)
-	cfg1.TCPTransport = TCPTransportConfig{
-		BindAddrs: getLocalhostAddrs(),
-		BindPort:  ports[0],
-	}
+	cfg1.TCPTransport.BindAddrs = getLocalhostAddrs()
+	cfg1.TCPTransport.BindPort = ports[0]
 
 	cfg1.RandomizeNodeName = true
 	cfg1.Codecs = []codec.Codec{dataCodec{}}
@@ -1501,10 +1499,8 @@ func TestRejoinWithDifferentSeedNodes(t *testing.T) {
 
 	var cfg1 KVConfig
 	flagext.DefaultValues(&cfg1)
-	cfg1.TCPTransport = TCPTransportConfig{
-		BindAddrs: getLocalhostAddrs(),
-		BindPort:  ports[0],
-	}
+	cfg1.TCPTransport.BindAddrs = getLocalhostAddrs()
+	cfg1.TCPTransport.BindPort = ports[0]
 
 	cfg1.RandomizeNodeName = true
 	cfg1.Codecs = []codec.Codec{dataCodec{}}

@@ -35,7 +35,7 @@ func (v *StringSliceCSVMulti) UnmarshalYAML(unmarshal func(interface{}) error) e
 		return nil
 	}
 
-	// Fall back to list format for backward compatibility
+	// Fall back to list format
 	var slice []string
 	if err := unmarshal(&slice); err != nil {
 		return err

@@ -85,3 +85,15 @@ func IsCanceled(err error) bool {
 	statusCode := ErrorToStatusCode(err)
 	return statusCode == codes.Canceled
 }
+
+// IsErrorCode returns whether err is any of the codes.
+func IsErrorCode(err error, codes ...codes.Code) bool {
+	if errStatus, ok := ErrorToStatus(err); ok {
+		for _, code := range codes {
+			if errStatus.Code() == code {
+				return true
+			}
+		}
+	}
+	return false
+}

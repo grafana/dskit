@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/timeutil"
 )
 
 const (
@@ -624,10 +625,12 @@ func (m *KV) running(ctx context.Context) error {
 
 	var tickerChan <-chan time.Time
 	if m.cfg.RejoinInterval > 0 && len(m.cfg.GetRejoinSeedNodes()) > 0 {
-		t := time.NewTicker(m.cfg.RejoinInterval)
-		defer t.Stop()
-
-		tickerChan = t.C
+		// Use a random initial delay between 0 and RejoinInterval to uniformly
+		// distribute rejoins across time when multiple processes start simultaneously.
+		initialDelay := 1 + time.Duration(math_rand.Int63n(int64(m.cfg.RejoinInterval)))
+		var stop func()
+		stop, tickerChan = timeutil.NewVariableTicker(initialDelay, m.cfg.RejoinInterval)
+		defer stop()
 	}
 
 	var obsoleteEntriesTickerChan <-chan time.Time

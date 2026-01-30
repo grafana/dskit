@@ -24,17 +24,24 @@ func (v *StringSliceCSVMulti) Set(s string) error {
 
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (v *StringSliceCSVMulti) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Try to unmarshal as string first (CSV format)
 	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-
-	// For YAML, we replace rather than append
-	if len(s) == 0 {
-		*v = nil
+	if err := unmarshal(&s); err == nil {
+		// For YAML, we replace rather than append
+		if len(s) == 0 {
+			*v = nil
+			return nil
+		}
+		*v = strings.Split(s, ",")
 		return nil
 	}
-	*v = strings.Split(s, ",")
+
+	// If that fails, try to unmarshal as a slice (list format) for backward compatibility
+	var slice []string
+	if err := unmarshal(&slice); err != nil {
+		return err
+	}
+	*v = slice
 	return nil
 }
 

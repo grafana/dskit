@@ -137,6 +137,16 @@ func (d *data) getAllTokens() []uint32 {
 	return out
 }
 
+// getAllMembers returns a sorted list of member names.
+func (d *data) getAllMembers() []string {
+	out := make([]string, 0, len(d.Members))
+	for k := range d.Members {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
 type dataCodec struct{}
 
 func (d dataCodec) CodecID() string {
@@ -1181,7 +1191,7 @@ func TestMemberlist_discoverMembersWithRetries(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			currResolveFailures := 0
 
-			dns := newDNSProviderMock(func() ([]string, error) {
+			dns := newDNSProviderMock(func(_ []string) ([]string, error) {
 				if currResolveFailures < testData.numResolveFailures {
 					currResolveFailures++
 					return nil, errMocked
@@ -1895,23 +1905,23 @@ func (l testLogger) Log(_ ...interface{}) error {
 }
 
 type dnsProviderMock struct {
-	onResolve func() ([]string, error)
+	onResolve func([]string) ([]string, error)
 
 	resolvedMx sync.Mutex
 	resolved   []string
 }
 
-func newDNSProviderMock(onResolve func() ([]string, error)) *dnsProviderMock {
+func newDNSProviderMock(onResolve func([]string) ([]string, error)) *dnsProviderMock {
 	return &dnsProviderMock{
 		onResolve: onResolve,
 	}
 }
 
-func (p *dnsProviderMock) Resolve(_ context.Context, _ []string) error {
-	addrs, err := p.onResolve()
+func (p *dnsProviderMock) Resolve(_ context.Context, addrs []string) error {
+	resolved, err := p.onResolve(addrs)
 
 	p.resolvedMx.Lock()
-	p.resolved = addrs
+	p.resolved = resolved
 	p.resolvedMx.Unlock()
 
 	return err
@@ -2489,4 +2499,423 @@ func TestWatchPrefixHandlesGracefullyNotificationForAlreadyDeletedEntry(t *testi
 	case <-done:
 	case <-time.After(1 * time.Second):
 	}
+}
+
+func TestNetworkPartition_RecoveryViaRejoin(t *testing.T) {
+	const key = "test"
+
+	var (
+		c      = dataCodec{}
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+
+		dnsMappingMx sync.RWMutex
+		dnsMapping   = map[string][]string{}
+	)
+
+	clearDNSResolution := func() {
+		dnsMappingMx.Lock()
+		defer dnsMappingMx.Unlock()
+		dnsMapping = map[string][]string{}
+	}
+
+	mockDNSResolution := func(input string, output []string) {
+		dnsMappingMx.Lock()
+		defer dnsMappingMx.Unlock()
+		dnsMapping[input] = output
+	}
+
+	resolveDNS := func(addrs []string) ([]string, error) {
+		dnsMappingMx.RLock()
+		defer dnsMappingMx.RUnlock()
+		var resolved []string
+		for _, addr := range addrs {
+			if actual, ok := dnsMapping[addr]; ok {
+				resolved = append(resolved, actual...)
+			}
+		}
+		return resolved, nil
+	}
+
+	expectMemberlistMembersCount := func(kv *KV, expected int) func(*assert.CollectT) {
+		return func(collect *assert.CollectT) {
+			require.Equal(collect, expected, kv.memberlist.NumMembers())
+		}
+	}
+
+	expectDataMembers := func(client *Client, expected []string) func(*assert.CollectT) {
+		return func(collect *assert.CollectT) {
+			actual := getData(t, client, key)
+			require.NotNil(collect, actual)
+			require.Equal(collect, expected, actual.getAllMembers())
+		}
+	}
+
+	// Helper to create node config with zone-aware routing
+	makeConfig := func(name, zone, role string, port int) KVConfig {
+		var cfg KVConfig
+		flagext.DefaultValues(&cfg)
+		cfg.NodeName = name
+		cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
+		cfg.TCPTransport.BindPort = port
+		cfg.Codecs = []codec.Codec{c}
+		cfg.JoinMembers = []string{"dns+" + name + "-join"}
+		cfg.AbortIfJoinFails = role == roleConfigMember
+		cfg.RejoinSeedNodes = []string{"dns+" + name + "-rejoin"}
+		cfg.RejoinInterval = 100 * time.Millisecond
+		cfg.ZoneAwareRouting = ZoneAwareRoutingConfig{
+			Enabled: true,
+			Zone:    zone,
+			Role:    role,
+		}
+		// Disable push/pull to just rely on rejoin and gossiping.
+		cfg.PushPullInterval = 0
+		// Fast settings for tests
+		cfg.GossipInterval = 50 * time.Millisecond
+		cfg.LeaveTimeout = 100 * time.Millisecond
+		return cfg
+	}
+
+	// Config:
+	// - Members:
+	//   - Abort if join at startup fails
+	//   - Rejoin enabled, discovering only same-zone bridges
+	//
+	// - Bridges:
+	//   - Do not abort if join at startup fails
+	//   - Rejoin enabled, discovering all bridges
+	//
+	// Initial condition:
+	// - The two zones are isolated
+	//
+	// Recovery:
+	// - The bridge in zone-b recovers from network partitioning and discovers the bridge in zone-a
+	t.Run("zones isolated at startup, then recover via rejoin", func(t *testing.T) {
+		clearDNSResolution()
+
+		// Get nodes ports.
+		ports, err := getFreePorts(3)
+		require.NoError(t, err)
+
+		bridgeZoneAPort := ports[0]
+		bridgeZoneBPort := ports[1]
+		memberZoneBPort := ports[2]
+
+		bridgeZoneAAddr := net.JoinHostPort("localhost", strconv.Itoa(bridgeZoneAPort))
+		bridgeZoneBAddr := net.JoinHostPort("localhost", strconv.Itoa(bridgeZoneBPort))
+
+		// Start both bridges in isolation.
+		cfgBridgeA := makeConfig("bridge-zone-a", "zone-a", roleConfigBridge, bridgeZoneAPort)
+		cfgBridgeB := makeConfig("bridge-zone-b", "zone-b", roleConfigBridge, bridgeZoneBPort)
+
+		mkvBridgeA := NewKV(cfgBridgeA, log.With(logger, "node", "bridge-zone-a"), newDNSProviderMock(resolveDNS), nil)
+		mkvBridgeB := NewKV(cfgBridgeB, log.With(logger, "node", "bridge-zone-b"), newDNSProviderMock(resolveDNS), nil)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeA))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeA))
+		})
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeB))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeB))
+		})
+
+		clientBridgeA, err := NewClient(mkvBridgeA, c)
+		require.NoError(t, err)
+		clientBridgeB, err := NewClient(mkvBridgeB, c)
+		require.NoError(t, err)
+
+		// Add "member-A" state via CAS on bridge-zone-a
+		require.NoError(t, cas(clientBridgeA, key, updateFn("member-A")))
+
+		// Start member-zone-b, joining bridge-zone-b
+		mockDNSResolution("dns+member-zone-b-join", []string{bridgeZoneBAddr})
+		mockDNSResolution("dns+member-zone-b-rejoin", []string{bridgeZoneBAddr})
+
+		cfgMemberB := makeConfig("member-zone-b", "zone-b", roleConfigMember, memberZoneBPort)
+		mkvMemberB := NewKV(cfgMemberB, log.With(logger, "node", "member-zone-b"), newDNSProviderMock(resolveDNS), nil)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvMemberB))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvMemberB))
+		})
+
+		clientMemberB, err := NewClient(mkvMemberB, c)
+		require.NoError(t, err)
+
+		// Add "member-B" on member-zone-b
+		require.NoError(t, cas(clientMemberB, key, updateFn("member-B")))
+
+		// We expect the two zones are isolated (1 node in zone-a, and 2 nodes in zone-b).
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeA, 1), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeB, 2), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvMemberB, 2), 3*time.Second, 100*time.Millisecond)
+
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeA, []string{"member-A"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeB, []string{"member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientMemberB, []string{"member-B"}), 3*time.Second, 100*time.Millisecond)
+
+		// The bridge in zone-b recovers from network partitioning and discovers the bridge in zone-a.
+		mockDNSResolution("dns+bridge-zone-b-join", []string{bridgeZoneAAddr})
+		mockDNSResolution("dns+bridge-zone-b-rejoin", []string{bridgeZoneAAddr})
+
+		// Every node should see each other.
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeA, 3), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeB, 3), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvMemberB, 3), 3*time.Second, 100*time.Millisecond)
+
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeA, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeB, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientMemberB, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+	})
+
+	// Config:
+	// - Members:
+	//   - Abort if join at startup fails
+	//   - Rejoin enabled, discovering only same-zone bridges
+	//
+	// - Bridges:
+	//   - Do not abort if join at startup fails
+	//   - Rejoin enabled, discovering all bridges
+	//
+	// Initial condition:
+	// - The two zones are isolated
+	//
+	// Recovery:
+	// - The bridge in zone-b crashes
+	// - A new bridge in zone-b is started (with empty state)
+	// - The new bridge in zone-b discovers the bridge in zone-a
+	// - The member in zone-b discovers the new bridge in zone-b via rejoin
+	// - State is propagated from member-zone-b to new bridge-zone-b to bridge-zone-a
+	t.Run("zones isolated at startup, then recover via new non-isolated bridge", func(t *testing.T) {
+		clearDNSResolution()
+
+		// Get nodes ports.
+		ports, err := getFreePorts(3)
+		require.NoError(t, err)
+
+		bridgeZoneAPort := ports[0]
+		bridgeZoneBPort := ports[1]
+		memberZoneBPort := ports[2]
+
+		bridgeZoneAAddr := net.JoinHostPort("localhost", strconv.Itoa(bridgeZoneAPort))
+		bridgeZoneBAddr := net.JoinHostPort("localhost", strconv.Itoa(bridgeZoneBPort))
+
+		// Start both bridges in isolation.
+		cfgBridgeA := makeConfig("bridge-zone-a", "zone-a", roleConfigBridge, bridgeZoneAPort)
+		cfgBridgeB := makeConfig("bridge-zone-b", "zone-b", roleConfigBridge, bridgeZoneBPort)
+
+		mkvBridgeA := NewKV(cfgBridgeA, log.With(logger, "node", "bridge-zone-a"), newDNSProviderMock(resolveDNS), nil)
+		mkvBridgeB := NewKV(cfgBridgeB, log.With(logger, "node", "bridge-zone-b"), newDNSProviderMock(resolveDNS), nil)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeA))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeA))
+		})
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeB))
+		t.Cleanup(func() {
+			// Ignore error because it could be already terminated.
+			_ = services.StopAndAwaitTerminated(ctx, mkvBridgeB)
+		})
+
+		clientBridgeA, err := NewClient(mkvBridgeA, c)
+		require.NoError(t, err)
+		clientBridgeB, err := NewClient(mkvBridgeB, c)
+		require.NoError(t, err)
+
+		// Add "member-A" state via CAS on bridge-zone-a
+		require.NoError(t, cas(clientBridgeA, key, updateFn("member-A")))
+
+		// Start member-zone-b, joining bridge-zone-b.
+		mockDNSResolution("dns+member-zone-b-join", []string{bridgeZoneBAddr})
+		mockDNSResolution("dns+member-zone-b-rejoin", []string{bridgeZoneBAddr})
+
+		cfgMemberB := makeConfig("member-zone-b", "zone-b", roleConfigMember, memberZoneBPort)
+		mkvMemberB := NewKV(cfgMemberB, log.With(logger, "node", "member-zone-b"), newDNSProviderMock(resolveDNS), nil)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvMemberB))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvMemberB))
+		})
+
+		clientMemberB, err := NewClient(mkvMemberB, c)
+		require.NoError(t, err)
+
+		// Add "member-B" on member-zone-b
+		require.NoError(t, cas(clientMemberB, key, updateFn("member-B")))
+
+		// We expect bridge-zone-a to be isolated (1 node), and bridge-zone-b + member-zone-b together (2 nodes).
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeA, 1), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeB, 2), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvMemberB, 2), 3*time.Second, 100*time.Millisecond)
+
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeA, []string{"member-A"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeB, []string{"member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientMemberB, []string{"member-B"}), 3*time.Second, 100*time.Millisecond)
+
+		// Terminate bridge-zone-b.
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeB))
+
+		// Start a new bridge-zone-b (with empty state).
+		// Configure DNS so that bridge-zone-b can now discover bridge-zone-a.
+		mockDNSResolution("dns+bridge-zone-b-join", []string{bridgeZoneAAddr})
+		mockDNSResolution("dns+bridge-zone-b-rejoin", []string{bridgeZoneAAddr})
+
+		cfgBridgeBNew := makeConfig("bridge-zone-b", "zone-b", roleConfigBridge, bridgeZoneBPort)
+		mkvBridgeBNew := NewKV(cfgBridgeBNew, log.With(logger, "node", "bridge-zone-b-new"), newDNSProviderMock(resolveDNS), nil)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeBNew))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeBNew))
+		})
+
+		clientBridgeBNew, err := NewClient(mkvBridgeBNew, c)
+		require.NoError(t, err)
+
+		// Every node should see each other.
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeA, 3), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeBNew, 3), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvMemberB, 3), 3*time.Second, 100*time.Millisecond)
+
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeA, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeBNew, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientMemberB, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+	})
+
+	// Config:
+	// - Members:
+	//   - Abort if join at startup fails
+	//   - Rejoin enabled, discovering only same-zone bridges
+	//
+	// - Bridges:
+	//   - Do not abort if join at startup fails
+	//   - Rejoin enabled, discovering all bridges
+	//
+	// Initial condition:
+	// - Both zones are connected (all 4 nodes see each other)
+	// - Both bridges crash and restart with empty state
+	//
+	// Recovery:
+	// - Existing members rejoin the restarted bridges
+	// - State is recovered from existing members
+	t.Run("all bridges lost, then state recovery via existing members rejoin", func(t *testing.T) {
+		clearDNSResolution()
+
+		ports, err := getFreePorts(4)
+		require.NoError(t, err)
+
+		bridgeZoneAPort := ports[0]
+		bridgeZoneBPort := ports[1]
+		memberZoneAPort := ports[2]
+		memberZoneBPort := ports[3]
+
+		bridgeZoneAAddr := net.JoinHostPort("localhost", strconv.Itoa(bridgeZoneAPort))
+		bridgeZoneBAddr := net.JoinHostPort("localhost", strconv.Itoa(bridgeZoneBPort))
+
+		// Configure DNS for bridges to discover each other
+		mockDNSResolution("dns+bridge-zone-a-join", []string{bridgeZoneAAddr, bridgeZoneBAddr})
+		mockDNSResolution("dns+bridge-zone-a-rejoin", []string{bridgeZoneAAddr, bridgeZoneBAddr})
+		mockDNSResolution("dns+bridge-zone-b-join", []string{bridgeZoneAAddr, bridgeZoneBAddr})
+		mockDNSResolution("dns+bridge-zone-b-rejoin", []string{bridgeZoneAAddr, bridgeZoneBAddr})
+
+		// Start both bridges
+		cfgBridgeA := makeConfig("bridge-zone-a", "zone-a", roleConfigBridge, bridgeZoneAPort)
+		cfgBridgeB := makeConfig("bridge-zone-b", "zone-b", roleConfigBridge, bridgeZoneBPort)
+
+		mkvBridgeA := NewKV(cfgBridgeA, log.With(logger, "node", "bridge-zone-a"), newDNSProviderMock(resolveDNS), nil)
+		mkvBridgeB := NewKV(cfgBridgeB, log.With(logger, "node", "bridge-zone-b"), newDNSProviderMock(resolveDNS), nil)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeA))
+		t.Cleanup(func() {
+			// Ignore error because it could be already terminated.
+			_ = services.StopAndAwaitTerminated(ctx, mkvBridgeA)
+		})
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeB))
+		t.Cleanup(func() {
+			// Ignore error because it could be already terminated.
+			_ = services.StopAndAwaitTerminated(ctx, mkvBridgeB)
+		})
+
+		// Wait for bridges to discover each other
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeA, 2), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeB, 2), 3*time.Second, 100*time.Millisecond)
+
+		// Start member-zone-a, joining bridge-zone-a
+		mockDNSResolution("dns+member-zone-a-join", []string{bridgeZoneAAddr})
+		mockDNSResolution("dns+member-zone-a-rejoin", []string{bridgeZoneAAddr})
+
+		cfgMemberA := makeConfig("member-zone-a", "zone-a", roleConfigMember, memberZoneAPort)
+		mkvMemberA := NewKV(cfgMemberA, log.With(logger, "node", "member-zone-a"), newDNSProviderMock(resolveDNS), nil)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvMemberA))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvMemberA))
+		})
+
+		clientMemberA, err := NewClient(mkvMemberA, c)
+		require.NoError(t, err)
+
+		// Start member-zone-b, joining bridge-zone-b
+		mockDNSResolution("dns+member-zone-b-join", []string{bridgeZoneBAddr})
+		mockDNSResolution("dns+member-zone-b-rejoin", []string{bridgeZoneBAddr})
+
+		cfgMemberB := makeConfig("member-zone-b", "zone-b", roleConfigMember, memberZoneBPort)
+		mkvMemberB := NewKV(cfgMemberB, log.With(logger, "node", "member-zone-b"), newDNSProviderMock(resolveDNS), nil)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvMemberB))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvMemberB))
+		})
+
+		clientMemberB, err := NewClient(mkvMemberB, c)
+		require.NoError(t, err)
+
+		// Add state via CAS
+		require.NoError(t, cas(clientMemberA, key, updateFn("member-A")))
+		require.NoError(t, cas(clientMemberB, key, updateFn("member-B")))
+
+		// All 4 nodes should see each other and have the state
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeA, 4), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeB, 4), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvMemberA, 4), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvMemberB, 4), 3*time.Second, 100*time.Millisecond)
+
+		require.EventuallyWithT(t, expectDataMembers(clientMemberA, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientMemberB, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+
+		// Terminate both bridges (simulates all bridges lost)
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeA))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeB))
+
+		// Restart bridges on the SAME ports with fresh empty state
+		cfgBridgeANew := makeConfig("bridge-zone-a", "zone-a", roleConfigBridge, bridgeZoneAPort)
+		cfgBridgeBNew := makeConfig("bridge-zone-b", "zone-b", roleConfigBridge, bridgeZoneBPort)
+
+		mkvBridgeANew := NewKV(cfgBridgeANew, log.With(logger, "node", "bridge-zone-a-new"), newDNSProviderMock(resolveDNS), nil)
+		mkvBridgeBNew := NewKV(cfgBridgeBNew, log.With(logger, "node", "bridge-zone-b-new"), newDNSProviderMock(resolveDNS), nil)
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeANew))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeANew))
+		})
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, mkvBridgeBNew))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, mkvBridgeBNew))
+		})
+
+		clientBridgeANew, err := NewClient(mkvBridgeANew, c)
+		require.NoError(t, err)
+		clientBridgeBNew, err := NewClient(mkvBridgeBNew, c)
+		require.NoError(t, err)
+
+		// Wait for automatic recovery via existing members' rejoin
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeANew, 4), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvBridgeBNew, 4), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvMemberA, 4), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectMemberlistMembersCount(mkvMemberB, 4), 3*time.Second, 100*time.Millisecond)
+
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeANew, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientBridgeBNew, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientMemberA, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+		require.EventuallyWithT(t, expectDataMembers(clientMemberB, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
+	})
 }

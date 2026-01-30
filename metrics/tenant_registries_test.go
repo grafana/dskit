@@ -1346,3 +1346,108 @@ func float64p(v float64) *float64 {
 func uint64p(v uint64) *uint64 {
 	return &v
 }
+
+// TestSoftRemoveTenantRegistryDeduplication verifies that metrics are deduplicated
+// when the same tenant is cycled multiple times (memory leak fix).
+func TestSoftRemoveTenantRegistryDeduplication(t *testing.T) {
+	tr := NewTenantRegistries(log.NewNopLogger())
+
+	// Cycle through the same 10 tenants twice to verify:
+	// 1. Deduplication prevents memory leak (only 10 metrics, not 20)
+	// 2. Values accumulate correctly (counter = 2 after two cycles, not 1)
+	for cycle := range 2 {
+		for i := range 10 {
+			r := prometheus.NewRegistry()
+			counter := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+				Name: "test_counter",
+				Help: "Test counter help",
+			}, []string{"user"})
+			gauge := promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+				Name: "test_gauge",
+				Help: "Test gauge help",
+			}, []string{"user"})
+			summary := promauto.With(r).NewSummaryVec(prometheus.SummaryOpts{
+				Name: "test_summary",
+				Help: "Test help",
+			}, []string{"user"})
+			histogram := promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+				Name: "test_histogram",
+				Help: "Test help",
+			}, []string{"user"})
+
+			user := fmt.Sprintf("test-%d", i)
+			tr.AddTenantRegistry(user, r)
+			counter.WithLabelValues(user).Add(1)
+			gauge.WithLabelValues(user).Add(1)
+			summary.WithLabelValues(user).Observe(1)
+			histogram.WithLabelValues(user).Observe(1)
+		}
+
+		require.Equal(t, 10, len(tr.Registries()), "Cycle %d: Expected 10 active registries", cycle)
+
+		for i := 0; i < 10; i++ {
+			tr.RemoveTenantRegistry(fmt.Sprintf("test-%d", i), false)
+		}
+
+		require.Equal(t, 0, len(tr.Registries()), "Cycle %d: Expected 0 active registries after removal", cycle)
+
+		// Verify deduplication and accumulation after second cycle
+		if cycle == 1 {
+			// Should have exactly 10 counter metrics (one per user), not 20
+			counterMetrics := tr.archived["test_counter"]
+			require.Equal(t, 10, len(counterMetrics.Metric), "Expected 10 deduplicated counter metrics")
+
+			// Counter values should accumulate: 1 (cycle 0) + 1 (cycle 1) = 2
+			for _, m := range counterMetrics.Metric {
+				require.Equal(t, 2.0, m.GetCounter().GetValue(), "Expected counter value 2.0 after two cycles for user %v", m.GetLabel())
+			}
+
+			// Gauges should NOT be archived (only counters, histograms, summaries)
+			_, exists := tr.archived["test_gauge"]
+			require.False(t, exists, "Gauges should not be archived")
+
+			// Histograms should accumulate
+			histogramMetrics := tr.archived["test_histogram"]
+			require.Equal(t, 10, len(histogramMetrics.Metric), "Expected 10 deduplicated histogram metrics")
+			for _, m := range histogramMetrics.Metric {
+				require.Equal(t, uint64(2), m.GetHistogram().GetSampleCount(), "Expected histogram sample_count 2 after two cycles")
+			}
+		}
+	}
+}
+
+// BenchmarkSoftRemoveMemoryLeak benchmarks the memory leak scenario:
+// cycling through the same 100 tenants 10 times (simulating churn).
+// With the fix, memory usage should be bounded (only 100 unique metrics archived).
+func BenchmarkSoftRemoveMemoryLeak(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		tr := NewTenantRegistries(log.NewNopLogger())
+
+		// Cycle through same 100 tenants 10 times
+		for cycle := 0; cycle < 10; cycle++ {
+			for tenantID := 0; tenantID < 100; tenantID++ {
+				r := prometheus.NewRegistry()
+				counter := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+					Name: "test_counter",
+					Help: "Test counter help",
+				}, []string{"user"})
+				histogram := promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+					Name: "test_histogram",
+					Help: "Test help",
+				}, []string{"user"})
+
+				user := fmt.Sprintf("tenant-%d", tenantID)
+				tr.AddTenantRegistry(user, r)
+				counter.WithLabelValues(user).Add(float64(cycle + 1))
+				histogram.WithLabelValues(user).Observe(float64(cycle + 1))
+			}
+
+			for tenantID := 0; tenantID < 100; tenantID++ {
+				tr.RemoveTenantRegistry(fmt.Sprintf("tenant-%d", tenantID), false)
+			}
+		}
+
+		// Verify deduplication worked (should have 100 metrics, not 1000)
+		require.Equal(b, 100, len(tr.archived["test_counter"].Metric), "Memory leak detected! Expected 100 deduplicated metrics")
+	}
+}

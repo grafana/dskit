@@ -74,3 +74,19 @@ func TestStringSliceCSVMulti_EmptyStringPreservesExisting(t *testing.T) {
 
 	assert.Equal(t, []string{"a", "b", "c"}, []string(v))
 }
+
+func TestStringSliceCSVMulti_YAMLListFormat(t *testing.T) {
+	type TestStruct struct {
+		CSV StringSliceCSVMulti `yaml:"csv"`
+	}
+
+	// Test YAML list format (backward compatibility)
+	yamlList := []byte(`csv:
+  - node1:7946
+  - node2:7946
+`)
+	var testStruct TestStruct
+	err := yaml.Unmarshal(yamlList, &testStruct)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"node1:7946", "node2:7946"}, []string(testStruct.CSV))
+}

@@ -23,9 +23,9 @@ func TestVariableTicker(t *testing.T) {
 		}
 
 		tolerance := 250 * time.Millisecond
-		assert.InDelta(t, ticks[0].Sub(startTime).Seconds(), 1*time.Second.Seconds(), float64(tolerance))
-		assert.InDelta(t, ticks[1].Sub(startTime).Seconds(), 3*time.Second.Seconds(), float64(tolerance))
-		assert.InDelta(t, ticks[2].Sub(startTime).Seconds(), 5*time.Second.Seconds(), float64(tolerance))
+		assert.InDelta(t, ticks[0].Sub(startTime).Seconds(), 1*time.Second.Seconds(), tolerance.Seconds())
+		assert.InDelta(t, ticks[1].Sub(startTime).Seconds(), 3*time.Second.Seconds(), tolerance.Seconds())
+		assert.InDelta(t, ticks[2].Sub(startTime).Seconds(), 5*time.Second.Seconds(), tolerance.Seconds())
 	})
 
 	t.Run("should not close the channel on stop function called", func(t *testing.T) {

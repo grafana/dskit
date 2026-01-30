@@ -154,14 +154,14 @@ type KVConfig struct {
 	ClusterLabelVerificationDisabled bool   `yaml:"cluster_label_verification_disabled" category:"advanced"`
 
 	// List of members to join
-	JoinMembers          flagext.StringSlice `yaml:"join_members"`
-	MinJoinBackoff       time.Duration       `yaml:"min_join_backoff" category:"advanced"`
-	MaxJoinBackoff       time.Duration       `yaml:"max_join_backoff" category:"advanced"`
-	MaxJoinRetries       int                 `yaml:"max_join_retries" category:"advanced"`
-	AbortIfFastJoinFails bool                `yaml:"abort_if_cluster_fast_join_fails" category:"advanced"`
-	AbortIfJoinFails     bool                `yaml:"abort_if_cluster_join_fails"`
-	RejoinInterval       time.Duration       `yaml:"rejoin_interval" category:"advanced"`
-	RejoinSeedNodes      flagext.StringSlice `yaml:"rejoin_seed_nodes" category:"experimental"`
+	JoinMembers          flagext.StringSliceCSVMulti `yaml:"join_members"`
+	MinJoinBackoff       time.Duration               `yaml:"min_join_backoff" category:"advanced"`
+	MaxJoinBackoff       time.Duration               `yaml:"max_join_backoff" category:"advanced"`
+	MaxJoinRetries       int                         `yaml:"max_join_retries" category:"advanced"`
+	AbortIfFastJoinFails bool                        `yaml:"abort_if_cluster_fast_join_fails" category:"advanced"`
+	AbortIfJoinFails     bool                        `yaml:"abort_if_cluster_join_fails"`
+	RejoinInterval       time.Duration               `yaml:"rejoin_interval" category:"advanced"`
+	RejoinSeedNodes      flagext.StringSliceCSVMulti `yaml:"rejoin_seed_nodes" category:"experimental"`
 
 	// Remove LEFT ingesters from ring after this timeout.
 	LeftIngestersTimeout   time.Duration `yaml:"left_ingesters_timeout" category:"advanced"`
@@ -204,14 +204,14 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.RandomizeNodeName, prefix+"memberlist.randomize-node-name", true, "Add random suffix to the node name.")
 	f.DurationVar(&cfg.StreamTimeout, prefix+"memberlist.stream-timeout", 2*time.Second, "The timeout for establishing a connection with a remote node, and for read/write operations.")
 	f.IntVar(&cfg.RetransmitMult, prefix+"memberlist.retransmit-factor", mlDefaults.RetransmitMult, "Multiplication factor used when sending out messages (factor * log(N+1)).")
-	f.Var(&cfg.JoinMembers, prefix+"memberlist.join", "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.")
+	f.Var(&cfg.JoinMembers, prefix+"memberlist.join", "Other cluster members to join. Can be specified multiple times or as a comma-separated list. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.")
 	f.DurationVar(&cfg.MinJoinBackoff, prefix+"memberlist.min-join-backoff", 1*time.Second, "Min backoff duration to join other cluster members.")
 	f.DurationVar(&cfg.MaxJoinBackoff, prefix+"memberlist.max-join-backoff", 1*time.Minute, "Max backoff duration to join other cluster members.")
 	f.IntVar(&cfg.MaxJoinRetries, prefix+"memberlist.max-join-retries", 10, "Max number of retries to join other cluster members.")
 	f.BoolVar(&cfg.AbortIfFastJoinFails, prefix+"memberlist.abort-if-fast-join-fails", false, "Abort if this node fails the fast memberlist cluster joining procedure at startup. When enabled, it's guaranteed that other services, depending on memberlist, have an updated view over the cluster state when they're started.")
 	f.BoolVar(&cfg.AbortIfJoinFails, prefix+"memberlist.abort-if-join-fails", cfg.AbortIfJoinFails, "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.")
 	f.DurationVar(&cfg.RejoinInterval, prefix+"memberlist.rejoin-interval", 0, "If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.")
-	f.Var(&cfg.RejoinSeedNodes, prefix+"memberlist.rejoin-seed-nodes", "Seed nodes to use for periodic rejoin. Takes precedence over -memberlist.join for rejoining. If not specified, -memberlist.join is used. Can be specified multiple times. Supports IP, hostname, or DNS Service Discovery format.")
+	f.Var(&cfg.RejoinSeedNodes, prefix+"memberlist.rejoin-seed-nodes", "Seed nodes to use for periodic rejoin. Takes precedence over -memberlist.join for rejoining. If not specified, -memberlist.join is used. Can be specified multiple times or as a comma-separated list. Supports IP, hostname, or DNS Service Discovery format.")
 	f.DurationVar(&cfg.LeftIngestersTimeout, prefix+"memberlist.left-ingesters-timeout", 5*time.Minute, "How long to keep LEFT ingesters in the ring.")
 	f.DurationVar(&cfg.ObsoleteEntriesTimeout, prefix+"memberlist.obsolete-entries-timeout", mlDefaults.PushPullInterval, "How long to keep obsolete entries in the KV store.")
 	f.DurationVar(&cfg.LeaveTimeout, prefix+"memberlist.leave-timeout", 20*time.Second, "Timeout for leaving memberlist cluster.")

@@ -220,8 +220,15 @@ func testGrpcLimitCheckWithMethodLimiter(
 	close(ts.finishRequest)
 	finished.Wait()
 
-	require.Equal(t, int64(0), ml.allInflight.Load())
-	require.Equal(t, int64(0), ml.protectedMethodInflight.Load())
+	// Wait for the server's stats handler to process RPCCallFinished for all requests.
+	// The client goroutines may complete before the server's stats.End event fires,
+	// which decrements the counters. Using Poll avoids this race condition.
+	test.Poll(t, 1*time.Second, int64(0), func() interface{} {
+		return ml.allInflight.Load()
+	})
+	test.Poll(t, 1*time.Second, int64(0), func() interface{} {
+		return ml.protectedMethodInflight.Load()
+	})
 
 	// Another request to protected or unprotected method should succeed again.
 	for _, fn := range append(callsToUnprotectedMethods, callToProtectedMethod) {

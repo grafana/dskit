@@ -1446,10 +1446,8 @@ func TestRejoin(t *testing.T) {
 
 	var cfg1 KVConfig
 	flagext.DefaultValues(&cfg1)
-	cfg1.TCPTransport = TCPTransportConfig{
-		BindAddrs: getLocalhostAddrs(),
-		BindPort:  ports[0],
-	}
+	cfg1.TCPTransport.BindAddrs = getLocalhostAddrs()
+	cfg1.TCPTransport.BindPort = ports[0]
 
 	cfg1.RandomizeNodeName = true
 	cfg1.Codecs = []codec.Codec{dataCodec{}}
@@ -1462,11 +1460,16 @@ func TestRejoin(t *testing.T) {
 
 	mkv1 := NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
-	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
+	t.Cleanup(func() {
+		// Ignore error since we explicitly stop this instance mid-test
+		_ = services.StopAndAwaitTerminated(context.Background(), mkv1)
+	})
 
 	mkv2 := NewKV(cfg2, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
-	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv2))
+	})
 
 	expectMembers := func(expected int) func() bool {
 		return func() bool { return mkv2.memberlist.NumMembers() == expected }
@@ -1481,11 +1484,69 @@ func TestRejoin(t *testing.T) {
 	require.Eventually(t, expectMembers(1), 10*time.Second, 100*time.Millisecond, "expected 1 member in the cluster")
 
 	// Let's start first KV again. It is not configured to join the cluster, but KV2 is rejoining.
-	mkv1 = NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
-	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
+	mkv1Restarted := NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1Restarted))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1Restarted))
+	})
 
-	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 member in the cluster")
+	require.Eventually(t, expectMembers(2), 10*time.Second, 100*time.Millisecond, "expected 2 members in the cluster")
+}
+
+func TestRejoinWithDifferentSeedNodes(t *testing.T) {
+	ports, err := getFreePorts(3)
+	require.NoError(t, err)
+
+	var cfg1 KVConfig
+	flagext.DefaultValues(&cfg1)
+	cfg1.TCPTransport.BindAddrs = getLocalhostAddrs()
+	cfg1.TCPTransport.BindPort = ports[0]
+
+	cfg1.RandomizeNodeName = true
+	cfg1.Codecs = []codec.Codec{dataCodec{}}
+	cfg1.AbortIfJoinFails = false
+
+	// cfg2: joins cfg1 initially, rejoins using cfg3's address via RejoinSeedNodes.
+	cfg2 := cfg1
+	cfg2.TCPTransport.BindPort = ports[1]
+	cfg2.JoinMembers = []string{net.JoinHostPort("localhost", strconv.Itoa(ports[0]))}
+	cfg2.RejoinSeedNodes = []string{net.JoinHostPort("localhost", strconv.Itoa(ports[2]))}
+	cfg2.RejoinInterval = 1 * time.Second
+
+	// cfg3: standalone node (no join members), will be discovered by cfg2 via rejoin.
+	cfg3 := cfg1
+	cfg3.TCPTransport.BindPort = ports[2]
+
+	mkv1 := NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv1))
+	})
+
+	mkv2 := NewKV(cfg2, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv2))
+	})
+
+	// Initially mkv2 should be connected to mkv1.
+	expectMembers := func(kv *KV, expected int) func() bool {
+		return func() bool { return kv.memberlist.NumMembers() == expected }
+	}
+	require.Eventually(t, expectMembers(mkv2, 2), 10*time.Second, 100*time.Millisecond, "expected 2 members in the cluster")
+
+	// Now start mkv3. mkv2's RejoinSeedNodes points to mkv3, so mkv2 should discover mkv3 via periodic rejoin.
+	mkv3 := NewKV(cfg3, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv3))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), mkv3))
+	})
+
+	// mkv2 should connect to mkv3 via rejoin (using RejoinSeedNodes).
+	// All three should eventually see each other.
+	require.Eventually(t, expectMembers(mkv1, 3), 10*time.Second, 100*time.Millisecond, "expected mkv1 to see 3 members")
+	require.Eventually(t, expectMembers(mkv2, 3), 10*time.Second, 100*time.Millisecond, "expected mkv2 to see 3 members")
+	require.Eventually(t, expectMembers(mkv3, 3), 10*time.Second, 100*time.Millisecond, "expected mkv3 to see 3 members")
 }
 
 func TestMessageBuffer(t *testing.T) {

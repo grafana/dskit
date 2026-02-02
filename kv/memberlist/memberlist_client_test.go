@@ -1130,30 +1130,71 @@ func TestMemberlist_AbortIfJoinFailsAtStartup(t *testing.T) {
 }
 
 func TestMemberlist_AbortIfFastJoinFailsAtStartup(t *testing.T) {
-	c := dataCodec{}
+	t.Run("default config with 1 min required node", func(t *testing.T) {
+		c := dataCodec{}
 
-	ports, err := getFreePorts(1)
-	require.NoError(t, err)
+		ports, err := getFreePorts(1)
+		require.NoError(t, err)
 
-	var cfg KVConfig
-	flagext.DefaultValues(&cfg)
-	cfg.MinJoinBackoff = 100 * time.Millisecond
-	cfg.MaxJoinBackoff = 100 * time.Millisecond
-	cfg.MaxJoinRetries = 2
-	cfg.AbortIfFastJoinFails = true
-	cfg.JoinMembers = []string{net.JoinHostPort(getLocalhostAddr(), strconv.Itoa(ports[0]))}
-	cfg.Codecs = []codec.Codec{c}
+		var cfg KVConfig
+		flagext.DefaultValues(&cfg)
+		cfg.MinJoinBackoff = 100 * time.Millisecond
+		cfg.MaxJoinBackoff = 100 * time.Millisecond
+		cfg.MaxJoinRetries = 2
+		cfg.AbortIfFastJoinFails = true
+		cfg.JoinMembers = []string{net.JoinHostPort(getLocalhostAddr(), strconv.Itoa(ports[0]))}
+		cfg.Codecs = []codec.Codec{c}
 
-	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: getLocalhostAddrs(),
-		BindPort:  0,
-	}
+		cfg.TCPTransport = TCPTransportConfig{
+			BindAddrs: getLocalhostAddrs(),
+			BindPort:  0,
+		}
 
-	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+		mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
-	// We expect the service to fail when starting.
-	err = services.StartAndAwaitRunning(context.Background(), mkv)
-	require.ErrorContains(t, err, "no memberlist node reached during fast-join procedure")
+		// We expect the service to fail when starting because no node can be reached.
+		err = services.StartAndAwaitRunning(context.Background(), mkv)
+		require.ErrorContains(t, err, "fast-join failed to reach minimum required seed nodes: joined 0, required 1")
+	})
+
+	t.Run("custom config with 2 min required nodes but only 1 reachable", func(t *testing.T) {
+		c := dataCodec{}
+
+		// Start a first KV instance that will be reachable.
+		var cfg1 KVConfig
+		flagext.DefaultValues(&cfg1)
+		cfg1.Codecs = []codec.Codec{c}
+		cfg1.TCPTransport = TCPTransportConfig{
+			BindAddrs: getLocalhostAddrs(),
+			BindPort:  0,
+		}
+
+		mkv1 := NewKV(cfg1, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+		defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
+
+		// Start a second KV instance that requires 2 nodes but can only reach 1.
+		var cfg2 KVConfig
+		flagext.DefaultValues(&cfg2)
+		cfg2.MinJoinBackoff = 100 * time.Millisecond
+		cfg2.MaxJoinBackoff = 100 * time.Millisecond
+		cfg2.MaxJoinRetries = 2
+		cfg2.AbortIfFastJoinFails = true
+		cfg2.AbortIfFastJoinFailsMinNodes = 2
+		cfg2.JoinMembers = []string{net.JoinHostPort(getLocalhostAddr(), strconv.Itoa(mkv1.GetListeningPort()))}
+		cfg2.Codecs = []codec.Codec{c}
+
+		cfg2.TCPTransport = TCPTransportConfig{
+			BindAddrs: getLocalhostAddrs(),
+			BindPort:  0,
+		}
+
+		mkv2 := NewKV(cfg2, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+
+		// We expect the service to fail when starting because only 1 node was joined but 2 are required.
+		err := services.StartAndAwaitRunning(context.Background(), mkv2)
+		require.ErrorContains(t, err, "fast-join failed to reach minimum required seed nodes: joined 1, required 2")
+	})
 }
 
 func TestMemberlist_discoverMembersWithRetries(t *testing.T) {

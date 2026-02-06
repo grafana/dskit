@@ -640,12 +640,16 @@ type TenantRegistries struct {
 
 	regsMu sync.Mutex
 	regs   []TenantRegistry
+
+	// archived holds metrics for soft-deleted registries.
+	archived MetricFamilyMap
 }
 
 // NewTenantRegistries makes new TenantRegistries.
 func NewTenantRegistries(logger log.Logger) *TenantRegistries {
 	return &TenantRegistries{
-		logger: logger,
+		logger:   logger,
+		archived: MetricFamilyMap{},
 	}
 }
 
@@ -663,13 +667,9 @@ func (r *TenantRegistries) AddTenantRegistry(tenant string, reg *prometheus.Regi
 			continue
 		}
 
-		if r.softRemoveTenantRegistry(&r.regs[idx]) {
-			// Keep it.
-			idx++
-		} else {
-			// Remove it.
-			r.regs = append(r.regs[:idx], r.regs[idx+1:]...)
-		}
+		// Archive and remove the registry.
+		r.archiveTenantRegistry(&r.regs[idx])
+		r.regs = append(r.regs[:idx], r.regs[idx+1:]...)
 	}
 
 	// New registries must be added to the end of the list, to guarantee stability.
@@ -682,7 +682,7 @@ func (r *TenantRegistries) AddTenantRegistry(tenant string, reg *prometheus.Regi
 // RemoveTenantRegistry removes all Prometheus registries for a given tenant.
 // If hard is true, registry is removed completely.
 // If hard is false, the latest registry values are preserved for future aggregations.
-func (r *TenantRegistries) RemoveTenantRegistry(tenant string, hard bool) {
+func (r *TenantRegistries) RemoveTenantRegistry_Old(tenant string, hard bool) {
 	r.regsMu.Lock()
 	defer r.regsMu.Unlock()
 
@@ -700,8 +700,29 @@ func (r *TenantRegistries) RemoveTenantRegistry(tenant string, hard bool) {
 	}
 }
 
+// RemoveTenantRegistry removes all Prometheus registries for a given tenant.
+// If hard is true, registry is removed completely.
+// If hard is false, the latest registry values are preserved in an "archive" registry.
+func (r *TenantRegistries) RemoveTenantRegistry(tenant string, hard bool) {
+	r.regsMu.Lock()
+	defer r.regsMu.Unlock()
+
+	for idx := 0; idx < len(r.regs); {
+		if tenant != r.regs[idx].tenant {
+			idx++
+			continue
+		}
+
+		if !hard {
+			r.archiveTenantRegistry(&r.regs[idx])
+		}
+		r.regs = append(r.regs[:idx], r.regs[idx+1:]...) // remove it.
+	}
+}
+
 // Returns true, if we should keep latest metrics. Returns false if we failed to gather latest metrics,
 // and this can be removed completely.
+// TODO: Delete, only used in the old method.
 func (r *TenantRegistries) softRemoveTenantRegistry(ur *TenantRegistry) bool {
 	last, err := ur.reg.Gather()
 	if err != nil {
@@ -736,6 +757,205 @@ func (r *TenantRegistries) softRemoveTenantRegistry(ur *TenantRegistry) bool {
 	return true
 }
 
+// archiveTenantRegistry gathers and stores counters/histograms/summaries from a tenant
+// registry being removed. Gauges are excluded since they represent current state, not
+// cumulative values. Archived metrics are aggregated to avoid counter resets.
+func (r *TenantRegistries) archiveTenantRegistry(ur *TenantRegistry) {
+	last, err := ur.reg.Gather()
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "tenant", ur.tenant, "err", err)
+		return
+	}
+
+	for ix := 0; ix < len(last); {
+		// Only keep metrics for which we don't want to go down, since that indicates reset (counter, summary, histogram).
+		switch last[ix].GetType() {
+		case dto.MetricType_COUNTER, dto.MetricType_SUMMARY, dto.MetricType_HISTOGRAM:
+			ix++
+		default:
+			// Remove gauges and unknowns.
+			last = append(last[:ix], last[ix+1:]...)
+		}
+	}
+
+	// No metrics left.
+	if len(last) == 0 {
+		return
+	}
+
+	mfm, err := NewMetricFamilyMap(last)
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "tenant", ur.tenant, "err", err)
+		return
+	}
+
+	// Store metrics in r.archived, deduplicating when necessary.
+	for _, m := range mfm {
+		name := m.GetName()
+		v, ok := r.archived[name]
+		if !ok {
+			r.archived[m.GetName()] = m
+			continue
+		}
+
+		// Clone-on-write: create new MetricFamily with deduplicated metrics.
+		deduplicated := deduplicateMetrics(v.Metric, m.Metric, m.GetType())
+		newFamily := &dto.MetricFamily{
+			Name:   v.Name,
+			Help:   v.Help,
+			Type:   v.Type,
+			Metric: deduplicated,
+		}
+		r.archived[name] = newFamily
+	}
+}
+
+// deduplicateMetrics merges new metrics into existing ones, deduplicating by label values.
+// Returns a new slice to avoid mutating the input (clone-on-write for thread safety).
+func deduplicateMetrics(existing, new []*dto.Metric, metricType dto.MetricType) []*dto.Metric {
+	// Copy the existing slice to avoid mutating shared data.
+	result := make([]*dto.Metric, len(existing))
+	copy(result, existing)
+
+	// Build a map of existing metrics by their label signature.
+	existingMap := make(map[string]int) // label signature -> index in result slice.
+	for i, m := range result {
+		sig := getMetricLabelSignature(m)
+		existingMap[sig] = i
+	}
+
+	// Process new metrics.
+	for _, newMetric := range new {
+		sig := getMetricLabelSignature(newMetric)
+		if idx, found := existingMap[sig]; found {
+			// Metric with same labels exists, merge values (clone-on-write).
+			result[idx] = mergeMetricValues(result[idx], newMetric, metricType)
+		} else {
+			// New unique metric, append it.
+			result = append(result, newMetric)
+			existingMap[sig] = len(result) - 1
+		}
+	}
+
+	return result
+}
+
+// getMetricLabelSignature creates a unique string signature from a metric's labels.
+func getMetricLabelSignature(m *dto.Metric) string {
+	buf := bytesBufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bytesBufferPool.Put(buf)
+
+	labels := m.GetLabel()
+	for _, lp := range labels {
+		buf.WriteString(lp.GetName())
+		buf.WriteByte('=')
+		buf.WriteString(lp.GetValue())
+		buf.WriteByte(0)
+	}
+	return buf.String()
+}
+
+// mergeMetricValues creates a new metric with merged values from existing and newMetric.
+// Returns a new metric to avoid mutating shared data (clone-on-write for thread safety).
+// For all metric types, we add values together to accumulate across multiple lifecycles
+// of the same tenant (preserving cumulative totals to avoid counter resets in aggregations).
+func mergeMetricValues(existing, newMetric *dto.Metric, metricType dto.MetricType) *dto.Metric {
+	// Create a new metric with a copy of the labels to avoid sharing the slice.
+	// We copy the slice but share the underlying LabelPair objects (which should not be mutated).
+	labelsCopy := make([]*dto.LabelPair, len(existing.Label))
+	copy(labelsCopy, existing.Label)
+
+	merged := &dto.Metric{
+		Label: labelsCopy,
+	}
+
+	switch metricType {
+	case dto.MetricType_COUNTER:
+		// Add counter values together (accumulate across tenant lifecycles).
+		existingVal := existing.GetCounter().GetValue()
+		newVal := newMetric.GetCounter().GetValue()
+		mergedVal := existingVal + newVal
+		merged.Counter = &dto.Counter{Value: &mergedVal}
+
+	case dto.MetricType_HISTOGRAM:
+		existingHist := existing.GetHistogram()
+		newHist := newMetric.GetHistogram()
+
+		// Add sample counts and sums.
+		mergedCount := existingHist.GetSampleCount() + newHist.GetSampleCount()
+		mergedSum := existingHist.GetSampleSum() + newHist.GetSampleSum()
+
+		merged.Histogram = &dto.Histogram{
+			SampleCount: &mergedCount,
+			SampleSum:   &mergedSum,
+		}
+
+		// Merge buckets.
+		if len(existingHist.GetBucket()) > 0 || len(newHist.GetBucket()) > 0 {
+			bucketMap := make(map[float64]uint64)
+			for _, b := range existingHist.Bucket {
+				bucketMap[b.GetUpperBound()] = b.GetCumulativeCount()
+			}
+			for _, newBucket := range newHist.Bucket {
+				bucketMap[newBucket.GetUpperBound()] += newBucket.GetCumulativeCount()
+			}
+
+			// Convert map back to slice.
+			for bound, count := range bucketMap {
+				boundCopy := bound
+				countCopy := count
+				merged.Histogram.Bucket = append(merged.Histogram.Bucket, &dto.Bucket{
+					UpperBound:      &boundCopy,
+					CumulativeCount: &countCopy,
+				})
+			}
+		}
+
+	case dto.MetricType_SUMMARY:
+		existingSummary := existing.GetSummary()
+		newSummary := newMetric.GetSummary()
+
+		// Add sample counts and sums.
+		mergedCount := existingSummary.GetSampleCount() + newSummary.GetSampleCount()
+		mergedSum := existingSummary.GetSampleSum() + newSummary.GetSampleSum()
+
+		merged.Summary = &dto.Summary{
+			SampleCount: &mergedCount,
+			SampleSum:   &mergedSum,
+		}
+
+		// For quantiles, we take the maximum value (summaries with same quantiles should be compatible)
+		if len(existingSummary.GetQuantile()) > 0 || len(newSummary.GetQuantile()) > 0 {
+			quantileMap := make(map[float64]float64)
+			for _, q := range existingSummary.Quantile {
+				quantileMap[q.GetQuantile()] = q.GetValue()
+			}
+			for _, newQuantile := range newSummary.Quantile {
+				if existingVal, found := quantileMap[newQuantile.GetQuantile()]; found {
+					if newQuantile.GetValue() > existingVal {
+						quantileMap[newQuantile.GetQuantile()] = newQuantile.GetValue()
+					}
+				} else {
+					quantileMap[newQuantile.GetQuantile()] = newQuantile.GetValue()
+				}
+			}
+
+			// Convert map back to slice.
+			for quantile, value := range quantileMap {
+				quantileCopy := quantile
+				valueCopy := value
+				merged.Summary.Quantile = append(merged.Summary.Quantile, &dto.Quantile{
+					Quantile: &quantileCopy,
+					Value:    &valueCopy,
+				})
+			}
+		}
+	}
+
+	return merged
+}
+
 // Registries returns a copy of the tenant registries list.
 func (r *TenantRegistries) Registries() []TenantRegistry {
 	r.regsMu.Lock()
@@ -763,9 +983,26 @@ func (r *TenantRegistries) GetRegistryForTenant(tenant string) *prometheus.Regis
 }
 
 func (r *TenantRegistries) BuildMetricFamiliesPerTenant() MetricFamiliesPerTenant {
-	data := MetricFamiliesPerTenant{}
+	r.regsMu.Lock()
+
+	// Shallow copy the archived metrics map to avoid concurrent map access.
+	// The MetricFamily/Metric objects are cloned on-write, so sharing pointers is safe.
+	archivedCopy := make(MetricFamilyMap, len(r.archived))
+	for k, v := range r.archived {
+		archivedCopy[k] = v
+	}
+
+	data := MetricFamiliesPerTenant{
+		{
+			tenant:  "", // Empty tenant name so these metrics are aggregated in totals but not per-tenant.
+			metrics: archivedCopy,
+		},
+	}
+	r.regsMu.Unlock()
+
 	for _, entry := range r.Registries() {
 		// Set for removed tenants.
+		// TODO: Remove, we're not doing this r.reg = nil thing anymore...
 		if entry.reg == nil {
 			if entry.lastGather != nil {
 				data = append(data, struct {

@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0" // otelhttp uses semconv v1.37.0 so we stick to the same version in order to produce consistent attributes on HTTP and HTTPGRPC spans.
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 

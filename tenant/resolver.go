@@ -91,7 +91,7 @@ func parseTenantIDs(orgID string) ([]string, error) {
 // no subtenant is present. The orgID format is "tenantID:subtenantID" (e.g., "123456:k6").
 //
 //nolint:revive
-func SubtenantID(ctx context.Context) (subtenantID string, tenantID string, _ error) {
+func SubtenantID(ctx context.Context) (tenantID string, subtenantID string, _ error) {
 	//lint:ignore faillint wrapper around upstream method
 	orgIDs, err := user.ExtractOrgID(ctx)
 	if err != nil {

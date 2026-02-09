@@ -23,40 +23,20 @@ import (
 //nolint:revive
 func TenantID(ctx context.Context) (string, error) {
 	//lint:ignore faillint wrapper around upstream method
-	orgID, err := user.ExtractOrgID(ctx)
+	orgIDs, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		return "", err
 	}
-
-	// Fast path: no multi-tenant separator
-	idx := strings.IndexByte(orgID, tenantIDsSeparator)
-	if idx == -1 {
-		tenantID := trimSubtenantID(orgID)
-		if err := ValidTenantID(tenantID); err != nil {
-			return "", err
-		}
-		return tenantID, nil
-	}
-
-	// Slow path: multi-tenant - validate first and check all are the same
-	tenantID := trimSubtenantID(orgID[:idx])
+	orgID, remaining, hasMoreIDs := stringsCut(orgIDs, tenantIDsSeparator)
+	tenantID := trimSubtenantID(orgID)
 	if err := ValidTenantID(tenantID); err != nil {
 		return "", err
 	}
-	remaining := orgID[idx+1:]
-	for {
-		sepIdx := strings.IndexByte(remaining, tenantIDsSeparator)
-		part := remaining
-		if sepIdx != -1 {
-			part = remaining[:sepIdx]
-		}
-		if tenantID != trimSubtenantID(part) {
+	for hasMoreIDs {
+		orgID, remaining, hasMoreIDs = stringsCut(remaining, tenantIDsSeparator)
+		if tenantID != trimSubtenantID(orgID) {
 			return "", user.ErrTooManyOrgIDs
 		}
-		if sepIdx == -1 {
-			break
-		}
-		remaining = remaining[sepIdx+1:]
 	}
 	return tenantID, nil
 }
@@ -100,52 +80,29 @@ func parseTenantIDs(orgID string) ([]string, error) {
 // no subtenant is present. The orgID format is "tenantID:subtenantID" (e.g., "123456:k6").
 //
 //nolint:revive
-func SubtenantID(ctx context.Context) (string, string, error) {
+func SubtenantID(ctx context.Context) (tenantID string, subtenantID string, _ error) {
 	//lint:ignore faillint wrapper around upstream method
 	orgIDs, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		return "", "", err
 	}
 
-	// Fast path: no multi-tenant separator
-	idx := strings.IndexByte(orgIDs, tenantIDsSeparator)
-	if idx == -1 {
-		tenantID, subtenantID := splitTenantAndSubtenant(orgIDs)
-		if err := ValidTenantID(tenantID); err != nil {
-			return "", "", err
-		}
-		if err := ValidSubtenantID(subtenantID); err != nil {
-			return "", "", err
-		}
-		return tenantID, subtenantID, nil
-	}
-
-	// Slow path: multi-tenant - validate first and check all are the same
-	orgID := orgIDs[:idx]
-	tenantID, subtenantID := splitTenantAndSubtenant(orgID)
+	orgID, remaining, hasMoreIDs := stringsCut(orgIDs, tenantIDsSeparator)
+	tenantID, subtenantID = splitTenantAndSubtenant(orgID)
 	if err := ValidTenantID(tenantID); err != nil {
 		return "", "", err
 	}
 	if err := ValidSubtenantID(subtenantID); err != nil {
 		return "", "", err
 	}
-	remaining := orgIDs[idx+1:]
-	for {
-		sepIdx := strings.IndexByte(remaining, tenantIDsSeparator)
-		part := remaining
-		if sepIdx != -1 {
-			part = remaining[:sepIdx]
-		}
-
+	var nextOrgID string
+	for hasMoreIDs {
+		nextOrgID, remaining, hasMoreIDs = stringsCut(remaining, tenantIDsSeparator)
 		// We can compare the entire orgID, no need to split into tenant/subtenant.
 		// The orgID is already guaranteed to be valid.
-		if part != orgID {
+		if orgID != nextOrgID {
 			return "", "", user.ErrTooManyOrgIDs
 		}
-		if sepIdx == -1 {
-			break
-		}
-		remaining = remaining[sepIdx+1:]
 	}
 	return tenantID, subtenantID, nil
 }

@@ -152,3 +152,12 @@ func splitTenantAndSubtenant(orgID string) (tenantID, subtenantID string) {
 	}
 	return orgID[:idx], orgID[idx+1:]
 }
+
+// stringsCut is like strings.Cut but uses strings.IndexByte instead.
+func stringsCut(s string, sep byte) (string, string, bool) {
+	idx := strings.IndexByte(s, sep)
+	if idx == -1 {
+		return s, "", false
+	}
+	return s[:idx], s[idx+1:], true
+}

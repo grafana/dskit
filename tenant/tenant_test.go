@@ -99,8 +99,7 @@ func BenchmarkSubtenantID(b *testing.B) {
 	})
 }
 
-func BenchmarkStringSearch(b *testing.B) {
-	// Benchmark comparing strings.IndexByte vs strings.Contains for single char search
+func BenchmarkStringsCut(b *testing.B) {
 	testStrings := []struct {
 		name string
 		s    string
@@ -114,16 +113,16 @@ func BenchmarkStringSearch(b *testing.B) {
 	}
 
 	for _, ts := range testStrings {
-		b.Run("IndexByte/"+ts.name, func(b *testing.B) {
+		b.Run("strings.Cut/"+ts.name, func(b *testing.B) {
 			s := ts.s
 			for i := 0; i < b.N; i++ {
-				_ = strings.IndexByte(s, ':')
+				_, _, _ = strings.Cut(s, ":")
 			}
 		})
-		b.Run("Contains/"+ts.name, func(b *testing.B) {
+		b.Run("stringsCut/"+ts.name, func(b *testing.B) {
 			s := ts.s
 			for i := 0; i < b.N; i++ {
-				_ = strings.Contains(s, ":")
+				_, _, _ = stringsCut(s, ':')
 			}
 		})
 	}

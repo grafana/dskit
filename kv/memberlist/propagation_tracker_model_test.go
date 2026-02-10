@@ -373,6 +373,48 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 				},
 			},
 		},
+		"incoming: dual-tombstone with later DeletedAt wins": {
+			localCAS: false,
+			local: &PropagationTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 20, DeletedAt: 100}, // Local tombstone, deleted at 100.
+				},
+			},
+			incoming: &PropagationTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 20, DeletedAt: 200}, // Incoming tombstone, deleted at 200.
+				},
+			},
+			expectedUpdatedLocal: &PropagationTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 20, DeletedAt: 200}, // Later deletion wins.
+				},
+			},
+			expectedChange: &PropagationTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 20, DeletedAt: 200},
+				},
+			},
+		},
+		"incoming: dual-tombstone with earlier DeletedAt is ignored": {
+			localCAS: false,
+			local: &PropagationTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 20, DeletedAt: 200}, // Local tombstone, deleted at 200.
+				},
+			},
+			incoming: &PropagationTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 20, DeletedAt: 100}, // Incoming tombstone, deleted at 100.
+				},
+			},
+			expectedUpdatedLocal: &PropagationTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 20, DeletedAt: 200}, // Local preserved.
+				},
+			},
+			expectedChange: nil,
+		},
 	}
 
 	for testName, testData := range tests {

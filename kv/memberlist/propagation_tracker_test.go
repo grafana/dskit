@@ -334,16 +334,19 @@ func TestPropagationTracker_SkipsNegativeDelay(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond, "tracker should complete initial sync")
 
 	// Publish a beacon with a future timestamp (simulating clock skew from another node).
+	const futureBeaconID uint64 = 2
 	futureTime := time.Now().Add(10 * time.Second)
 	err = mkv.CAS(context.Background(), propagationTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePropagationTrackerDesc(in)
-		desc.Beacons[2] = BeaconDesc{PublishedAt: futureTime.UnixMilli()}
+		desc.Beacons[futureBeaconID] = BeaconDesc{PublishedAt: futureTime.UnixMilli()}
 		return desc, true, nil
 	})
 	require.NoError(t, err)
 
-	// Wait for the tracker to receive the beacon.
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the tracker to receive the beacon by polling on seen beacons.
+	require.Eventually(t, func() bool {
+		return tracker.alreadySeen(futureBeaconID)
+	}, 5*time.Second, 10*time.Millisecond, "tracker should have seen the beacon")
 
 	// Verify no delay was recorded (negative delay should be skipped).
 	metricFamilies, err := metrics.NewMetricFamilyMapFromGatherer(registry)

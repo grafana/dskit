@@ -2,6 +2,7 @@ package memberlist
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -23,6 +24,20 @@ const (
 	// propagationTrackerKey is the KV store key used for storing propagation tracker state.
 	propagationTrackerKey = "memberlist-propagation-tracker"
 )
+
+// PropagationTrackerConfig configures the propagation tracker.
+type PropagationTrackerConfig struct {
+	Enabled        bool          `yaml:"enabled" category:"experimental"`
+	BeaconInterval time.Duration `yaml:"beacon_interval" category:"experimental"`
+	BeaconLifetime time.Duration `yaml:"beacon_lifetime" category:"experimental"`
+}
+
+// RegisterFlagsWithPrefix registers flags with the given prefix.
+func (cfg *PropagationTrackerConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable the propagation tracker to measure gossip propagation delay.")
+	f.DurationVar(&cfg.BeaconInterval, prefix+"beacon-interval", 1*time.Minute, "How often to publish beacons for propagation tracking.")
+	f.DurationVar(&cfg.BeaconLifetime, prefix+"beacon-lifetime", 10*time.Minute, "How long a beacon lives before being garbage collected.")
+}
 
 // PropagationTracker is a service that tracks gossip propagation delay across
 // the memberlist cluster by periodically publishing beacons and measuring

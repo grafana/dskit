@@ -305,6 +305,54 @@ func TestPropagationTracker_BeaconLifetimeGarbageCollection(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond, "beacon should be garbage collected")
 }
 
+// TestPropagationTracker_SkipsNegativeDelay verifies that beacons with future timestamps
+// (which can happen due to clock skew between nodes) do not have their delay recorded,
+// since a negative delay would be meaningless.
+func TestPropagationTracker_SkipsNegativeDelay(t *testing.T) {
+	mkv := createPropagationTrackerTestKV(t)
+	trackerCodec := GetPropagationTrackerCodec()
+
+	// Start a tracker that will receive beacons via WatchKey.
+	registry := prometheus.NewPedanticRegistry()
+	tracker := NewPropagationTracker(mkv, time.Hour, time.Hour, log.NewNopLogger(), registry)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))
+	})
+
+	// Publish an initial beacon to trigger the tracker's initial sync.
+	err := mkv.CAS(context.Background(), propagationTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := GetOrCreatePropagationTrackerDesc(in)
+		desc.Beacons[1] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
+		return desc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Wait for the tracker to complete initial sync.
+	require.Eventually(t, func() bool {
+		return tracker.initialSyncDone.Load()
+	}, 5*time.Second, 10*time.Millisecond, "tracker should complete initial sync")
+
+	// Publish a beacon with a future timestamp (simulating clock skew from another node).
+	futureTime := time.Now().Add(10 * time.Second)
+	err = mkv.CAS(context.Background(), propagationTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := GetOrCreatePropagationTrackerDesc(in)
+		desc.Beacons[2] = BeaconDesc{PublishedAt: futureTime.UnixMilli()}
+		return desc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Wait for the tracker to receive the beacon.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify no delay was recorded (negative delay should be skipped).
+	metricFamilies, err := metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	histogram, err := metrics.FindHistogramWithNameAndLabels(metricFamilies, "memberlist_propagation_tracker_delay_seconds")
+	require.NoError(t, err)
+	assert.Zero(t, histogram.GetSampleCount(), "negative delay (future timestamp) should not be recorded")
+}
+
 // createPropagationTrackerTestKV creates and starts a KV store configured with the PropagationTracker codec.
 // The KV store is automatically stopped when the test completes.
 func createPropagationTrackerTestKV(t *testing.T) *KV {

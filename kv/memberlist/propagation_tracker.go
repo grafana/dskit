@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/timeutil"
@@ -92,7 +93,7 @@ func NewPropagationTracker(
 func (t *PropagationTracker) running(ctx context.Context) error {
 	level.Info(t.logger).Log("msg", "propagation tracker started", "beacon_interval", t.beaconInterval, "beacon_lifetime", t.beaconLifetime)
 
-	// Start the WatchKey goroutine to track beacon arrivals in real-time
+	// Start the goroutine to track beacon arrivals in real-time
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	defer cancelWatch()
 
@@ -127,21 +128,33 @@ func (t *PropagationTracker) running(ctx context.Context) error {
 }
 
 // watchBeacons uses WatchKey to receive beacon updates in real-time and measure delay.
+// It loops with backoff until the context is canceled.
 func (t *PropagationTracker) watchBeacons(ctx context.Context) {
-	t.kv.WatchKey(ctx, propagationTrackerKey, t.codec, func(val interface{}) bool {
-		if val == nil {
-			return true // continue watching
-		}
-
-		desc, ok := val.(*PropagationTrackerDesc)
-		if !ok {
-			level.Warn(t.logger).Log("msg", "unexpected value type in watch callback", "type", fmt.Sprintf("%T", val))
-			return true
-		}
-
-		t.onBeaconsReceived(desc)
-		return true // continue watching
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 5 * time.Second,
+		MaxRetries: 0, // Retry indefinitely until context is canceled.
 	})
+
+	for boff.Ongoing() {
+		t.kv.WatchKey(ctx, propagationTrackerKey, t.codec, func(val interface{}) bool {
+			if val == nil {
+				return true
+			}
+
+			desc, ok := val.(*PropagationTrackerDesc)
+			if !ok {
+				level.Warn(t.logger).Log("msg", "unexpected value type in watch callback", "type", fmt.Sprintf("%T", val))
+				return true
+			}
+
+			t.onBeaconsReceived(desc)
+			return true
+		})
+
+		// WatchKey exited, wait before retrying.
+		boff.Wait()
+	}
 }
 
 // onBeaconsReceived processes received beacons and records delay for unseen beacons.
@@ -180,7 +193,7 @@ func (t *PropagationTracker) onBeaconsReceived(desc *PropagationTrackerDesc) {
 		t.beaconsReceivedTotal.Add(float64(receivedCount))
 	}
 
-	// Clean up seenBeacons that are no longer in the KV store (or are deleted tombstones).
+	// Clean up beacons that are no longer in the KV store (or are deleted tombstones).
 	t.cleanupSeenBeacons(desc)
 }
 
@@ -198,7 +211,7 @@ func (t *PropagationTracker) markAsSeen(beaconID uint64) {
 }
 
 // cleanupSeenBeacons removes entries from seenBeacons that are no longer active
-// in the KV store. Tombstone handling is done at the model level (BeaconDesc.DeletedAt),
+// in the KV store. Tombstone handling is done by the memberlist client,
 // so we just need to keep seenBeacons in sync with active beacons.
 func (t *PropagationTracker) cleanupSeenBeacons(desc *PropagationTrackerDesc) {
 	t.seenBeaconsMu.Lock()
@@ -264,6 +277,7 @@ func (t *PropagationTracker) publishBeacon(ctx context.Context) {
 		desc := GetOrCreatePropagationTrackerDesc(in)
 
 		// Skip publishing if we already have a beacon with the same ID (extremely rare beacon ID collision).
+		// In case of a collision, the beacon ID is tracked as seen anyway, but we don't care given it's a rare case.
 		if _, exists := desc.Beacons[beaconID]; exists {
 			return nil, false, nil
 		}
@@ -281,7 +295,6 @@ func (t *PropagationTracker) publishBeacon(ctx context.Context) {
 	}
 
 	t.beaconsPublishedTotal.Inc()
-	level.Debug(t.logger).Log("msg", "published beacon", "beacon_id", beaconID)
 }
 
 // deleteBeacons marks the specified beacons as tombstones by setting their DeletedAt timestamp.
@@ -308,8 +321,5 @@ func (t *PropagationTracker) deleteBeacons(ctx context.Context, beaconIDs []uint
 
 	if err != nil {
 		level.Warn(t.logger).Log("msg", "failed to mark beacons as deleted", "err", err)
-		return
 	}
-
-	level.Debug(t.logger).Log("msg", "marked beacons as deleted", "count", len(beaconIDs))
 }

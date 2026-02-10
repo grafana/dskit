@@ -21,28 +21,28 @@ import (
 )
 
 const (
-	// propagationTrackerKey is the KV store key used for storing propagation tracker state.
-	propagationTrackerKey = "memberlist-propagation-tracker"
+	// propagationDelayTrackerKey is the KV store key used for storing propagation delay tracker state.
+	propagationDelayTrackerKey = "memberlist-propagation-delay-tracker"
 )
 
-// PropagationTrackerConfig configures the propagation tracker.
-type PropagationTrackerConfig struct {
+// PropagationDelayTrackerConfig configures the propagation delay tracker.
+type PropagationDelayTrackerConfig struct {
 	Enabled        bool          `yaml:"enabled" category:"experimental"`
 	BeaconInterval time.Duration `yaml:"beacon_interval" category:"experimental"`
 	BeaconLifetime time.Duration `yaml:"beacon_lifetime" category:"experimental"`
 }
 
 // RegisterFlagsWithPrefix registers flags with the given prefix.
-func (cfg *PropagationTrackerConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable the propagation tracker to measure gossip propagation delay.")
+func (cfg *PropagationDelayTrackerConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable the propagation delay tracker to measure gossip propagation delay.")
 	f.DurationVar(&cfg.BeaconInterval, prefix+"beacon-interval", 1*time.Minute, "How often to publish beacons for propagation tracking.")
 	f.DurationVar(&cfg.BeaconLifetime, prefix+"beacon-lifetime", 10*time.Minute, "How long a beacon lives before being garbage collected.")
 }
 
-// PropagationTracker is a service that tracks gossip propagation delay across
+// PropagationDelayTracker is a service that tracks gossip propagation delay across
 // the memberlist cluster by periodically publishing beacons and measuring
 // how long it takes for beacons to propagate.
-type PropagationTracker struct {
+type PropagationDelayTracker struct {
 	services.Service
 
 	beaconInterval time.Duration
@@ -72,20 +72,20 @@ type PropagationTracker struct {
 	beaconsReceivedTotal  prometheus.Counter
 }
 
-// NewPropagationTracker creates a new PropagationTracker service.
-func NewPropagationTracker(
+// NewPropagationDelayTracker creates a new PropagationDelayTracker service.
+func NewPropagationDelayTracker(
 	kv *KV,
 	beaconInterval time.Duration,
 	beaconLifetime time.Duration,
 	logger log.Logger,
 	registerer prometheus.Registerer,
-) *PropagationTracker {
-	t := &PropagationTracker{
+) *PropagationDelayTracker {
+	t := &PropagationDelayTracker{
 		beaconInterval: beaconInterval,
 		beaconLifetime: beaconLifetime,
 		kv:             kv,
-		codec:          GetPropagationTrackerCodec(),
-		logger:         log.With(logger, "component", "memberlist-propagation-tracker"),
+		codec:          GetPropagationDelayTrackerCodec(),
+		logger:         log.With(logger, "component", "memberlist-propagation-delay-tracker"),
 		seenBeacons:    make(map[uint64]struct{}),
 		propagationDelay: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "memberlist_propagation_tracker_delay_seconds",
@@ -105,13 +105,13 @@ func NewPropagationTracker(
 		}),
 	}
 
-	t.Service = services.NewBasicService(nil, t.running, nil).WithName("propagation-tracker")
+	t.Service = services.NewBasicService(nil, t.running, nil).WithName("propagation-delay-tracker")
 
 	return t
 }
 
-func (t *PropagationTracker) running(ctx context.Context) error {
-	level.Info(t.logger).Log("msg", "propagation tracker started", "beacon_interval", t.beaconInterval, "beacon_lifetime", t.beaconLifetime)
+func (t *PropagationDelayTracker) running(ctx context.Context) error {
+	level.Info(t.logger).Log("msg", "propagation delay tracker started", "beacon_interval", t.beaconInterval, "beacon_lifetime", t.beaconLifetime)
 
 	// Start the goroutine to track beacon arrivals in real-time
 	watchCtx, cancelWatch := context.WithCancel(ctx)
@@ -149,7 +149,7 @@ func (t *PropagationTracker) running(ctx context.Context) error {
 
 // watchBeacons uses WatchKey to receive beacon updates in real-time and measure delay.
 // It loops with backoff until the context is canceled.
-func (t *PropagationTracker) watchBeacons(ctx context.Context) {
+func (t *PropagationDelayTracker) watchBeacons(ctx context.Context) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 5 * time.Second,
@@ -157,12 +157,12 @@ func (t *PropagationTracker) watchBeacons(ctx context.Context) {
 	})
 
 	for boff.Ongoing() {
-		t.kv.WatchKey(ctx, propagationTrackerKey, t.codec, func(val interface{}) bool {
+		t.kv.WatchKey(ctx, propagationDelayTrackerKey, t.codec, func(val interface{}) bool {
 			if val == nil {
 				return true
 			}
 
-			desc, ok := val.(*PropagationTrackerDesc)
+			desc, ok := val.(*PropagationDelayTrackerDesc)
 			if !ok {
 				level.Warn(t.logger).Log("msg", "unexpected value type in watch callback", "type", fmt.Sprintf("%T", val))
 				return true
@@ -178,7 +178,7 @@ func (t *PropagationTracker) watchBeacons(ctx context.Context) {
 }
 
 // onBeaconsReceived processes received beacons and records delay for unseen beacons.
-func (t *PropagationTracker) onBeaconsReceived(desc *PropagationTrackerDesc) {
+func (t *PropagationDelayTracker) onBeaconsReceived(desc *PropagationDelayTrackerDesc) {
 	now := time.Now()
 	receivedCount := 0
 
@@ -217,14 +217,14 @@ func (t *PropagationTracker) onBeaconsReceived(desc *PropagationTrackerDesc) {
 	t.cleanupSeenBeacons(desc)
 }
 
-func (t *PropagationTracker) alreadySeen(beaconID uint64) bool {
+func (t *PropagationDelayTracker) alreadySeen(beaconID uint64) bool {
 	t.seenBeaconsMu.RLock()
 	defer t.seenBeaconsMu.RUnlock()
 	_, seen := t.seenBeacons[beaconID]
 	return seen
 }
 
-func (t *PropagationTracker) markAsSeen(beaconID uint64) {
+func (t *PropagationDelayTracker) markAsSeen(beaconID uint64) {
 	t.seenBeaconsMu.Lock()
 	defer t.seenBeaconsMu.Unlock()
 	t.seenBeacons[beaconID] = struct{}{}
@@ -233,7 +233,7 @@ func (t *PropagationTracker) markAsSeen(beaconID uint64) {
 // cleanupSeenBeacons removes entries from seenBeacons that are no longer active
 // in the KV store. Tombstone handling is done by the memberlist client,
 // so we just need to keep seenBeacons in sync with active beacons.
-func (t *PropagationTracker) cleanupSeenBeacons(desc *PropagationTrackerDesc) {
+func (t *PropagationDelayTracker) cleanupSeenBeacons(desc *PropagationDelayTrackerDesc) {
 	t.seenBeaconsMu.Lock()
 	defer t.seenBeaconsMu.Unlock()
 
@@ -257,14 +257,14 @@ func (t *PropagationTracker) cleanupSeenBeacons(desc *PropagationTrackerDesc) {
 // onBeaconInterval is called on each beacon interval tick to:
 // 1. Mark beacons older than beaconLifetime as tombstones for garbage collection
 // 2. Publish a new beacon if no recent beacon exists
-func (t *PropagationTracker) onBeaconInterval(ctx context.Context) {
-	val, err := t.kv.Get(propagationTrackerKey, t.codec)
+func (t *PropagationDelayTracker) onBeaconInterval(ctx context.Context) {
+	val, err := t.kv.Get(propagationDelayTrackerKey, t.codec)
 	if err != nil {
 		level.Warn(t.logger).Log("msg", "failed to get beacons", "err", err)
 		return
 	}
 
-	desc := GetOrCreatePropagationTrackerDesc(val)
+	desc := GetOrCreatePropagationDelayTrackerDesc(val)
 	now := time.Now()
 
 	// Collect old beacons that should be marked as tombstones
@@ -294,7 +294,7 @@ func (t *PropagationTracker) onBeaconInterval(ctx context.Context) {
 	}
 }
 
-func (t *PropagationTracker) publishBeacon(ctx context.Context) {
+func (t *PropagationDelayTracker) publishBeacon(ctx context.Context) {
 	// Generate a non-zero beacon ID. We need beaconID > 0 because 0 is used as
 	// the "no pending beacon" sentinel value in pendingBeaconID.
 	beaconID := rand.Uint64()
@@ -311,8 +311,8 @@ func (t *PropagationTracker) publishBeacon(ctx context.Context) {
 	// Mark as seen before publishing to avoid measuring our own beacon.
 	t.markAsSeen(beaconID)
 
-	err := t.kv.CAS(ctx, propagationTrackerKey, t.codec, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := GetOrCreatePropagationTrackerDesc(in)
+	err := t.kv.CAS(ctx, propagationDelayTrackerKey, t.codec, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := GetOrCreatePropagationDelayTrackerDesc(in)
 
 		// Skip publishing if we already have a beacon with the same ID (extremely rare beacon ID collision).
 		// In case of a collision, the beacon ID is tracked as seen anyway, but we don't care given it's a rare case.
@@ -336,9 +336,9 @@ func (t *PropagationTracker) publishBeacon(ctx context.Context) {
 }
 
 // deleteBeacons marks the specified beacons as tombstones by setting their DeletedAt timestamp.
-func (t *PropagationTracker) deleteBeacons(ctx context.Context, beaconIDs []uint64) {
-	err := t.kv.CAS(ctx, propagationTrackerKey, t.codec, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := GetOrCreatePropagationTrackerDesc(in)
+func (t *PropagationDelayTracker) deleteBeacons(ctx context.Context, beaconIDs []uint64) {
+	err := t.kv.CAS(ctx, propagationDelayTrackerKey, t.codec, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := GetOrCreatePropagationDelayTrackerDesc(in)
 		now := time.Now()
 
 		changed := false

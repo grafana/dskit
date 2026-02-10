@@ -9,78 +9,78 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPropagationTrackerDesc_Merge_AddBeacon(t *testing.T) {
+func TestPropagationDelayTrackerDesc_Merge_AddBeacon(t *testing.T) {
 	tests := map[string]struct {
-		local                *PropagationTrackerDesc
-		incoming             *PropagationTrackerDesc
+		local                *PropagationDelayTrackerDesc
+		incoming             *PropagationDelayTrackerDesc
 		expectedUpdatedLocal Mergeable
 		expectedChange       Mergeable
 	}{
 		"the first beacon is added": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
 			},
 		},
 		"a new beacon is added to existing beacons": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
-				Beacons: map[uint64]BeaconDesc{
-					1: {PublishedAt: 10},
-					2: {PublishedAt: 20},
-				},
-			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 10},
+					2: {PublishedAt: 20},
+				},
+			},
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					2: {PublishedAt: 20},
 				},
 			},
 		},
 		"multiple new beacons are added": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
-				Beacons: map[uint64]BeaconDesc{
-					1: {PublishedAt: 10},
-					2: {PublishedAt: 20},
-					3: {PublishedAt: 30},
-				},
-			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 					3: {PublishedAt: 30},
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
+				Beacons: map[uint64]BeaconDesc{
+					1: {PublishedAt: 10},
+					2: {PublishedAt: 20},
+					3: {PublishedAt: 30},
+				},
+			},
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					2: {PublishedAt: 20},
 					3: {PublishedAt: 30},
@@ -106,52 +106,52 @@ func TestPropagationTrackerDesc_Merge_AddBeacon(t *testing.T) {
 	}
 }
 
-func TestPropagationTrackerDesc_Merge_UpdateBeacon(t *testing.T) {
+func TestPropagationDelayTrackerDesc_Merge_UpdateBeacon(t *testing.T) {
 	tests := map[string]struct {
-		local                *PropagationTrackerDesc
-		incoming             *PropagationTrackerDesc
+		local                *PropagationDelayTrackerDesc
+		incoming             *PropagationDelayTrackerDesc
 		expectedUpdatedLocal Mergeable
 		expectedChange       Mergeable
 	}{
 		"beacon updated with newer timestamp": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 30}, // Updated with newer timestamp.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 30},
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					2: {PublishedAt: 30},
 				},
 			},
 		},
 		"beacon not updated with older timestamp": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 15}, // Older timestamp, should be ignored.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
@@ -160,19 +160,19 @@ func TestPropagationTrackerDesc_Merge_UpdateBeacon(t *testing.T) {
 			expectedChange: nil,
 		},
 		"beacon not updated with equal timestamp": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20}, // Same timestamp, no change.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
@@ -199,37 +199,37 @@ func TestPropagationTrackerDesc_Merge_UpdateBeacon(t *testing.T) {
 	}
 }
 
-func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
+func TestPropagationDelayTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 	now := time.Unix(10000, 0)
 
 	tests := map[string]struct {
 		localCAS             bool
-		local                *PropagationTrackerDesc
-		incoming             *PropagationTrackerDesc
+		local                *PropagationDelayTrackerDesc
+		incoming             *PropagationDelayTrackerDesc
 		expectedUpdatedLocal Mergeable
 		expectedChange       Mergeable
 	}{
 		"local change: beacon removed and local beacon is not deleted yet": {
 			localCAS: true,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					// Beacon 2 removed.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20, DeletedAt: now.UnixMilli()},
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					2: {PublishedAt: 20, DeletedAt: now.UnixMilli()},
 				},
@@ -237,19 +237,19 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 		},
 		"local change: beacon removed and local beacon is already deleted": {
 			localCAS: true,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20, DeletedAt: 100}, // Already deleted.
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					// Beacon 2 removed.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20, DeletedAt: 100},
@@ -259,25 +259,25 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 		},
 		"incoming: beacon deleted with newer timestamp": {
 			localCAS: false,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 30, DeletedAt: 30}, // Deleted with newer timestamp.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 30, DeletedAt: 30},
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					2: {PublishedAt: 30, DeletedAt: 30},
 				},
@@ -285,25 +285,25 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 		},
 		"incoming: beacon deleted with equal timestamp, deletion should win": {
 			localCAS: false,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20, DeletedAt: 20}, // Deleted with equal timestamp.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20, DeletedAt: 20},
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					2: {PublishedAt: 20, DeletedAt: 20},
 				},
@@ -311,19 +311,19 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 		},
 		"incoming: beacon deleted with older timestamp, should be ignored": {
 			localCAS: false,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 10, DeletedAt: 10}, // Deleted with older timestamp.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 					2: {PublishedAt: 20},
@@ -333,17 +333,17 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 		},
 		"incoming: active beacon does not override tombstone with equal timestamp": {
 			localCAS: false,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 20}, // Local is tombstone.
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 0}, // Incoming is active with same timestamp.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 20}, // Tombstone preserved.
 				},
@@ -352,22 +352,22 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 		},
 		"incoming: active beacon with newer timestamp overrides tombstone": {
 			localCAS: false,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 20}, // Local is tombstone.
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 30, DeletedAt: 0}, // Incoming is active with newer timestamp.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 30, DeletedAt: 0}, // Active wins.
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 30, DeletedAt: 0},
 				},
@@ -375,22 +375,22 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 		},
 		"incoming: dual-tombstone with later DeletedAt wins": {
 			localCAS: false,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 100}, // Local tombstone, deleted at 100.
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 200}, // Incoming tombstone, deleted at 200.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 200}, // Later deletion wins.
 				},
 			},
-			expectedChange: &PropagationTrackerDesc{
+			expectedChange: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 200},
 				},
@@ -398,17 +398,17 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 		},
 		"incoming: dual-tombstone with earlier DeletedAt is ignored": {
 			localCAS: false,
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 200}, // Local tombstone, deleted at 200.
 				},
 			},
-			incoming: &PropagationTrackerDesc{
+			incoming: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 100}, // Incoming tombstone, deleted at 100.
 				},
 			},
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 20, DeletedAt: 200}, // Local preserved.
 				},
@@ -419,7 +419,7 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			localCopy := testData.local.Clone().(*PropagationTrackerDesc)
+			localCopy := testData.local.Clone().(*PropagationDelayTrackerDesc)
 			incomingCopy := testData.incoming.Clone()
 
 			change, err := localCopy.mergeWithTime(incomingCopy, testData.localCAS, now)
@@ -430,22 +430,22 @@ func TestPropagationTrackerDesc_Merge_DeleteBeacon(t *testing.T) {
 	}
 }
 
-func TestPropagationTrackerDesc_Merge_EdgeCases(t *testing.T) {
+func TestPropagationDelayTrackerDesc_Merge_EdgeCases(t *testing.T) {
 	tests := map[string]struct {
-		local                *PropagationTrackerDesc
+		local                *PropagationDelayTrackerDesc
 		incoming             Mergeable
 		expectedUpdatedLocal Mergeable
 		expectedChange       Mergeable
 		expectedError        string
 	}{
 		"nil incoming": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
 			},
 			incoming: nil,
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
@@ -453,13 +453,13 @@ func TestPropagationTrackerDesc_Merge_EdgeCases(t *testing.T) {
 			expectedChange: nil,
 		},
 		"typed nil incoming": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
 			},
-			incoming: (*PropagationTrackerDesc)(nil),
-			expectedUpdatedLocal: &PropagationTrackerDesc{
+			incoming: (*PropagationDelayTrackerDesc)(nil),
+			expectedUpdatedLocal: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: 10},
 				},
@@ -467,11 +467,11 @@ func TestPropagationTrackerDesc_Merge_EdgeCases(t *testing.T) {
 			expectedChange: nil,
 		},
 		"wrong type": {
-			local: &PropagationTrackerDesc{
+			local: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{},
 			},
 			incoming:      &testMergeable{},
-			expectedError: "expected *PropagationTrackerDesc, got *memberlist.testMergeable",
+			expectedError: "expected *PropagationDelayTrackerDesc, got *memberlist.testMergeable",
 		},
 	}
 
@@ -500,8 +500,8 @@ func (t *testMergeable) MergeContent() []string                       { return n
 func (t *testMergeable) RemoveTombstones(_ time.Time) (int, int)      { return 0, 0 }
 func (t *testMergeable) Clone() Mergeable                             { return &testMergeable{} }
 
-func TestPropagationTrackerDesc_MergeContent(t *testing.T) {
-	d := NewPropagationTrackerDesc()
+func TestPropagationDelayTrackerDesc_MergeContent(t *testing.T) {
+	d := NewPropagationDelayTrackerDesc()
 	d.Beacons[1000] = BeaconDesc{PublishedAt: 1000}
 	d.Beacons[2000] = BeaconDesc{PublishedAt: 2000}
 	d.Beacons[3000] = BeaconDesc{PublishedAt: 3000}
@@ -514,19 +514,19 @@ func TestPropagationTrackerDesc_MergeContent(t *testing.T) {
 	assert.Contains(t, content, "3000")
 }
 
-func TestPropagationTrackerDesc_RemoveTombstones(t *testing.T) {
+func TestPropagationDelayTrackerDesc_RemoveTombstones(t *testing.T) {
 	now := time.Now()
 	limit := now.Add(-5 * time.Minute)
 
 	tests := map[string]struct {
-		desc           *PropagationTrackerDesc
+		desc           *PropagationDelayTrackerDesc
 		limit          time.Time
-		expectedDesc   *PropagationTrackerDesc
+		expectedDesc   *PropagationDelayTrackerDesc
 		expectedTotal  int
 		expectedRemove int
 	}{
 		"zero limit removes all tombstones": {
-			desc: &PropagationTrackerDesc{
+			desc: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: now.UnixMilli(), DeletedAt: 0},                                      // Active.
 					2: {PublishedAt: now.Add(-10 * time.Minute).UnixMilli(), DeletedAt: 0},               // Active (old).
@@ -535,7 +535,7 @@ func TestPropagationTrackerDesc_RemoveTombstones(t *testing.T) {
 				},
 			},
 			limit: time.Time{}, // Zero limit.
-			expectedDesc: &PropagationTrackerDesc{
+			expectedDesc: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: now.UnixMilli(), DeletedAt: 0},
 					2: {PublishedAt: now.Add(-10 * time.Minute).UnixMilli(), DeletedAt: 0},
@@ -545,7 +545,7 @@ func TestPropagationTrackerDesc_RemoveTombstones(t *testing.T) {
 			expectedRemove: 2,
 		},
 		"non-zero limit removes old tombstones only": {
-			desc: &PropagationTrackerDesc{
+			desc: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: now.UnixMilli(), DeletedAt: 0},                                      // Active.
 					2: {PublishedAt: now.Add(-10 * time.Minute).UnixMilli(), DeletedAt: 0},               // Active (old, not removed).
@@ -554,7 +554,7 @@ func TestPropagationTrackerDesc_RemoveTombstones(t *testing.T) {
 				},
 			},
 			limit: limit,
-			expectedDesc: &PropagationTrackerDesc{
+			expectedDesc: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: now.UnixMilli(), DeletedAt: 0},
 					2: {PublishedAt: now.Add(-10 * time.Minute).UnixMilli(), DeletedAt: 0},
@@ -565,14 +565,14 @@ func TestPropagationTrackerDesc_RemoveTombstones(t *testing.T) {
 			expectedRemove: 1, // 1 tombstone removed (beacon 4).
 		},
 		"no tombstones": {
-			desc: &PropagationTrackerDesc{
+			desc: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: now.UnixMilli(), DeletedAt: 0},
 					2: {PublishedAt: now.Add(-10 * time.Minute).UnixMilli(), DeletedAt: 0},
 				},
 			},
 			limit: limit,
-			expectedDesc: &PropagationTrackerDesc{
+			expectedDesc: &PropagationDelayTrackerDesc{
 				Beacons: map[uint64]BeaconDesc{
 					1: {PublishedAt: now.UnixMilli(), DeletedAt: 0},
 					2: {PublishedAt: now.Add(-10 * time.Minute).UnixMilli(), DeletedAt: 0},
@@ -593,12 +593,12 @@ func TestPropagationTrackerDesc_RemoveTombstones(t *testing.T) {
 	}
 }
 
-func TestPropagationTrackerDesc_Clone(t *testing.T) {
-	d := NewPropagationTrackerDesc()
+func TestPropagationDelayTrackerDesc_Clone(t *testing.T) {
+	d := NewPropagationDelayTrackerDesc()
 	d.Beacons[1000] = BeaconDesc{PublishedAt: 1000}
 	d.Beacons[2000] = BeaconDesc{PublishedAt: 2000, DeletedAt: 100}
 
-	cloned := d.Clone().(*PropagationTrackerDesc)
+	cloned := d.Clone().(*PropagationDelayTrackerDesc)
 
 	// Verify the clone has the same data.
 	assert.Equal(t, len(d.Beacons), len(cloned.Beacons))
@@ -612,30 +612,30 @@ func TestPropagationTrackerDesc_Clone(t *testing.T) {
 	assert.Equal(t, int64(1000), cloned.Beacons[1000].PublishedAt)
 }
 
-func TestGetOrCreatePropagationTrackerDesc(t *testing.T) {
+func TestGetOrCreatePropagationDelayTrackerDesc(t *testing.T) {
 	t.Run("nil input returns new desc", func(t *testing.T) {
-		desc := GetOrCreatePropagationTrackerDesc(nil)
+		desc := GetOrCreatePropagationDelayTrackerDesc(nil)
 		require.NotNil(t, desc)
 		assert.NotNil(t, desc.Beacons)
 		assert.Len(t, desc.Beacons, 0)
 	})
 
 	t.Run("existing desc is returned", func(t *testing.T) {
-		existing := NewPropagationTrackerDesc()
+		existing := NewPropagationDelayTrackerDesc()
 		existing.Beacons[1000] = BeaconDesc{PublishedAt: 1000}
 
-		desc := GetOrCreatePropagationTrackerDesc(existing)
+		desc := GetOrCreatePropagationDelayTrackerDesc(existing)
 		assert.Same(t, existing, desc)
 		assert.Len(t, desc.Beacons, 1)
 	})
 }
 
-func TestGetPropagationTrackerCodec(t *testing.T) {
-	codec := GetPropagationTrackerCodec()
-	assert.Equal(t, PropagationTrackerCodecID, codec.CodecID())
+func TestGetPropagationDelayTrackerCodec(t *testing.T) {
+	codec := GetPropagationDelayTrackerCodec()
+	assert.Equal(t, PropagationDelayTrackerCodecID, codec.CodecID())
 
 	// Test encode/decode roundtrip.
-	original := NewPropagationTrackerDesc()
+	original := NewPropagationDelayTrackerDesc()
 	original.Beacons[1234567890] = BeaconDesc{
 		PublishedAt: 1234567890,
 		DeletedAt:   9876543210,
@@ -647,6 +647,6 @@ func TestGetPropagationTrackerCodec(t *testing.T) {
 	decoded, err := codec.Decode(encoded)
 	require.NoError(t, err)
 
-	decodedDesc := decoded.(*PropagationTrackerDesc)
+	decodedDesc := decoded.(*PropagationDelayTrackerDesc)
 	assert.Equal(t, original.Beacons[1234567890], decodedDesc.Beacons[1234567890])
 }

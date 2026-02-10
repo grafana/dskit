@@ -184,8 +184,8 @@ type KVConfig struct {
 	// Zone-aware routing configuration.
 	ZoneAwareRouting ZoneAwareRoutingConfig `yaml:"zone_aware_routing"`
 
-	// Propagation tracker configuration.
-	PropagationTracker PropagationTrackerConfig `yaml:"propagation_tracker" category:"experimental"`
+	// Propagation delay tracker configuration.
+	PropagationDelayTracker PropagationDelayTrackerConfig `yaml:"propagation_delay_tracker" category:"experimental"`
 
 	MetricsNamespace string `yaml:"-"`
 
@@ -238,7 +238,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 
 	cfg.TCPTransport.RegisterFlagsWithPrefix(f, prefix)
 	cfg.ZoneAwareRouting.RegisterFlagsWithPrefix(f, prefix+"memberlist.zone-aware-routing.")
-	cfg.PropagationTracker.RegisterFlagsWithPrefix(f, prefix+"memberlist.propagation-tracker.")
+	cfg.PropagationDelayTracker.RegisterFlagsWithPrefix(f, prefix+"memberlist.propagation-delay-tracker.")
 
 	cfg.discoverMembersBackoff = backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
@@ -331,8 +331,8 @@ type KV struct {
 	// closed on shutdown
 	shutdown chan struct{}
 
-	// Propagation tracker (nil if disabled).
-	propagationTracker *PropagationTracker
+	// Propagation delay tracker (nil if disabled).
+	propagationDelayTracker *PropagationDelayTracker
 
 	// metrics
 	numberOfReceivedMessages            prometheus.Counter
@@ -456,9 +456,9 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 		mlkv.codecs[c.CodecID()] = c
 	}
 
-	// Register propagation tracker codec if enabled.
-	if cfg.PropagationTracker.Enabled {
-		mlkv.codecs[PropagationTrackerCodecID] = GetPropagationTrackerCodec()
+	// Register propagation delay tracker codec if enabled.
+	if cfg.PropagationDelayTracker.Enabled {
+		mlkv.codecs[PropagationDelayTrackerCodecID] = GetPropagationDelayTrackerCodec()
 	}
 
 	mlkv.NamedService = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping).WithName("memberlist_kv")
@@ -605,18 +605,18 @@ func (m *KV) starting(ctx context.Context) error {
 	}
 	m.delegateReady.Store(true)
 
-	// Start propagation tracker if enabled.
-	if m.cfg.PropagationTracker.Enabled {
-		m.propagationTracker = NewPropagationTracker(
+	// Start propagation delay tracker if enabled.
+	if m.cfg.PropagationDelayTracker.Enabled {
+		m.propagationDelayTracker = NewPropagationDelayTracker(
 			m,
-			m.cfg.PropagationTracker.BeaconInterval,
-			m.cfg.PropagationTracker.BeaconLifetime,
+			m.cfg.PropagationDelayTracker.BeaconInterval,
+			m.cfg.PropagationDelayTracker.BeaconLifetime,
 			m.logger,
 			m.registerer,
 		)
-		if err := m.propagationTracker.StartAsync(ctx); err != nil {
-			level.Warn(m.logger).Log("msg", "failed to start propagation tracker", "err", err)
-			m.propagationTracker = nil
+		if err := m.propagationDelayTracker.StartAsync(ctx); err != nil {
+			level.Warn(m.logger).Log("msg", "failed to start propagation delay tracker", "err", err)
+			m.propagationDelayTracker = nil
 		}
 	}
 
@@ -943,11 +943,11 @@ func (m *KV) discoverMembersWithRetries(ctx context.Context, members []string) (
 // While Stopping, we try to leave memberlist cluster and then shutdown memberlist client.
 // We do this in order to send out last messages, typically that ingester has LEFT the ring.
 func (m *KV) stopping(_ error) error {
-	// Stop propagation tracker if running.
-	if m.propagationTracker != nil {
-		m.propagationTracker.StopAsync()
-		if err := m.propagationTracker.AwaitTerminated(context.Background()); err != nil {
-			level.Warn(m.logger).Log("msg", "error stopping propagation tracker", "err", err)
+	// Stop propagation delay tracker if running.
+	if m.propagationDelayTracker != nil {
+		m.propagationDelayTracker.StopAsync()
+		if err := m.propagationDelayTracker.AwaitTerminated(context.Background()); err != nil {
+			level.Warn(m.logger).Log("msg", "error stopping propagation delay tracker", "err", err)
 		}
 	}
 

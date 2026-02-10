@@ -10,62 +10,62 @@ import (
 )
 
 const (
-	// PropagationTrackerCodecID is the codec ID used for the propagation tracker.
-	PropagationTrackerCodecID = "propagationTracker"
+	// PropagationDelayTrackerCodecID is the codec ID used for the propagation delay tracker.
+	PropagationDelayTrackerCodecID = "propagationDelayTracker"
 )
 
-// PropagationTrackerDescFactory creates a new PropagationTrackerDesc.
-func PropagationTrackerDescFactory() proto.Message {
-	return NewPropagationTrackerDesc()
+// PropagationDelayTrackerDescFactory creates a new PropagationDelayTrackerDesc.
+func PropagationDelayTrackerDescFactory() proto.Message {
+	return NewPropagationDelayTrackerDesc()
 }
 
-// NewPropagationTrackerDesc creates a new, empty PropagationTrackerDesc.
-func NewPropagationTrackerDesc() *PropagationTrackerDesc {
-	return &PropagationTrackerDesc{
+// NewPropagationDelayTrackerDesc creates a new, empty PropagationDelayTrackerDesc.
+func NewPropagationDelayTrackerDesc() *PropagationDelayTrackerDesc {
+	return &PropagationDelayTrackerDesc{
 		Beacons: make(map[uint64]BeaconDesc),
 	}
 }
 
-// GetPropagationTrackerCodec returns the codec for PropagationTrackerDesc.
-func GetPropagationTrackerCodec() codec.Codec {
-	return codec.NewProtoCodec(PropagationTrackerCodecID, PropagationTrackerDescFactory)
+// GetPropagationDelayTrackerCodec returns the codec for PropagationDelayTrackerDesc.
+func GetPropagationDelayTrackerCodec() codec.Codec {
+	return codec.NewProtoCodec(PropagationDelayTrackerCodecID, PropagationDelayTrackerDescFactory)
 }
 
-// GetOrCreatePropagationTrackerDesc returns the given value as a *PropagationTrackerDesc,
+// GetOrCreatePropagationDelayTrackerDesc returns the given value as a *PropagationDelayTrackerDesc,
 // or creates a new one if the value is nil.
-func GetOrCreatePropagationTrackerDesc(in any) *PropagationTrackerDesc {
+func GetOrCreatePropagationDelayTrackerDesc(in any) *PropagationDelayTrackerDesc {
 	if in == nil {
-		return NewPropagationTrackerDesc()
+		return NewPropagationDelayTrackerDesc()
 	}
 
-	desc := in.(*PropagationTrackerDesc)
+	desc := in.(*PropagationDelayTrackerDesc)
 	if desc == nil {
-		return NewPropagationTrackerDesc()
+		return NewPropagationDelayTrackerDesc()
 	}
 
 	return desc
 }
 
 // Merge implements Mergeable.
-func (d *PropagationTrackerDesc) Merge(other Mergeable, localCAS bool) (Mergeable, error) {
+func (d *PropagationDelayTrackerDesc) Merge(other Mergeable, localCAS bool) (Mergeable, error) {
 	return d.mergeWithTime(other, localCAS, time.Now())
 }
 
-func (d *PropagationTrackerDesc) mergeWithTime(mergeable Mergeable, localCAS bool, now time.Time) (Mergeable, error) {
+func (d *PropagationDelayTrackerDesc) mergeWithTime(mergeable Mergeable, localCAS bool, now time.Time) (Mergeable, error) {
 	if mergeable == nil {
 		return nil, nil
 	}
 
-	other, ok := mergeable.(*PropagationTrackerDesc)
+	other, ok := mergeable.(*PropagationDelayTrackerDesc)
 	if !ok {
-		return nil, fmt.Errorf("expected *PropagationTrackerDesc, got %T", mergeable)
+		return nil, fmt.Errorf("expected *PropagationDelayTrackerDesc, got %T", mergeable)
 	}
 
 	if other == nil {
 		return nil, nil
 	}
 
-	change := NewPropagationTrackerDesc()
+	change := NewPropagationDelayTrackerDesc()
 
 	for beaconID, otherBeacon := range other.Beacons {
 		changed := false
@@ -110,7 +110,7 @@ func (d *PropagationTrackerDesc) mergeWithTime(mergeable Mergeable, localCAS boo
 }
 
 // MergeContent implements Mergeable.
-func (d *PropagationTrackerDesc) MergeContent() []string {
+func (d *PropagationDelayTrackerDesc) MergeContent() []string {
 	result := make([]string, 0, len(d.Beacons))
 	for beaconID := range d.Beacons {
 		result = append(result, fmt.Sprintf("%d", beaconID))
@@ -119,7 +119,7 @@ func (d *PropagationTrackerDesc) MergeContent() []string {
 }
 
 // RemoveTombstones implements Mergeable.
-func (d *PropagationTrackerDesc) RemoveTombstones(limit time.Time) (total, removed int) {
+func (d *PropagationDelayTrackerDesc) RemoveTombstones(limit time.Time) (total, removed int) {
 	for beaconID, beacon := range d.Beacons {
 		if beacon.DeletedAt != 0 {
 			if limit.IsZero() || time.UnixMilli(beacon.DeletedAt).Before(limit) {
@@ -134,8 +134,8 @@ func (d *PropagationTrackerDesc) RemoveTombstones(limit time.Time) (total, remov
 }
 
 // Clone implements Mergeable.
-func (d *PropagationTrackerDesc) Clone() Mergeable {
-	clone := proto.Clone(d).(*PropagationTrackerDesc)
+func (d *PropagationDelayTrackerDesc) Clone() Mergeable {
+	clone := proto.Clone(d).(*PropagationDelayTrackerDesc)
 
 	// Ensure empty maps are preserved (easier to compare with a deep equal in tests).
 	if d.Beacons != nil && clone.Beacons == nil {

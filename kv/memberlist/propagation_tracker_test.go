@@ -16,24 +16,24 @@ import (
 	"github.com/grafana/dskit/services"
 )
 
-// TestPropagationTracker_TracksPropagationDelay verifies that when multiple trackers are running,
+// TestPropagationDelayTracker_TracksPropagationDelay verifies that when multiple trackers are running,
 // they receive beacons from each other and record the propagation delay in the histogram.
-func TestPropagationTracker_TracksPropagationDelay(t *testing.T) {
-	mkv := createPropagationTrackerTestKV(t)
+func TestPropagationDelayTracker_TracksPropagationDelay(t *testing.T) {
+	mkv := createPropagationDelayTrackerTestKV(t)
 
 	const beaconInterval = 100 * time.Millisecond
 
 	// Start two trackers with separate registries so we can check their metrics independently.
 	// Each tracker will publish beacons and receive beacons from the other.
 	registry1 := prometheus.NewPedanticRegistry()
-	tracker1 := NewPropagationTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry1)
+	tracker1 := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry1)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker1))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker1))
 	})
 
 	registry2 := prometheus.NewPedanticRegistry()
-	tracker2 := NewPropagationTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry2)
+	tracker2 := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry2)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker2))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker2))
@@ -78,26 +78,26 @@ func TestPropagationTracker_TracksPropagationDelay(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond)
 }
 
-// TestPropagationTracker_SkipsTrackingPropagationDelayOnInitialSync verifies that:
+// TestPropagationDelayTracker_SkipsTrackingPropagationDelayOnInitialSync verifies that:
 // 1. Pre-existing beacons in the KV store do not have their delay recorded when the tracker starts
 // 2. A tracker's own published beacons are marked as seen before publishing, so they don't count as "received"
-func TestPropagationTracker_SkipsTrackingPropagationDelayOnInitialSync(t *testing.T) {
-	mkv := createPropagationTrackerTestKV(t)
+func TestPropagationDelayTracker_SkipsTrackingPropagationDelayOnInitialSync(t *testing.T) {
+	mkv := createPropagationDelayTrackerTestKV(t)
 
 	const beaconInterval = 100 * time.Millisecond
 
 	// Start a "publisher" tracker to pre-populate the KV store with beacons.
 	// This simulates beacons that were published by other nodes before our test tracker starts.
-	publisher := NewPropagationTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	publisher := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), publisher))
 
 	// Wait for the publisher to create some beacons
 	require.Eventually(t, func() bool {
-		val, err := mkv.Get(propagationTrackerKey, GetPropagationTrackerCodec())
+		val, err := mkv.Get(propagationDelayTrackerKey, GetPropagationDelayTrackerCodec())
 		if err != nil || val == nil {
 			return false
 		}
-		desc := val.(*PropagationTrackerDesc)
+		desc := val.(*PropagationDelayTrackerDesc)
 		return len(desc.Beacons) >= 2
 	}, 5*time.Second, 50*time.Millisecond, "expected publisher to create beacons")
 
@@ -105,13 +105,13 @@ func TestPropagationTracker_SkipsTrackingPropagationDelayOnInitialSync(t *testin
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), publisher))
 
 	// Record how many beacons exist before starting the test tracker
-	val, err := mkv.Get(propagationTrackerKey, GetPropagationTrackerCodec())
+	val, err := mkv.Get(propagationDelayTrackerKey, GetPropagationDelayTrackerCodec())
 	require.NoError(t, err)
-	preExistingBeaconCount := len(val.(*PropagationTrackerDesc).Beacons)
+	preExistingBeaconCount := len(val.(*PropagationDelayTrackerDesc).Beacons)
 
 	// Create test tracker with its own registry so we can check metrics
 	registry := prometheus.NewPedanticRegistry()
-	tracker := NewPropagationTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry)
+	tracker := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry)
 
 	// Start tracker - it will receive pre-existing beacons via WatchKey during initial sync
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
@@ -121,11 +121,11 @@ func TestPropagationTracker_SkipsTrackingPropagationDelayOnInitialSync(t *testin
 
 	// Wait for the tracker to publish at least one new beacon
 	require.Eventually(t, func() bool {
-		val, err := mkv.Get(propagationTrackerKey, GetPropagationTrackerCodec())
+		val, err := mkv.Get(propagationDelayTrackerKey, GetPropagationDelayTrackerCodec())
 		if err != nil || val == nil {
 			return false
 		}
-		desc := val.(*PropagationTrackerDesc)
+		desc := val.(*PropagationDelayTrackerDesc)
 		return len(desc.Beacons) > preExistingBeaconCount
 	}, 5*time.Second, 50*time.Millisecond, "expected new beacon to be published")
 
@@ -139,18 +139,18 @@ func TestPropagationTracker_SkipsTrackingPropagationDelayOnInitialSync(t *testin
 	assert.Zero(t, histogram.GetSampleCount(), "pre-existing beacons and tracker's own beacons should not have delay recorded")
 }
 
-// TestPropagationTracker_PublishesFirstBeacon verifies that the tracker correctly
-// publishes a beacon when the propagationTrackerKey doesn't exist in the KV store yet.
-func TestPropagationTracker_PublishesFirstBeacon(t *testing.T) {
-	mkv := createPropagationTrackerTestKV(t)
+// TestPropagationDelayTracker_PublishesFirstBeacon verifies that the tracker correctly
+// publishes a beacon when the propagationDelayTrackerKey doesn't exist in the KV store yet.
+func TestPropagationDelayTracker_PublishesFirstBeacon(t *testing.T) {
+	mkv := createPropagationDelayTrackerTestKV(t)
 
 	// Verify the key doesn't exist initially
-	val, err := mkv.Get(propagationTrackerKey, GetPropagationTrackerCodec())
+	val, err := mkv.Get(propagationDelayTrackerKey, GetPropagationDelayTrackerCodec())
 	require.NoError(t, err)
 	require.Nil(t, val, "expected key to not exist initially")
 
-	// Create PropagationTracker with short beacon interval
-	tracker := NewPropagationTracker(mkv, 100*time.Millisecond, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	// Create PropagationDelayTracker with short beacon interval
+	tracker := NewPropagationDelayTracker(mkv, 100*time.Millisecond, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 
 	// Start tracker
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
@@ -160,11 +160,11 @@ func TestPropagationTracker_PublishesFirstBeacon(t *testing.T) {
 
 	// Wait for first beacon to be published
 	require.Eventually(t, func() bool {
-		val, err := mkv.Get(propagationTrackerKey, GetPropagationTrackerCodec())
+		val, err := mkv.Get(propagationDelayTrackerKey, GetPropagationDelayTrackerCodec())
 		if err != nil || val == nil {
 			return false
 		}
-		desc, ok := val.(*PropagationTrackerDesc)
+		desc, ok := val.(*PropagationDelayTrackerDesc)
 		if !ok {
 			return false
 		}
@@ -172,29 +172,29 @@ func TestPropagationTracker_PublishesFirstBeacon(t *testing.T) {
 	}, 5*time.Second, 50*time.Millisecond, "expected beacon to be published")
 
 	// Verify the beacon has a valid timestamp close to now
-	val, err = mkv.Get(propagationTrackerKey, GetPropagationTrackerCodec())
+	val, err = mkv.Get(propagationDelayTrackerKey, GetPropagationDelayTrackerCodec())
 	require.NoError(t, err)
-	desc := val.(*PropagationTrackerDesc)
+	desc := val.(*PropagationDelayTrackerDesc)
 	for _, beacon := range desc.Beacons {
 		require.InDelta(t, time.Now().UnixMilli(), beacon.PublishedAt, float64(10*time.Second.Milliseconds()))
 	}
 }
 
-// TestPropagationTracker_OneBeaconPerIntervalPerCluster verifies that the beacon publishing rate is
+// TestPropagationDelayTracker_OneBeaconPerIntervalPerCluster verifies that the beacon publishing rate is
 // close to one beacon per interval across the entire cluster, even when multiple trackers
 // are running. Due to the propagation delays, some duplicate beacons are expected when
 // trackers race, but the rate should be much lower than if every tracker publishes a beacon
 // every interval.
-func TestPropagationTracker_OneBeaconPerIntervalPerCluster(t *testing.T) {
-	mkv := createPropagationTrackerTestKV(t)
+func TestPropagationDelayTracker_OneBeaconPerIntervalPerCluster(t *testing.T) {
+	mkv := createPropagationDelayTrackerTestKV(t)
 
 	const beaconInterval = 100 * time.Millisecond
 	const numTrackers = 10
 
 	// Start multiple trackers (simulating multiple nodes in a cluster)
-	var trackers []*PropagationTracker
+	var trackers []*PropagationDelayTracker
 	for i := 0; i < numTrackers; i++ {
-		tracker := NewPropagationTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		tracker := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
 		trackers = append(trackers, tracker)
 	}
@@ -209,11 +209,11 @@ func TestPropagationTracker_OneBeaconPerIntervalPerCluster(t *testing.T) {
 	}
 
 	// Get the beacons and compute the actual time range covered
-	val, err := mkv.Get(propagationTrackerKey, GetPropagationTrackerCodec())
+	val, err := mkv.Get(propagationDelayTrackerKey, GetPropagationDelayTrackerCodec())
 	require.NoError(t, err)
 	require.NotNil(t, val)
 
-	desc := val.(*PropagationTrackerDesc)
+	desc := val.(*PropagationDelayTrackerDesc)
 	beaconCount := len(desc.Beacons)
 	require.NotZero(t, beaconCount, "expected at least one beacon")
 
@@ -240,19 +240,19 @@ func TestPropagationTracker_OneBeaconPerIntervalPerCluster(t *testing.T) {
 		"expected at most %d beacons (2x ideal for %v duration), got %d", maxExpected, actualDuration, beaconCount)
 }
 
-// TestPropagationTracker_BeaconLifetimeGarbageCollection verifies that beacons older than
+// TestPropagationDelayTracker_BeaconLifetimeGarbageCollection verifies that beacons older than
 // beaconLifetime are automatically marked as tombstones, and then removed by the KV store's
 // tombstone removal mechanism after LeftIngestersTimeout.
 //
 // Note: The KV store's Get() method removes all tombstones before returning, so we cannot
 // directly observe the tombstone state via Get(). Instead, we verify that old beacons
 // eventually disappear from the store (which requires them to first become tombstones).
-func TestPropagationTracker_BeaconLifetimeGarbageCollection(t *testing.T) {
+func TestPropagationDelayTracker_BeaconLifetimeGarbageCollection(t *testing.T) {
 	// Create KV with short LeftIngestersTimeout for faster tombstone removal
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
-	cfg.Codecs = []codec.Codec{GetPropagationTrackerCodec()}
+	cfg.Codecs = []codec.Codec{GetPropagationDelayTrackerCodec()}
 	cfg.LeftIngestersTimeout = 100 * time.Millisecond
 
 	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
@@ -265,22 +265,22 @@ func TestPropagationTracker_BeaconLifetimeGarbageCollection(t *testing.T) {
 	const beaconLifetime = 200 * time.Millisecond
 
 	registry := prometheus.NewPedanticRegistry()
-	tracker := NewPropagationTracker(mkv, beaconInterval, beaconLifetime, log.NewNopLogger(), registry)
+	tracker := NewPropagationDelayTracker(mkv, beaconInterval, beaconLifetime, log.NewNopLogger(), registry)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))
 	})
 
-	trackerCodec := GetPropagationTrackerCodec()
+	trackerCodec := GetPropagationDelayTrackerCodec()
 
 	// Wait for a beacon to be published
 	var initialBeaconID uint64
 	require.Eventually(t, func() bool {
-		val, _ := mkv.Get(propagationTrackerKey, trackerCodec)
+		val, _ := mkv.Get(propagationDelayTrackerKey, trackerCodec)
 		if val == nil {
 			return false
 		}
-		desc := val.(*PropagationTrackerDesc)
+		desc := val.(*PropagationDelayTrackerDesc)
 		for beaconID, beacon := range desc.Beacons {
 			if beacon.DeletedAt == 0 {
 				initialBeaconID = beaconID
@@ -295,34 +295,40 @@ func TestPropagationTracker_BeaconLifetimeGarbageCollection(t *testing.T) {
 	// after LeftIngestersTimeout (100ms), for a total of ~300ms minimum.
 	// We can't observe the intermediate tombstone state via Get() since it strips tombstones.
 	require.Eventually(t, func() bool {
-		val, _ := mkv.Get(propagationTrackerKey, trackerCodec)
+		val, _ := mkv.Get(propagationDelayTrackerKey, trackerCodec)
 		if val == nil {
 			return false
 		}
-		desc := val.(*PropagationTrackerDesc)
+		desc := val.(*PropagationDelayTrackerDesc)
 		_, exists := desc.Beacons[initialBeaconID]
 		return !exists
 	}, 5*time.Second, 10*time.Millisecond, "beacon should be garbage collected")
 }
 
-// TestPropagationTracker_SkipsNegativeDelay verifies that beacons with future timestamps
+// TestPropagationDelayTracker_SkipsNegativeDelay verifies that beacons with future timestamps
 // (which can happen due to clock skew between nodes) do not have their delay recorded,
 // since a negative delay would be meaningless.
-func TestPropagationTracker_SkipsNegativeDelay(t *testing.T) {
-	mkv := createPropagationTrackerTestKV(t)
-	trackerCodec := GetPropagationTrackerCodec()
+func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
+	mkv := createPropagationDelayTrackerTestKV(t)
+	trackerCodec := GetPropagationDelayTrackerCodec()
 
 	// Start a tracker that will receive beacons via WatchKey.
 	registry := prometheus.NewPedanticRegistry()
-	tracker := NewPropagationTracker(mkv, time.Hour, time.Hour, log.NewNopLogger(), registry)
+	tracker := NewPropagationDelayTracker(mkv, time.Hour, time.Hour, log.NewNopLogger(), registry)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))
 	})
 
+	// Wait for the WatchKey goroutine to register. StartAndAwaitRunning returns when the
+	// service enters Running state, but the watch goroutine is spawned asynchronously and
+	// may not have registered with WatchKey yet. Without this delay, the CAS notification
+	// could be missed in slow CI environments.
+	time.Sleep(100 * time.Millisecond)
+
 	// Publish an initial beacon to trigger the tracker's initial sync.
-	err := mkv.CAS(context.Background(), propagationTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := GetOrCreatePropagationTrackerDesc(in)
+	err := mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := GetOrCreatePropagationDelayTrackerDesc(in)
 		desc.Beacons[1] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
 		return desc, true, nil
 	})
@@ -336,8 +342,8 @@ func TestPropagationTracker_SkipsNegativeDelay(t *testing.T) {
 	// Publish a beacon with a future timestamp (simulating clock skew from another node).
 	const futureBeaconID uint64 = 2
 	futureTime := time.Now().Add(10 * time.Second)
-	err = mkv.CAS(context.Background(), propagationTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := GetOrCreatePropagationTrackerDesc(in)
+	err = mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := GetOrCreatePropagationDelayTrackerDesc(in)
 		desc.Beacons[futureBeaconID] = BeaconDesc{PublishedAt: futureTime.UnixMilli()}
 		return desc, true, nil
 	})
@@ -356,15 +362,15 @@ func TestPropagationTracker_SkipsNegativeDelay(t *testing.T) {
 	assert.Zero(t, histogram.GetSampleCount(), "negative delay (future timestamp) should not be recorded")
 }
 
-// createPropagationTrackerTestKV creates and starts a KV store configured with the PropagationTracker codec.
+// createPropagationDelayTrackerTestKV creates and starts a KV store configured with the PropagationDelayTracker codec.
 // The KV store is automatically stopped when the test completes.
-func createPropagationTrackerTestKV(t *testing.T) *KV {
+func createPropagationDelayTrackerTestKV(t *testing.T) *KV {
 	t.Helper()
 
 	var cfg KVConfig
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
-	cfg.Codecs = []codec.Codec{GetPropagationTrackerCodec()}
+	cfg.Codecs = []codec.Codec{GetPropagationDelayTrackerCodec()}
 
 	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))

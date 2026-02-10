@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/services"
@@ -25,7 +25,7 @@ const (
 
 // PropagationTracker is a service that tracks gossip propagation delay across
 // the memberlist cluster by periodically publishing beacons and measuring
-// how long it takes for beacons to propagate via WatchKey.
+// how long it takes for beacons to propagate.
 type PropagationTracker struct {
 	services.Service
 
@@ -52,13 +52,6 @@ type PropagationTracker struct {
 }
 
 // NewPropagationTracker creates a new PropagationTracker service.
-//
-// Parameters:
-//   - kv: The memberlist KV store. The propagation tracker codec must be registered before calling this.
-//   - beaconInterval: How often to check for and potentially publish beacons.
-//   - beaconLifetime: How long a beacon lives before being marked as a tombstone.
-//   - logger: Logger for the service.
-//   - registerer: Prometheus registerer for metrics.
 func NewPropagationTracker(
 	kv *KV,
 	beaconInterval time.Duration,
@@ -264,11 +257,16 @@ func (t *PropagationTracker) publishBeacon(ctx context.Context) {
 	beaconID := rand.Uint64()
 	now := time.Now()
 
-	// Mark as seen before publishing to avoid measuring our own beacon
+	// Mark as seen before publishing to avoid measuring our own beacon.
 	t.markAsSeen(beaconID)
 
 	err := t.kv.CAS(ctx, propagationTrackerKey, t.codec, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePropagationTrackerDesc(in)
+
+		// Skip publishing if we already have a beacon with the same ID (extremely rare beacon ID collision).
+		if _, exists := desc.Beacons[beaconID]; exists {
+			return nil, false, nil
+		}
 
 		desc.Beacons[beaconID] = BeaconDesc{
 			PublishedAt: now.UnixMilli(),

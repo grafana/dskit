@@ -33,11 +33,17 @@ func GetPropagationTrackerCodec() codec.Codec {
 
 // GetOrCreatePropagationTrackerDesc returns the given value as a *PropagationTrackerDesc,
 // or creates a new one if the value is nil.
-func GetOrCreatePropagationTrackerDesc(d interface{}) *PropagationTrackerDesc {
-	if d == nil {
+func GetOrCreatePropagationTrackerDesc(in any) *PropagationTrackerDesc {
+	if in == nil {
 		return NewPropagationTrackerDesc()
 	}
-	return d.(*PropagationTrackerDesc)
+
+	desc := in.(*PropagationTrackerDesc)
+	if desc == nil {
+		return NewPropagationTrackerDesc()
+	}
+
+	return desc
 }
 
 // Merge implements Mergeable.

@@ -320,29 +320,34 @@ func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))
 	})
 
-	// Wait for the WatchKey goroutine to register. StartAndAwaitRunning returns when the
-	// service enters Running state, but the watch goroutine is spawned asynchronously and
-	// may not have registered with WatchKey yet. Without this delay, the CAS notification
-	// could be missed in slow CI environments.
-	time.Sleep(100 * time.Millisecond)
-
-	// Publish an initial beacon to trigger the tracker's initial sync.
-	err := mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := GetOrCreatePropagationDelayTrackerDesc(in)
-		desc.Beacons[1] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
-		return desc, true, nil
-	})
-	require.NoError(t, err)
-
-	// Wait for the tracker to complete initial sync.
+	// Wait for the tracker to complete initial sync by publishing a beacon until it triggers
+	// the WatchKey callback. This handles the race where the watcher may not be registered yet.
+	// We use the same beacon ID each time to ensure only 1 beacon is published.
+	const syncBeaconID uint64 = 1
 	require.Eventually(t, func() bool {
+		_ = mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+			desc := GetOrCreatePropagationDelayTrackerDesc(in)
+			// Always update with new timestamp to trigger notification even if beacon exists.
+			desc.Beacons[syncBeaconID] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
+			return desc, true, nil
+		})
 		return tracker.initialSyncDone.Load()
 	}, 5*time.Second, 10*time.Millisecond, "tracker should complete initial sync")
+
+	// Get the current histogram count before publishing the future beacon.
+	getHistogramCount := func() uint64 {
+		metricFamilies, err := metrics.NewMetricFamilyMapFromGatherer(registry)
+		require.NoError(t, err)
+		histogram, err := metrics.FindHistogramWithNameAndLabels(metricFamilies, "memberlist_propagation_tracker_delay_seconds")
+		require.NoError(t, err)
+		return histogram.GetSampleCount()
+	}
+	countBefore := getHistogramCount()
 
 	// Publish a beacon with a future timestamp (simulating clock skew from another node).
 	const futureBeaconID uint64 = 2
 	futureTime := time.Now().Add(10 * time.Second)
-	err = mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+	err := mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePropagationDelayTrackerDesc(in)
 		desc.Beacons[futureBeaconID] = BeaconDesc{PublishedAt: futureTime.UnixMilli()}
 		return desc, true, nil
@@ -354,12 +359,9 @@ func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
 		return tracker.alreadySeen(futureBeaconID)
 	}, 5*time.Second, 10*time.Millisecond, "tracker should have seen the beacon")
 
-	// Verify no delay was recorded (negative delay should be skipped).
-	metricFamilies, err := metrics.NewMetricFamilyMapFromGatherer(registry)
-	require.NoError(t, err)
-	histogram, err := metrics.FindHistogramWithNameAndLabels(metricFamilies, "memberlist_propagation_tracker_delay_seconds")
-	require.NoError(t, err)
-	assert.Zero(t, histogram.GetSampleCount(), "negative delay (future timestamp) should not be recorded")
+	// Verify no delay was recorded for the future beacon (negative delay should be skipped).
+	countAfter := getHistogramCount()
+	assert.Equal(t, countBefore, countAfter, "negative delay (future timestamp) should not be recorded")
 }
 
 // createPropagationDelayTrackerTestKV creates and starts a KV store configured with the PropagationDelayTracker codec.

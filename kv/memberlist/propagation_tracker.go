@@ -56,6 +56,11 @@ type PropagationTracker struct {
 	seenBeaconsMu sync.RWMutex
 	seenBeacons   map[uint64]struct{}
 
+	// pendingBeaconID is the beacon ID currently being published. This prevents a race
+	// where cleanupSeenBeacons could remove a beacon ID from seenBeacons before the
+	// CAS operation that publishes it completes.
+	pendingBeaconID atomic.Uint64
+
 	// initialSyncDone indicates whether the first WatchKey callback has completed.
 	// On the first callback, we mark all beacons as seen but skip delay recording
 	// since pre-existing beacons may have been published long ago.
@@ -232,7 +237,15 @@ func (t *PropagationTracker) cleanupSeenBeacons(desc *PropagationTrackerDesc) {
 	t.seenBeaconsMu.Lock()
 	defer t.seenBeaconsMu.Unlock()
 
+	// Get the pending beacon ID to avoid cleaning it up during publish.
+	pendingID := t.pendingBeaconID.Load()
+
 	for beaconID := range t.seenBeacons {
+		// Skip the pending beacon ID - it may not be in the KV store yet.
+		if beaconID == pendingID {
+			continue
+		}
+
 		beacon, exists := desc.Beacons[beaconID]
 		// Remove from seenBeacons if not in KV store or if it's a tombstone
 		if !exists || beacon.DeletedAt != 0 {
@@ -282,8 +295,18 @@ func (t *PropagationTracker) onBeaconInterval(ctx context.Context) {
 }
 
 func (t *PropagationTracker) publishBeacon(ctx context.Context) {
+	// Generate a non-zero beacon ID. We need beaconID > 0 because 0 is used as
+	// the "no pending beacon" sentinel value in pendingBeaconID.
 	beaconID := rand.Uint64()
+	if beaconID == 0 {
+		beaconID = 1
+	}
 	now := time.Now()
+
+	// Set pendingBeaconID before marking as seen to prevent cleanupSeenBeacons
+	// from removing it during the CAS operation window.
+	t.pendingBeaconID.Store(beaconID)
+	defer t.pendingBeaconID.Store(0)
 
 	// Mark as seen before publishing to avoid measuring our own beacon.
 	t.markAsSeen(beaconID)

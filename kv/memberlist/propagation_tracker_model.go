@@ -70,7 +70,7 @@ func (d *PropagationTrackerDesc) mergeWithTime(mergeable Mergeable, localCAS boo
 			thisBeacon = otherBeacon
 		} else {
 			// In case the timestamp is equal we give priority to the deleted state.
-			if otherBeacon.PublishedAt > thisBeacon.PublishedAt || (otherBeacon.PublishedAt == thisBeacon.PublishedAt && otherBeacon.DeletedAt != 0 && thisBeacon.DeletedAt == 0) {
+			if otherBeacon.PublishedAt > thisBeacon.PublishedAt || (otherBeacon.PublishedAt == thisBeacon.PublishedAt && otherBeacon.DeletedAt > thisBeacon.DeletedAt) {
 				changed = true
 				thisBeacon = otherBeacon
 			}

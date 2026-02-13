@@ -37,6 +37,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
@@ -1065,11 +1066,9 @@ func setAutoAssignedPorts(network string, cfg *Config) {
 }
 
 func TestPprofCmdlineDisabled(t *testing.T) {
-	cfg := Config{}
-	cfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	var cfg Config
+	flagext.DefaultValues(&cfg)
 	setAutoAssignedPorts("tcp", &cfg)
-	cfg.Registerer = prometheus.NewPedanticRegistry()
-	cfg.Gatherer = prometheus.NewRegistry()
 
 	srv, err := New(cfg)
 	require.NoError(t, err)

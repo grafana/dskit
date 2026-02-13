@@ -34,8 +34,10 @@ import (
 	protobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
@@ -1061,6 +1063,33 @@ func setAutoAssignedPorts(network string, cfg *Config) {
 	cfg.GRPCListenNetwork = network
 	cfg.GRPCListenAddress = "localhost"
 	cfg.GRPCListenPort = 0
+}
+
+func TestPprofCmdlineDisabled(t *testing.T) {
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+	setAutoAssignedPorts("tcp", &cfg)
+	reg := prometheus.NewPedanticRegistry()
+	cfg.Registerer, cfg.Gatherer = reg, reg
+
+	srv, err := New(cfg)
+	require.NoError(t, err)
+	go func() { require.NoError(t, srv.Run()) }()
+	t.Cleanup(srv.Shutdown)
+
+	// /debug/pprof/cmdline should return 404
+	resp, err := http.Get(httpTarget(srv, "/debug/pprof/cmdline"))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	// Other pprof endpoints should still work
+	for _, path := range []string{"/debug/pprof/", "/debug/pprof/heap"} {
+		resp, err := http.Get(httpTarget(srv, path))
+		require.NoError(t, err)
+		resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "expected 200 for %s", path)
+	}
 }
 
 func httpTarget(srv *Server, path string) string {

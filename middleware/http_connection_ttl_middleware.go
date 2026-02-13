@@ -134,7 +134,9 @@ func (m *httpConnectionTTLMiddleware) calculateTTL(conn string) time.Duration {
 	h := fnv.New64()
 	h.Write([]byte(conn))
 	hash := h.Sum64()
-	ttlInMs := m.minTTL.Milliseconds() + (int64(hash) % (m.maxTTL.Milliseconds() + 1 - m.minTTL.Milliseconds()))
+	minMs := uint64(m.minTTL.Milliseconds())
+	maxMs := uint64(m.maxTTL.Milliseconds())
+	ttlInMs := minMs + (hash % (maxMs + 1 - minMs))
 	return time.Duration(ttlInMs) * time.Millisecond
 }
 

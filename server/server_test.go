@@ -1069,6 +1069,8 @@ func TestPprofCmdlineDisabled(t *testing.T) {
 	var cfg Config
 	flagext.DefaultValues(&cfg)
 	setAutoAssignedPorts("tcp", &cfg)
+	reg := prometheus.NewPedanticRegistry()
+	cfg.Registerer, cfg.Gatherer = reg, reg
 
 	srv, err := New(cfg)
 	require.NoError(t, err)

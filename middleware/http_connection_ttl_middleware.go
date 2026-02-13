@@ -47,6 +47,9 @@ type httpConnectionTTLMiddleware struct {
 
 	totalOpenConnections   prometheus.Counter
 	totalClosedConnections *prometheus.CounterVec
+
+	ticker *time.Ticker
+	done   chan struct{}
 }
 
 // NewHTTPConnectionTTLMiddleware returns an HTTP middleware that limits the maximum lifetime, TTL,
@@ -86,10 +89,17 @@ func NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleConnectionCheckFrequency
 		if idleConnectionCheckFrequency <= 0 {
 			return nil, errIdleConnectionCheckFrequencyMustBePositive
 		}
+		rpcLimiter.ticker = time.NewTicker(idleConnectionCheckFrequency)
+		rpcLimiter.done = make(chan struct{})
 		go func() {
-			idleConnectionCheckTicker := time.NewTicker(idleConnectionCheckFrequency)
-			for range idleConnectionCheckTicker.C {
-				rpcLimiter.removeIdleExpiredConnections()
+			defer rpcLimiter.ticker.Stop()
+			for {
+				select {
+				case <-rpcLimiter.ticker.C:
+					rpcLimiter.removeIdleExpiredConnections()
+				case <-rpcLimiter.done:
+					return
+				}
 			}
 		}()
 	}
@@ -161,6 +171,19 @@ func (m *httpConnectionTTLMiddleware) connectionState(conn string) *connectionSt
 		m.totalOpenConnections.Inc()
 	}
 	return state
+}
+
+// Stop stops the background ticker goroutine and releases associated resources.
+// It is safe to call multiple times.
+func (m *httpConnectionTTLMiddleware) Stop() {
+	if m.done != nil {
+		select {
+		case <-m.done:
+			// Already closed
+		default:
+			close(m.done)
+		}
+	}
 }
 
 // Wrap implements middleware.Interface, and returns a http.Handler that first

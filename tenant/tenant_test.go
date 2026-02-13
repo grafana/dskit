@@ -72,29 +72,29 @@ func BenchmarkTenantID(b *testing.B) {
 	})
 }
 
-func BenchmarkSubtenantID(b *testing.B) {
+func BenchmarkTenantWithMetadata(b *testing.B) {
 	singleCtx := context.Background()
-	singleCtx = user.InjectOrgID(singleCtx, "tenant-a:k6")
-	singleNoSubCtx := context.Background()
-	singleNoSubCtx = user.InjectOrgID(singleNoSubCtx, "tenant-a")
+	singleCtx = user.InjectOrgID(singleCtx, "tenant-a:key=value")
+	singleNoMetaCtx := context.Background()
+	singleNoMetaCtx = user.InjectOrgID(singleNoMetaCtx, "tenant-a")
 	multiCtx := context.Background()
-	multiCtx = user.InjectOrgID(multiCtx, "tenant-a:k6|tenant-a:k6")
+	multiCtx = user.InjectOrgID(multiCtx, "tenant-a:key=value|tenant-a:key=value")
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	b.Run("single-with-subtenant", func(b *testing.B) {
+	b.Run("single-with-metadata", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _, _ = SubtenantID(singleCtx)
+			_, _, _ = TenantWithMetadata(singleCtx)
 		}
 	})
-	b.Run("single-no-subtenant", func(b *testing.B) {
+	b.Run("single-no-metadata", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _, _ = SubtenantID(singleNoSubCtx)
+			_, _, _ = TenantWithMetadata(singleNoMetaCtx)
 		}
 	})
 	b.Run("multi-same-tenant", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _, _ = SubtenantID(multiCtx)
+			_, _, _ = TenantWithMetadata(multiCtx)
 		}
 	})
 }

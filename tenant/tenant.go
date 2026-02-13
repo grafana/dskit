@@ -14,18 +14,20 @@ import (
 const (
 	// MaxTenantIDLength is the max length of single tenant ID in bytes
 	MaxTenantIDLength = 150
+	MaxMetadataLength = 64
 
 	tenantIDsSeparator = '|'
 
-	// subtenantIDSeparator separates the tenant ID from the subtenant ID.
-	// The format is "tenantID:subtenantID" (e.g., "123456:k6").
+	// metadataSeparator separates the tenant ID from the metadata.
+	// The format is "tenantID:key=value" (e.g., "123456:product=k6").
 	// The colon is not a valid character in tenant IDs, making it safe to use as a separator.
-	subtenantIDSeparator = ':'
+	metadataSeparator = ':'
 )
 
 var (
 	// validTenantIdChars is a lookup table for valid tenant ID characters.
 	validTenantIdChars [256]bool
+	validMetadataChars [256]bool
 
 	errTenantIDTooLong = fmt.Errorf("tenant ID is too long: max %d characters", MaxTenantIDLength)
 	errUnsafeTenantID  = errors.New("tenant ID is '.' or '..'")
@@ -47,6 +49,22 @@ func init() {
 	for _, c := range "!-_.*'()" {
 		validTenantIdChars[c] = true
 	}
+
+	// Metadata:
+	for _, c := range "-=" {
+		validMetadataChars[c] = true
+	}
+	for c := 'a'; c <= 'z'; c++ {
+		validMetadataChars[c] = true
+	}
+	for c := '0'; c <= '9'; c++ {
+		validMetadataChars[c] = true
+	}
+}
+
+type Metadata struct {
+	Key   string
+	Value string
 }
 
 type errTenantIDUnsupportedCharacter struct {
@@ -59,6 +77,19 @@ func (e *errTenantIDUnsupportedCharacter) Error() string {
 		"tenant ID '%s' contains unsupported character '%c'",
 		e.tenantID,
 		e.tenantID[e.pos],
+	)
+}
+
+type errMetadataUnsupportedCharacter struct {
+	pos      int
+	metadata string
+}
+
+func (e *errMetadataUnsupportedCharacter) Error() string {
+	return fmt.Sprintf(
+		"metadata '%s' contains unsupported character '%c'",
+		e.metadata,
+		e.metadata[e.pos],
 	)
 }
 
@@ -98,10 +129,18 @@ func ValidTenantID(s string) error {
 	return nil
 }
 
-// ValidSubtenantID returns an error if the subtenant ID is invalid, nil otherwise.
-// Subtenant IDs follow the same rules as tenant IDs.
-func ValidSubtenantID(s string) error {
-	return ValidTenantID(s)
+// ValidMetadata returns an error if the metadata is invalid, nil otherwise.
+// Metadata must contain only lowercase letters, digits, '-', and '='.
+func ValidMetadata(s string) error {
+	for i := 0; i < len(s); i++ {
+		if !validMetadataChars[s[i]] {
+			return &errMetadataUnsupportedCharacter{metadata: s, pos: i}
+		}
+	}
+	if len(s) > MaxMetadataLength {
+		return fmt.Errorf("metadata too long: %d", len(s))
+	}
+	return nil
 }
 
 // JoinTenantIDs returns all tenant IDs concatenated with the separator character `|`
@@ -134,19 +173,19 @@ func TenantIDsFromOrgID(orgID string) ([]string, error) {
 	return TenantIDs(user.InjectOrgID(context.TODO(), orgID))
 }
 
-func trimSubtenantID(orgID string) string {
-	idx := strings.IndexByte(orgID, subtenantIDSeparator)
+func trimMetadata(orgID string) string {
+	idx := strings.IndexByte(orgID, metadataSeparator)
 	if idx == -1 {
 		return orgID
 	}
 	return orgID[:idx]
 }
 
-// splitTenantAndSubtenant splits an orgID into tenant ID and subtenant ID.
-// If the orgID contains no subtenant separator, the subtenant will be empty.
-// The format is "tenantID:subtenantID" (e.g., "123456:k6").
-func splitTenantAndSubtenant(orgID string) (tenantID, subtenantID string) {
-	idx := strings.IndexByte(orgID, subtenantIDSeparator)
+// splitTenantAndMetadata splits an orgID into tenant ID and metadata.
+// If the orgID contains no metadata separator, the metadata string will be empty.
+// The format is "tenantID:key=value" (e.g., "123456:product=k6").
+func splitTenantAndMetadata(orgID string) (tenantID, metadata string) {
+	idx := strings.IndexByte(orgID, metadataSeparator)
 	if idx == -1 {
 		return orgID, ""
 	}

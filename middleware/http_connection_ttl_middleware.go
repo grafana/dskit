@@ -123,15 +123,28 @@ func (m *httpConnectionTTLMiddleware) removeIdleExpiredConnections() {
 }
 
 // removeExpiredConnection checks if the given connection expired, and in that case removes it from the cache.
+// If the connection is not yet tracked, it creates a new entry. If it exists and is not expired, it updates lastSeen.
 // Returns a boolean indicating if the given connection has been removed.
 func (m *httpConnectionTTLMiddleware) removeExpiredConnection(conn string) bool {
-	state := m.connectionState(conn)
-	// It is safe to call state.isExpired() without locking m.connectionsMu,
-	// because connectionState.ttl and connectionState.created are never modified.
-	if !state.isExpired() {
+	now := time.Now()
+	m.connectionsMu.Lock()
+	state, exists := m.connections[conn]
+	if !exists {
+		state = &connectionState{
+			ttl:      m.calculateTTL(conn),
+			created:  now,
+			lastSeen: now,
+		}
+		m.connections[conn] = state
+		m.connectionsMu.Unlock()
+		m.totalOpenConnections.Inc()
 		return false
 	}
-	m.connectionsMu.Lock()
+	if !state.isExpired() {
+		state.lastSeen = now
+		m.connectionsMu.Unlock()
+		return false
+	}
 	delete(m.connections, conn)
 	m.connectionsMu.Unlock()
 	m.totalClosedConnections.WithLabelValues(totalClosedConnectionsReasonLimit).Inc()
@@ -148,29 +161,6 @@ func (m *httpConnectionTTLMiddleware) calculateTTL(conn string) time.Duration {
 	maxMs := uint64(m.maxTTL.Milliseconds())
 	ttlInMs := minMs + (hash % (maxMs + 1 - minMs))
 	return time.Duration(ttlInMs) * time.Millisecond
-}
-
-// connectionState returns the current state of the given connection.
-func (m *httpConnectionTTLMiddleware) connectionState(conn string) *connectionState {
-	var now = time.Now()
-	m.connectionsMu.Lock()
-	state, cachedConn := m.connections[conn]
-	if cachedConn {
-		state.lastSeen = now
-	} else {
-		ttl := m.calculateTTL(conn)
-		state = &connectionState{
-			ttl:      ttl,
-			created:  now,
-			lastSeen: now,
-		}
-		m.connections[conn] = state
-	}
-	m.connectionsMu.Unlock()
-	if !cachedConn {
-		m.totalOpenConnections.Inc()
-	}
-	return state
 }
 
 // Stop stops the background ticker goroutine and releases associated resources.

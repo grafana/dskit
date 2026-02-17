@@ -70,6 +70,7 @@ func TestNewHTTPConnectionTTLMiddleware(t *testing.T) {
 			if tc.expectedErr == nil {
 				require.NoError(t, err)
 				require.NotNil(t, m)
+				t.Cleanup(m.Stop)
 			} else {
 				require.ErrorIs(t, err, tc.expectedErr)
 				require.Nil(t, m)
@@ -116,6 +117,7 @@ func TestHTTPConnectionTTLMiddleware_CalculateTTL(t *testing.T) {
 			m, err := NewHTTPConnectionTTLMiddleware(tc.minTTL, tc.maxTTL, time.Second, reg)
 			require.NoError(t, err)
 			require.NotNil(t, m)
+			t.Cleanup(m.Stop)
 
 			limiterMiddleware, ok := m.(*httpConnectionTTLMiddleware)
 			require.True(t, ok)
@@ -184,6 +186,7 @@ func TestHTTPConnectionTTLMiddleware_Wrap(t *testing.T) {
 			// create request per connection limiter middleware
 			m, err := NewHTTPConnectionTTLMiddleware(tc.minTTL, tc.maxTTL, 1*time.Second, reg)
 			require.NoError(t, err)
+			t.Cleanup(m.Stop)
 
 			// declare default handler
 			hnd := m.Wrap(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -227,6 +230,7 @@ func TestHTTPConnectionTTLMiddleware_RemoveIdleExpiredConnections(t *testing.T) 
 	reg := prometheus.NewRegistry()
 	m, err := NewHTTPConnectionTTLMiddleware(1*time.Second, 2*time.Second, idleConnectionCheckFrequency, reg)
 	require.NoError(t, err)
+	t.Cleanup(m.Stop)
 
 	// declare default handler
 	hnd := m.Wrap(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -275,6 +279,7 @@ func TestHTTPConnectionTTLMiddleware_RemoveIdleExpiredConnectionsKeepsActiveConn
 	reg := prometheus.NewRegistry()
 	m, err := NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleCheckFrequency, reg)
 	require.NoError(t, err)
+	t.Cleanup(m.Stop)
 
 	rpcMiddleware, ok := m.(*httpConnectionTTLMiddleware)
 	require.True(t, ok)

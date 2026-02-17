@@ -148,24 +148,25 @@ func (m *httpConnectionTTLMiddleware) removeExpiredConnection(conn string) bool 
 	m.connectionsMu.Lock()
 	state, exists := m.connections[conn]
 	if !exists {
-		m.connections[conn] = &connectionState{
+		state = &connectionState{
 			ttl:      m.calculateTTL(conn),
 			created:  now,
 			lastSeen: now,
 		}
+		m.connections[conn] = state
 		m.connectionsMu.Unlock()
 		m.totalOpenConnections.Inc()
 		return false
 	}
-	if state.isExpired() {
-		delete(m.connections, conn)
+	if !state.isExpired() {
+		state.lastSeen = now
 		m.connectionsMu.Unlock()
-		m.totalClosedConnections.WithLabelValues(totalClosedConnectionsReasonLimit).Inc()
-		return true
+		return false
 	}
-	state.lastSeen = now
+	delete(m.connections, conn)
 	m.connectionsMu.Unlock()
-	return false
+	m.totalClosedConnections.WithLabelValues(totalClosedConnectionsReasonLimit).Inc()
+	return true
 }
 
 // calculateTTL calculates the TTL for the given connection. This value is from the range between minTTL and maxTTL,

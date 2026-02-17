@@ -343,6 +343,7 @@ func TestHTTPConnectionTTLMiddleware_ConcurrentRemoveExpiredConnection(t *testin
 	reg := prometheus.NewRegistry()
 	m, err := NewHTTPConnectionTTLMiddleware(1*time.Millisecond, 1*time.Millisecond, 1*time.Second, reg)
 	require.NoError(t, err)
+	t.Cleanup(m.Stop)
 
 	rpcMiddleware, ok := m.(*httpConnectionTTLMiddleware)
 	require.True(t, ok)
@@ -408,7 +409,7 @@ func TestHTTPConnectionTTLMiddleware_IdleCleanupThenRequest(t *testing.T) {
 	// Use a long idle check frequency so the background ticker doesn't interfere.
 	m, err := NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, 10*time.Second, reg)
 	require.NoError(t, err)
-	t.Cleanup(m.(*httpConnectionTTLMiddleware).Stop)
+	t.Cleanup(m.Stop)
 
 	rpcMiddleware := m.(*httpConnectionTTLMiddleware)
 

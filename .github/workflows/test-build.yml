@@ -31,7 +31,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
       - name: Go mod check
         run: make mod-check
       - name: Lint
@@ -51,7 +51,7 @@ jobs:
       matrix:
         # We want to make sure dskit can support multiple golang versions
         # by ensuring the test would pass using all these supported versions.
-        go-version: ['1.24.x', '1.25.x']
+        go-version: ['1.25.x', '1.26.x']
       fail-fast: false
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6

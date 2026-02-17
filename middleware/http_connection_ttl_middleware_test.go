@@ -380,6 +380,69 @@ func TestHTTPConnectionTTLMiddleware_ConcurrentRemoveExpiredConnection(t *testin
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "closed_connections_with_ttl_total"))
 }
 
+func TestHTTPConnectionTTLMiddleware_IdleCleanupThenRequest(t *testing.T) {
+	const (
+		minTTL = 50 * time.Millisecond
+		maxTTL = 50 * time.Millisecond
+	)
+	metricNames := []string{
+		"open_connections_with_ttl_total",
+		"closed_connections_with_ttl_total",
+	}
+	// When a connection's TTL has expired, isExpired() fires first in
+	// removeExpiredConnection, so the "limit" label is used. The important
+	// thing is that Connection: close IS sent — without two-phase idle
+	// cleanup, the entry would be deleted and a fresh one re-created,
+	// allowing the connection to escape TTL enforcement.
+	expectedMetrics := `
+		# HELP open_connections_with_ttl_total Number of connections that connection with TTL middleware started tracking
+		# TYPE open_connections_with_ttl_total counter
+		open_connections_with_ttl_total 1
+		# HELP closed_connections_with_ttl_total Number of connections that connection with TTL middleware closed or stopped tracking
+		# TYPE closed_connections_with_ttl_total counter
+		closed_connections_with_ttl_total{reason="idle timeout"} 0
+		closed_connections_with_ttl_total{reason="limit"} 1
+	`
+
+	reg := prometheus.NewRegistry()
+	// Use a long idle check frequency so the background ticker doesn't interfere.
+	m, err := NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, 10*time.Second, reg)
+	require.NoError(t, err)
+	t.Cleanup(m.(*httpConnectionTTLMiddleware).Stop)
+
+	rpcMiddleware := m.(*httpConnectionTTLMiddleware)
+
+	hnd := m.Wrap(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+	}))
+
+	ctx := context.Background()
+
+	// Send first request to register the connection.
+	w := httptest.NewRecorder()
+	req, err := createRequestWith(ctx, http.MethodGet, "/", conn1)
+	require.NoError(t, err)
+	hnd.ServeHTTP(w, req)
+	require.NotEqual(t, connectionHeaderCloseValue, w.Header().Get(connectionHeaderKey))
+
+	// Wait for the connection to become idle-expired.
+	time.Sleep(maxTTL + 10*time.Millisecond)
+
+	// Simulate the background ticker: first call marks the entry.
+	rpcMiddleware.removeIdleExpiredConnections()
+
+	// Send another request from the same connection.
+	// The entry survived idle GC (marked, not deleted), so isExpired() sees
+	// the original creation time and signals Connection: close.
+	w = httptest.NewRecorder()
+	req, err = createRequestWith(ctx, http.MethodGet, "/", conn1)
+	require.NoError(t, err)
+	hnd.ServeHTTP(w, req)
+	require.Equal(t, connectionHeaderCloseValue, w.Header().Get(connectionHeaderKey))
+
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+}
+
 func checkHTTPConnectionTTL(t *testing.T, m Interface, conn string, shouldConnBeActive bool) bool {
 	rpcMiddleware, ok := m.(*httpConnectionTTLMiddleware)
 	assert.True(t, ok)

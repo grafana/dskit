@@ -25,9 +25,10 @@ var (
 )
 
 type connectionState struct {
-	ttl      time.Duration
-	created  time.Time
-	lastSeen time.Time
+	ttl         time.Duration
+	created     time.Time
+	lastSeen    time.Time
+	idleExpired bool
 }
 
 func (c *connectionState) isExpired() bool {
@@ -117,15 +118,22 @@ func NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleConnectionCheckFrequency
 	return rpcLimiter, nil
 }
 
-// removeIdleExpiredConnections removes all expired idle cached connections, i.e.,
-// the ones exceeding their own TTL.
+// removeIdleExpiredConnections uses two-phase cleanup for cached connections that have
+// been idle (no requests seen) for longer than maxTTL.
+// On the first pass, idle entries are marked (idleExpired=true), preserving them so that
+// removeExpiredConnection can still find the entry and detect TTL expiry on the next request.
+// On the second pass (if no request arrived in between), the entry is deleted.
 func (m *httpConnectionTTLMiddleware) removeIdleExpiredConnections() {
 	count := 0
 	m.connectionsMu.Lock()
 	for conn, state := range m.connections {
 		if state.isIdleExpired(m.maxTTL) {
-			delete(m.connections, conn)
-			count++
+			if state.idleExpired {
+				delete(m.connections, conn)
+				count++
+			} else {
+				state.idleExpired = true
+			}
 		}
 	}
 	m.connectionsMu.Unlock()
@@ -140,25 +148,24 @@ func (m *httpConnectionTTLMiddleware) removeExpiredConnection(conn string) bool 
 	m.connectionsMu.Lock()
 	state, exists := m.connections[conn]
 	if !exists {
-		state = &connectionState{
+		m.connections[conn] = &connectionState{
 			ttl:      m.calculateTTL(conn),
 			created:  now,
 			lastSeen: now,
 		}
-		m.connections[conn] = state
 		m.connectionsMu.Unlock()
 		m.totalOpenConnections.Inc()
 		return false
 	}
-	if !state.isExpired() {
-		state.lastSeen = now
+	if state.isExpired() {
+		delete(m.connections, conn)
 		m.connectionsMu.Unlock()
-		return false
+		m.totalClosedConnections.WithLabelValues(totalClosedConnectionsReasonLimit).Inc()
+		return true
 	}
-	delete(m.connections, conn)
+	state.lastSeen = now
 	m.connectionsMu.Unlock()
-	m.totalClosedConnections.WithLabelValues(totalClosedConnectionsReasonLimit).Inc()
-	return true
+	return false
 }
 
 // calculateTTL calculates the TTL for the given connection. This value is from the range between minTTL and maxTTL,

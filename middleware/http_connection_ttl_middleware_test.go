@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -335,6 +337,47 @@ func TestHTTPConnectionTTLMiddleware_RemoveIdleExpiredConnectionsKeepsActiveConn
 	}, 2*maxTTL, idleCheckFrequency)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+}
+
+func TestHTTPConnectionTTLMiddleware_ConcurrentRemoveExpiredConnection(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := NewHTTPConnectionTTLMiddleware(1*time.Millisecond, 1*time.Millisecond, 1*time.Second, reg)
+	require.NoError(t, err)
+
+	rpcMiddleware, ok := m.(*httpConnectionTTLMiddleware)
+	require.True(t, ok)
+
+	// Seed the connection so it gets tracked.
+	removed := rpcMiddleware.removeExpiredConnection(conn1)
+	require.False(t, removed)
+
+	// Wait for the connection to expire.
+	time.Sleep(10 * time.Millisecond)
+
+	// Concurrently call removeExpiredConnection; exactly one should report removal.
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	var removedCount atomic.Int64
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			if rpcMiddleware.removeExpiredConnection(conn1) {
+				removedCount.Inc()
+			}
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int64(1), removedCount.Load(), "expected exactly 1 goroutine to report the connection as removed")
+
+	// Exactly 1 close should be recorded, regardless of concurrency.
+	expectedMetrics := `
+		# HELP closed_connections_with_ttl_total Number of connections that connection with TTL middleware closed or stopped tracking
+		# TYPE closed_connections_with_ttl_total counter
+		closed_connections_with_ttl_total{reason="limit"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "closed_connections_with_ttl_total"))
 }
 
 func checkHTTPConnectionTTL(t *testing.T, m Interface, conn string, shouldConnBeActive bool) bool {

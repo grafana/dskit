@@ -57,6 +57,10 @@ type httpConnectionTTLMiddleware struct {
 // no TTL is assumed.
 // The background goroutine for idle connection cleanup stops when ctx is cancelled.
 func NewHTTPConnectionTTLMiddleware(ctx context.Context, minTTL, maxTTL, idleConnectionCheckFrequency time.Duration, reg prometheus.Registerer) (Interface, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	if minTTL < 0 {
 		minTTL = 0
 	}

@@ -107,8 +107,8 @@ func NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleConnectionCheckFrequency
 	return rpcLimiter, nil
 }
 
-// removeIdleExpiredConnections removes all expired idle cached connections, i.e.,
-// the ones exceeding their own TTL.
+// removeIdleExpiredConnections removes cached connections that have been idle
+// (no requests seen) for longer than maxTTL, as a garbage collection mechanism.
 func (m *httpConnectionTTLMiddleware) removeIdleExpiredConnections() {
 	count := 0
 	m.connectionsMu.Lock()

@@ -38,6 +38,15 @@ func (c *connectionState) isIdleExpired(timeout time.Duration) bool {
 	return time.Since(c.lastSeen) > timeout
 }
 
+// HTTPConnectionTTLMiddleware is an HTTP middleware that limits the maximum lifetime
+// of TCP connections. It embeds Interface and adds a Stop method for cleanup.
+type HTTPConnectionTTLMiddleware interface {
+	Interface
+	// Stop stops the background ticker goroutine and releases associated resources.
+	// It is safe to call Stop even if the middleware was created with TTL disabled.
+	Stop()
+}
+
 type httpConnectionTTLMiddleware struct {
 	minTTL time.Duration
 	maxTTL time.Duration
@@ -57,7 +66,7 @@ type httpConnectionTTLMiddleware struct {
 // response header to the client, as a signal to close the connection.
 // For each connection, the TTL is between the given minTTL and maxTTL. If minTTL and maxTTL are <= 0,
 // no TTL is assumed.
-func NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleConnectionCheckFrequency time.Duration, reg prometheus.Registerer) (Interface, error) {
+func NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleConnectionCheckFrequency time.Duration, reg prometheus.Registerer) (HTTPConnectionTTLMiddleware, error) {
 	if minTTL < 0 {
 		minTTL = 0
 	}

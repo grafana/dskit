@@ -39,10 +39,11 @@ func (c *connectionState) isIdleExpired(timeout time.Duration) bool {
 }
 
 // HTTPConnectionTTLMiddleware is an HTTP middleware that limits the maximum lifetime
-// of TCP connections. It embeds Interface and adds a Stop method for cleanup.
+// of TCP connections.
 type HTTPConnectionTTLMiddleware interface {
 	Interface
-	// Stop stops the background ticker goroutine and releases associated resources.
+
+	// Stop stops the middleware and releases associated resources.
 	// It is safe to call Stop even if the middleware was created with TTL disabled.
 	Stop()
 }

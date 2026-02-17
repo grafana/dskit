@@ -66,7 +66,7 @@ func TestNewHTTPConnectionTTLMiddleware(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			m, err := NewHTTPConnectionTTLMiddleware(tc.minTTL, tc.maxTTL, tc.idleConnectionCheckFrequency, prometheus.NewRegistry())
+			m, err := NewHTTPConnectionTTLMiddleware(t.Context(), tc.minTTL, tc.maxTTL, tc.idleConnectionCheckFrequency, prometheus.NewRegistry())
 			if tc.expectedErr == nil {
 				require.NoError(t, err)
 				require.NotNil(t, m)
@@ -113,7 +113,7 @@ func TestHTTPConnectionTTLMiddleware_CalculateTTL(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
-			m, err := NewHTTPConnectionTTLMiddleware(tc.minTTL, tc.maxTTL, time.Second, reg)
+			m, err := NewHTTPConnectionTTLMiddleware(t.Context(), tc.minTTL, tc.maxTTL, time.Second, reg)
 			require.NoError(t, err)
 			require.NotNil(t, m)
 
@@ -182,7 +182,7 @@ func TestHTTPConnectionTTLMiddleware_Wrap(t *testing.T) {
 		t.Run(tn, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
 			// create request per connection limiter middleware
-			m, err := NewHTTPConnectionTTLMiddleware(tc.minTTL, tc.maxTTL, 1*time.Second, reg)
+			m, err := NewHTTPConnectionTTLMiddleware(t.Context(), tc.minTTL, tc.maxTTL, 1*time.Second, reg)
 			require.NoError(t, err)
 
 			// declare default handler
@@ -225,7 +225,7 @@ func TestHTTPConnectionTTLMiddleware_RemoveIdleExpiredConnections(t *testing.T) 
 		closed_connections_with_ttl_total{reason="idle timeout"} 1
 	`
 	reg := prometheus.NewRegistry()
-	m, err := NewHTTPConnectionTTLMiddleware(1*time.Second, 2*time.Second, idleConnectionCheckFrequency, reg)
+	m, err := NewHTTPConnectionTTLMiddleware(t.Context(), 1*time.Second, 2*time.Second, idleConnectionCheckFrequency, reg)
 	require.NoError(t, err)
 
 	// declare default handler
@@ -273,7 +273,7 @@ func TestHTTPConnectionTTLMiddleware_RemoveIdleExpiredConnectionsKeepsActiveConn
 	`
 
 	reg := prometheus.NewRegistry()
-	m, err := NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleCheckFrequency, reg)
+	m, err := NewHTTPConnectionTTLMiddleware(t.Context(), minTTL, maxTTL, idleCheckFrequency, reg)
 	require.NoError(t, err)
 
 	rpcMiddleware, ok := m.(*httpConnectionTTLMiddleware)

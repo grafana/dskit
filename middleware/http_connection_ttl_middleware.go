@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"net/http"
@@ -47,9 +48,6 @@ type httpConnectionTTLMiddleware struct {
 
 	totalOpenConnections   prometheus.Counter
 	totalClosedConnections *prometheus.CounterVec
-
-	ticker *time.Ticker
-	done   chan struct{}
 }
 
 // NewHTTPConnectionTTLMiddleware returns an HTTP middleware that limits the maximum lifetime, TTL,
@@ -57,7 +55,8 @@ type httpConnectionTTLMiddleware struct {
 // response header to the client, as a signal to close the connection.
 // For each connection, the TTL is between the given minTTL and maxTTL. If minTTL and maxTTL are <= 0,
 // no TTL is assumed.
-func NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleConnectionCheckFrequency time.Duration, reg prometheus.Registerer) (Interface, error) {
+// The background goroutine for idle connection cleanup stops when ctx is cancelled.
+func NewHTTPConnectionTTLMiddleware(ctx context.Context, minTTL, maxTTL, idleConnectionCheckFrequency time.Duration, reg prometheus.Registerer) (Interface, error) {
 	if minTTL < 0 {
 		minTTL = 0
 	}
@@ -89,15 +88,14 @@ func NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, idleConnectionCheckFrequency
 		if idleConnectionCheckFrequency <= 0 {
 			return nil, errIdleConnectionCheckFrequencyMustBePositive
 		}
-		rpcLimiter.ticker = time.NewTicker(idleConnectionCheckFrequency)
-		rpcLimiter.done = make(chan struct{})
+		ticker := time.NewTicker(idleConnectionCheckFrequency)
 		go func() {
-			defer rpcLimiter.ticker.Stop()
+			defer ticker.Stop()
 			for {
 				select {
-				case <-rpcLimiter.ticker.C:
+				case <-ticker.C:
 					rpcLimiter.removeIdleExpiredConnections()
-				case <-rpcLimiter.done:
+				case <-ctx.Done():
 					return
 				}
 			}
@@ -171,19 +169,6 @@ func (m *httpConnectionTTLMiddleware) connectionState(conn string) *connectionSt
 		m.totalOpenConnections.Inc()
 	}
 	return state
-}
-
-// Stop stops the background ticker goroutine and releases associated resources.
-// It is safe to call Stop even if the middleware was created with TTL disabled.
-func (m *httpConnectionTTLMiddleware) Stop() {
-	if m.done != nil {
-		select {
-		case <-m.done:
-			// Already closed
-		default:
-			close(m.done)
-		}
-	}
 }
 
 // Wrap implements middleware.Interface, and returns a http.Handler that first

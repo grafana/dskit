@@ -487,7 +487,7 @@ func TestCASFailedBecauseOfVersionChanges(t *testing.T) {
 			return d, true, nil
 		})
 
-		require.EqualError(t, err, "failed to CAS-update key test: too many retries")
+		require.EqualError(t, err, "failed to CAS-update key test: too many retries: version mismatch")
 		require.Equal(t, maxCasRetries, calls)
 	})
 }

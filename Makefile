@@ -42,7 +42,8 @@ lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint ## Runs m
 	faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
-		github.com/go-kit/kit/log, \
+		github.com/go-kit/kit/log,\
+		gopkg.in/yaml.v3=go.yaml.in/yaml/v3,\
 		github.com/prometheus/client_golang/prometheus.{MustRegister}=github.com/prometheus/client_golang/prometheus/promauto,\
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewGauge,NewGaugeVec,NewGaugeFunc,NewHistogram,NewHistogramVec,NewSummary,NewSummaryVec}\
 		=github.com/prometheus/client_golang/prometheus/promauto.With.{NewCounter,NewCounterVec,NewGauge,NewGaugeVec,NewGaugeFunc,NewHistogram,NewHistogramVec,NewSummary,NewSummaryVec}"\
@@ -82,7 +83,7 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
 .tools/bin/golangci-lint: .tools
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b .tools/bin v2.6.2
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b .tools/bin v2.9.0
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")

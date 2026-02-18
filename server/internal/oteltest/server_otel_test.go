@@ -170,7 +170,7 @@ func TestOTelTracing(t *testing.T) {
 			useOtherGRPC: true,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
 				strings.TrimPrefix(grpc_health_v1.Health_Check_FullMethodName, "/"): {
-					attribute.String("rpc.system", "grpc"),
+					attribute.String("rpc.system.name", "grpc"),
 				},
 			},
 		},

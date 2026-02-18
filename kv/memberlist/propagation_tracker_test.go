@@ -1,8 +1,10 @@
 package memberlist
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -395,6 +397,69 @@ func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
 	// Verify no delay was recorded for the future beacon (negative delay should be skipped).
 	countAfter := getHistogramCount()
 	assert.Equal(t, countBefore, countAfter, "negative delay (future timestamp) should not be recorded")
+}
+
+// TestPropagationDelayTracker_LogsHighLatencyBeacons verifies that beacons with delay exceeding
+// the configured threshold are logged with a warning.
+func TestPropagationDelayTracker_LogsHighLatencyBeacons(t *testing.T) {
+	mkv := createPropagationDelayTrackerTestKV(t)
+	trackerCodec := GetPropagationDelayTrackerCodec()
+
+	// Create a logger that captures output.
+	var logBuf bytes.Buffer
+	logger := log.NewLogfmtLogger(&logBuf)
+
+	// Start a tracker with a very low latency threshold so any beacon will trigger the log.
+	registry := prometheus.NewPedanticRegistry()
+	var cfg PropagationDelayTrackerConfig
+	flagext.DefaultValues(&cfg)
+	cfg.BeaconInterval = time.Hour
+	cfg.BeaconLifetime = time.Hour
+	cfg.LogBeaconsLatencyLongerThan = 1 * time.Millisecond
+	tracker := NewPropagationDelayTracker(mkv, cfg, "test-node", logger, registry)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))
+	})
+
+	// Wait for the tracker to complete initial sync.
+	const syncBeaconID uint64 = 1
+	require.Eventually(t, func() bool {
+		_ = mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+			desc := GetOrCreatePropagationDelayTrackerDesc(in)
+			desc.Beacons[syncBeaconID] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
+			return desc, true, nil
+		})
+		return tracker.initialSyncDone.Load()
+	}, 5*time.Second, 10*time.Millisecond, "tracker should complete initial sync")
+
+	// Clear the log buffer after initial sync.
+	logBuf.Reset()
+
+	// Publish a beacon with a timestamp in the past to simulate high latency.
+	const highLatencyBeaconID uint64 = 2
+	pastTime := time.Now().Add(-5 * time.Second)
+	err := mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := GetOrCreatePropagationDelayTrackerDesc(in)
+		desc.Beacons[highLatencyBeaconID] = BeaconDesc{
+			PublishedAt: pastTime.UnixMilli(),
+			PublishedBy: "other-node",
+		}
+		return desc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Wait for the tracker to receive the beacon and log the warning.
+	require.Eventually(t, func() bool {
+		return tracker.alreadySeen(highLatencyBeaconID) && strings.Contains(logBuf.String(), "high latency beacon detected")
+	}, 5*time.Second, 10*time.Millisecond, "tracker should have seen the beacon and logged warning")
+
+	// Verify the warning log was emitted with expected fields.
+	logOutput := logBuf.String()
+	assert.Contains(t, logOutput, "high latency beacon detected", "expected warning message")
+	assert.Contains(t, logOutput, "beacon_id=2", "expected beacon_id in log")
+	assert.Contains(t, logOutput, "published_by=other-node", "expected published_by in log")
+	assert.Contains(t, logOutput, "delay=", "expected delay in log")
 }
 
 // createPropagationDelayTrackerTestKV creates and starts a KV store configured with the PropagationDelayTracker codec.

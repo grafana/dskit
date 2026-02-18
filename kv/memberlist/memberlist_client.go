@@ -608,8 +608,8 @@ func (m *KV) starting(ctx context.Context) error {
 	if m.cfg.PropagationDelayTracker.Enabled {
 		m.propagationDelayTracker = NewPropagationDelayTracker(
 			m,
-			m.cfg.PropagationDelayTracker.BeaconInterval,
-			m.cfg.PropagationDelayTracker.BeaconLifetime,
+			m.cfg.PropagationDelayTracker,
+			m.memberlist.LocalNode().Name,
 			m.logger,
 			m.registerer,
 		)

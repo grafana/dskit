@@ -2,6 +2,7 @@ package memberlist
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -26,14 +27,22 @@ func TestPropagationDelayTracker_TracksPropagationDelay(t *testing.T) {
 	// Start two trackers with separate registries so we can check their metrics independently.
 	// Each tracker will publish beacons and receive beacons from the other.
 	registry1 := prometheus.NewPedanticRegistry()
-	tracker1 := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry1)
+	var cfg1 PropagationDelayTrackerConfig
+	flagext.DefaultValues(&cfg1)
+	cfg1.BeaconInterval = beaconInterval
+	cfg1.BeaconLifetime = time.Hour
+	tracker1 := NewPropagationDelayTracker(mkv, cfg1, "test-node-1", log.NewNopLogger(), registry1)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker1))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker1))
 	})
 
 	registry2 := prometheus.NewPedanticRegistry()
-	tracker2 := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry2)
+	var cfg2 PropagationDelayTrackerConfig
+	flagext.DefaultValues(&cfg2)
+	cfg2.BeaconInterval = beaconInterval
+	cfg2.BeaconLifetime = time.Hour
+	tracker2 := NewPropagationDelayTracker(mkv, cfg2, "test-node-2", log.NewNopLogger(), registry2)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker2))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker2))
@@ -88,7 +97,11 @@ func TestPropagationDelayTracker_SkipsTrackingPropagationDelayOnInitialSync(t *t
 
 	// Start a "publisher" tracker to pre-populate the KV store with beacons.
 	// This simulates beacons that were published by other nodes before our test tracker starts.
-	publisher := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	var publisherCfg PropagationDelayTrackerConfig
+	flagext.DefaultValues(&publisherCfg)
+	publisherCfg.BeaconInterval = beaconInterval
+	publisherCfg.BeaconLifetime = time.Hour
+	publisher := NewPropagationDelayTracker(mkv, publisherCfg, "publisher-node", log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), publisher))
 
 	// Wait for the publisher to create some beacons
@@ -111,7 +124,11 @@ func TestPropagationDelayTracker_SkipsTrackingPropagationDelayOnInitialSync(t *t
 
 	// Create test tracker with its own registry so we can check metrics
 	registry := prometheus.NewPedanticRegistry()
-	tracker := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), registry)
+	var trackerCfg PropagationDelayTrackerConfig
+	flagext.DefaultValues(&trackerCfg)
+	trackerCfg.BeaconInterval = beaconInterval
+	trackerCfg.BeaconLifetime = time.Hour
+	tracker := NewPropagationDelayTracker(mkv, trackerCfg, "test-node", log.NewNopLogger(), registry)
 
 	// Start tracker - it will receive pre-existing beacons via WatchKey during initial sync
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
@@ -150,7 +167,11 @@ func TestPropagationDelayTracker_PublishesFirstBeacon(t *testing.T) {
 	require.Nil(t, val, "expected key to not exist initially")
 
 	// Create PropagationDelayTracker with short beacon interval
-	tracker := NewPropagationDelayTracker(mkv, 100*time.Millisecond, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	var cfg PropagationDelayTrackerConfig
+	flagext.DefaultValues(&cfg)
+	cfg.BeaconInterval = 100 * time.Millisecond
+	cfg.BeaconLifetime = time.Hour
+	tracker := NewPropagationDelayTracker(mkv, cfg, "test-node", log.NewNopLogger(), prometheus.NewPedanticRegistry())
 
 	// Start tracker
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
@@ -194,7 +215,11 @@ func TestPropagationDelayTracker_OneBeaconPerIntervalPerCluster(t *testing.T) {
 	// Start multiple trackers (simulating multiple nodes in a cluster)
 	var trackers []*PropagationDelayTracker
 	for i := 0; i < numTrackers; i++ {
-		tracker := NewPropagationDelayTracker(mkv, beaconInterval, time.Hour, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		var cfg PropagationDelayTrackerConfig
+		flagext.DefaultValues(&cfg)
+		cfg.BeaconInterval = beaconInterval
+		cfg.BeaconLifetime = time.Hour
+		tracker := NewPropagationDelayTracker(mkv, cfg, fmt.Sprintf("test-node-%d", i), log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
 		trackers = append(trackers, tracker)
 	}
@@ -265,7 +290,11 @@ func TestPropagationDelayTracker_BeaconLifetimeGarbageCollection(t *testing.T) {
 	const beaconLifetime = 200 * time.Millisecond
 
 	registry := prometheus.NewPedanticRegistry()
-	tracker := NewPropagationDelayTracker(mkv, beaconInterval, beaconLifetime, log.NewNopLogger(), registry)
+	var trackerCfg PropagationDelayTrackerConfig
+	flagext.DefaultValues(&trackerCfg)
+	trackerCfg.BeaconInterval = beaconInterval
+	trackerCfg.BeaconLifetime = beaconLifetime
+	tracker := NewPropagationDelayTracker(mkv, trackerCfg, "test-node", log.NewNopLogger(), registry)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))
@@ -314,7 +343,11 @@ func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
 
 	// Start a tracker that will receive beacons via WatchKey.
 	registry := prometheus.NewPedanticRegistry()
-	tracker := NewPropagationDelayTracker(mkv, time.Hour, time.Hour, log.NewNopLogger(), registry)
+	var cfg PropagationDelayTrackerConfig
+	flagext.DefaultValues(&cfg)
+	cfg.BeaconInterval = time.Hour
+	cfg.BeaconLifetime = time.Hour
+	tracker := NewPropagationDelayTracker(mkv, cfg, "test-node", log.NewNopLogger(), registry)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))

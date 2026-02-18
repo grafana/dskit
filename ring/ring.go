@@ -586,7 +586,7 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 			return nil, ErrInconsistentTokensInfo
 		}
 
-		// We want n *distinct* instances && distinct zones.
+		// We want replicaSetSize *distinct* instances && distinct zones.
 		if slices.Contains(distinctHosts, info.InstanceID) {
 			continue
 		}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -399,6 +400,30 @@ func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
 	assert.Equal(t, countBefore, countAfter, "negative delay (future timestamp) should not be recorded")
 }
 
+// syncBuffer is a thread-safe wrapper around bytes.Buffer.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (sb *syncBuffer) Write(p []byte) (n int, err error) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	return sb.buf.Write(p)
+}
+
+func (sb *syncBuffer) String() string {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	return sb.buf.String()
+}
+
+func (sb *syncBuffer) Reset() {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	sb.buf.Reset()
+}
+
 // TestPropagationDelayTracker_LogsHighLatencyBeacons verifies that beacons with delay exceeding
 // the configured threshold are logged with a warning.
 func TestPropagationDelayTracker_LogsHighLatencyBeacons(t *testing.T) {
@@ -406,7 +431,7 @@ func TestPropagationDelayTracker_LogsHighLatencyBeacons(t *testing.T) {
 	trackerCodec := GetPropagationDelayTrackerCodec()
 
 	// Create a logger that captures output.
-	var logBuf bytes.Buffer
+	var logBuf syncBuffer
 	logger := log.NewLogfmtLogger(&logBuf)
 
 	// Start a tracker with a very low latency threshold so any beacon will trigger the log.

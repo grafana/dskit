@@ -1,7 +1,6 @@
 package memberlist
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/metrics"
@@ -406,7 +406,7 @@ func TestPropagationDelayTracker_LogsHighLatencyBeacons(t *testing.T) {
 	trackerCodec := GetPropagationDelayTrackerCodec()
 
 	// Create a logger that captures output.
-	var logBuf bytes.Buffer
+	var logBuf concurrency.SyncBuffer
 	logger := log.NewLogfmtLogger(&logBuf)
 
 	// Start a tracker with a very low latency threshold so any beacon will trigger the log.

@@ -1532,20 +1532,19 @@ func (op Operation) IsInstanceInStateHealthy(s InstanceState) bool {
 	return op&(1<<s) > 0
 }
 
-// ShouldExtendReplicaSetOnState returns true if given a state of instance that's going to be
-// added to the replica set, the instance should still tentatively added to the
-// replica set, but shouldn't count towards fulfilling the replication factor.
+// ShouldExtendReplicaSetOnState returns true if given a state of instance
+// that's going to be added to the replica set, for which
+// [Operation.IsInstanceInStateHealthy] returns true, the instance should still
+// be added to the replica set, but shouldn't count towards fulfilling the
+// replication factor.
 //
 // The ring will then continue finding instances to handle the operation as if
 // this instance wasn't picked.
 //
-// The instance will then be removed from the set if [Operation.IsInstanceInStateHealthy]
-// returns false for its state (e. g. [Write], which only allows ACTIVE replicas).
-//
-// This allows the ring to make sure the operation is handled by replicas in
-// a healthy state, while still possibly being handled by other, secondary replicas
-// (e. g. [Read], which allows PENDING replicas but still requires ACTIVE or
-// LEAVING replicas to handle the operation).
+// This allows the ring to make sure the operation is handled by replicas in a
+// "primary" state, while still possibly being handled by other, secondary
+// replicas (e. g. [Read], which allows PENDING replicas but still requires
+// ACTIVE or LEAVING replicas to handle the operation).
 func (op Operation) ShouldExtendReplicaSetOnState(s InstanceState) bool {
 	return op&(0x10000<<s) > 0
 }

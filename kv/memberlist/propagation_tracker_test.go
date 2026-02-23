@@ -366,7 +366,7 @@ func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
 			desc.Beacons[syncBeaconID] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
 			return desc, true, nil
 		})
-		return tracker.initialSyncDone.Load()
+		return tracker.alreadySeen(syncBeaconID)
 	}, 5*time.Second, 10*time.Millisecond, "tracker should complete initial sync")
 
 	// Get the current histogram count before publishing the future beacon.
@@ -430,19 +430,29 @@ func TestPropagationDelayTracker_LogsHighLatencyBeacons(t *testing.T) {
 			desc.Beacons[syncBeaconID] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
 			return desc, true, nil
 		})
-		return tracker.initialSyncDone.Load()
+		return tracker.alreadySeen(syncBeaconID)
 	}, 5*time.Second, 10*time.Millisecond, "tracker should complete initial sync")
 
 	// Clear the log buffer after initial sync.
 	logBuf.Reset()
 
-	// Publish a beacon with a timestamp in the past to simulate high latency.
+	// Record the current time after initial sync completes. This timestamp is guaranteed
+	// to be after the tracker's startupTime since the tracker is already running.
+	// We'll use this as the "publish time" for our high-latency beacon, then wait
+	// a bit before the tracker receives it to create artificial latency.
+	publishTime := time.Now()
+
+	// Wait to create measurable delay that exceeds the 1ms threshold.
+	time.Sleep(10 * time.Millisecond)
+
+	// Publish a beacon with the timestamp from before the sleep to simulate high latency.
+	// The timestamp is after startupTime (so it won't be filtered) and the delay will
+	// exceed the threshold (since we slept 10ms before publishing).
 	const highLatencyBeaconID uint64 = 2
-	pastTime := time.Now().Add(-5 * time.Second)
 	err := mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := GetOrCreatePropagationDelayTrackerDesc(in)
 		desc.Beacons[highLatencyBeaconID] = BeaconDesc{
-			PublishedAt: pastTime.UnixMilli(),
+			PublishedAt: publishTime.UnixMilli(),
 			PublishedBy: "other-node",
 		}
 		return desc, true, nil

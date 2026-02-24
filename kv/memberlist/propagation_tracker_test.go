@@ -355,21 +355,6 @@ func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))
 	})
 
-	// Wait for the tracker to complete initial sync by publishing a beacon until it triggers
-	// the WatchKey callback. This handles the race where the watcher may not be registered yet.
-	// We use the same beacon ID each time to ensure only 1 beacon is published.
-	const syncBeaconID uint64 = 1
-	require.Eventually(t, func() bool {
-		_ = mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
-			desc := GetOrCreatePropagationDelayTrackerDesc(in)
-			// Always update with new timestamp to trigger notification even if beacon exists.
-			desc.Beacons[syncBeaconID] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
-			return desc, true, nil
-		})
-		return tracker.initialSyncDone.Load()
-	}, 5*time.Second, 10*time.Millisecond, "tracker should complete initial sync")
-
-	// Get the current histogram count before publishing the future beacon.
 	getHistogramCount := func() uint64 {
 		metricFamilies, err := metrics.NewMetricFamilyMapFromGatherer(registry)
 		require.NoError(t, err)
@@ -377,26 +362,23 @@ func TestPropagationDelayTracker_SkipsNegativeDelay(t *testing.T) {
 		require.NoError(t, err)
 		return histogram.GetSampleCount()
 	}
-	countBefore := getHistogramCount()
 
 	// Publish a beacon with a future timestamp (simulating clock skew from another node).
-	const futureBeaconID uint64 = 2
-	futureTime := time.Now().Add(10 * time.Second)
-	err := mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := GetOrCreatePropagationDelayTrackerDesc(in)
-		desc.Beacons[futureBeaconID] = BeaconDesc{PublishedAt: futureTime.UnixMilli()}
-		return desc, true, nil
-	})
-	require.NoError(t, err)
-
-	// Wait for the tracker to receive the beacon by polling on seen beacons.
+	// We use time.Now() inside the CAS to ensure each attempt triggers a notification.
+	const futureBeaconID uint64 = 1
 	require.Eventually(t, func() bool {
+		_ = mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
+			desc := GetOrCreatePropagationDelayTrackerDesc(in)
+			desc.Beacons[futureBeaconID] = BeaconDesc{PublishedAt: time.Now().Add(10 * time.Second).UnixMilli()}
+			return desc, true, nil
+		})
 		return tracker.alreadySeen(futureBeaconID)
 	}, 5*time.Second, 10*time.Millisecond, "tracker should have seen the beacon")
 
 	// Verify no delay was recorded for the future beacon (negative delay should be skipped).
-	countAfter := getHistogramCount()
-	assert.Equal(t, countBefore, countAfter, "negative delay (future timestamp) should not be recorded")
+	// Since BeaconInterval is set to 1 hour, no tracker-published beacons will be recorded during this test.
+	histogramCount := getHistogramCount()
+	assert.Equal(t, uint64(0), histogramCount, "negative delay (future timestamp) should not be recorded")
 }
 
 // TestPropagationDelayTracker_LogsHighLatencyBeacons verifies that beacons with delay exceeding
@@ -422,42 +404,30 @@ func TestPropagationDelayTracker_LogsHighLatencyBeacons(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker))
 	})
 
-	// Wait for the tracker to complete initial sync.
-	const syncBeaconID uint64 = 1
+	// Wait to ensure beacon timestamps will be after the tracker's startupTime.
+	// The tracker records startupTime when it starts running. If we create a beacon
+	// with a timestamp before startupTime, it will be filtered out.
+	time.Sleep(20 * time.Millisecond)
+
+	// Publish a beacon with a timestamp 10ms in the past to simulate high latency.
+	// We use time.Now() inside the CAS to ensure each attempt triggers a notification.
+	const highLatencyBeaconID uint64 = 1
 	require.Eventually(t, func() bool {
 		_ = mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
 			desc := GetOrCreatePropagationDelayTrackerDesc(in)
-			desc.Beacons[syncBeaconID] = BeaconDesc{PublishedAt: time.Now().UnixMilli()}
+			desc.Beacons[highLatencyBeaconID] = BeaconDesc{
+				PublishedAt: time.Now().Add(-10 * time.Millisecond).UnixMilli(),
+				PublishedBy: "other-node",
+			}
 			return desc, true, nil
 		})
-		return tracker.initialSyncDone.Load()
-	}, 5*time.Second, 10*time.Millisecond, "tracker should complete initial sync")
-
-	// Clear the log buffer after initial sync.
-	logBuf.Reset()
-
-	// Publish a beacon with a timestamp in the past to simulate high latency.
-	const highLatencyBeaconID uint64 = 2
-	pastTime := time.Now().Add(-5 * time.Second)
-	err := mkv.CAS(context.Background(), propagationDelayTrackerKey, trackerCodec, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := GetOrCreatePropagationDelayTrackerDesc(in)
-		desc.Beacons[highLatencyBeaconID] = BeaconDesc{
-			PublishedAt: pastTime.UnixMilli(),
-			PublishedBy: "other-node",
-		}
-		return desc, true, nil
-	})
-	require.NoError(t, err)
-
-	// Wait for the tracker to receive the beacon and log the warning.
-	require.Eventually(t, func() bool {
 		return tracker.alreadySeen(highLatencyBeaconID) && strings.Contains(logBuf.String(), "high latency beacon detected")
 	}, 5*time.Second, 10*time.Millisecond, "tracker should have seen the beacon and logged warning")
 
 	// Verify the warning log was emitted with expected fields.
 	logOutput := logBuf.String()
 	assert.Contains(t, logOutput, "high latency beacon detected", "expected warning message")
-	assert.Contains(t, logOutput, "beacon_id=2", "expected beacon_id in log")
+	assert.Contains(t, logOutput, "beacon_id=1", "expected beacon_id in log")
 	assert.Contains(t, logOutput, "published_by=other-node", "expected published_by in log")
 	assert.Contains(t, logOutput, "delay=", "expected delay in log")
 }

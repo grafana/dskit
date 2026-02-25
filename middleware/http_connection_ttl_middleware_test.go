@@ -443,6 +443,50 @@ func TestHTTPConnectionTTLMiddleware_IdleCleanupThenRequest(t *testing.T) {
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 	})
+
+	// Test case: Request arrives before TTL expires, idleExpired should be reset.
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			minTTL = 500 * time.Millisecond
+			maxTTL = 500 * time.Millisecond
+		)
+
+		reg := prometheus.NewRegistry()
+		m, err := NewHTTPConnectionTTLMiddleware(minTTL, maxTTL, 10*time.Second, reg)
+		require.NoError(t, err)
+		t.Cleanup(m.Stop)
+
+		rpcMiddleware := m.(*httpConnectionTTLMiddleware)
+
+		hnd := m.Wrap(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.WriteHeader(http.StatusOK)
+		}))
+
+		// Send first request to register the connection.
+		w := httptest.NewRecorder()
+		req, err := createRequestWith(t.Context(), http.MethodGet, "/", conn1)
+		require.NoError(t, err)
+		hnd.ServeHTTP(w, req)
+
+		// Directly set idleExpired to simulate a previous cleanup pass.
+		rpcMiddleware.connectionsMu.Lock()
+		state := rpcMiddleware.connections[conn1]
+		require.NotNil(t, state)
+		state.idleExpired = true
+		rpcMiddleware.connectionsMu.Unlock()
+
+		// Send another request - TTL hasn't expired yet.
+		w = httptest.NewRecorder()
+		req, err = createRequestWith(t.Context(), http.MethodGet, "/", conn1)
+		require.NoError(t, err)
+		hnd.ServeHTTP(w, req)
+		require.NotEqual(t, connectionHeaderCloseValue, w.Header().Get(connectionHeaderKey))
+
+		// Verify idleExpired was reset by the request.
+		rpcMiddleware.connectionsMu.Lock()
+		require.False(t, rpcMiddleware.connections[conn1].idleExpired, "idleExpired should be reset after request")
+		rpcMiddleware.connectionsMu.Unlock()
+	})
 }
 
 func checkHTTPConnectionTTL(t *testing.T, m Interface, conn string, shouldConnBeActive bool) bool {

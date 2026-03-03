@@ -1,12 +1,12 @@
 module github.com/grafana/dskit/ring/example/local
 
-go 1.25.5
+go 1.25.7
 
 toolchain go1.26.0
 
 require (
 	github.com/go-kit/log v0.2.1
-	github.com/grafana/dskit v0.0.0-20260223123128-f8dc60ba726d
+	github.com/grafana/dskit v0.0.0-20260228091820-49ab18c8ab1e
 	github.com/prometheus/client_golang v1.23.2
 )
 
@@ -32,7 +32,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grafana/otel-profiling-go v0.5.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7 // indirect
-	github.com/hashicorp/consul/api v1.33.2 // indirect
+	github.com/hashicorp/consul/api v1.33.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.5.0 // indirect

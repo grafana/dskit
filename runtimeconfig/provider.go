@@ -16,48 +16,68 @@ import (
 
 // provider reads raw bytes from a config source.
 type provider interface {
-	Read(ctx context.Context, path string) ([]byte, error)
+	// Name returns the identifier for this provider (file path or URL), used in error messages and hash keys.
+	Name() string
+	// Read returns the contents of the config source.
+	Read(ctx context.Context) ([]byte, error)
 }
 
 // fileProvider reads config from the local filesystem.
-type fileProvider struct{}
-
-func (f *fileProvider) Read(_ context.Context, path string) ([]byte, error) {
-	return os.ReadFile(path)
+type fileProvider struct {
+	path string
 }
 
-// httpProvider fetches config from HTTP/HTTPS URLs with RED metrics.
+func newFileProvider(path string) *fileProvider {
+	return &fileProvider{path: path}
+}
+
+func (f *fileProvider) Name() string { return f.path }
+
+func (f *fileProvider) Read(_ context.Context) ([]byte, error) {
+	return os.ReadFile(f.path)
+}
+
+// httpProvider fetches config from an HTTP/HTTPS URL with RED metrics.
 type httpProvider struct {
+	url             string
 	client          *http.Client
 	requestDuration *prometheus.HistogramVec
 }
 
-func newHTTPProvider(client *http.Client, registerer prometheus.Registerer) *httpProvider {
+func newHTTPProvider(url string, client *http.Client, requestDuration *prometheus.HistogramVec) *httpProvider {
 	return &httpProvider{
-		client: client,
-		requestDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "runtime_config_http_request_duration_seconds",
-			Help:    "Time spent fetching runtime config from HTTP URLs.",
-			Buckets: prometheus.DefBuckets,
-			// Use defaults recommended by Prometheus for native histograms.
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: time.Hour,
-		}, []string{"url", "status_code"}),
+		url:             url,
+		client:          client,
+		requestDuration: requestDuration,
 	}
 }
 
-func (h *httpProvider) Read(ctx context.Context, url string) ([]byte, error) {
+// newHTTPRequestDuration creates the shared histogram for all httpProvider instances.
+func newHTTPRequestDuration(registerer prometheus.Registerer) *prometheus.HistogramVec {
+	return promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "runtime_config_http_request_duration_seconds",
+		Help:    "Time spent fetching runtime config from HTTP URLs.",
+		Buckets: prometheus.DefBuckets,
+		// Use defaults recommended by Prometheus for native histograms.
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
+	}, []string{"url", "status_code"})
+}
+
+func (h *httpProvider) Name() string { return h.url }
+
+func (h *httpProvider) Read(ctx context.Context) ([]byte, error) {
 	start := time.Now()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		h.requestDuration.WithLabelValues(url, "error").Observe(time.Since(start).Seconds())
+		h.requestDuration.WithLabelValues(h.url, "error").Observe(time.Since(start).Seconds())
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -66,16 +86,16 @@ func (h *httpProvider) Read(ctx context.Context, url string) ([]byte, error) {
 	statusCode := strconv.Itoa(resp.StatusCode)
 
 	if resp.StatusCode/100 != 2 {
-		h.requestDuration.WithLabelValues(url, statusCode).Observe(time.Since(start).Seconds())
-		return nil, &httpError{statusCode: resp.StatusCode, url: url}
+		h.requestDuration.WithLabelValues(h.url, statusCode).Observe(time.Since(start).Seconds())
+		return nil, &httpError{statusCode: resp.StatusCode, url: h.url}
 	}
 
 	if err != nil {
-		h.requestDuration.WithLabelValues(url, "error").Observe(time.Since(start).Seconds())
+		h.requestDuration.WithLabelValues(h.url, "error").Observe(time.Since(start).Seconds())
 		return nil, fmt.Errorf("read response body: %w", err)
 	}
 
-	h.requestDuration.WithLabelValues(url, statusCode).Observe(time.Since(start).Seconds())
+	h.requestDuration.WithLabelValues(h.url, statusCode).Observe(time.Since(start).Seconds())
 	return body, nil
 }
 

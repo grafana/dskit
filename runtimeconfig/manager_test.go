@@ -469,7 +469,7 @@ func TestOverridesManagerFailingPreprocessor(t *testing.T) {
 	require.NoError(t, err)
 	err = services.StartAndAwaitRunning(context.Background(), overridesManager)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "preprocess file")
+	require.Contains(t, err.Error(), "preprocess")
 	require.Contains(t, err.Error(), "some preprocessor error")
 }
 

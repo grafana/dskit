@@ -66,11 +66,10 @@ type Manager struct {
 	configLoadSuccess prometheus.Gauge
 	configHash        *prometheus.GaugeVec
 
-	// Maps path to hash. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
+	// Maps provider name to hash. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes map[string]string
 
-	fileProvider *fileProvider
-	httpProvider *httpProvider // nil if no URL paths are configured
+	providers []provider
 }
 
 // New creates an instance of Manager. Manager is a services.Service, and must be explicitly started to perform any work.
@@ -91,18 +90,24 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 			Name: "runtime_config_hash",
 			Help: "Hash of the currently active runtime configuration, merged from all configured files.",
 		}, []string{"sha256"}),
-		logger:       logger,
-		fileProvider: &fileProvider{},
+		logger: logger,
 	}
 
+	var httpClient *http.Client
+	var httpDuration *prometheus.HistogramVec
 	for _, p := range cfg.LoadPath {
 		if isURL(p) {
-			timeout := cfg.HTTPClientTimeout
-			if timeout == 0 {
-				timeout = 30 * time.Second
+			if httpClient == nil {
+				timeout := cfg.HTTPClientTimeout
+				if timeout == 0 {
+					timeout = 30 * time.Second
+				}
+				httpClient = &http.Client{Timeout: timeout}
+				httpDuration = newHTTPRequestDuration(registerer)
 			}
-			mgr.httpProvider = newHTTPProvider(&http.Client{Timeout: timeout}, registerer)
-			break
+			mgr.providers = append(mgr.providers, newHTTPProvider(p, httpClient, httpDuration))
+		} else {
+			mgr.providers = append(mgr.providers, newFileProvider(p))
 		}
 	}
 
@@ -172,42 +177,35 @@ func (om *Manager) loop(ctx context.Context) error {
 	}
 }
 
-func (om *Manager) readPath(ctx context.Context, path string) ([]byte, error) {
-	if isURL(path) {
-		return om.httpProvider.Read(ctx, path)
-	}
-	return om.fileProvider.Read(ctx, path)
-}
-
 // loadConfig loads all configuration files using the loader function then merges the yaml configuration files into one yaml document.
 // and notifies listeners if successful.
 func (om *Manager) loadConfig(ctx context.Context) error {
-	rawData := map[string][]byte{}
+	rawData := make([][]byte, len(om.providers))
 	hashes := map[string]string{}
 
-	for _, f := range om.cfg.LoadPath {
-		buf, err := om.readPath(ctx, f)
+	for i, p := range om.providers {
+		buf, err := p.Read(ctx)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "read %q", f)
+			return errors.Wrapf(err, "read %q", p.Name())
 		}
 
 		if om.cfg.Preprocessor != nil {
 			buf, err = om.cfg.Preprocessor(buf)
 			if err != nil {
 				om.configLoadSuccess.Set(0)
-				return errors.Wrapf(err, "preprocess file %q", f)
+				return errors.Wrapf(err, "preprocess %q", p.Name())
 			}
 		}
 
-		rawData[f] = buf
-		hashes[f] = fmt.Sprintf("%x", sha256.Sum256(buf))
+		rawData[i] = buf
+		hashes[p.Name()] = fmt.Sprintf("%x", sha256.Sum256(buf))
 	}
 
 	// check if new hashes are the same as before
 	sameHashes := true
-	for f, h := range hashes {
-		if om.fileHashes[f] != h {
+	for name, h := range hashes {
+		if om.fileHashes[name] != h {
 			sameHashes = false
 			break
 		}
@@ -220,17 +218,17 @@ func (om *Manager) loadConfig(ctx context.Context) error {
 	}
 
 	mergedConfig := map[string]interface{}{}
-	for i, f := range om.cfg.LoadPath {
-		data := rawData[f]
-		yamlFile, err := om.unmarshalMaybeGzipped(f, data)
+	for i, p := range om.providers {
+		data := rawData[i]
+		yamlFile, err := om.unmarshalMaybeGzipped(p.Name(), data)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "unmarshal file %q", f)
+			return errors.Wrapf(err, "unmarshal %q", p.Name())
 		}
 		mergedConfig, err = mergeConfigMaps(mergedConfig, yamlFile, "")
 		if err != nil {
 			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "can't merge file %q on top of the previous %#v", f, om.cfg.LoadPath[:i])
+			return errors.Wrapf(err, "can't merge %q on top of the previous providers", p.Name())
 		}
 	}
 

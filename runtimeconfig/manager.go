@@ -8,7 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -35,17 +35,19 @@ type Loader func(r io.Reader) (interface{}, error)
 // It holds config related to loading per-tenant config.
 type Config struct {
 	ReloadPeriod time.Duration `yaml:"period" category:"advanced"`
-	// LoadPath contains the path to the runtime config files.
+	// LoadPath contains the path to the runtime config files or HTTP URLs.
 	// Requires a non-empty value
-	LoadPath     flagext.StringSliceCSV `yaml:"file"`
-	Preprocessor Preprocessor           `yaml:"-"`
-	Loader       Loader                 `yaml:"-"`
+	LoadPath          flagext.StringSliceCSV `yaml:"file"`
+	HTTPClientTimeout time.Duration          `yaml:"http_client_timeout" category:"advanced"`
+	Preprocessor      Preprocessor           `yaml:"-"`
+	Loader            Loader                 `yaml:"-"`
 }
 
 // RegisterFlags registers flags.
 func (mc *Config) RegisterFlags(f *flag.FlagSet) {
-	f.Var(&mc.LoadPath, "runtime-config.file", "Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.")
+	f.Var(&mc.LoadPath, "runtime-config.file", "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.")
 	f.DurationVar(&mc.ReloadPeriod, "runtime-config.reload-period", 10*time.Second, "How often to check runtime config files.")
+	f.DurationVar(&mc.HTTPClientTimeout, "runtime-config.http-client-timeout", 30*time.Second, "HTTP client timeout when fetching runtime config from URLs.")
 }
 
 // Manager periodically reloads the configuration from specified files, and keeps this
@@ -66,6 +68,9 @@ type Manager struct {
 
 	// Maps path to hash. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes map[string]string
+
+	fileProvider *fileProvider
+	httpProvider *httpProvider // nil if no URL paths are configured
 }
 
 // New creates an instance of Manager. Manager is a services.Service, and must be explicitly started to perform any work.
@@ -86,19 +91,31 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 			Name: "runtime_config_hash",
 			Help: "Hash of the currently active runtime configuration, merged from all configured files.",
 		}, []string{"sha256"}),
-		logger: logger,
+		logger:       logger,
+		fileProvider: &fileProvider{},
+	}
+
+	for _, p := range cfg.LoadPath {
+		if isURL(p) {
+			timeout := cfg.HTTPClientTimeout
+			if timeout == 0 {
+				timeout = 30 * time.Second
+			}
+			mgr.httpProvider = newHTTPProvider(&http.Client{Timeout: timeout}, registerer)
+			break
+		}
 	}
 
 	mgr.Service = services.NewBasicService(mgr.starting, mgr.loop, mgr.stopping)
 	return &mgr, nil
 }
 
-func (om *Manager) starting(_ context.Context) error {
+func (om *Manager) starting(ctx context.Context) error {
 	if len(om.cfg.LoadPath) == 0 {
 		return nil
 	}
 
-	return errors.Wrap(om.loadConfig(), "failed to load runtime config")
+	return errors.Wrap(om.loadConfig(ctx), "failed to load runtime config")
 }
 
 // CreateListenerChannel creates new channel that can be used to receive new config values.
@@ -144,7 +161,7 @@ func (om *Manager) loop(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			err := om.loadConfig()
+			err := om.loadConfig(ctx)
 			if err != nil {
 				// Log but don't stop on error - we don't want to halt all ingesters because of a typo
 				level.Error(om.logger).Log("msg", "failed to load config", "err", err)
@@ -155,17 +172,24 @@ func (om *Manager) loop(ctx context.Context) error {
 	}
 }
 
+func (om *Manager) readPath(ctx context.Context, path string) ([]byte, error) {
+	if isURL(path) {
+		return om.httpProvider.Read(ctx, path)
+	}
+	return om.fileProvider.Read(ctx, path)
+}
+
 // loadConfig loads all configuration files using the loader function then merges the yaml configuration files into one yaml document.
 // and notifies listeners if successful.
-func (om *Manager) loadConfig() error {
+func (om *Manager) loadConfig(ctx context.Context) error {
 	rawData := map[string][]byte{}
 	hashes := map[string]string{}
 
 	for _, f := range om.cfg.LoadPath {
-		buf, err := os.ReadFile(f)
+		buf, err := om.readPath(ctx, f)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "read file %q", f)
+			return errors.Wrapf(err, "read %q", f)
 		}
 
 		if om.cfg.Preprocessor != nil {

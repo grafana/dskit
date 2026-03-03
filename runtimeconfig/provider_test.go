@@ -33,6 +33,12 @@ func TestIsURL(t *testing.T) {
 	}
 }
 
+func newTestHTTPProvider(t *testing.T, url string, client *http.Client) (*httpProvider, *prometheus.Registry) {
+	reg := prometheus.NewPedanticRegistry()
+	dur := newHTTPRequestDuration(reg)
+	return newHTTPProvider(url, client, dur), reg
+}
+
 func TestHTTPProvider_Success(t *testing.T) {
 	body := "overrides:\n  user1:\n    limit1: 100\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -40,12 +46,12 @@ func TestHTTPProvider_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	reg := prometheus.NewPedanticRegistry()
-	p := newHTTPProvider(&http.Client{}, reg)
+	p, _ := newTestHTTPProvider(t, srv.URL+"/config.yaml", &http.Client{})
 
-	data, err := p.Read(context.Background(), srv.URL+"/config.yaml")
+	data, err := p.Read(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, body, string(data))
+	assert.Equal(t, srv.URL+"/config.yaml", p.Name())
 
 	assert.Equal(t, 1, testutil.CollectAndCount(p.requestDuration))
 }
@@ -56,10 +62,9 @@ func TestHTTPProvider_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	reg := prometheus.NewPedanticRegistry()
-	p := newHTTPProvider(&http.Client{}, reg)
+	p, _ := newTestHTTPProvider(t, srv.URL+"/config.yaml", &http.Client{})
 
-	_, err := p.Read(context.Background(), srv.URL+"/config.yaml")
+	_, err := p.Read(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP 500")
 
@@ -76,10 +81,9 @@ func TestHTTPProvider_NonOKStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	reg := prometheus.NewPedanticRegistry()
-	p := newHTTPProvider(&http.Client{}, reg)
+	p, _ := newTestHTTPProvider(t, srv.URL+"/config.yaml", &http.Client{})
 
-	_, err := p.Read(context.Background(), srv.URL+"/config.yaml")
+	_, err := p.Read(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP 403")
 
@@ -97,10 +101,9 @@ func TestHTTPProvider_Timeout(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	reg := prometheus.NewPedanticRegistry()
-	p := newHTTPProvider(&http.Client{Timeout: 50 * time.Millisecond}, reg)
+	p, _ := newTestHTTPProvider(t, srv.URL+"/config.yaml", &http.Client{Timeout: 50 * time.Millisecond})
 
-	_, err := p.Read(context.Background(), srv.URL+"/config.yaml")
+	_, err := p.Read(context.Background())
 	require.Error(t, err)
 
 	assert.Equal(t, 1, testutil.CollectAndCount(p.requestDuration))
@@ -115,12 +118,11 @@ func TestHTTPProvider_ContextCanceled(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	reg := prometheus.NewPedanticRegistry()
-	p := newHTTPProvider(&http.Client{}, reg)
+	p, _ := newTestHTTPProvider(t, srv.URL+"/config.yaml", &http.Client{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := p.Read(ctx, srv.URL+"/config.yaml")
+	_, err := p.Read(ctx)
 	require.Error(t, err)
 }

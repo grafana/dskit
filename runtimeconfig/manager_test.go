@@ -6,9 +6,12 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -741,4 +744,180 @@ func TestManager_GetConfigNilBeforeStarting(t *testing.T) {
 	// We haven't started the manager yet, so the config should be nil. Which is legal.
 	require.NoError(t, err)
 	require.Nil(t, overridesManager.GetConfig())
+}
+
+func newHTTPConfigServer(t *testing.T, response string) *httptest.Server {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(response))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestManager_URLPath(t *testing.T) {
+	srv := newHTTPConfigServer(t, "value: 42\n")
+
+	cfg := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     []string{srv.URL + "/config.yaml"},
+		Loader:       valueLoader,
+	}
+
+	manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	require.NotNil(t, manager.GetConfig())
+	require.Equal(t, value{Value: 42}, manager.GetConfig())
+}
+
+func TestManager_URLPathFirstLoadFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     []string{srv.URL + "/config.yaml"},
+		Loader:       valueLoader,
+	}
+
+	manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	err = services.StartAndAwaitRunning(context.Background(), manager)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "HTTP 500")
+}
+
+func TestManager_URLPathReloadFailure(t *testing.T) {
+	var mu sync.Mutex
+	statusCode := http.StatusOK
+	body := "value: 42\n"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		sc := statusCode
+		b := body
+		mu.Unlock()
+		w.WriteHeader(sc)
+		if sc == http.StatusOK {
+			_, _ = w.Write([]byte(b))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	reg := prometheus.NewPedanticRegistry()
+	reloadPeriod := 100 * time.Millisecond
+
+	cfg := Config{
+		ReloadPeriod: reloadPeriod,
+		LoadPath:     []string{srv.URL + "/config.yaml"},
+		Loader:       valueLoader,
+	}
+
+	manager, err := New(cfg, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	require.Equal(t, value{Value: 42}, manager.GetConfig())
+
+	// Switch to failing.
+	mu.Lock()
+	statusCode = http.StatusInternalServerError
+	mu.Unlock()
+
+	time.Sleep(3 * reloadPeriod)
+
+	// Config should still be the old value.
+	require.Equal(t, value{Value: 42}, manager.GetConfig())
+
+	// The reload success metric should be 0.
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+		# TYPE runtime_config_last_reload_successful gauge
+		runtime_config_last_reload_successful{config="overrides"} 0
+	`), "runtime_config_last_reload_successful"))
+
+	// Switch back to succeeding with a new value.
+	mu.Lock()
+	statusCode = http.StatusOK
+	body = "value: 99\n"
+	mu.Unlock()
+
+	test.Poll(t, 5*time.Second, value{Value: 99}, func() interface{} {
+		return manager.GetConfig()
+	})
+}
+
+func TestManager_MixedPaths(t *testing.T) {
+	// File source.
+	tempFile, err := os.CreateTemp("", "mixed-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(tempFile.Name()) })
+	_, err = tempFile.WriteString("overrides:\n  user1:\n    limit1: 100\n")
+	require.NoError(t, err)
+	require.NoError(t, tempFile.Close())
+
+	// HTTP source.
+	srv := newHTTPConfigServer(t, "overrides:\n  user2:\n    limit2: 200\n")
+
+	defaultTestLimits = &TestLimits{Limit1: 0, Limit2: 0}
+
+	cfg := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     []string{tempFile.Name(), srv.URL + "/config.yaml"},
+		Loader:       testLoadOverrides,
+	}
+
+	manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	conf := manager.GetConfig().(*testOverrides)
+	require.NotNil(t, conf)
+	require.Equal(t, 100, conf.Overrides["user1"].Limit1)
+	require.Equal(t, 200, conf.Overrides["user2"].Limit2)
+}
+
+func TestManager_URLPathMetrics(t *testing.T) {
+	srv := newHTTPConfigServer(t, "value: 1\n")
+
+	reg := prometheus.NewPedanticRegistry()
+	cfg := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     []string{srv.URL + "/config.yaml"},
+		Loader:       valueLoader,
+	}
+
+	manager, err := New(cfg, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+
+	var found bool
+	for _, mf := range metricFamilies {
+		if mf.GetName() == "runtime_config_http_request_duration_seconds" {
+			found = true
+			require.NotEmpty(t, mf.GetMetric())
+			m := mf.GetMetric()[0]
+			require.NotNil(t, m.GetHistogram())
+			assert.Greater(t, m.GetHistogram().GetSampleCount(), uint64(0))
+
+			labels := map[string]string{}
+			for _, lp := range m.GetLabel() {
+				labels[lp.GetName()] = lp.GetValue()
+			}
+			assert.Equal(t, "200", labels["status_code"])
+			assert.Contains(t, labels["url"], srv.URL)
+		}
+	}
+	assert.True(t, found, "expected runtime_config_http_request_duration_seconds metric")
 }

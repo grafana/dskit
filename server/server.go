@@ -417,11 +417,15 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	}
 
 	// Setup gRPC server
+	debugDisabled := cfg.LogLevel.IsDebugDisabled()
+	if cfg.Log != nil {
+		debugDisabled = false
+	}
 	serverLog := middleware.GRPCServerLog{
 		Log:                      logger,
 		WithRequest:              !cfg.ExcludeRequestInLog,
 		DisableRequestSuccessLog: cfg.DisableRequestSuccessLog,
-		DebugDisabled:            cfg.LogLevel.IsDebugDisabled(),
+		DebugDisabled:            debugDisabled,
 	}
 	var grpcInstrumentationOptions []middleware.InstrumentationOption
 	if cfg.ReportGRPCCodesInInstrumentationLabel {

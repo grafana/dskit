@@ -82,14 +82,16 @@ func (h *httpProvider) Read(ctx context.Context) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
 	statusCode := strconv.Itoa(resp.StatusCode)
 
 	if resp.StatusCode/100 != 2 {
+		// Drain body to allow connection reuse.
+		_, _ = io.Copy(io.Discard, resp.Body)
 		h.requestDuration.WithLabelValues(h.url, statusCode).Observe(time.Since(start).Seconds())
 		return nil, &httpError{statusCode: resp.StatusCode, url: h.url}
 	}
 
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		h.requestDuration.WithLabelValues(h.url, "error").Observe(time.Since(start).Seconds())
 		return nil, fmt.Errorf("read response body: %w", err)

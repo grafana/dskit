@@ -11,13 +11,13 @@ import (
 )
 
 func TestIsDebugEnabled(t *testing.T) {
-	t.Run("plain nop logger (no DebugEnabled interface) returns true", func(t *testing.T) {
-		require.True(t, isDebugEnabled(log.NewNopLogger()))
+	t.Run("plain nop logger (no DebugEnabled interface) returns false", func(t *testing.T) {
+		require.False(t, isDebugEnabled(log.NewNopLogger()))
 	})
 
-	t.Run("bare go-kit level filter (no DebugEnabled interface) returns true", func(t *testing.T) {
+	t.Run("bare go-kit level filter (no DebugEnabled interface) returns false", func(t *testing.T) {
 		logger := level.NewFilter(log.NewNopLogger(), level.AllowInfo())
-		require.True(t, isDebugEnabled(logger))
+		require.False(t, isDebugEnabled(logger))
 	})
 
 	t.Run("dskit FilteredLogger with AllowDebug returns true", func(t *testing.T) {

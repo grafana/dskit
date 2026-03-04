@@ -141,15 +141,13 @@ type DebugEnabled interface {
 // isDebugEnabled reports whether logger will emit debug-level messages.
 //
 // It checks whether logger implements the optional DebugEnabled interface.
-// If not, it conservatively returns true so that no log lines are ever lost —
-// the small extra work of building the log-entry chain is preferable to
-// silently dropping debug output.
+// If not, it returns false: debug-level log work is skipped by default.
+// Loggers that want debug output must implement DebugEnabled and return true.
 func isDebugEnabled(logger log.Logger) bool {
 	if de, ok := logger.(DebugEnabled); ok {
 		return de.DebugEnabled()
 	}
-	// Conservative default: assume debug is enabled so we never miss a log line.
-	return true
+	return false
 }
 
 func shouldLog(ctx context.Context, err error) (bool, string) {

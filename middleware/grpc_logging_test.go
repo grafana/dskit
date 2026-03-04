@@ -71,7 +71,8 @@ func TestGrpcLogging(t *testing.T) {
 	}} {
 		t.Run("", func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
-			logger := log.NewLogfmtLogger(buf)
+			// Wrap with a debug-enabled logger so debug-level log lines are not skipped.
+			logger := newLevelFilteredLogger(log.NewLogfmtLogger(buf), true)
 			l := GRPCServerLog{Log: logger, WithRequest: true, DisableRequestSuccessLog: false}
 
 			handler := func(context.Context, interface{}) (interface{}, error) {

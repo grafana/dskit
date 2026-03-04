@@ -12,8 +12,8 @@ import (
 // Use NewFilteredLogger (or NewGoKitWithLevel) in place of level.NewFilter
 // when you need the DebugEnabled optimisation.
 type FilteredLogger struct {
-	log.Logger            // the underlying level-filtered logger
-	debugEnabled bool     // whether the configured level allows debug messages
+	log.Logger        // the underlying level-filtered logger
+	debugEnabled bool // whether the configured level allows debug messages
 }
 
 // NewFilteredLogger returns a FilteredLogger that wraps next with a level

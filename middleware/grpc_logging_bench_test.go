@@ -162,6 +162,38 @@ func BenchmarkStreamServerInterceptor_CanceledError_WithOrgID(b *testing.B) {
 	}
 }
 
+// BenchmarkUnaryServerInterceptor_NoError_SuccessLogEnabled_DebugDisabled benchmarks
+// the success path for unary when debug is suppressed — log work should be skipped.
+func BenchmarkUnaryServerInterceptor_NoError_SuccessLogEnabled_DebugDisabled(b *testing.B) {
+	logger := newLevelFilteredLogger(log.NewNopLogger(), false) // AllowInfo, DebugEnabled=false
+	l := GRPCServerLog{Log: logger, WithRequest: false, DisableRequestSuccessLog: false}
+	ctx := context.Background()
+	info := &grpc.UnaryServerInfo{FullMethod: "/cortex.Ingester/Push"}
+	handler := func(context.Context, interface{}) (interface{}, error) { return nil, nil }
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = l.UnaryServerInterceptor(ctx, nil, info, handler)
+	}
+}
+
+// BenchmarkUnaryServerInterceptor_NoError_SuccessLogEnabled_DebugEnabled benchmarks
+// the success path for unary when debug is genuinely enabled (the log will be emitted).
+func BenchmarkUnaryServerInterceptor_NoError_SuccessLogEnabled_DebugEnabled(b *testing.B) {
+	logger := newLevelFilteredLogger(log.NewNopLogger(), true) // AllowDebug, DebugEnabled=true
+	l := GRPCServerLog{Log: logger, WithRequest: false, DisableRequestSuccessLog: false}
+	ctx := context.Background()
+	info := &grpc.UnaryServerInfo{FullMethod: "/cortex.Ingester/Push"}
+	handler := func(context.Context, interface{}) (interface{}, error) { return nil, nil }
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = l.UnaryServerInterceptor(ctx, nil, info, handler)
+	}
+}
+
 // BenchmarkUnaryServerInterceptor_CanceledError_DebugDisabled mirrors stream for unary.
 func BenchmarkUnaryServerInterceptor_CanceledError_DebugDisabled(b *testing.B) {
 	logger := newLevelFilteredLogger(log.NewNopLogger(), false)

@@ -47,6 +47,20 @@ func (l *RateLimitedLogger) Log(keyvals ...interface{}) error {
 	return nil
 }
 
+// DebugEnabled reports whether the wrapped logger will emit debug-level messages.
+// It satisfies the middleware.DebugEnabled interface, propagating the level check
+// through the logging chain so that callers can skip building expensive log-field
+// chains when debug output is suppressed by an inner level filter.
+func (l *RateLimitedLogger) DebugEnabled() bool {
+	type debugEnabler interface {
+		DebugEnabled() bool
+	}
+	if de, ok := l.next.(debugEnabler); ok {
+		return de.DebugEnabled()
+	}
+	return true
+}
+
 func (l *RateLimitedLogger) getCounterFromKeyvals(keyvals ...interface{}) prometheus.Counter {
 	for i := 0; i < len(keyvals); i += 2 {
 		levelKey, ok := keyvals[i].(string)

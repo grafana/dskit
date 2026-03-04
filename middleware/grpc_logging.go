@@ -56,7 +56,8 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		return resp, nil
 	}
 
-	// Honor sampled error logging.
+	// Honor sampled error logging. Check early to avoid building log fields
+	// for errors that are configured to be dropped entirely.
 	keep, reason := shouldLog(ctx, err)
 	if reason != "" {
 		err = fmt.Errorf("%w (%s)", err, reason)
@@ -65,18 +66,31 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		return resp, err
 	}
 
-	entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", time.Since(begin))
+	duration := time.Since(begin)
 	if err != nil {
-		if s.WithRequest {
-			entry = log.With(entry, "request", req)
-		}
 		if grpcUtils.IsCanceled(err) {
-			level.Debug(entry).Log("msg", gRPC, "err", err)
+			// Canceled errors are logged at Debug level. Avoid building the
+			// (expensive) contextual log-entry chain when debug is not enabled.
+			if isDebugEnabled(s.Log) {
+				entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", duration)
+				if s.WithRequest {
+					entry = log.With(entry, "request", req)
+				}
+				level.Debug(entry).Log("msg", gRPC, "err", err)
+			}
 		} else {
+			entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", duration)
+			if s.WithRequest {
+				entry = log.With(entry, "request", req)
+			}
 			level.Warn(entry).Log("msg", gRPC, "err", err)
 		}
 	} else {
-		level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
+		// Success path: logged at Debug level; skip work when debug is filtered.
+		if isDebugEnabled(s.Log) {
+			entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", duration)
+			level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
+		}
 	}
 	return resp, err
 }
@@ -89,17 +103,53 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 		return nil
 	}
 
-	entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", time.Since(begin))
+	duration := time.Since(begin)
 	if err != nil {
 		if grpcUtils.IsCanceled(err) {
-			level.Debug(entry).Log("msg", gRPC, "err", err)
+			// Canceled errors are logged at Debug level. Avoid building the
+			// (expensive) contextual log-entry chain when debug is not enabled.
+			if isDebugEnabled(s.Log) {
+				entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", duration)
+				level.Debug(entry).Log("msg", gRPC, "err", err)
+			}
 		} else {
+			entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", duration)
 			level.Warn(entry).Log("msg", gRPC, "err", err)
 		}
 	} else {
-		level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
+		// Success path: logged at Debug level; skip work when debug is filtered.
+		if isDebugEnabled(s.Log) {
+			entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", duration)
+			level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
+		}
 	}
 	return err
+}
+
+// DebugEnabled is an optional interface that a log.Logger can implement to
+// advertise whether debug-level messages will be emitted. Implementing this
+// interface allows callers to skip building expensive log-field chains when
+// debug output is suppressed, without losing any log lines.
+//
+// go-kit/log's level.NewFilter does not expose a public level-check API, so
+// loggers that want to participate in this optimization must implement this
+// interface themselves (e.g. dskit's RateLimitedLogger and similar wrappers).
+type DebugEnabled interface {
+	DebugEnabled() bool
+}
+
+// isDebugEnabled reports whether logger will emit debug-level messages.
+//
+// It checks whether logger implements the optional DebugEnabled interface.
+// If not, it conservatively returns true so that no log lines are ever lost —
+// the small extra work of building the log-entry chain is preferable to
+// silently dropping debug output.
+func isDebugEnabled(logger log.Logger) bool {
+	if de, ok := logger.(DebugEnabled); ok {
+		return de.DebugEnabled()
+	}
+	// Conservative default: assume debug is enabled so we never miss a log line.
+	return true
 }
 
 func shouldLog(ctx context.Context, err error) (bool, string) {

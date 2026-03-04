@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -658,20 +659,21 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 
 	reloadPeriod := 100 * time.Millisecond
 
-	managerConfig := Config{
-		ReloadPeriod: reloadPeriod,
-		LoadPath:     []string{tempFile.Name()},
-		Loader:       testLoadOverrides,
-	}
+	synctest.Test(t, func(t *testing.T) {
+		managerConfig := Config{
+			ReloadPeriod: reloadPeriod,
+			LoadPath:     []string{tempFile.Name()},
+			Loader:       testLoadOverrides,
+		}
 
-	reg := prometheus.NewPedanticRegistry()
+		reg := prometheus.NewPedanticRegistry()
 
-	manager, err := New(managerConfig, "overrides", reg, log.NewNopLogger())
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+		manager, err := New(managerConfig, "overrides", reg, log.NewNopLogger())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 
-	assertHashAndSuccessMetric := func(config []byte, lastSuccessful int) {
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		assertHashAndSuccessMetric := func(config []byte, lastSuccessful int) {
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP runtime_config_hash Hash of the currently active runtime configuration, merged from all configured files.
 					# TYPE runtime_config_hash gauge
 					runtime_config_hash{config="overrides", sha256="%s"} 1
@@ -679,62 +681,70 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful{config="overrides"} %d
 				`, fmt.Sprintf("%x", sha256.Sum256(config)), lastSuccessful))))
+		}
 
-	}
+		// Now success metric should be 1
+		assertHashAndSuccessMetric(validConfig, 1)
 
-	// Now success metric should be 1
-	assertHashAndSuccessMetric(validConfig, 1)
+		// Make config invalid. Now metrics should be 0
+		invalidConfig := []byte("invalid")
+		err = os.WriteFile(tempFile.Name(), invalidConfig, 0600)
+		require.NoError(t, err)
 
-	// Make config invalid. Now metrics should be 0
-	invalidConfig := []byte("invalid")
-	err = os.WriteFile(tempFile.Name(), invalidConfig, 0600)
-	require.NoError(t, err)
+		time.Sleep(2 * reloadPeriod)
+		synctest.Wait()
+		assertHashAndSuccessMetric(validConfig, 0)
 
-	time.Sleep(2 * reloadPeriod)
-	assertHashAndSuccessMetric(validConfig, 0)
+		// Revert config to good state. Make sure it has same hash as before.
+		err = os.WriteFile(tempFile.Name(), validConfig, 0600)
+		require.NoError(t, err)
 
-	// Revert config to good state. Make sure it has same hash as before.
-	err = os.WriteFile(tempFile.Name(), validConfig, 0600)
-	require.NoError(t, err)
+		time.Sleep(2 * reloadPeriod)
+		synctest.Wait()
 
-	time.Sleep(2 * reloadPeriod)
+		// Now success metric should be back to 1.
+		assertHashAndSuccessMetric(validConfig, 1)
 
-	// Now success metric should be back to 1.
-	assertHashAndSuccessMetric(validConfig, 1)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager))
+	})
 }
 
 func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
-	loadCounter := atomic.NewInt32(0)
+	reloadPeriod := 100 * time.Millisecond
 
-	cfg := newTestOverridesManagerConfig(t, 100*time.Millisecond, func(reader io.Reader) (interface{}, error) {
-		loadCounter.Inc()
-		return valueLoader(reader)
+	cfg := newTestOverridesManagerConfig(t, reloadPeriod, nil)
+
+	synctest.Test(t, func(t *testing.T) {
+		loadCounter := atomic.NewInt32(0)
+		cfg.Loader = func(reader io.Reader) (interface{}, error) {
+			loadCounter.Inc()
+			return valueLoader(reader)
+		}
+
+		overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+		require.NoError(t, err)
+
+		ch := overridesManager.CreateListenerChannel(10) // must be big enough to hold all modifications.
+
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
+
+		time.Sleep(reloadPeriod + time.Millisecond)
+		synctest.Wait()
+		require.Equal(t, int32(1), loadCounter.Load())
+
+		// Let's make some modifications to the config
+		const mods = 3
+		for i := 0; i < mods; i++ {
+			writeValueToFile(t, cfg.LoadPath[0], value{Value: i})
+			time.Sleep(reloadPeriod + time.Millisecond)
+			synctest.Wait()
+		}
+
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
+
+		assert.Equal(t, mods+1, int(loadCounter.Load())) // + 1 for initial load, before modifications
+		assert.Equal(t, mods+1, len(ch))                 // Loaded values
 	})
-
-	overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
-	require.NoError(t, err)
-
-	ch := overridesManager.CreateListenerChannel(10) // must be big enough to hold all modifications.
-
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
-
-	test.Poll(t, time.Second, 1, func() interface{} {
-		return int(loadCounter.Load())
-	})
-
-	// Let's make some modifications to the config
-	const mods = 3
-	const modDelay = 500 * time.Millisecond
-	for i := 0; i < mods; i++ {
-		writeValueToFile(t, cfg.LoadPath[0], value{Value: i})
-		// wait before next rewrite, but also after last rewrite to give manager a chance to reload the file again
-		time.Sleep(modDelay)
-	}
-
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
-
-	assert.Equal(t, mods+1, int(loadCounter.Load())) // + 1 for initial load, before modifications
-	assert.Equal(t, mods+1, len(ch))                 // Loaded values
 }
 
 func TestManager_GetConfigNilBeforeStarting(t *testing.T) {
@@ -830,17 +840,16 @@ func TestManager_URLPathReloadFailure(t *testing.T) {
 	statusCode = http.StatusInternalServerError
 	mu.Unlock()
 
-	time.Sleep(3 * reloadPeriod)
-
-	// Config should still be the old value.
-	require.Equal(t, value{Value: 42}, manager.GetConfig())
-
-	// The reload success metric should be 0.
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+	test.Poll(t, 5*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 		# TYPE runtime_config_last_reload_successful gauge
 		runtime_config_last_reload_successful{config="overrides"} 0
-	`), "runtime_config_last_reload_successful"))
+	`), "runtime_config_last_reload_successful")
+	})
+
+	// Config should still be the old value.
+	require.Equal(t, value{Value: 42}, manager.GetConfig())
 
 	// Switch back to succeeding with a new value.
 	mu.Lock()

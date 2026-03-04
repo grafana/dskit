@@ -48,9 +48,8 @@ type grpcStatsHandler struct {
 type contextKey int
 
 const (
-	contextKeyMethodName contextKey = 1
-	contextKeyRouteName  contextKey = 2
-	contextKeyConnID     contextKey = 3
+	contextKeyRouteName    contextKey = 2
+	contextKeyConnID       contextKey = 3
 	contextKeyRPCObservers contextKey = 4
 )
 
@@ -64,8 +63,6 @@ type rpcObservers struct {
 }
 
 func (g *grpcStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
-	ctx = context.WithValue(ctx, contextKeyMethodName, info.FullMethodName)
-
 	// Pre-resolve all labeled metric handles once per stream so that HandleRPC
 	// (called on every message) can call Observe/Inc/Dec without any label
 	// hashing, map lookups, or mutex acquisitions inside the HistogramVec/GaugeVec.
@@ -80,8 +77,6 @@ func (g *grpcStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) c
 func (g *grpcStatsHandler) HandleRPC(ctx context.Context, rpcStats stats.RPCStats) {
 	obs, ok := ctx.Value(contextKeyRPCObservers).(*rpcObservers)
 	if !ok {
-		// Fallback: no pre-resolved observers (should not happen in normal usage).
-		g.handleRPCFallback(ctx, rpcStats)
 		return
 	}
 
@@ -112,42 +107,6 @@ func (g *grpcStatsHandler) HandleRPC(ctx context.Context, rpcStats stats.RPCStat
 		obs.sentPayloadSize.Observe(float64(s.WireLength))
 	case *stats.OutTrailer:
 		// Ignore outgoing trailers. OutTrailer doesn't have valid WireLength (there is a deprecated field, always set to 0).
-	}
-}
-
-// handleRPCFallback is the original WithLabelValues-per-call path, used only
-// when no pre-resolved observers are available in the context.
-func (g *grpcStatsHandler) handleRPCFallback(ctx context.Context, rpcStats stats.RPCStats) {
-	fullMethodName, ok := ctx.Value(contextKeyMethodName).(string)
-	if !ok {
-		return
-	}
-
-	connID, hasConnID := ctx.Value(contextKeyConnID).(string)
-
-	switch s := rpcStats.(type) {
-	case *stats.Begin:
-		g.inflightRequests.WithLabelValues(gRPC, fullMethodName).Inc()
-		if hasConnID {
-			g.grpcConcurrentStreamsTracker.OpenStream(connID)
-		}
-	case *stats.End:
-		g.inflightRequests.WithLabelValues(gRPC, fullMethodName).Dec()
-		if hasConnID {
-			g.grpcConcurrentStreamsTracker.CloseStream(connID)
-		}
-	case *stats.InHeader:
-		// Ignore incoming headers.
-	case *stats.InPayload:
-		g.receivedPayloadSize.WithLabelValues(gRPC, fullMethodName).Observe(float64(s.WireLength))
-	case *stats.InTrailer:
-		// Ignore incoming trailers.
-	case *stats.OutHeader:
-		// Ignore outgoing headers.
-	case *stats.OutPayload:
-		g.sentPayloadSize.WithLabelValues(gRPC, fullMethodName).Observe(float64(s.WireLength))
-	case *stats.OutTrailer:
-		// Ignore outgoing trailers.
 	}
 }
 

@@ -46,6 +46,10 @@ type GRPCServerLog struct {
 	// WithRequest will log the entire request rather than just the error
 	WithRequest              bool
 	DisableRequestSuccessLog bool
+	// DebugDisabled skips building log-field chains for canceled errors and
+	// successful requests, which are logged at debug level. When false (the
+	// default), debug-level entries are emitted as usual.
+	DebugDisabled bool
 }
 
 // UnaryServerInterceptor returns an interceptor that logs gRPC requests
@@ -71,7 +75,7 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		if grpcUtils.IsCanceled(err) {
 			// Canceled errors are logged at Debug level. Avoid building the
 			// (expensive) contextual log-entry chain when debug is not enabled.
-			if isDebugEnabled(s.Log) {
+			if !s.DebugDisabled {
 				entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", duration)
 				if s.WithRequest {
 					entry = log.With(entry, "request", req)
@@ -87,7 +91,7 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 		}
 	} else {
 		// Success path: logged at Debug level; skip work when debug is filtered.
-		if isDebugEnabled(s.Log) {
+		if !s.DebugDisabled {
 			entry := log.With(user.LogWith(ctx, s.Log), "method", info.FullMethod, "duration", duration)
 			level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
 		}
@@ -108,7 +112,7 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 		if grpcUtils.IsCanceled(err) {
 			// Canceled errors are logged at Debug level. Avoid building the
 			// (expensive) contextual log-entry chain when debug is not enabled.
-			if isDebugEnabled(s.Log) {
+			if !s.DebugDisabled {
 				entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", duration)
 				level.Debug(entry).Log("msg", gRPC, "err", err)
 			}
@@ -118,36 +122,12 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 		}
 	} else {
 		// Success path: logged at Debug level; skip work when debug is filtered.
-		if isDebugEnabled(s.Log) {
+		if !s.DebugDisabled {
 			entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", duration)
 			level.Debug(entry).Log("msg", dskit_log.LazySprintf("%s (success)", gRPC))
 		}
 	}
 	return err
-}
-
-// DebugEnabled is an optional interface that a log.Logger can implement to
-// advertise whether debug-level messages will be emitted. Implementing this
-// interface allows callers to skip building expensive log-field chains when
-// debug output is suppressed, without losing any log lines.
-//
-// go-kit/log's level.NewFilter does not expose a public level-check API, so
-// loggers that want to participate in this optimization must implement this
-// interface themselves (e.g. dskit's RateLimitedLogger and similar wrappers).
-type DebugEnabled interface {
-	DebugEnabled() bool
-}
-
-// isDebugEnabled reports whether logger will emit debug-level messages.
-//
-// It checks whether logger implements the optional DebugEnabled interface.
-// If not, it returns false: debug-level log work is skipped by default.
-// Loggers that want debug output must implement DebugEnabled and return true.
-func isDebugEnabled(logger log.Logger) bool {
-	if de, ok := logger.(DebugEnabled); ok {
-		return de.DebugEnabled()
-	}
-	return false
 }
 
 func shouldLog(ctx context.Context, err error) (bool, string) {

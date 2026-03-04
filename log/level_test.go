@@ -11,6 +11,24 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+func TestIsDebugDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		level string
+		want  bool
+	}{
+		{"debug", false},
+		{"info", true},
+		{"warn", true},
+		{"error", true},
+	} {
+		t.Run(tc.level, func(t *testing.T) {
+			var l Level
+			require.NoError(t, l.Set(tc.level))
+			require.Equal(t, tc.want, l.IsDebugDisabled())
+		})
+	}
+}
+
 func TestMarshalYAML(t *testing.T) {
 	var l Level
 	err := l.Set("debug")

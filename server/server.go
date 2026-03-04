@@ -421,6 +421,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		Log:                      logger,
 		WithRequest:              !cfg.ExcludeRequestInLog,
 		DisableRequestSuccessLog: cfg.DisableRequestSuccessLog,
+		DebugDisabled:            cfg.LogLevel.IsDebugDisabled(),
 	}
 	var grpcInstrumentationOptions []middleware.InstrumentationOption
 	if cfg.ReportGRPCCodesInInstrumentationLabel {

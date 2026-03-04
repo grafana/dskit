@@ -41,6 +41,12 @@ func (l *Level) String() string {
 	return l.s
 }
 
+// IsDebugDisabled reports whether the level suppresses debug messages
+// (i.e. the configured level is info, warn, or error).
+func (l *Level) IsDebugDisabled() bool {
+	return l.s != "debug"
+}
+
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (l *Level) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var level string

@@ -189,6 +189,29 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 	}
 }
 
+// WithoutPartitions returns a new PartitionRingDesc without the specified partitions and their owners.
+func (m *PartitionRingDesc) WithoutPartitions(partitions map[int32]struct{}) PartitionRingDesc {
+	newPartitions := make(map[int32]PartitionDesc, len(partitions))
+	newOwners := make(map[string]OwnerDesc, len(partitions)*2) // assuming two owners per partition.
+
+	for pid, p := range m.Partitions {
+		if _, ok := partitions[pid]; !ok {
+			newPartitions[pid] = p
+		}
+	}
+
+	for oid, o := range m.Owners {
+		if _, ok := partitions[o.OwnedPartition]; !ok {
+			newOwners[oid] = o
+		}
+	}
+
+	return PartitionRingDesc{
+		Partitions: newPartitions,
+		Owners:     newOwners,
+	}
+}
+
 // AddPartition adds a new partition to the ring. Tokens are auto-generated using the spread minimizing strategy
 // which generates deterministic unique tokens.
 func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now time.Time) {

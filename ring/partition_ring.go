@@ -489,6 +489,11 @@ func (r *PartitionRing) WithPartitions(partitions map[int32]struct{}) (*Partitio
 	return NewPartitionRingWithOptions(r.desc.WithPartitions(partitions), r.opts)
 }
 
+// WithPartitions returns a new PartitionRing without the specified partitions.
+func (r *PartitionRing) WithoutPartitions(partitions map[int32]struct{}) (*PartitionRing, error) {
+	return NewPartitionRingWithOptions(r.desc.WithoutPartitions(partitions), r.opts)
+}
+
 // ActivePartitionBatchRing wraps PartitionRing and implements DoBatchRing to lookup ACTIVE partitions.
 type ActivePartitionBatchRing struct {
 	ring *PartitionRing

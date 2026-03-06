@@ -71,8 +71,7 @@ func TestGrpcLogging(t *testing.T) {
 	}} {
 		t.Run("", func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
-			logger := log.NewLogfmtLogger(buf)
-			l := GRPCServerLog{Log: logger, WithRequest: true, DisableRequestSuccessLog: false}
+			l := GRPCServerLog{Log: log.NewLogfmtLogger(buf), WithRequest: true, DisableRequestSuccessLog: false}
 
 			handler := func(context.Context, interface{}) (interface{}, error) {
 				return nil, tc.inputErr

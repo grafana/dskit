@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/grafana/mimir/blob/main/pkg/util/propagation/propagation.go
-// Provenance-includes-license: AGPL-3.0-only
-// Provenance-includes-copyright: Grafana Labs
 
 // Package propagation provides abstractions for propagating auxiliary request information
 // across both HTTP and protobuf transport paths.

@@ -25,8 +25,15 @@ import (
 	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 )
+
+var parseMetricSelectorFunc func(input string) (m []*labels.Matcher, err error)
+
+// SetSelectorParser sets the function used to parse metric selector strings from header values.
+// It must be called during application initialisation before any labelaccess functions are used.
+func SetSelectorParser(f func(string) ([]*labels.Matcher, error)) {
+	parseMetricSelectorFunc = f
+}
 
 // HTTPHeaderKey is the HTTP (and gRPC metadata) header used to carry label policy values.
 const HTTPHeaderKey = "X-Prom-Label-Policy"
@@ -237,7 +244,10 @@ func policyFromHeaderValue(headerString string) (string, *LabelPolicy, error) {
 		return "", nil, fmt.Errorf("%w, '%v'", errInvalidHeaderEscape, err)
 	}
 
-	matchers, err := parser.ParseMetricSelector(selectorString)
+	if parseMetricSelectorFunc == nil {
+		panic("labelaccess: SetSelectorParser must be called before using labelaccess functions")
+	}
+	matchers, err := parseMetricSelectorFunc(selectorString)
 	if err != nil {
 		return "", nil, fmt.Errorf("%w '%s', error: '%v'", errInvalidSelector, selectorString, err)
 	}

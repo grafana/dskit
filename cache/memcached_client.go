@@ -588,13 +588,23 @@ func (c *MemcachedClient) storeOperation(ctx context.Context, key string, value 
 
 	err := f(ctx, key, value, ttl)
 	if err != nil {
-		level.Warn(c.logger).Log(
-			"msg", "failed to store item to cache",
-			"operation", operation,
-			"key", key,
-			"sizeBytes", len(value),
-			"err", err,
-		)
+		if errors.Is(err, ErrNotStored) {
+			level.Debug(c.logger).Log(
+				"msg", "failed to store item to cache",
+				"operation", operation,
+				"key", key,
+				"sizeBytes", len(value),
+				"err", err,
+			)
+		} else {
+			level.Warn(c.logger).Log(
+				"msg", "failed to store item to cache",
+				"operation", operation,
+				"key", key,
+				"sizeBytes", len(value),
+				"err", err,
+			)
+		}
 		c.trackError(operation, err)
 	}
 

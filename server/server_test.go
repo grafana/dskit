@@ -20,7 +20,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	gokit_log "github.com/go-kit/log"

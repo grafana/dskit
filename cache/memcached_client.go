@@ -306,7 +306,7 @@ func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duratio
 func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
 	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
 		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
-		level.Warn(c.logger).Log("msg", "failed to store item to cache because it is too large", "key", key, "size", len(value), "max_item_size", c.config.MaxItemSize)
+		level.Debug(c.logger).Log("msg", "failed to store item to cache because it is too large", "key", key, "size", len(value), "max_item_size", c.config.MaxItemSize)
 		return
 	}
 
@@ -321,7 +321,7 @@ func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) 
 
 	if err != nil {
 		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
-		level.Warn(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "key", key, "err", err, "buffer_size", c.config.MaxAsyncBufferSize)
+		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "key", key, "err", err, "buffer_size", c.config.MaxAsyncBufferSize)
 	}
 }
 
@@ -588,7 +588,7 @@ func (c *MemcachedClient) storeOperation(ctx context.Context, key string, value 
 
 	err := f(ctx, key, value, ttl)
 	if err != nil {
-		level.Warn(c.logger).Log(
+		level.Debug(c.logger).Log(
 			"msg", "failed to store item to cache",
 			"operation", operation,
 			"key", key,

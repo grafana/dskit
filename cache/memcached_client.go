@@ -637,6 +637,8 @@ func (c *MemcachedClient) trackError(op string, err error, msg ...interface{}) {
 		c.metrics.failures.WithLabelValues(op, reasonMalformedKey).Inc()
 	case errors.Is(err, memcache.ErrServerError):
 		c.metrics.failures.WithLabelValues(op, reasonServerError).Inc()
+	case errors.Is(err, context.Canceled):
+		c.metrics.failures.WithLabelValues(op, reasonCanceled).Inc()
 	default:
 		c.metrics.failures.WithLabelValues(op, reasonOther).Inc()
 		severity = level.WarnValue() // Log unexpected kinds of errors with higher severity so they're easier to diagnose.

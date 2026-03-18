@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -40,13 +41,21 @@ func (f *fileProvider) Read(_ context.Context) ([]byte, error) {
 // httpProvider fetches config from an HTTP/HTTPS URL with RED metrics.
 type httpProvider struct {
 	url             string
+	urlForMetrics   string // scheme+host+path only, no query/fragment
 	client          *http.Client
 	requestDuration *prometheus.HistogramVec
 }
 
-func newHTTPProvider(url string, client *http.Client, requestDuration *prometheus.HistogramVec) *httpProvider {
+func newHTTPProvider(rawURL string, client *http.Client, requestDuration *prometheus.HistogramVec) *httpProvider {
+	urlForMetrics := rawURL
+	if parsed, err := url.Parse(rawURL); err == nil {
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		urlForMetrics = parsed.String()
+	}
 	return &httpProvider{
-		url:             url,
+		url:             rawURL,
+		urlForMetrics:   urlForMetrics,
 		client:          client,
 		requestDuration: requestDuration,
 	}
@@ -77,7 +86,7 @@ func (h *httpProvider) Read(ctx context.Context) ([]byte, error) {
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		h.requestDuration.WithLabelValues(h.url, "error").Observe(time.Since(start).Seconds())
+		h.requestDuration.WithLabelValues(h.urlForMetrics, "error").Observe(time.Since(start).Seconds())
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -87,17 +96,17 @@ func (h *httpProvider) Read(ctx context.Context) ([]byte, error) {
 	if resp.StatusCode/100 != 2 {
 		// Drain body to allow connection reuse.
 		_, _ = io.Copy(io.Discard, resp.Body)
-		h.requestDuration.WithLabelValues(h.url, statusCode).Observe(time.Since(start).Seconds())
+		h.requestDuration.WithLabelValues(h.urlForMetrics, statusCode).Observe(time.Since(start).Seconds())
 		return nil, &httpError{statusCode: resp.StatusCode, url: h.url}
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		h.requestDuration.WithLabelValues(h.url, "error").Observe(time.Since(start).Seconds())
+		h.requestDuration.WithLabelValues(h.urlForMetrics, "error").Observe(time.Since(start).Seconds())
 		return nil, fmt.Errorf("read response body: %w", err)
 	}
 
-	h.requestDuration.WithLabelValues(h.url, statusCode).Observe(time.Since(start).Seconds())
+	h.requestDuration.WithLabelValues(h.urlForMetrics, statusCode).Observe(time.Since(start).Seconds())
 	return body, nil
 }
 

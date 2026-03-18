@@ -644,7 +644,7 @@ func (c *MemcachedClient) trackError(op string, err error, msg ...interface{}) {
 
 	logger := log.WithPrefix(c.logger, level.Key(), severity)
 	logger = log.WithSuffix(logger, "err", err)
-	logger.Log(msg)
+	logger.Log(msg...)
 }
 
 func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {

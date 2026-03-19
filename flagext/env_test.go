@@ -22,6 +22,12 @@ func TestFlagToEnvVar(t *testing.T) {
 			expected: "MYAPP_SERVER_HTTP_LISTEN_PORT",
 		},
 		{
+			name:     "basic flag with complex prefix",
+			prefix:   "myApp.Name",
+			flagName: "server.http-listen-port",
+			expected: "MYAPP_NAME_SERVER_HTTP_LISTEN_PORT",
+		},
+		{
 			name:     "empty prefix",
 			prefix:   "",
 			flagName: "server.http-listen-port",

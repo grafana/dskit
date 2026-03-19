@@ -12,20 +12,21 @@ var flagNameReplacer = strings.NewReplacer(".", "_", "-", "_")
 
 // FlagToEnvVar converts a flag name to its corresponding environment variable name.
 // The flag name is uppercased and all dots, dashes, and underscores in the flag name
-// are replaced with (or kept as) underscores. The prefix is used as-is and should be
-// provided in uppercase. If prefix is non-empty it is prepended with an underscore
-// separator.
+// are replaced with (or kept as) underscores. The prefix is similarly upper-cased with
+// symbol substitution. If prefix is non-empty, an _ is placed between the flag name and prefix
 //
 // Note that distinct flag names can map to the same environment variable. For example,
 // "a.b" and "a-b" both map to "A_B". Callers should avoid registering flags whose
 // names differ only in dots, dashes, and underscores.
 //
-// For example, FlagToEnvVar("MYAPP", "server.http-listen-port") returns
-// "MYAPP_SERVER_HTTP_LISTEN_PORT".
+// For example, FlagToEnvVar("myapp-name", "server.http-listen-port") returns
+// "MYAPP_NAME_SERVER_HTTP_LISTEN_PORT".
 func FlagToEnvVar(prefix, flagName string) string {
 	envVar := strings.ToUpper(flagName)
 	envVar = flagNameReplacer.Replace(envVar)
 	if prefix != "" {
+		prefix = strings.ToUpper(prefix)
+		prefix = flagNameReplacer.Replace(prefix)
 		return prefix + "_" + envVar
 	}
 	return envVar

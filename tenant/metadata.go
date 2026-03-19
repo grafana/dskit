@@ -110,8 +110,12 @@ func ValidMetadata(s string) error {
 			return &errMetadataUnsupportedCharacter{metadata: s, pos: i}
 		}
 	}
-	if len(s) > MaxMetadataLength {
-		return fmt.Errorf("metadata too long: %d", len(s))
+	metadataLen := len(s)
+	if metadataLen > 0 && s[0] == metadataSeparator {
+		metadataLen--
+	}
+	if metadataLen > MaxMetadataLength {
+		return fmt.Errorf("metadata too long: %d", metadataLen)
 	}
 	return nil
 }

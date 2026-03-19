@@ -140,6 +140,13 @@ func TestTenantIDs(t *testing.T) {
 			metadata:    Metadata{}.With("product", "k6"),
 		},
 		{
+			name:        "tenant-with-max-length-metadata",
+			headerValue: strptr("tenant-a:k=" + strings.Repeat("x", MaxMetadataLength-2)),
+			tenantID:    "tenant-a",
+			tenantIDs:   []string{"tenant-a"},
+			metadata:    Metadata{}.With("k", strings.Repeat("x", MaxMetadataLength-2)),
+		},
+		{
 			name:        "tenant-with-empty-metadata",
 			headerValue: strptr("tenant-a:"),
 			tenantID:    "tenant-a",

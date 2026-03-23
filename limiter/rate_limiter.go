@@ -66,6 +66,21 @@ func (l *RateLimiter) Burst(now time.Time, tenantID string) int {
 	return l.getTenantLimiter(now, tenantID).Burst()
 }
 
+// RemoveStaleEntries removes entries that have not been accessed since
+// the given cutoff time and returns the number of removed entries.
+func (l *RateLimiter) RemoveStaleEntries(cutoff time.Time) int {
+	l.tenantsLock.Lock()
+	defer l.tenantsLock.Unlock()
+	removed := 0
+	for tenantID, entry := range l.tenants {
+		if entry.recheckAt.Before(cutoff) {
+			delete(l.tenants, tenantID)
+			removed++
+		}
+	}
+	return removed
+}
+
 func (l *RateLimiter) getTenantLimiter(now time.Time, tenantID string) *rate.Limiter {
 	recheck := false
 

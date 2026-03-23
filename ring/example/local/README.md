@@ -21,6 +21,9 @@ go build local.go
 ./local -bindaddr=127.0.0.2 -join-member=127.0.0.1
 ```
 
+> #### NOTE for MacOS users
+> you will need to setup a network alias for each `bindaddr` other than `127.0.0.1` you want to use. For example, to create a second instance listening on `127.0.0.2` you can run the following command to enable it: `sudo ifconfig lo0 alias 127.0.0.2 up`
+
 4. You can start as many peers as you want with different loopback bindaddr.
 
 5. Check the ring page
@@ -33,7 +36,7 @@ e.g: http://127.0.0.1:8100/ring
 
 6. Also check the memberlist status page.
 
-e.g: https://127.0.0.1:8100/kv
+e.g: http://127.0.0.1:8100/kv
 
 ![Memberlist Status Page](./images/local-memberlist.png)
 

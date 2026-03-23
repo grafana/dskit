@@ -123,7 +123,15 @@ func (l *RateLimiter) recheckTenantLimiter(now time.Time, tenantID string) *rate
 	l.tenantsLock.Lock()
 	defer l.tenantsLock.Unlock()
 
-	entry := l.tenants[tenantID]
+	entry, ok := l.tenants[tenantID]
+	if !ok {
+		entry = &tenantLimiter{
+			limiter:   rate.NewLimiter(limit, burst),
+			recheckAt: now.Add(l.recheckPeriod),
+		}
+		l.tenants[tenantID] = entry
+		return entry.limiter
+	}
 
 	// We check again if the recheck period elapsed, cause it may
 	// have already been rechecked in the meanwhile.

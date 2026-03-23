@@ -141,6 +141,27 @@ func TestRateLimiter_RemoveStaleEntries(t *testing.T) {
 	assert.Equal(t, 0, limiter.RemoveStaleEntries(now.Add(2*time.Hour)))
 }
 
+func TestRateLimiter_RecheckTenantLimiterAfterRemoval(t *testing.T) {
+	strategy := &staticLimitStrategy{tenants: map[string]struct {
+		limit float64
+		burst int
+	}{
+		"tenant": {limit: 10, burst: 20},
+	}}
+
+	recheckPeriod := time.Second
+	limiter := NewRateLimiter(strategy, recheckPeriod)
+	now := time.Now()
+
+	assert.True(t, limiter.AllowN(now, "tenant", 1))
+	assert.Equal(t, 1, limiter.RemoveStaleEntries(now.Add(2*recheckPeriod)))
+
+	assert.NotPanics(t, func() {
+		assert.NotNil(t, limiter.recheckTenantLimiter(now.Add(2*recheckPeriod), "tenant"))
+	})
+	assert.True(t, limiter.AllowN(now.Add(2*recheckPeriod), "tenant", 1))
+}
+
 func BenchmarkRateLimiter_CustomMultiTenant(b *testing.B) {
 	strategy := &increasingLimitStrategy{}
 	limiter := NewRateLimiter(strategy, 10*time.Second)

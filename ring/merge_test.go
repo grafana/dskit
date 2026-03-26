@@ -480,6 +480,155 @@ func TestMergeMissingIntoLeft(t *testing.T) {
 	}
 }
 
+func TestMergeFarFutureTimestamp_IncomingClamped(t *testing.T) {
+	now := time.Now()
+	nowUnix := now.Unix()
+	farFuture := time.Date(2034, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+
+	// Local ring has instance with current timestamp.
+	local := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 1": {Addr: "addr1", Timestamp: nowUnix, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+		},
+	}
+
+	// Incoming ring has same instance with a corrupted far-future timestamp.
+	incoming := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 1": {Addr: "addr1", Timestamp: farFuture, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+		},
+	}
+
+	change, err := local.mergeWithTime(incoming, false, now)
+	assert.NoError(t, err)
+
+	// The incoming far-future timestamp should be clamped to now.
+	// Since clamped incoming (now) == local (now), no change from the incoming side.
+	// But the timestamps are equal so no update from the merge loop.
+	ing := local.Ingesters["Ing 1"]
+	assert.Equal(t, nowUnix, ing.Timestamp, "local timestamp should remain current")
+	assert.Nil(t, change, "no change expected when clamped incoming equals local")
+}
+
+func TestMergeFarFutureTimestamp_LocalClamped(t *testing.T) {
+	now := time.Now()
+	nowUnix := now.Unix()
+	farFuture := time.Date(2034, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+
+	// Local ring has instance with corrupted far-future timestamp.
+	local := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 1": {Addr: "addr1", Timestamp: farFuture, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+		},
+	}
+
+	// Incoming ring has same instance with a current timestamp (slightly newer).
+	incoming := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 1": {Addr: "addr1", Timestamp: nowUnix + 5, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+		},
+	}
+
+	change, err := local.mergeWithTime(incoming, false, now)
+	assert.NoError(t, err)
+	assert.NotNil(t, change, "change expected: local was clamped and incoming wins")
+
+	// Local entry should now have the incoming's timestamp (which is nowUnix+5, after clamping local to nowUnix).
+	ing := local.Ingesters["Ing 1"]
+	assert.Equal(t, nowUnix+5, ing.Timestamp, "incoming should win after local is clamped")
+}
+
+func TestMergeFarFutureTimestamp_LocalClampedSelfHealing(t *testing.T) {
+	now := time.Now()
+	nowUnix := now.Unix()
+	farFuture := time.Date(2034, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+
+	// Local ring has instance with corrupted far-future timestamp.
+	local := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 1": {Addr: "addr1", Timestamp: farFuture, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+		},
+	}
+
+	// Incoming ring has a DIFFERENT instance only (no mention of Ing 1).
+	incoming := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 2": {Addr: "addr2", Timestamp: nowUnix, State: ACTIVE, Tokens: []uint32{100, 200}},
+		},
+	}
+
+	change, err := local.mergeWithTime(incoming, false, now)
+	assert.NoError(t, err)
+	assert.NotNil(t, change, "change expected: Ing 1 was clamped, Ing 2 is new")
+
+	// Ing 1's corrupted timestamp should be clamped to now.
+	ing1 := local.Ingesters["Ing 1"]
+	assert.Equal(t, nowUnix, ing1.Timestamp, "corrupted local timestamp should be clamped to now")
+
+	// The change should include both the clamped Ing 1 and the new Ing 2.
+	changeDesc := change.(*Desc)
+	assert.Contains(t, changeDesc.Ingesters, "Ing 1", "clamped entry should be in change for gossip propagation")
+	assert.Contains(t, changeDesc.Ingesters, "Ing 2", "new entry should be in change")
+}
+
+func TestMergeFarFutureTimestamp_LocalCASMarkLeft(t *testing.T) {
+	now := time.Now()
+	nowUnix := now.Unix()
+	farFuture := time.Date(2034, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+
+	// Local ring has instance with corrupted far-future timestamp.
+	local := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 1": {Addr: "addr1", Timestamp: farFuture, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			"Ing 2": {Addr: "addr2", Timestamp: nowUnix, State: ACTIVE, Tokens: []uint32{100, 200}},
+		},
+	}
+
+	// Incoming ring does NOT have Ing 1 (it's gone), localCAS should mark it LEFT.
+	incoming := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 2": {Addr: "addr2", Timestamp: nowUnix, State: ACTIVE, Tokens: []uint32{100, 200}},
+		},
+	}
+
+	change, err := local.mergeWithTime(incoming, true, now)
+	assert.NoError(t, err)
+	assert.NotNil(t, change)
+
+	// Ing 1 should be marked LEFT with a current timestamp (not the far-future one).
+	ing1 := local.Ingesters["Ing 1"]
+	assert.Equal(t, LEFT, ing1.State, "missing instance should be marked LEFT via localCAS")
+	assert.Equal(t, nowUnix, ing1.Timestamp, "timestamp should be current, not far-future")
+	assert.Nil(t, ing1.Tokens, "LEFT instance should have no tokens")
+}
+
+func TestMergeFarFutureTimestamp_LegitimateClockSkew(t *testing.T) {
+	now := time.Now()
+	nowUnix := now.Unix()
+
+	// Timestamp 30 minutes in the future (within allowed drift) should NOT be clamped.
+	slightlyFuture := nowUnix + 1800
+
+	local := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 1": {Addr: "addr1", Timestamp: nowUnix, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+		},
+	}
+
+	incoming := &Desc{
+		Ingesters: map[string]InstanceDesc{
+			"Ing 1": {Addr: "addr1", Timestamp: slightlyFuture, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+		},
+	}
+
+	change, err := local.mergeWithTime(incoming, false, now)
+	assert.NoError(t, err)
+	assert.NotNil(t, change, "incoming with slightly future timestamp should win")
+
+	ing := local.Ingesters["Ing 1"]
+	assert.Equal(t, slightlyFuture, ing.Timestamp, "legitimate clock skew should be accepted without clamping")
+}
+
 func mergeLocalCAS(ring1, ring2 *Desc, nowUnixTime int64) (*Desc, *Desc) {
 	change, err := ring1.mergeWithTime(ring2, true, time.Unix(nowUnixTime, 0))
 	if err != nil {

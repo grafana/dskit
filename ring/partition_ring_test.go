@@ -1,10 +1,12 @@
 package ring
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
 	"slices"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
@@ -1376,4 +1378,216 @@ func randomString(rnd *rand.Rand, length int) string {
 		out = append(out, byte(firstASCIIChar+rnd.Intn(lastASCIIChar-firstASCIIChar)))
 	}
 	return string(out)
+}
+
+func TestActivePartitionBatchRing_GetKeysByPartition(t *testing.T) {
+	t.Run("no active partitions returns error", func(t *testing.T) {
+		ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 0, 3, 0)
+		r := NewActivePartitionBatchRing(ring)
+
+		result, err := r.GetKeysByPartition(context.Background(), []uint32{1, 2, 3})
+		require.Error(t, err)
+		require.Nil(t, result)
+	})
+
+	t.Run("empty keys returns nil", func(t *testing.T) {
+		ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 10, 0, 0)
+		r := NewActivePartitionBatchRing(ring)
+
+		result, err := r.GetKeysByPartition(context.Background(), nil)
+		require.NoError(t, err)
+		require.Nil(t, result)
+	})
+
+	t.Run("context cancelled returns error", func(t *testing.T) {
+		ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 10, 0, 0)
+		r := NewActivePartitionBatchRing(ring)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		result, err := r.GetKeysByPartition(ctx, []uint32{1, 2, 3})
+		require.Error(t, err)
+		require.Nil(t, result)
+	})
+
+	t.Run("gaps in partition IDs does not panic", func(t *testing.T) {
+		// Create a ring with non-contiguous partition IDs by adding active and inactive
+		// partitions, so that only some IDs are active and there are gaps.
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(0, PartitionActive, time.Now())
+		desc.AddPartition(1, PartitionInactive, time.Now())
+		desc.AddPartition(2, PartitionInactive, time.Now())
+		desc.AddPartition(5, PartitionActive, time.Now())
+		desc.AddPartition(10, PartitionActive, time.Now())
+
+		ring, err := NewPartitionRing(*desc)
+		require.NoError(t, err)
+		r := NewActivePartitionBatchRing(ring)
+
+		rnd := rand.New(rand.NewSource(0))
+		keys := make([]uint32, 100)
+		for i := range keys {
+			keys[i] = rnd.Uint32()
+		}
+
+		result, err := r.GetKeysByPartition(context.Background(), keys)
+		require.NoError(t, err)
+		require.NotEmpty(t, result)
+
+		// All returned partition IDs must be active (0, 5, or 10).
+		for _, pk := range result {
+			assert.Contains(t, []int32{0, 5, 10}, pk.PartitionID)
+			assert.NotEmpty(t, pk.Indexes)
+		}
+
+		assertGetKeysByPartitionMatchesActivePartitionForKey(t, ring, keys, result)
+	})
+
+	t.Run("returned partitions match ActivePartitionForKey", func(t *testing.T) {
+		ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), 10, 5, 0)
+		r := NewActivePartitionBatchRing(ring)
+
+		rnd := rand.New(rand.NewSource(0))
+		keys := make([]uint32, 1000)
+		for i := range keys {
+			keys[i] = rnd.Uint32()
+		}
+
+		result, err := r.GetKeysByPartition(context.Background(), keys)
+		require.NoError(t, err)
+
+		assertGetKeysByPartitionMatchesActivePartitionForKey(t, ring, keys, result)
+	})
+}
+
+// assertGetKeysByPartitionMatchesActivePartitionForKey verifies that each key index
+// in the GetKeysByPartition result maps to the correct partition according to ActivePartitionForKey.
+func assertGetKeysByPartitionMatchesActivePartitionForKey(t *testing.T, ring *PartitionRing, keys []uint32, result []PartitionKeys) {
+	t.Helper()
+
+	// Build a map from key index to the partition it was assigned to.
+	keyToPartition := make(map[int]int32)
+	for _, pk := range result {
+		for _, idx := range pk.Indexes {
+			keyToPartition[idx] = pk.PartitionID
+		}
+	}
+
+	// Every key must be present and assigned to the correct partition.
+	require.Equal(t, len(keys), len(keyToPartition), "every key should be assigned to a partition")
+
+	for i, key := range keys {
+		expectedPartitionID, err := ring.ActivePartitionForKey(key)
+		require.NoError(t, err)
+		assert.Equal(t, expectedPartitionID, keyToPartition[i], "key index %d (key=%d) should be in partition %d", i, key, expectedPartitionID)
+	}
+}
+
+func TestActivePartitionBatchRing_GetKeysByPartition_MatchesDoBatchWithOptions(t *testing.T) {
+	tests := []struct {
+		name        string
+		numActive   int
+		numInactive int
+		numKeys     int
+	}{
+		{
+			name:        "10 active partitions, 100 keys",
+			numActive:   10,
+			numInactive: 0,
+			numKeys:     100,
+		},
+		{
+			name:        "10 active partitions with inactive, 100 keys",
+			numActive:   10,
+			numInactive: 5,
+			numKeys:     100,
+		},
+		{
+			name:        "30 active partitions, 1000 keys",
+			numActive:   30,
+			numInactive: 0,
+			numKeys:     1000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), tt.numActive, tt.numInactive, 0)
+			r := NewActivePartitionBatchRing(ring)
+
+			keys := make([]uint32, tt.numKeys)
+			rnd := rand.New(rand.NewSource(0))
+			for i := range keys {
+				keys[i] = rnd.Uint32()
+			}
+
+			// Get grouping from GetKeysByPartition.
+			splitResult, err := r.GetKeysByPartition(context.Background(), keys)
+			require.NoError(t, err)
+
+			// Get grouping from DoBatchWithOptions by recording what each callback receives.
+			// We use Cleanup to wait for all callbacks to complete before inspecting
+			// the results, because DoBatchWithOptions may return early once quorum is reached.
+			var mu sync.Mutex
+			cleanupDone := make(chan struct{})
+			doBatchResult := make(map[string][]int)
+			err = DoBatchWithOptions(context.Background(), WriteNoExtend, r, keys, func(desc InstanceDesc, indexes []int) error {
+				mu.Lock()
+				doBatchResult[desc.Addr] = append([]int(nil), indexes...)
+				mu.Unlock()
+				return nil
+			}, DoBatchOptions{
+				Cleanup: func() { close(cleanupDone) },
+			})
+			require.NoError(t, err)
+			<-cleanupDone
+
+			// Build comparable map from GetKeysByPartition result.
+			splitResultMap := make(map[string][]int, len(splitResult))
+			for _, pk := range splitResult {
+				splitResultMap[strconv.Itoa(int(pk.PartitionID))] = pk.Indexes
+			}
+
+			// Both must have the same set of partitions.
+			require.Equal(t, len(doBatchResult), len(splitResultMap), "number of partitions should match")
+
+			for addr, doBatchIndexes := range doBatchResult {
+				splitIndexes, found := splitResultMap[addr]
+				require.True(t, found, "partition %s found in DoBatchWithOptions but not in GetKeysByPartition", addr)
+
+				// Sort both slices for comparison since map iteration order is non-deterministic.
+				sort.Ints(doBatchIndexes)
+				sort.Ints(splitIndexes)
+				require.Equal(t, doBatchIndexes, splitIndexes, "indexes for partition %s should match", addr)
+			}
+		})
+	}
+}
+
+func BenchmarkActivePartitionBatchRing_GetKeysByPartition(b *testing.B) {
+	for _, numPartitions := range []int{10, 100} {
+		b.Run(fmt.Sprintf("partitions=%d", numPartitions), func(b *testing.B) {
+			ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numPartitions, 0, 0)
+			r := NewActivePartitionBatchRing(ring)
+
+			rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+			ctx := context.Background()
+
+			// Look up 1K keys each time. This simulates Mimir write requests with 1K samples per request.
+			keys := make([]uint32, 1000)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				// Regenerate keys each iteration to avoid misleadingly good results
+				// from CPU branch prediction and cache effects on a fixed key set.
+				for j := range keys {
+					keys[j] = rnd.Uint32()
+				}
+				if _, err := r.GetKeysByPartition(ctx, keys); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }

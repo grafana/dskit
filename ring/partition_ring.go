@@ -2,6 +2,7 @@ package ring
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -42,6 +43,9 @@ type PartitionRing struct {
 	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
 	activePartitionsCount int
 
+	// maxPartitionID is the highest partition ID in the ring, or -1 if there are no partitions.
+	maxPartitionID int32
+
 	// opts is used to propagate the options to sub rings when shuffle sharding.
 	opts PartitionRingOptions
 }
@@ -79,6 +83,7 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 		partitionByToken:      desc.partitionByToken(),
 		ownersByPartition:     desc.ownersByPartition(),
 		activePartitionsCount: desc.activePartitionsCount(),
+		maxPartitionID:        desc.maxPartitionID(),
 		shuffleShardCache:     shuffleShardCache,
 		opts:                  opts,
 	}, nil
@@ -291,6 +296,11 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 // PartitionsCount returns the number of partitions in the ring.
 func (r *PartitionRing) PartitionsCount() int {
 	return len(r.desc.Partitions)
+}
+
+// MaxPartitionID returns the highest partition ID in the ring, or -1 if there are no partitions.
+func (r *PartitionRing) MaxPartitionID() int32 {
+	return r.maxPartitionID
 }
 
 // ActivePartitionsCount returns the number of active partitions in the ring.
@@ -539,6 +549,76 @@ func (r *ActivePartitionBatchRing) Get(key uint32, _ Operation, bufInstances []I
 		MaxUnavailableZones:  0,
 		ZoneAwarenessEnabled: false,
 	}, nil
+}
+
+// PartitionKeys holds a partition ID and the indexes of keys assigned to it.
+type PartitionKeys struct {
+	PartitionID int32
+	Indexes     []int
+}
+
+// GetKeysByPartition groups the input keys by the active partition they belong to, returning
+// the partition ID and the original indexes of keys assigned to each partition.
+// This is a simplified alternative to DoBatchWithOptions for cases where no quorum tracking is needed.
+func (r *ActivePartitionBatchRing) GetKeysByPartition(ctx context.Context, keys []uint32) ([]PartitionKeys, error) {
+	if r.ring.ActivePartitionsCount() <= 0 {
+		return nil, fmt.Errorf("GetKeysByPartition: no active partitions")
+	}
+
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	numSlots := int(r.ring.MaxPartitionID()) + 1
+
+	// First pass: find the partition for each key and count keys per partition.
+	numKeysByPartition := make([]int, numSlots)
+	partitionIDByKey := make([]int32, len(keys))
+	for i, key := range keys {
+		if i%10e3 == 0 {
+			if err := context.Cause(ctx); err != nil {
+				return nil, err
+			}
+		}
+
+		partitionID, err := r.ring.ActivePartitionForKey(key)
+		if err != nil {
+			return nil, err
+		}
+
+		partitionIDByKey[i] = partitionID
+		numKeysByPartition[partitionID]++
+	}
+
+	// Allocate a single backing array for all index slices to reduce allocations.
+	allIndexes := make([]int, 0, len(keys))
+	indexSlices := make([][]int, numSlots)
+	numActivePartitions := 0
+	for id, count := range numKeysByPartition {
+		if count > 0 {
+			start := len(allIndexes)
+			allIndexes = allIndexes[:start+count]
+			indexSlices[id] = allIndexes[start : start : start+count] // length 0, capacity count
+			numActivePartitions++
+		}
+	}
+
+	// Second pass: assign key indexes to their partition slices.
+	for i, partitionID := range partitionIDByKey {
+		indexSlices[partitionID] = append(indexSlices[partitionID], i)
+	}
+
+	result := make([]PartitionKeys, 0, numActivePartitions)
+	for id, indexes := range indexSlices {
+		if len(indexes) > 0 {
+			result = append(result, PartitionKeys{
+				PartitionID: int32(id),
+				Indexes:     indexes,
+			})
+		}
+	}
+
+	return result, nil
 }
 
 func multiPartitionOwnerInstanceID(instanceID string, partitionID int32) string {

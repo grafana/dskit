@@ -598,7 +598,7 @@ func (r *ActivePartitionBatchRing) GetKeysByPartition(ctx context.Context, keys 
 		if count > 0 {
 			start := len(allIndexes)
 			allIndexes = allIndexes[:start+count]
-			indexSlices[id] = allIndexes[start:start:start+count] // length 0, capacity count
+			indexSlices[id] = allIndexes[start : start : start+count] // length 0, capacity count
 			numActivePartitions++
 		}
 	}

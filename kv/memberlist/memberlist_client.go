@@ -196,6 +196,9 @@ type KVConfig struct {
 	// This useful to override it in tests.
 	discoverMembersBackoff backoff.Config `yaml:"-"`
 
+	// probeInterval overrides the default probe interval when non-zero. This is useful for testing.
+	probeInterval time.Duration `yaml:"-"`
+
 	// Hooks used for testing.
 	beforeJoinMembersOnStartupHook func(_ context.Context)
 }
@@ -510,8 +513,13 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	// For our use cases, we don't need a very fast detection of dead nodes. Since we use a TCP transport
 	// and we open a new TCP connection for each packet, we prefer to reduce the probe frequency and increase
 	// the timeout compared to defaults.
-	mlCfg.ProbeInterval = 5 * time.Second // Probe a random node every this interval. This setting is also the total timeout for the direct + indirect probes.
-	mlCfg.ProbeTimeout = 2 * time.Second  // Timeout for the direct probe.
+	if m.cfg.probeInterval > 0 {
+		mlCfg.ProbeInterval = m.cfg.probeInterval
+		mlCfg.ProbeTimeout = m.cfg.probeInterval / 2
+	} else {
+		mlCfg.ProbeInterval = 5 * time.Second // Probe a random node every this interval. This setting is also the total timeout for the direct + indirect probes.
+		mlCfg.ProbeTimeout = 2 * time.Second  // Timeout for the direct probe.
+	}
 
 	// Since we use a custom transport based on TCP, having TCP-based fallbacks doesn't give us any benefit.
 	// On the contrary, if we keep TCP pings enabled, each node will effectively run 2x pings against a dead

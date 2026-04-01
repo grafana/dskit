@@ -1503,6 +1503,7 @@ func TestRejoin(t *testing.T) {
 	cfg1.RandomizeNodeName = true
 	cfg1.Codecs = []codec.Codec{dataCodec{}}
 	cfg1.AbortIfJoinFails = false
+	cfg1.probeInterval = 500 * time.Millisecond
 
 	cfg2 := cfg1
 	cfg2.TCPTransport.BindPort = ports[1]

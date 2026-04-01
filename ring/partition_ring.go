@@ -559,10 +559,9 @@ type PartitionKeys struct {
 
 // GetKeysByPartition groups the input keys by the active partition they belong to, returning
 // the partition ID and the original indexes of keys assigned to each partition.
-// This is a simplified alternative to DoBatchWithOptions for cases where no quorum tracking is needed.
 func (r *ActivePartitionBatchRing) GetKeysByPartition(ctx context.Context, keys []uint32) ([]PartitionKeys, error) {
-	if r.ring.ActivePartitionsCount() <= 0 {
-		return nil, fmt.Errorf("GetKeysByPartition: no active partitions")
+	if r.ring.ActivePartitionsCount() == 0 {
+		return nil, ErrNoActivePartitionFound
 	}
 
 	if len(keys) == 0 {
@@ -590,26 +589,23 @@ func (r *ActivePartitionBatchRing) GetKeysByPartition(ctx context.Context, keys 
 		numKeysByPartition[partitionID]++
 	}
 
-	// Allocate a single backing array for all index slices to reduce allocations.
-	allIndexes := make([]int, 0, len(keys))
-	indexSlices := make([][]int, numSlots)
-	numActivePartitions := 0
-	for id, count := range numKeysByPartition {
-		if count > 0 {
-			start := len(allIndexes)
-			allIndexes = allIndexes[:start+count]
-			indexSlices[id] = allIndexes[start : start : start+count] // length 0, capacity count
-			numActivePartitions++
-		}
-	}
-
-	// Second pass: assign key indexes to their partition slices.
+	// Second pass: assign key indexes to their partition slices, backed by a single array.
+	indexesBuf := make([]int, 0, len(keys))
+	keysByPartitionID := make([][]int, numSlots)
+	numPartitionsWithKeys := 0
 	for i, partitionID := range partitionIDByKey {
-		indexSlices[partitionID] = append(indexSlices[partitionID], i)
+		if keysByPartitionID[partitionID] == nil {
+			start := len(indexesBuf)
+			count := numKeysByPartition[partitionID]
+			indexesBuf = indexesBuf[:start+count]
+			keysByPartitionID[partitionID] = indexesBuf[start : start : start+count] // length 0, capacity count
+			numPartitionsWithKeys++
+		}
+		keysByPartitionID[partitionID] = append(keysByPartitionID[partitionID], i)
 	}
 
-	result := make([]PartitionKeys, 0, numActivePartitions)
-	for id, indexes := range indexSlices {
+	result := make([]PartitionKeys, 0, numPartitionsWithKeys)
+	for id, indexes := range keysByPartitionID {
 		if len(indexes) > 0 {
 			result = append(result, PartitionKeys{
 				PartitionID: int32(id),

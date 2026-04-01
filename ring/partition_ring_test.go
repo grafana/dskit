@@ -6,7 +6,6 @@ import (
 	"math"
 	"math/rand"
 	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"testing"
@@ -1556,9 +1555,9 @@ func TestActivePartitionBatchRing_GetKeysByPartition_MatchesDoBatchWithOptions(t
 				splitIndexes, found := splitResultMap[addr]
 				require.True(t, found, "partition %s found in DoBatchWithOptions but not in GetKeysByPartition", addr)
 
-				// Sort both slices for comparison since map iteration order is non-deterministic.
-				sort.Ints(doBatchIndexes)
-				sort.Ints(splitIndexes)
+				// Sort defensively in case internal ordering guarantees change in the future.
+				slices.Sort(doBatchIndexes)
+				slices.Sort(splitIndexes)
 				require.Equal(t, doBatchIndexes, splitIndexes, "indexes for partition %s should match", addr)
 			}
 		})

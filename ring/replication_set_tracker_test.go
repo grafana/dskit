@@ -226,9 +226,9 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 	instanceRequestCounts := make([]atomic.Uint64, len(instances))
 
 	const iterations = 1000
-	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) error {
+	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) (retErr error) {
 		t := test.NewRecoverableT(t)
-		defer t.Recover()
+		defer t.RecoverError(&retErr)
 
 		logger := &testLogger{}
 		tracker := newDefaultResultTracker(instances, 1, logger)
@@ -890,9 +890,9 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 	var zoneARequestCount, zoneBRequestCount, zoneCRequestCount atomic.Int64
 
 	const iterations = 900
-	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) error {
+	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) (retErr error) {
 		t := test.NewRecoverableT(t)
-		defer t.Recover()
+		defer t.RecoverError(&retErr)
 
 		logger := &testLogger{}
 		tracker := newZoneAwareResultTracker(instances, 1, nil, logger)

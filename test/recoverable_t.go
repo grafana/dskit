@@ -6,13 +6,14 @@ import (
 	"testing"
 )
 
-// RecoverableT wraps a testing.TB so that FailNow panics instead of calling
-// runtime.Goexit. This allows using require.* assertions from non-test goroutines
-// (e.g., workers in concurrency.ForEachJob) where runtime.Goexit would prevent the
-// goroutine from returning and cause the caller to hang.
+// RecoverableT wraps a testing.TB so that FailNow, Fatal, and Fatalf panic instead
+// of calling runtime.Goexit. This allows using require.* assertions from non-test
+// goroutines (e.g., workers in concurrency.ForEachJob) where runtime.Goexit would
+// terminate the goroutine without returning, causing the caller to hang.
 //
-// Errorf and all other methods delegate to the wrapped testing.TB, so test failures
-// are still recorded normally.
+// These are the only testing.TB methods that need overriding: all other methods
+// (Errorf, Log, Failed, etc.) are safe to call from any goroutine and delegate
+// directly to the wrapped testing.TB.
 //
 // Usage:
 //

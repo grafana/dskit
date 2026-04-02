@@ -38,6 +38,10 @@ fi
 
 # List all test packages.
 ALL_TESTS=$(go list "${REPO_DIR}/..." | sort)
+if [[ $? -ne 0 ]]; then
+    echo "Failed to list test packages."
+    exit 1
+fi
 
 # Filter tests by the requested group.
 GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL="$TOTAL" -v INDEX="$INDEX" '(NR - 1) % TOTAL == INDEX')

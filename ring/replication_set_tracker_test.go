@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/concurrency"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -223,7 +224,8 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 
 	instanceRequestCounts := make([]atomic.Uint64, len(instances))
 
-	for testIteration := 0; testIteration < 1000; testIteration++ {
+	const iterations = 1000
+	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) error {
 		logger := &testLogger{}
 		tracker := newDefaultResultTracker(instances, 1, logger)
 		tracker.startMinimumRequests()
@@ -249,14 +251,16 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 			}()
 		}
 
-		require.Eventually(t, func() bool {
+		if !assert.Eventually(t, func() bool {
 			mtx.RLock()
 			defer mtx.RUnlock()
 
 			return countInstancesReleased == 3
-		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released")
+		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released") {
+			return nil
+		}
 
-		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
+		assert.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
 
 		var expectedLogMessages []map[interface{}]interface{}
 
@@ -275,19 +279,23 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 		tracker.done(nil, nil)
 		tracker.done(nil, nil)
 
-		require.Eventually(t, func() bool {
+		if !assert.Eventually(t, func() bool {
 			mtx.RLock()
 			defer mtx.RUnlock()
 
 			return countInstancesReleased == 4
-		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released")
+		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released") {
+			return nil
+		}
 
-		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
+		assert.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
 
-		require.True(t, tracker.succeeded())
+		assert.True(t, tracker.succeeded())
 
-		require.ElementsMatch(t, expectedLogMessages, logger.messages)
-	}
+		assert.ElementsMatch(t, expectedLogMessages, logger.messages)
+		return nil
+	})
+	require.NoError(t, err)
 
 	// With 1000 iterations, 4 instances and max 1 error, we'd expect each instance to receive
 	// 750 calls each (each instance has a 3-in-4 chance of being called in each iteration).
@@ -879,9 +887,10 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6}
 
-	zoneRequestCounts := map[string]int{"zone-a": 0, "zone-b": 0, "zone-c": 0}
+	var zoneARequestCount, zoneBRequestCount, zoneCRequestCount atomic.Int64
 
-	for testIteration := 0; testIteration < 900; testIteration++ {
+	const iterations = 900
+	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) error {
 		logger := &testLogger{}
 		tracker := newZoneAwareResultTracker(instances, 1, nil, logger)
 		tracker.startMinimumRequests()
@@ -903,15 +912,17 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			}()
 		}
 
-		require.Eventually(t, func() bool {
+		if !assert.Eventually(t, func() bool {
 			mtx.RLock()
 			defer mtx.RUnlock()
 
 			return len(instancesReleased) == 4
-		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released")
+		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released") {
+			return nil
+		}
 
-		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
-		require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
+		assert.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
+		assert.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
 
 		_, zoneAReleased := instancesAwaitReleaseResults[&instances[0]]
 		_, zoneBReleased := instancesAwaitReleaseResults[&instances[2]]
@@ -919,7 +930,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 		expectedLogMessages := []map[interface{}]interface{}{}
 
 		if zoneAReleased {
-			zoneRequestCounts["zone-a"]++
+			zoneARequestCount.Inc()
 			tracker.done(&instance1, nil)
 			tracker.done(&instance2, nil)
 
@@ -932,7 +943,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 		}
 
 		if zoneBReleased {
-			zoneRequestCounts["zone-b"]++
+			zoneBRequestCount.Inc()
 			tracker.done(&instance3, nil)
 			tracker.done(&instance4, nil)
 
@@ -945,7 +956,7 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 		}
 
 		if zoneCReleased {
-			zoneRequestCounts["zone-c"]++
+			zoneCRequestCount.Inc()
 			tracker.done(&instance5, nil)
 			tracker.done(&instance6, nil)
 
@@ -957,26 +968,31 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			})
 		}
 
-		require.True(t, tracker.succeeded())
+		assert.True(t, tracker.succeeded())
 
-		require.Eventually(t, func() bool {
+		if !assert.Eventually(t, func() bool {
 			mtx.RLock()
 			defer mtx.RUnlock()
 
 			return len(instancesReleased) == 6
-		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released")
+		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released") {
+			return nil
+		}
 
-		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
+		assert.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
 
-		require.ElementsMatch(t, expectedLogMessages, logger.messages)
-	}
+		assert.ElementsMatch(t, expectedLogMessages, logger.messages)
+		return nil
+	})
+	require.NoError(t, err)
 
 	// With 900 iterations, 3 zones and max 1 failing zone, we'd expect each zone to receive
 	// 600 calls each (each zone has a 2-in-3 chance of being called in each iteration).
 	const expectedAverageCallsPerZone = 600
 	const tolerancePerc = 0.2
+	zoneRequestCounts := []int64{zoneARequestCount.Load(), zoneBRequestCount.Load(), zoneCRequestCount.Load()}
 	for _, zoneRequestCount := range zoneRequestCounts {
-		require.InDeltaf(t, expectedAverageCallsPerZone, zoneRequestCount, expectedAverageCallsPerZone*tolerancePerc, "expected roughly even distribution of requests across all zones, but got %v", zoneRequestCount)
+		require.InDeltaf(t, expectedAverageCallsPerZone, zoneRequestCount, expectedAverageCallsPerZone*tolerancePerc, "expected roughly even distribution of requests across all zones, but got %v", zoneRequestCounts)
 	}
 }
 

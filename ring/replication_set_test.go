@@ -700,6 +700,14 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImme
 	waitForFailingZoneToSeeCancelledContext := make(chan struct{})
 	mtx := sync.RWMutex{}
 
+	// Both replicas in the failing zone must enter f() before replica-1 returns its error.
+	// Without this, there is a race: replica-1's error can be processed by the main loop
+	// (cancelling the zone's contexts) before replica-2's goroutine reaches awaitStart.
+	// When that happens, awaitStart's select may pick ctx.Done() over the release channel,
+	// so replica-2 never enters f() and never closes waitForFailingZoneToSeeCancelledContext.
+	failingZoneReplicasEnteredF := sync.WaitGroup{}
+	failingZoneReplicasEnteredF.Add(2)
+
 	f := func(ctx context.Context, instance *InstanceDesc, cancel context.CancelCauseFunc) (string, error) {
 		cleanupTracker.trackCall(ctx, instance, cancel)
 
@@ -716,17 +724,24 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImme
 		// - if it's replica-2, wait for this instance's context to be cancelled before returning
 		switch instance.Addr {
 		case failingZone + "-replica-1":
-			if strings.HasSuffix(instance.Addr, "-replica-1") {
-				return "", errors.New("this is the failing instance")
-			}
+			// Wait for both replicas in the failing zone to enter f() before returning the
+			// error, so that replica-2 is guaranteed to be past awaitStart and able to
+			// observe the context cancellation inside f().
+			failingZoneReplicasEnteredF.Done()
+			failingZoneReplicasEnteredF.Wait()
+			return "", errors.New("this is the failing instance")
 		case failingZone + "-replica-2":
+			failingZoneReplicasEnteredF.Done()
+			failingZoneReplicasEnteredF.Wait()
 			select {
 			case <-ctx.Done():
 				close(waitForFailingZoneToSeeCancelledContext)
 				failingZoneSawCancelledContext = true
 			case <-time.After(time.Second):
 				close(waitForFailingZoneToSeeCancelledContext)
-				require.FailNow(t, "other instance in failing zone gave up waiting for its context to be cancelled")
+				// Don't use require.FailNow here: this runs in a goroutine spawned by
+				// DoUntilQuorumWithoutSuccessfulContextCancellation, not the test goroutine.
+				return "", errors.New("other instance in failing zone gave up waiting for its context to be cancelled")
 			}
 		default:
 			// If this instance is not in the failing zone, wait until the failing zone's context is cancelled before returning to avoid races.
@@ -734,7 +749,9 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_CancelsEntireZoneImme
 			case <-waitForFailingZoneToSeeCancelledContext:
 				// Nothing more to do.
 			case <-time.After(2 * time.Second):
-				require.FailNow(t, "gave up waiting for instance in failing zone to report its context had been cancelled: "+instance.Addr)
+				// Don't use require.FailNow here: this runs in a goroutine spawned by
+				// DoUntilQuorumWithoutSuccessfulContextCancellation, not the test goroutine.
+				return "", fmt.Errorf("gave up waiting for instance in failing zone to report its context had been cancelled: %s", instance.Addr)
 			}
 		}
 

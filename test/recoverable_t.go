@@ -2,6 +2,7 @@ package test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -36,6 +37,18 @@ func NewRecoverableT(t testing.TB) *RecoverableT {
 // FailNow panics with a sentinel value instead of calling runtime.Goexit.
 func (p *RecoverableT) FailNow() {
 	panic(testFailure{})
+}
+
+// Fatal is equivalent to Log followed by FailNow.
+func (p *RecoverableT) Fatal(args ...any) {
+	p.TB.Errorf(fmt.Sprint(args...))
+	p.FailNow()
+}
+
+// Fatalf is equivalent to Logf followed by FailNow.
+func (p *RecoverableT) Fatalf(format string, args ...any) {
+	p.TB.Errorf(format, args...)
+	p.FailNow()
 }
 
 // Recover catches the panic from FailNow. It must be called as a deferred function.

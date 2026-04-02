@@ -10,6 +10,7 @@ import (
 
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/test"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -226,6 +227,9 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 
 	const iterations = 1000
 	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) error {
+		t := test.NewRecoverableT(t)
+		defer t.Recover()
+
 		logger := &testLogger{}
 		tracker := newDefaultResultTracker(instances, 1, logger)
 		tracker.startMinimumRequests()
@@ -251,16 +255,14 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 			}()
 		}
 
-		if !assert.Eventually(t, func() bool {
+		require.Eventually(t, func() bool {
 			mtx.RLock()
 			defer mtx.RUnlock()
 
 			return countInstancesReleased == 3
-		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released") {
-			return nil
-		}
+		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released")
 
-		assert.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
+		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
 
 		var expectedLogMessages []map[interface{}]interface{}
 
@@ -279,20 +281,18 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 		tracker.done(nil, nil)
 		tracker.done(nil, nil)
 
-		if !assert.Eventually(t, func() bool {
+		require.Eventually(t, func() bool {
 			mtx.RLock()
 			defer mtx.RUnlock()
 
 			return countInstancesReleased == 4
-		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released") {
-			return nil
-		}
+		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released")
 
-		assert.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
+		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
 
-		assert.True(t, tracker.succeeded())
+		require.True(t, tracker.succeeded())
 
-		assert.ElementsMatch(t, expectedLogMessages, logger.messages)
+		require.ElementsMatch(t, expectedLogMessages, logger.messages)
 		return nil
 	})
 	require.NoError(t, err)
@@ -891,6 +891,9 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 
 	const iterations = 900
 	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) error {
+		t := test.NewRecoverableT(t)
+		defer t.Recover()
+
 		logger := &testLogger{}
 		tracker := newZoneAwareResultTracker(instances, 1, nil, logger)
 		tracker.startMinimumRequests()
@@ -912,17 +915,15 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			}()
 		}
 
-		if !assert.Eventually(t, func() bool {
+		require.Eventually(t, func() bool {
 			mtx.RLock()
 			defer mtx.RUnlock()
 
 			return len(instancesReleased) == 4
-		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released") {
-			return nil
-		}
+		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released")
 
-		assert.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
-		assert.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
+		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
+		require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
 
 		_, zoneAReleased := instancesAwaitReleaseResults[&instances[0]]
 		_, zoneBReleased := instancesAwaitReleaseResults[&instances[2]]
@@ -968,20 +969,18 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 			})
 		}
 
-		assert.True(t, tracker.succeeded())
+		require.True(t, tracker.succeeded())
 
-		if !assert.Eventually(t, func() bool {
+		require.Eventually(t, func() bool {
 			mtx.RLock()
 			defer mtx.RUnlock()
 
 			return len(instancesReleased) == 6
-		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released") {
-			return nil
-		}
+		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released")
 
-		assert.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
+		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
 
-		assert.ElementsMatch(t, expectedLogMessages, logger.messages)
+		require.ElementsMatch(t, expectedLogMessages, logger.messages)
 		return nil
 	})
 	require.NoError(t, err)

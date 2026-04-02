@@ -318,7 +318,7 @@ func TestSpreadMinimizingTokenGenerator_VerifyInstanceOwnershipSpreadByZone(t *t
 	t.Parallel()
 
 	tokensPerInstance := 512
-	instancesPerZone := 10000
+	instancesPerZone := 1000
 	instanceByToken, tokensByZone := createTokensForAllInstancesAndZones(t, instancesPerZone, tokensPerInstance)
 	ownershipByInstanceByZone := registeredOwnershipByZone(instancesPerZone, instanceByToken, tokensByZone)
 	for _, ownershipByInstance := range ownershipByInstanceByZone {

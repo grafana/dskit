@@ -42,13 +42,13 @@ func (p *RecoverableT) FailNow() {
 
 // Fatal is equivalent to Log followed by FailNow.
 func (p *RecoverableT) Fatal(args ...any) {
-	p.TB.Errorf(fmt.Sprint(args...))
+	p.Errorf("%s", fmt.Sprint(args...))
 	p.FailNow()
 }
 
 // Fatalf is equivalent to Logf followed by FailNow.
 func (p *RecoverableT) Fatalf(format string, args ...any) {
-	p.TB.Errorf(format, args...)
+	p.Errorf(format, args...)
 	p.FailNow()
 }
 

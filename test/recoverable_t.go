@@ -38,7 +38,7 @@ func NewRecoverableT(t testing.TB) *RecoverableT {
 // FailNow marks the test as failed and panics with a sentinel value instead of
 // calling runtime.Goexit.
 func (p *RecoverableT) FailNow() {
-	p.TB.Fail()
+	p.Fail()
 	panic(testFailure{})
 }
 

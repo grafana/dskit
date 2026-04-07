@@ -41,7 +41,8 @@ func newTestHTTPProvider(t *testing.T, url string, client *http.Client) (*httpPr
 
 func TestHTTPProvider_Success(t *testing.T) {
 	body := "overrides:\n  user1:\n    limit1: 100\n"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "dskit-runtimeconfig", r.Header.Get("User-Agent"))
 		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()

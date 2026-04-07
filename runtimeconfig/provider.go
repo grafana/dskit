@@ -83,6 +83,7 @@ func (h *httpProvider) Read(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
+	req.Header.Set("User-Agent", "dskit-runtimeconfig")
 
 	resp, err := h.client.Do(req)
 	if err != nil {

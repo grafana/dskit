@@ -1621,11 +1621,9 @@ func TestMessageBuffer(t *testing.T) {
 func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{
-		TCPTransport: TCPTransportConfig{
-			BindAddrs: getLocalhostAddrs(),
-		},
-	}
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
@@ -1690,11 +1688,9 @@ func TestNotifyMsgResendsOnlyChanges(t *testing.T) {
 func TestSendingOldTombstoneShouldNotForwardMessage(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{
-		TCPTransport: TCPTransportConfig{
-			BindAddrs: getLocalhostAddrs(),
-		},
-	}
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
 	cfg.LeftIngestersTimeout = 5 * time.Minute
@@ -1835,11 +1831,10 @@ func TestFastJoin(t *testing.T) {
 func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{}
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
 	cfg.Codecs = append(cfg.Codecs, codec)
-	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: getLocalhostAddrs(),
-	}
+	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
 
 	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
@@ -1881,7 +1876,8 @@ func TestDelegateMethodsDontCrashBeforeKVStarts(t *testing.T) {
 func TestMetricsRegistration(t *testing.T) {
 	c := dataCodec{}
 
-	cfg := KVConfig{}
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
 	cfg.Codecs = append(cfg.Codecs, c)
 
 	reg := prometheus.NewPedanticRegistry()
@@ -2013,12 +2009,9 @@ func (p delayedDNSProviderMock) Addresses() []string {
 func TestGetBroadcastsPrefersLocalUpdates(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{
-		TCPTransport: TCPTransportConfig{
-			BindAddrs: getLocalhostAddrs(),
-		},
-	}
-
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
 	// We will be checking for number of messages in the broadcast queue, so make sure to use known retransmit factor.
 	cfg.RetransmitMult = 1
 	cfg.Codecs = append(cfg.Codecs, codec)
@@ -2076,11 +2069,10 @@ func getKey(t *testing.T, msg []byte) string {
 func TestRaceBetweenStoringNewValueForKeyAndUpdatingIt(t *testing.T) {
 	codec := dataCodec{}
 
-	cfg := KVConfig{}
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
 	cfg.Codecs = append(cfg.Codecs, codec)
-	cfg.TCPTransport = TCPTransportConfig{
-		BindAddrs: getLocalhostAddrs(),
-	}
+	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
 
 	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 
@@ -2157,7 +2149,8 @@ func marshalState(t *testing.T, kvps ...*KeyValuePair) []byte {
 }
 
 func TestNotificationDelay(t *testing.T) {
-	cfg := KVConfig{}
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
 	// We're going to trigger sends manually, so effectively disable the automatic send interval.
 	const hundredYears = 100 * 365 * 24 * time.Hour
 	cfg.NotifyInterval = hundredYears
@@ -2275,7 +2268,8 @@ func TestNotificationDelay(t *testing.T) {
 func TestMemberlist_WatchPrefix(t *testing.T) {
 	t.Run("buffer size configuration", func(t *testing.T) {
 		// Test custom buffer size
-		cfg := KVConfig{}
+		var cfg KVConfig
+		flagext.DefaultValues(&cfg)
 		cfg.WatchPrefixBufferSize = 10
 		kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
 		require.Equal(t, 10, kv.cfg.WatchPrefixBufferSize)
@@ -2294,7 +2288,8 @@ func TestMemberlist_WatchPrefix(t *testing.T) {
 
 	t.Run("buffering behavior", func(t *testing.T) {
 		// Create KV with small buffer and fast notification interval
-		cfg := KVConfig{}
+		var cfg KVConfig
+		flagext.DefaultValues(&cfg)
 		cfg.WatchPrefixBufferSize = 2
 		// Disable notification batching to get immediate notifications
 		cfg.NotifyInterval = 0

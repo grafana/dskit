@@ -257,6 +257,9 @@ func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
 
 // Validate validates the KV configuration.
 func (cfg *KVConfig) Validate() error {
+	if cfg.ReceivedMessagesQueueSize <= 0 {
+		return fmt.Errorf("memberlist received messages queue size must be greater than 0")
+	}
 	return cfg.ZoneAwareRouting.Validate()
 }
 

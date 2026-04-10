@@ -31,7 +31,6 @@ import (
 const (
 	maxCasRetries              = 10          // max retries in CAS operation
 	noChangeDetectedRetrySleep = time.Second // how long to sleep after no change was detected in CAS
-	notifyMsgQueueSize         = 1024        // size of buffered channels to handle memberlist messages
 	watchPrefixBufferSize      = 128         // size of buffered channel for the WatchPrefix function
 )
 
@@ -144,8 +143,9 @@ type KVConfig struct {
 	GossipNodes         int           `yaml:"gossip_nodes" category:"advanced"`
 	GossipToTheDeadTime time.Duration `yaml:"gossip_to_dead_nodes_time" category:"advanced"`
 	DeadNodeReclaimTime time.Duration `yaml:"dead_node_reclaim_time" category:"advanced"`
-	EnableCompression   bool          `yaml:"compression_enabled" category:"advanced"`
-	NotifyInterval      time.Duration `yaml:"notify_interval" category:"advanced"`
+	EnableCompression         bool          `yaml:"compression_enabled" category:"advanced"`
+	NotifyInterval            time.Duration `yaml:"notify_interval" category:"advanced"`
+	ReceivedMessagesQueueSize int           `yaml:"received_messages_queue_size" category:"advanced"`
 
 	// ip:port to advertise other cluster members. Used for NAT traversal
 	AdvertiseAddr string `yaml:"advertise_addr"`
@@ -232,6 +232,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.IntVar(&cfg.MessageHistoryBufferBytes, prefix+"memberlist.message-history-buffer-bytes", 0, "How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.")
 	f.BoolVar(&cfg.EnableCompression, prefix+"memberlist.compression-enabled", mlDefaults.EnableCompression, "Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization.")
 	f.DurationVar(&cfg.NotifyInterval, prefix+"memberlist.notify-interval", 0, "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.")
+	f.IntVar(&cfg.ReceivedMessagesQueueSize, prefix+"memberlist.received-messages-queue-size", mlDefaults.HandoffQueueDepth, "Size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes.")
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
 	f.IntVar(&cfg.AdvertisePort, prefix+"memberlist.advertise-port", mlDefaults.AdvertisePort, "Gossip port to advertise to other members in the cluster. Used for NAT traversal.")
 	f.StringVar(&cfg.ClusterLabel, prefix+"memberlist.cluster-label", mlDefaults.Label, "The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.")
@@ -489,6 +490,7 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	mlCfg.GossipToTheDeadTime = m.cfg.GossipToTheDeadTime
 	mlCfg.DeadNodeReclaimTime = m.cfg.DeadNodeReclaimTime
 	mlCfg.EnableCompression = m.cfg.EnableCompression
+	mlCfg.HandoffQueueDepth = m.cfg.ReceivedMessagesQueueSize
 
 	mlCfg.AdvertiseAddr = m.cfg.AdvertiseAddr
 	mlCfg.AdvertisePort = m.cfg.AdvertisePort
@@ -1469,7 +1471,7 @@ func (m *KV) getKeyWorkerChannel(key string) chan<- valueUpdate {
 	ch := m.workersChannels[key]
 	if ch == nil {
 		// spawn a key associated worker goroutine to process updates in background
-		ch = make(chan valueUpdate, notifyMsgQueueSize)
+		ch = make(chan valueUpdate, m.cfg.ReceivedMessagesQueueSize)
 		go m.processValueUpdate(ch, key)
 
 		m.workersChannels[key] = ch

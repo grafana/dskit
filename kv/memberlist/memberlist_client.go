@@ -134,15 +134,15 @@ func (c *Client) awaitKVRunningOrStopping(ctx context.Context) error {
 // KVConfig is a config for memberlist.KV
 type KVConfig struct {
 	// Memberlist options.
-	NodeName            string        `yaml:"node_name" category:"advanced"`
-	RandomizeNodeName   bool          `yaml:"randomize_node_name" category:"advanced"`
-	StreamTimeout       time.Duration `yaml:"stream_timeout" category:"advanced"`
-	RetransmitMult      int           `yaml:"retransmit_factor" category:"advanced"`
-	PushPullInterval    time.Duration `yaml:"pull_push_interval" category:"advanced"`
-	GossipInterval      time.Duration `yaml:"gossip_interval" category:"advanced"`
-	GossipNodes         int           `yaml:"gossip_nodes" category:"advanced"`
-	GossipToTheDeadTime time.Duration `yaml:"gossip_to_dead_nodes_time" category:"advanced"`
-	DeadNodeReclaimTime time.Duration `yaml:"dead_node_reclaim_time" category:"advanced"`
+	NodeName                  string        `yaml:"node_name" category:"advanced"`
+	RandomizeNodeName         bool          `yaml:"randomize_node_name" category:"advanced"`
+	StreamTimeout             time.Duration `yaml:"stream_timeout" category:"advanced"`
+	RetransmitMult            int           `yaml:"retransmit_factor" category:"advanced"`
+	PushPullInterval          time.Duration `yaml:"pull_push_interval" category:"advanced"`
+	GossipInterval            time.Duration `yaml:"gossip_interval" category:"advanced"`
+	GossipNodes               int           `yaml:"gossip_nodes" category:"advanced"`
+	GossipToTheDeadTime       time.Duration `yaml:"gossip_to_dead_nodes_time" category:"advanced"`
+	DeadNodeReclaimTime       time.Duration `yaml:"dead_node_reclaim_time" category:"advanced"`
 	EnableCompression         bool          `yaml:"compression_enabled" category:"advanced"`
 	NotifyInterval            time.Duration `yaml:"notify_interval" category:"advanced"`
 	ReceivedMessagesQueueSize int           `yaml:"received_messages_queue_size" category:"advanced"`

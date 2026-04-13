@@ -931,6 +931,14 @@ func (r *TenantRegistries) BuildMetricFamiliesPerTenant() MetricFamiliesPerTenan
 		archivedCopy[k] = v
 	}
 
+	// Snapshot regs under the same lock to avoid a race where a concurrent
+	// RemoveTenantRegistry archives a tenant's metrics and removes it from regs
+	// between the two snapshots, causing metrics to vanish for a scrape.
+	regs := make([]TenantRegistry, len(r.regs))
+	copy(regs, r.regs)
+
+	r.regsMu.Unlock()
+
 	var data MetricFamiliesPerTenant
 	if len(archivedCopy) > 0 {
 		data = append(data, struct {
@@ -941,9 +949,8 @@ func (r *TenantRegistries) BuildMetricFamiliesPerTenant() MetricFamiliesPerTenan
 			metrics: archivedCopy,
 		})
 	}
-	r.regsMu.Unlock()
 
-	for _, entry := range r.Registries() {
+	for _, entry := range regs {
 		m, err := entry.reg.Gather()
 		if err == nil {
 			var mfm MetricFamilyMap // := would shadow err from outer block, and single err check will not work

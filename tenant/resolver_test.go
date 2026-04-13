@@ -93,7 +93,7 @@ func TestTenantIDs(t *testing.T) {
 			headerValue: strptr("tenant-a:key=value|tenant-a:key=value"),
 			tenantID:    "tenant-a",
 			tenantIDs:   []string{"tenant-a"},
-			metadata:    Metadata{data: map[string]string{"key": "value"}},
+			metadata:    Metadata{}.With("key", "value"),
 		},
 		{
 			// TenantID/ExtractWithMetadata return early when different tenants found, before validating all
@@ -130,20 +130,21 @@ func TestTenantIDs(t *testing.T) {
 			headerValue: strptr("123456:key=value"),
 			tenantID:    "123456",
 			tenantIDs:   []string{"123456"},
-			metadata:    Metadata{data: map[string]string{"key": "value"}},
+			metadata:    Metadata{}.With("key", "value"),
 		},
 		{
 			name:        "tenant-with-metadata-complex",
 			headerValue: strptr("my-tenant-id:product=k6"),
 			tenantID:    "my-tenant-id",
 			tenantIDs:   []string{"my-tenant-id"},
-			metadata:    Metadata{data: map[string]string{"product": "k6"}},
+			metadata:    Metadata{}.With("product", "k6"),
 		},
 		{
 			name:        "tenant-with-empty-metadata",
 			headerValue: strptr("tenant-a:"),
 			tenantID:    "tenant-a",
 			tenantIDs:   []string{"tenant-a"},
+			errMetadata: errMalformedMetadata{source: ":", reason: `no key-value separator '=' in ":"`},
 		},
 		{
 			// TenantID/TenantIDs don't validate metadata, only ExtractWithMetadata does
@@ -151,7 +152,7 @@ func TestTenantIDs(t *testing.T) {
 			headerValue: strptr("tenant-a:key/value"),
 			tenantID:    "tenant-a",
 			tenantIDs:   []string{"tenant-a"},
-			errMetadata: &errMetadataUnsupportedCharacter{pos: 3, metadata: "key/value"},
+			errMetadata: &errMetadataUnsupportedCharacter{pos: 4, metadata: ":key/value"},
 		},
 		{
 			// TenantID/TenantIDs don't validate metadata, only ExtractWithMetadata does
@@ -167,7 +168,23 @@ func TestTenantIDs(t *testing.T) {
 			headerValue:        strptr("tenant-a:keyvalue"),
 			tenantID:           "tenant-a",
 			tenantIDs:          []string{"tenant-a"},
-			errMetadataContain: "invalid key value pair",
+			errMetadataContain: "malformed tenant metadata",
+		},
+		{
+			// Metadata is not sorted
+			name:               "invalid-metadata-not-sorted",
+			headerValue:        strptr("tenant-a:z=foo:a=bar"),
+			tenantID:           "tenant-a",
+			tenantIDs:          []string{"tenant-a"},
+			errMetadataContain: "keys must be unique and sorted",
+		},
+		{
+			// Metadata is not unique
+			name:               "invalid-metadata-not-sorted",
+			headerValue:        strptr("tenant-a:a=foo:z=bar:a=bar"),
+			tenantID:           "tenant-a",
+			tenantIDs:          []string{"tenant-a"},
+			errMetadataContain: "keys must be unique and sorted",
 		},
 		{
 			name:        "multi-tenant-with-metadata",
@@ -205,7 +222,7 @@ func TestTenantIDs(t *testing.T) {
 			headerValue: strptr("tenant-a:env=prod:product=k6"),
 			tenantID:    "tenant-a",
 			tenantIDs:   []string{"tenant-a"},
-			metadata:    Metadata{data: map[string]string{"env": "prod", "product": "k6"}},
+			metadata:    Metadata{}.With("env", "prod").With("product", "k6"),
 		},
 		{
 			// Each tenant has its own metadata declaration but they're the same.

@@ -120,6 +120,11 @@ func (m Metadata) Encode() string {
 	return m.source
 }
 
+// IsEmpty returns true iff metadata holds no key-value pairs.
+func (m Metadata) IsEmpty() bool {
+	return m.source == ""
+}
+
 // Divide iterates over Metadata, mapping each key-value pair to a new Metadata
 // that only contains it.
 //
@@ -199,22 +204,6 @@ func writeMetadataKV(into *strings.Builder, key, val string) {
 func (m Metadata) With(key string, val string) Metadata {
 	m.Set(key, val)
 	return m
-}
-
-// Has checks whether a specific metadata key is present.
-func (m Metadata) Has(key string) bool {
-	_, ok := m.Get(key)
-	return ok
-}
-
-// Get the value set for key.
-func (m Metadata) Get(key string) (string, bool) {
-	for k, v := range m.Iter() {
-		if k == key {
-			return v, true
-		}
-	}
-	return "", false
 }
 
 // WithTenant encodes the metadata as a tenant-prefixed string.

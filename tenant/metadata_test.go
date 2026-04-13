@@ -40,23 +40,33 @@ func TestMetadata_WithTenant(t *testing.T) {
 	}
 }
 
-func TestMetadata_Has(t *testing.T) {
-	var md Metadata
-	md.Set("key", "value")
-	assert.True(t, md.Has("key"))
-	assert.False(t, md.Has("missing"))
-}
-
-func TestMetadata_Get(t *testing.T) {
-	var md Metadata
-	md.Set("key", "value")
-	val, ok := md.Get("key")
-	assert.True(t, ok)
-	assert.Equal(t, "value", val)
-
-	val, ok = md.Get("missing")
-	assert.False(t, ok)
-	assert.Equal(t, "", val)
+func TestMetadata_IsEmpty(t *testing.T) {
+	testCases := []struct {
+		name  string
+		input Metadata
+		want  bool
+	}{
+		{
+			name:  "empty string",
+			input: NewMetadata(""),
+			want:  true,
+		},
+		{
+			name:  "one kv pair",
+			input: NewMetadata(":a=b"),
+			want:  false,
+		},
+		{
+			name:  "multiple kv pairs",
+			input: NewMetadata(":a=b:b=c"),
+			want:  false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.input.IsEmpty())
+		})
+	}
 }
 
 func TestMetadata_DivideIter(t *testing.T) {

@@ -738,7 +738,7 @@ func (r *TenantRegistries) archiveTenantRegistry(ur *TenantRegistry) {
 		}
 
 		// Clone-on-write: create new MetricFamily with deduplicated metrics.
-		deduplicated := deduplicateMetrics(v.Metric, m.Metric, m.GetType())
+		deduplicated := deduplicateMetrics(v.Metric, m.Metric, v.GetType())
 		newFamily := &dto.MetricFamily{
 			Name:   v.Name,
 			Help:   v.Help,

@@ -1420,3 +1420,86 @@ func TestSoftRemoveTenantRegistryDeduplication(t *testing.T) {
 		}
 	}
 }
+
+// TestSoftRemoveAggregatedMetricsNeverDecrease verifies that aggregated metric values
+// (as seen by Prometheus through BuildMetricFamiliesPerTenant) never decrease across
+// the full lifecycle of add → observe → soft-remove → re-add → observe → soft-remove.
+// This is the end-to-end guarantee that prevents counter resets.
+func TestSoftRemoveAggregatedMetricsNeverDecrease(t *testing.T) {
+	tr := NewTenantRegistries(log.NewNopLogger())
+
+	sumOfCounters := func() float64 {
+		return tr.BuildMetricFamiliesPerTenant().GetSumOfCounters("test_counter")
+	}
+
+	sumOfHistogramCounts := func() uint64 {
+		var hd HistogramData
+		for _, entry := range tr.BuildMetricFamiliesPerTenant() {
+			entry.metrics.SumHistogramsTo("test_histogram", &hd)
+		}
+		return hd.Count()
+	}
+
+	sumOfSummaryCounts := func() uint64 {
+		var sd SummaryData
+		for _, entry := range tr.BuildMetricFamiliesPerTenant() {
+			entry.metrics.SumSummariesTo("test_summary", &sd)
+		}
+		return sd.sampleCount
+	}
+
+	var prevCounterSum float64
+	var prevHistCount uint64
+	var prevSummaryCount uint64
+
+	assertNonDecreasing := func(step string) {
+		cs := sumOfCounters()
+		hc := sumOfHistogramCounts()
+		sc := sumOfSummaryCounts()
+		require.GreaterOrEqual(t, cs, prevCounterSum, "%s: counter sum decreased (was %v, now %v)", step, prevCounterSum, cs)
+		require.GreaterOrEqual(t, hc, prevHistCount, "%s: histogram count decreased (was %v, now %v)", step, prevHistCount, hc)
+		require.GreaterOrEqual(t, sc, prevSummaryCount, "%s: summary count decreased (was %v, now %v)", step, prevSummaryCount, sc)
+		prevCounterSum = cs
+		prevHistCount = hc
+		prevSummaryCount = sc
+	}
+
+	for cycle := 0; cycle < 3; cycle++ {
+		// Add tenant and observe some metrics.
+		reg := prometheus.NewRegistry()
+		counter := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "test_counter",
+			Help: "Test counter",
+		})
+		histogram := promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name: "test_histogram",
+			Help: "Test histogram",
+		})
+		summary := promauto.With(reg).NewSummary(prometheus.SummaryOpts{
+			Name: "test_summary",
+			Help: "Test summary",
+		})
+
+		tr.AddTenantRegistry("tenant-a", reg)
+		assertNonDecreasing(fmt.Sprintf("cycle %d: after add", cycle))
+
+		// Simulate work.
+		counter.Add(5)
+		histogram.Observe(1)
+		histogram.Observe(2)
+		summary.Observe(1)
+		summary.Observe(2)
+		assertNonDecreasing(fmt.Sprintf("cycle %d: after observe", cycle))
+
+		// Soft-remove.
+		tr.RemoveTenantRegistry("tenant-a", false)
+		assertNonDecreasing(fmt.Sprintf("cycle %d: after soft-remove", cycle))
+	}
+
+	// After 3 cycles of counter.Add(5), the total should be 15.
+	require.Equal(t, float64(15), sumOfCounters(), "expected accumulated counter value across 3 cycles")
+	// After 3 cycles of 2 observations each, the total count should be 6.
+	require.Equal(t, uint64(6), sumOfHistogramCounts(), "expected accumulated histogram count across 3 cycles")
+	// After 3 cycles of 2 observations each, the total count should be 6.
+	require.Equal(t, uint64(6), sumOfSummaryCounts(), "expected accumulated summary count across 3 cycles")
+}

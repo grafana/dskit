@@ -1353,8 +1353,8 @@ func TestSoftRemoveTenantRegistryDeduplication(t *testing.T) {
 	tr := NewTenantRegistries(log.NewNopLogger())
 
 	// Cycle through the same 10 tenants twice to verify:
-	// 1. Deduplication prevents memory leak (only 10 metrics, not 20)
-	// 2. Values accumulate correctly (counter = 2 after two cycles, not 1)
+	// 1. Deduplication prevents memory leak (only 10 metrics, not 20).
+	// 2. Values accumulate correctly (counter = 2 after two cycles, not 1).
 	for cycle := range 2 {
 		for i := range 10 {
 			r := prometheus.NewRegistry()
@@ -1391,63 +1391,32 @@ func TestSoftRemoveTenantRegistryDeduplication(t *testing.T) {
 
 		require.Equal(t, 0, len(tr.Registries()), "Cycle %d: Expected 0 active registries after removal", cycle)
 
-		// Verify deduplication and accumulation after second cycle
-		if cycle == 1 {
-			// Should have exactly 10 counter metrics (one per user), not 20
-			counterMetrics := tr.archived["test_counter"]
-			require.Equal(t, 10, len(counterMetrics.Metric), "Expected 10 deduplicated counter metrics")
+		// Gauges should never be archived (only counters, histograms, summaries).
+		_, exists := tr.archived["test_gauge"]
+		require.False(t, exists, "Cycle %d: Gauges should not be archived", cycle)
 
-			// Counter values should accumulate: 1 (cycle 0) + 1 (cycle 1) = 2
-			for _, m := range counterMetrics.Metric {
-				require.Equal(t, 2.0, m.GetCounter().GetValue(), "Expected counter value 2.0 after two cycles for user %v", m.GetLabel())
-			}
+		// After first cycle: verify initial archival works.
+		// After second cycle: verify deduplication and accumulation.
+		expectedCount := cycle + 1
 
-			// Gauges should NOT be archived (only counters, histograms, summaries)
-			_, exists := tr.archived["test_gauge"]
-			require.False(t, exists, "Gauges should not be archived")
-
-			// Histograms should accumulate
-			histogramMetrics := tr.archived["test_histogram"]
-			require.Equal(t, 10, len(histogramMetrics.Metric), "Expected 10 deduplicated histogram metrics")
-			for _, m := range histogramMetrics.Metric {
-				require.Equal(t, uint64(2), m.GetHistogram().GetSampleCount(), "Expected histogram sample_count 2 after two cycles")
-			}
-		}
-	}
-}
-
-// BenchmarkSoftRemoveMemoryLeak benchmarks the memory leak scenario:
-// cycling through the same 100 tenants 10 times (simulating churn).
-// With the fix, memory usage should be bounded (only 100 unique metrics archived).
-func BenchmarkSoftRemoveMemoryLeak(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		tr := NewTenantRegistries(log.NewNopLogger())
-
-		// Cycle through same 100 tenants 10 times
-		for cycle := 0; cycle < 10; cycle++ {
-			for tenantID := 0; tenantID < 100; tenantID++ {
-				r := prometheus.NewRegistry()
-				counter := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-					Name: "test_counter",
-					Help: "Test counter help",
-				}, []string{"user"})
-				histogram := promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
-					Name: "test_histogram",
-					Help: "Test help",
-				}, []string{"user"})
-
-				user := fmt.Sprintf("tenant-%d", tenantID)
-				tr.AddTenantRegistry(user, r)
-				counter.WithLabelValues(user).Add(float64(cycle + 1))
-				histogram.WithLabelValues(user).Observe(float64(cycle + 1))
-			}
-
-			for tenantID := 0; tenantID < 100; tenantID++ {
-				tr.RemoveTenantRegistry(fmt.Sprintf("tenant-%d", tenantID), false)
-			}
+		counterMetrics := tr.archived["test_counter"]
+		require.Equal(t, 10, len(counterMetrics.Metric), "Cycle %d: Expected 10 archived counter metrics", cycle)
+		for _, m := range counterMetrics.Metric {
+			require.Equal(t, float64(expectedCount), m.GetCounter().GetValue(), "Cycle %d: Expected counter value %d for user %v", cycle, expectedCount, m.GetLabel())
 		}
 
-		// Verify deduplication worked (should have 100 metrics, not 1000)
-		require.Equal(b, 100, len(tr.archived["test_counter"].Metric), "Memory leak detected! Expected 100 deduplicated metrics")
+		histogramMetrics := tr.archived["test_histogram"]
+		require.Equal(t, 10, len(histogramMetrics.Metric), "Cycle %d: Expected 10 archived histogram metrics", cycle)
+		for _, m := range histogramMetrics.Metric {
+			require.Equal(t, uint64(expectedCount), m.GetHistogram().GetSampleCount(), "Cycle %d: Expected histogram sample_count %d", cycle, expectedCount)
+			require.Equal(t, float64(expectedCount), m.GetHistogram().GetSampleSum(), "Cycle %d: Expected histogram sample_sum %d", cycle, expectedCount)
+		}
+
+		summaryMetrics := tr.archived["test_summary"]
+		require.Equal(t, 10, len(summaryMetrics.Metric), "Cycle %d: Expected 10 archived summary metrics", cycle)
+		for _, m := range summaryMetrics.Metric {
+			require.Equal(t, uint64(expectedCount), m.GetSummary().GetSampleCount(), "Cycle %d: Expected summary sample_count %d", cycle, expectedCount)
+			require.Equal(t, float64(expectedCount), m.GetSummary().GetSampleSum(), "Cycle %d: Expected summary sample_sum %d", cycle, expectedCount)
+		}
 	}
 }

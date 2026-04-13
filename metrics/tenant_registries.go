@@ -626,11 +626,8 @@ func (h *HistogramDataCollector) Add(hd HistogramData) {
 
 // TenantRegistry holds a Prometheus registry associated to a specific tenant.
 type TenantRegistry struct {
-	tenant string               // Set to "" when registry is soft-removed.
-	reg    *prometheus.Registry // Set to nil, when registry is soft-removed.
-
-	// Set to last result of Gather() call when removing registry.
-	lastGather MetricFamilyMap
+	tenant string
+	reg    *prometheus.Registry
 }
 
 // TenantRegistries holds Prometheus registries for multiple tenants, guaranteeing
@@ -681,27 +678,6 @@ func (r *TenantRegistries) AddTenantRegistry(tenant string, reg *prometheus.Regi
 
 // RemoveTenantRegistry removes all Prometheus registries for a given tenant.
 // If hard is true, registry is removed completely.
-// If hard is false, the latest registry values are preserved for future aggregations.
-func (r *TenantRegistries) RemoveTenantRegistry_Old(tenant string, hard bool) {
-	r.regsMu.Lock()
-	defer r.regsMu.Unlock()
-
-	for idx := 0; idx < len(r.regs); {
-		if tenant != r.regs[idx].tenant {
-			idx++
-			continue
-		}
-
-		if !hard && r.softRemoveTenantRegistry(&r.regs[idx]) {
-			idx++ // keep it
-		} else {
-			r.regs = append(r.regs[:idx], r.regs[idx+1:]...) // remove it.
-		}
-	}
-}
-
-// RemoveTenantRegistry removes all Prometheus registries for a given tenant.
-// If hard is true, registry is removed completely.
 // If hard is false, the latest registry values are preserved in an "archive" registry.
 func (r *TenantRegistries) RemoveTenantRegistry(tenant string, hard bool) {
 	r.regsMu.Lock()
@@ -718,43 +694,6 @@ func (r *TenantRegistries) RemoveTenantRegistry(tenant string, hard bool) {
 		}
 		r.regs = append(r.regs[:idx], r.regs[idx+1:]...) // remove it.
 	}
-}
-
-// Returns true, if we should keep latest metrics. Returns false if we failed to gather latest metrics,
-// and this can be removed completely.
-// TODO: Delete, only used in the old method.
-func (r *TenantRegistries) softRemoveTenantRegistry(ur *TenantRegistry) bool {
-	last, err := ur.reg.Gather()
-	if err != nil {
-		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "tenant", ur.tenant, "err", err)
-		return false
-	}
-
-	for ix := 0; ix < len(last); {
-		// Only keep metrics for which we don't want to go down, since that indicates reset (counter, summary, histogram).
-		switch last[ix].GetType() {
-		case dto.MetricType_COUNTER, dto.MetricType_SUMMARY, dto.MetricType_HISTOGRAM:
-			ix++
-		default:
-			// Remove gauges and unknowns.
-			last = append(last[:ix], last[ix+1:]...)
-		}
-	}
-
-	// No metrics left.
-	if len(last) == 0 {
-		return false
-	}
-
-	ur.lastGather, err = NewMetricFamilyMap(last)
-	if err != nil {
-		level.Warn(r.logger).Log("msg", "failed to gather metrics from registry", "tenant", ur.tenant, "err", err)
-		return false
-	}
-
-	ur.tenant = ""
-	ur.reg = nil
-	return true
 }
 
 // archiveTenantRegistry gathers and stores counters/histograms/summaries from a tenant
@@ -925,7 +864,7 @@ func mergeMetricValues(existing, newMetric *dto.Metric, metricType dto.MetricTyp
 			SampleSum:   &mergedSum,
 		}
 
-		// For quantiles, we take the maximum value (summaries with same quantiles should be compatible)
+		// For quantiles, we take the maximum value (summaries with same quantiles should be compatible).
 		if len(existingSummary.GetQuantile()) > 0 || len(newSummary.GetQuantile()) > 0 {
 			quantileMap := make(map[float64]float64)
 			for _, q := range existingSummary.Quantile {
@@ -992,28 +931,19 @@ func (r *TenantRegistries) BuildMetricFamiliesPerTenant() MetricFamiliesPerTenan
 		archivedCopy[k] = v
 	}
 
-	data := MetricFamiliesPerTenant{
-		{
+	var data MetricFamiliesPerTenant
+	if len(archivedCopy) > 0 {
+		data = append(data, struct {
+			tenant  string
+			metrics MetricFamilyMap
+		}{
 			tenant:  "", // Empty tenant name so these metrics are aggregated in totals but not per-tenant.
 			metrics: archivedCopy,
-		},
+		})
 	}
 	r.regsMu.Unlock()
 
 	for _, entry := range r.Registries() {
-		// Set for removed tenants.
-		// TODO: Remove, we're not doing this r.reg = nil thing anymore...
-		if entry.reg == nil {
-			if entry.lastGather != nil {
-				data = append(data, struct {
-					tenant  string
-					metrics MetricFamilyMap
-				}{tenant: "", metrics: entry.lastGather})
-			}
-
-			continue
-		}
-
 		m, err := entry.reg.Gather()
 		if err == nil {
 			var mfm MetricFamilyMap // := would shadow err from outer block, and single err check will not work

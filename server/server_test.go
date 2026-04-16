@@ -136,6 +136,7 @@ func TestGRPCDisabled(t *testing.T) {
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
 	setAutoAssignedPorts(DefaultNetwork, &cfg)
 	cfg.GRPCDisabled = true
+	cfg.Registerer = prometheus.NewRegistry()
 	cfg.MetricsNamespace = "testing_grpc_disabled"
 
 	server, err := New(cfg)

@@ -69,6 +69,25 @@ func TestMetadata_IsEmpty(t *testing.T) {
 	}
 }
 
+func TestMetadata_Has(t *testing.T) {
+	var md Metadata
+	md.Set("key", "value")
+	assert.True(t, md.Has("key"))
+	assert.False(t, md.Has("missing"))
+}
+
+func TestMetadata_Get(t *testing.T) {
+	var md Metadata
+	md.Set("key", "value")
+	val, ok := md.Get("key")
+	assert.True(t, ok)
+	assert.Equal(t, "value", val)
+
+	val, ok = md.Get("missing")
+	assert.False(t, ok)
+	assert.Equal(t, "", val)
+}
+
 func TestMetadata_DivideIter(t *testing.T) {
 	tests := []struct {
 		name     string

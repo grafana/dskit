@@ -295,6 +295,151 @@ func TestOTelPropagatorsFromEnv(t *testing.T) {
 	})
 }
 
+func TestOtelSamplerFromEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		sampler  string
+		arg      string
+		wantDesc string
+	}{
+		{
+			name:     "unset defaults to ParentBased(AlwaysSample)",
+			sampler:  "",
+			arg:      "",
+			wantDesc: "ParentBased{root:AlwaysOnSampler,remoteParentSampled:AlwaysOnSampler,remoteParentNotSampled:AlwaysOffSampler,localParentSampled:AlwaysOnSampler,localParentNotSampled:AlwaysOffSampler}",
+		},
+		{
+			name:     "always_on",
+			sampler:  "always_on",
+			arg:      "",
+			wantDesc: "AlwaysOnSampler",
+		},
+		{
+			name:     "always_off",
+			sampler:  "always_off",
+			arg:      "",
+			wantDesc: "AlwaysOffSampler",
+		},
+		{
+			name:     "traceidratio with valid arg",
+			sampler:  "traceidratio",
+			arg:      "0.1",
+			wantDesc: "TraceIDRatioBased{0.1}",
+		},
+		{
+			name:     "traceidratio with no arg defaults to 1.0",
+			sampler:  "traceidratio",
+			arg:      "",
+			wantDesc: "AlwaysOnSampler",
+		},
+		{
+			name:     "traceidratio with invalid arg defaults to 1.0",
+			sampler:  "traceidratio",
+			arg:      "not-a-number",
+			wantDesc: "AlwaysOnSampler",
+		},
+		{
+			name:     "traceidratio with out-of-range arg defaults to 1.0",
+			sampler:  "traceidratio",
+			arg:      "2.5",
+			wantDesc: "AlwaysOnSampler",
+		},
+		{
+			name:     "traceidratio with negative arg defaults to 1.0",
+			sampler:  "traceidratio",
+			arg:      "-0.5",
+			wantDesc: "AlwaysOnSampler",
+		},
+		{
+			name:     "parentbased_always_on",
+			sampler:  "parentbased_always_on",
+			arg:      "",
+			wantDesc: "ParentBased{root:AlwaysOnSampler,remoteParentSampled:AlwaysOnSampler,remoteParentNotSampled:AlwaysOffSampler,localParentSampled:AlwaysOnSampler,localParentNotSampled:AlwaysOffSampler}",
+		},
+		{
+			name:     "parentbased_always_off",
+			sampler:  "parentbased_always_off",
+			arg:      "",
+			wantDesc: "ParentBased{root:AlwaysOffSampler,remoteParentSampled:AlwaysOnSampler,remoteParentNotSampled:AlwaysOffSampler,localParentSampled:AlwaysOnSampler,localParentNotSampled:AlwaysOffSampler}",
+		},
+		{
+			name:     "parentbased_traceidratio",
+			sampler:  "parentbased_traceidratio",
+			arg:      "0.5",
+			wantDesc: "ParentBased{root:TraceIDRatioBased{0.5},remoteParentSampled:AlwaysOnSampler,remoteParentNotSampled:AlwaysOffSampler,localParentSampled:AlwaysOnSampler,localParentNotSampled:AlwaysOffSampler}",
+		},
+		{
+			name:     "unknown sampler defaults to ParentBased(AlwaysSample)",
+			sampler:  "some_unknown_sampler",
+			arg:      "",
+			wantDesc: "ParentBased{root:AlwaysOnSampler,remoteParentSampled:AlwaysOnSampler,remoteParentNotSampled:AlwaysOffSampler,localParentSampled:AlwaysOnSampler,localParentNotSampled:AlwaysOffSampler}",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+			if tc.sampler == "" {
+				os.Unsetenv("OTEL_TRACES_SAMPLER")
+			} else {
+				os.Setenv("OTEL_TRACES_SAMPLER", tc.sampler)
+			}
+			if tc.arg == "" {
+				os.Unsetenv("OTEL_TRACES_SAMPLER_ARG")
+			} else {
+				os.Setenv("OTEL_TRACES_SAMPLER_ARG", tc.arg)
+			}
+
+			sampler := otelSamplerFromEnv()
+			require.NotNil(t, sampler)
+			assert.Equal(t, tc.wantDesc, sampler.Description())
+		})
+	}
+}
+
+func TestParseRatioOrDefault(t *testing.T) {
+	tests := []struct {
+		input      string
+		defaultVal float64
+		want       float64
+	}{
+		{"0.5", 1.0, 0.5},
+		{"0.0", 1.0, 0.0},
+		{"1.0", 0.5, 1.0},
+		{"", 0.75, 0.75},
+		{"invalid", 0.75, 0.75},
+		{"-0.1", 0.75, 0.75},
+		{"1.1", 0.75, 0.75},
+		{"NaN", 0.75, 0.75},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			got := parseRatioOrDefault(tc.input, tc.defaultVal)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestNewOTelFromEnvRespectsSampler(t *testing.T) {
+	// This test validates the core bug fix: when OTEL_TRACES_SAMPLER=traceidratio
+	// is set with OTEL_TRACES_SAMPLER_ARG=0.1, the sampler should NOT be AlwaysSample.
+	defer saveEnvAndRestoreDeferred("OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG")()
+
+	os.Setenv("OTEL_TRACES_SAMPLER", "traceidratio")
+	os.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.1")
+
+	sampler := otelSamplerFromEnv()
+
+	// Must NOT be AlwaysSample — this is the exact bug we're fixing.
+	alwaysOn := sdktrace.AlwaysSample()
+	assert.NotEqual(t, alwaysOn.Description(), sampler.Description(),
+		"sampler should NOT be AlwaysOnSampler when OTEL_TRACES_SAMPLER=traceidratio")
+
+	assert.Equal(t, "TraceIDRatioBased{0.1}", sampler.Description())
+}
+
 func saveEnvAndRestoreDeferred(vars ...string) func() {
 	originalValues := make(map[string]string)
 	for _, v := range vars {

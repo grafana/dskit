@@ -35,32 +35,35 @@ func StreamClientUserHeaderInterceptor(ctx context.Context, desc *grpc.StreamDes
 
 // ServerUserHeaderInterceptor propagates the user ID from the gRPC metadata back to our context.
 func ServerUserHeaderInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	_, ctx, err := user.ExtractFromGRPCRequest(ctx)
+	orgID, err := user.ExtractOrgIDFromGRPCRequest(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return handler(ctx, req)
+	return handler(user.InjectOrgIDInline(ctx, orgID), req)
 }
 
 // StreamServerUserHeaderInterceptor propagates the user ID from the gRPC metadata back to our context.
 func StreamServerUserHeaderInterceptor(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	_, ctx, err := user.ExtractFromGRPCRequest(ss.Context())
+	orgID, err := user.ExtractOrgIDFromGRPCRequest(ss.Context())
 	if err != nil {
 		return err
 	}
 
-	return handler(srv, serverStream{
-		ctx:          ctx,
-		ServerStream: ss,
-	})
+	s := &orgIDServerStream{ServerStream: ss}
+	s.orgIDCtx.Context = ss.Context()
+	s.orgIDCtx.SetOrgID(orgID)
+	return handler(srv, s)
 }
 
-type serverStream struct {
-	ctx context.Context
+// orgIDServerStream wraps a grpc.ServerStream and injects the org ID into the
+// context without the overhead of context.WithValue. The OrgIDCtx is embedded
+// directly to avoid a separate heap allocation for the context.
+type orgIDServerStream struct {
 	grpc.ServerStream
+	orgIDCtx user.OrgIDCtx
 }
 
-func (ss serverStream) Context() context.Context {
-	return ss.ctx
+func (ss *orgIDServerStream) Context() context.Context {
+	return &ss.orgIDCtx
 }

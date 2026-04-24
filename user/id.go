@@ -17,6 +17,12 @@ const (
 	userIDContextKey contextKey = 1
 )
 
+// boxedOrgIDContextKey is orgIDContextKey pre-boxed as an interface{} to avoid
+// repeated heap allocations when used as a key in context.Value lookups and
+// comparisons. Without this, each call to ctx.Value(orgIDContextKey) would box
+// the contextKey value on the heap.
+var boxedOrgIDContextKey any = orgIDContextKey
+
 // Errors that we return
 var (
 	ErrNoOrgID               = errors.New("no org id")
@@ -29,7 +35,12 @@ var (
 
 // ExtractOrgID gets the org ID from the context.
 func ExtractOrgID(ctx context.Context) (string, error) {
-	orgID, ok := ctx.Value(orgIDContextKey).(string)
+	// Fast path: check if the context is our optimized OrgIDCtx type first,
+	// avoiding the allocation from boxing the return value of Value() as any.
+	if c, ok := ctx.(*OrgIDCtx); ok {
+		return c.orgID, nil
+	}
+	orgID, ok := ctx.Value(boxedOrgIDContextKey).(string)
 	if !ok {
 		return "", ErrNoOrgID
 	}
@@ -38,7 +49,40 @@ func ExtractOrgID(ctx context.Context) (string, error) {
 
 // InjectOrgID returns a derived context containing the org ID.
 func InjectOrgID(ctx context.Context, orgID string) context.Context {
-	return context.WithValue(ctx, interface{}(orgIDContextKey), orgID)
+	return context.WithValue(ctx, boxedOrgIDContextKey, orgID)
+}
+
+// OrgIDCtx is a context.Context implementation that stores an org ID inline,
+// avoiding the allocation overhead of context.WithValue. It intercepts
+// Value calls for the org ID context key and delegates everything else to the
+// embedded parent context.
+//
+// This type is intended to be embedded in structs to avoid a separate heap
+// allocation when only the org ID needs to be injected into the context chain.
+type OrgIDCtx struct {
+	context.Context
+	orgID string
+}
+
+// SetOrgID sets the org ID in this context.
+func (c *OrgIDCtx) SetOrgID(orgID string) {
+	c.orgID = orgID
+}
+
+// Value intercepts lookups for the org ID context key and returns the stored
+// org ID. All other keys are delegated to the parent context.
+func (c *OrgIDCtx) Value(key any) any {
+	if key == boxedOrgIDContextKey {
+		return c.orgID
+	}
+	return c.Context.Value(key)
+}
+
+// InjectOrgIDInline returns a context with the org ID injected using an inline
+// context type, avoiding the separate allocation that context.WithValue makes.
+// The returned context supports extraction via ExtractOrgID.
+func InjectOrgIDInline(ctx context.Context, orgID string) context.Context {
+	return &OrgIDCtx{Context: ctx, orgID: orgID}
 }
 
 // ExtractUserID gets the user ID from the context.

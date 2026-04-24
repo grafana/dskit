@@ -21,6 +21,18 @@ func ExtractFromGRPCRequest(ctx context.Context) (string, context.Context, error
 	return orgIDs[0], InjectOrgID(ctx, orgIDs[0]), nil
 }
 
+// ExtractOrgIDFromGRPCRequest extracts the org ID from gRPC incoming metadata
+// without injecting it into a new context. This is useful when the caller wants
+// to manage context injection separately (e.g., using InjectOrgIDInline).
+func ExtractOrgIDFromGRPCRequest(ctx context.Context) (string, error) {
+	orgIDs := metadata.ValueFromIncomingContext(ctx, lowerOrgIDHeaderName)
+	if len(orgIDs) != 1 {
+		return "", ErrNoOrgID
+	}
+
+	return orgIDs[0], nil
+}
+
 // InjectIntoGRPCRequest injects the orgID from the context into the request metadata.
 func InjectIntoGRPCRequest(ctx context.Context) (context.Context, error) {
 	orgID, err := ExtractOrgID(ctx)

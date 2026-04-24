@@ -114,13 +114,20 @@ func (o *DoBatchOptions) replaceZeroValuesWithDefaults() {
 func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys []uint32, callback func(InstanceDesc, []int) error, o DoBatchOptions) error {
 	o.replaceZeroValuesWithDefaults()
 
-	if r.InstancesCount() <= 0 {
+	instanceCount := r.InstancesCount()
+	if instanceCount <= 0 {
 		o.Cleanup()
 		return fmt.Errorf("DoBatch: InstancesCount <= 0")
 	}
-	expectedTrackersPerInstance := len(keys) * (r.ReplicationFactor() + 1) / r.InstancesCount()
+	replicationFactor := r.ReplicationFactor()
+	expectedTrackersPerInstance := len(keys) * (replicationFactor + 1) / instanceCount
 	itemTrackers := make([]itemTracker, len(keys))
-	instances := make(map[string]instance, r.InstancesCount())
+
+	// Use a map of pointers to avoid copying the instance struct on every map write
+	// (which happens each time we append to itemTrackers/indexes slices). With value types,
+	// the entire struct including slice headers is copied back into the map on every update.
+	// With pointers, we modify the instance in-place through the pointer.
+	instances := make(map[string]*instance, instanceCount)
 
 	var (
 		bufDescs [GetBufferSize]InstanceDesc
@@ -147,16 +154,17 @@ func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys [
 		itemTrackers[i].remaining.Store(int32(len(replicationSet.Instances)))
 
 		for _, desc := range replicationSet.Instances {
-			curr, found := instances[desc.Addr]
-			if !found {
-				curr.itemTrackers = make([]*itemTracker, 0, expectedTrackersPerInstance)
-				curr.indexes = make([]int, 0, expectedTrackersPerInstance)
+			inst := instances[desc.Addr]
+			if inst == nil {
+				inst = &instance{
+					desc:         desc,
+					itemTrackers: make([]*itemTracker, 0, expectedTrackersPerInstance),
+					indexes:      make([]int, 0, expectedTrackersPerInstance),
+				}
+				instances[desc.Addr] = inst
 			}
-			instances[desc.Addr] = instance{
-				desc:         desc,
-				itemTrackers: append(curr.itemTrackers, &itemTrackers[i]),
-				indexes:      append(curr.indexes, i),
-			}
+			inst.itemTrackers = append(inst.itemTrackers, &itemTrackers[i])
+			inst.indexes = append(inst.indexes, i)
 		}
 	}
 
@@ -175,11 +183,11 @@ func DoBatchWithOptions(ctx context.Context, op Operation, r DoBatchRing, keys [
 	var wg sync.WaitGroup
 
 	wg.Add(len(instances))
-	for _, i := range instances {
-		i := i
+	for _, inst := range instances {
+		inst := inst
 		o.Go(func() {
-			err := callback(i.desc, i.indexes)
-			tracker.record(i.itemTrackers, err, o.IsClientError)
+			err := callback(inst.desc, inst.indexes)
+			tracker.record(inst.itemTrackers, err, o.IsClientError)
 			wg.Done()
 		})
 	}

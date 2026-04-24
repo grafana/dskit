@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -78,49 +79,69 @@ func (g *grpcInflightLimitCheck) TapHandle(ctx context.Context, info *tap.Info) 
 	// However, that would mean paying the cost of an extra goroutine for every single gRPC request, just in case the request's context is cancelled before we start processing it.
 	// Instead of that we schedule a cheaper timer that we will cancel in the happy case, which will run after 10s and perform the cleanup only when needed.
 	state := &gprcInflightLimitCheckerState{
-		fullMethod:       info.FullMethodName,
-		timestamp:        time.Now(),
-		headersProcessed: make(chan struct{}),
+		fullMethod: info.FullMethodName,
+		timestamp:  time.Now(),
+		// Store references needed by the timer callback directly in the state struct,
+		// avoiding a separate closure allocation for checkProbablyEarlyAbortedRequest.
+		checkerCtx: ctx,
+		checker:    g,
 	}
-	state.nonProcessedRequestTimer = g.timeAfterFunc(unprocessedRequestCheckTimeout, g.checkProbablyEarlyAbortedRequest(ctx, state))
+	state.nonProcessedRequestTimer = g.timeAfterFunc(unprocessedRequestCheckTimeout, state.checkProbablyEarlyAbortedRequest)
 
 	return context.WithValue(ctx, gprcInflightLimitCheckerStateKey{}, state), nil
 }
 
-func (g *grpcInflightLimitCheck) checkProbablyEarlyAbortedRequest(ctx context.Context, state *gprcInflightLimitCheckerState) func() {
-	return func() {
-		// If this function is running, we're in a corner case. Be very verbose in logging to help with debugging.
-		logger := state.logger(g.logger)
+// checkProbablyEarlyAbortedRequest is the timer callback for detecting requests that were
+// cancelled before processing started. It uses state.checkerCtx and state.checker which are
+// stored at creation time to avoid a separate closure allocation.
+func (state *gprcInflightLimitCheckerState) checkProbablyEarlyAbortedRequest() {
+	g := state.checker
+	ctx := state.checkerCtx
 
-		level.Warn(g.logger).Log("msg", "gRPC request processing didn't start within 10s of receiving, checking the context state")
-		select {
-		case <-ctx.Done():
-			level.Info(logger).Log("msg", "gRPC request context is done, assuming the request was cancelled before processing started, will call RPCCallFinished")
-		case <-state.headersProcessed:
-			level.Info(logger).Log("msg", "gRPC request processing has started, no need to call RPCCallFinished", "time_to_start_processing", time.Since(state.timestamp).String())
-			return
-		default:
-			level.Info(logger).Log("msg", "gRPC request context is not done and processing hasn't started, will wait until context is done or processing starts")
+	// If this function is running, we're in a corner case. Be very verbose in logging to help with debugging.
+	logger := state.logger(g.logger)
 
+	level.Warn(g.logger).Log("msg", "gRPC request processing didn't start within 10s of receiving, checking the context state")
+
+	if state.headersProcessed.Load() != 0 {
+		level.Info(logger).Log("msg", "gRPC request processing has started, no need to call RPCCallFinished", "time_to_start_processing", time.Since(state.timestamp).String())
+		return
+	}
+
+	select {
+	case <-ctx.Done():
+		level.Info(logger).Log("msg", "gRPC request context is done, assuming the request was cancelled before processing started, will call RPCCallFinished")
+	default:
+		level.Info(logger).Log("msg", "gRPC request context is not done and processing hasn't started, will wait until context is done or processing starts")
+
+		// Poll until context is done or headers are processed.
+		// This is a rare edge case path (timer fires after 10s), so polling is acceptable.
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
 			select {
 			case <-ctx.Done():
 				level.Info(logger).Log("msg", "gRPC request context is finally done, assuming the request was cancelled before processing started, will call RPCCallFinished")
-			case <-state.headersProcessed:
-				level.Info(logger).Log("msg", "gRPC request processing has finally started, no need to call RPCCallFinished", "time_to_start_processing", time.Since(state.timestamp).String())
-				return
+				goto callFinished
+			case <-ticker.C:
+				if state.headersProcessed.Load() != 0 {
+					level.Info(logger).Log("msg", "gRPC request processing has finally started, no need to call RPCCallFinished", "time_to_start_processing", time.Since(state.timestamp).String())
+					return
+				}
 			}
 		}
+	}
 
-		called := false
-		state.rpcCallFinishedOnce.Do(func() {
-			called = true
-			g.methodLimiter.RPCCallFinished(ctx)
-		})
-		if called {
-			level.Info(logger).Log("msg", "called RPCCallFinished for gRPC request that never started processing")
-		} else {
-			level.Info(logger).Log("msg", "RPCCallFinishes was already called for this gRPC request, no need to call it again")
-		}
+callFinished:
+	called := false
+	state.rpcCallFinishedOnce.Do(func() {
+		called = true
+		g.methodLimiter.RPCCallFinished(ctx)
+	})
+	if called {
+		level.Info(logger).Log("msg", "called RPCCallFinished for gRPC request that never started processing")
+	} else {
+		level.Info(logger).Log("msg", "RPCCallFinishes was already called for this gRPC request, no need to call it again")
 	}
 }
 
@@ -160,11 +181,8 @@ func (g *grpcInflightLimitCheck) HandleRPC(ctx context.Context, rpcStats stats.R
 			if !state.nonProcessedRequestTimer.Stop() {
 				level.Warn(state.logger(g.logger)).Log("msg", "gRPC request processing has started, but the non-processing timer already fired, need to signal that we're processing it now")
 				// The timer has already expired, so the function is either executing or has executed.
-				//
-				// This (stats.InHeader) should be called once and only once, but gRPC is known for changing contracts
-				// and we don't want this to start panicking trying to close the channel multiple times,
-				// so a sync.Once doesn't hurt here.
-				state.headersProcessedOnce.Do(func() { close(state.headersProcessed) })
+				// Signal that headers have been processed using an atomic flag.
+				state.headersProcessed.Store(1)
 			}
 		}
 
@@ -216,10 +234,18 @@ type gprcInflightLimitCheckerState struct {
 	timestamp  time.Time
 
 	nonProcessedRequestTimer testableTimer
-	headersProcessedOnce     sync.Once
-	headersProcessed         chan struct{}
+	// headersProcessed is an atomic flag (0 = not processed, 1 = processed) that replaces
+	// a channel to avoid a per-request channel allocation on the hot path.
+	headersProcessed atomic.Uint32
 
 	rpcCallFinishedOnce sync.Once
+
+	// checkerCtx and checker are stored here so that the timer callback
+	// (checkProbablyEarlyAbortedRequest) can be a method on the state struct
+	// rather than a closure that captures these variables separately,
+	// saving one closure allocation per request.
+	checkerCtx context.Context
+	checker    *grpcInflightLimitCheck
 }
 
 func (state *gprcInflightLimitCheckerState) logger(baseLogger log.Logger) log.Logger {

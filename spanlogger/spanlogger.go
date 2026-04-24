@@ -48,16 +48,40 @@ var (
 
 // SpanLogger unifies tracing and logging, to reduce repetition.
 type SpanLogger struct {
-	ctx        context.Context            // context passed in, with logger
-	resolver   TenantResolver             // passed in
-	baseLogger log.Logger                 // passed in
-	logger     atomic.Pointer[log.Logger] // initialized on first use
+	ctx        context.Context // context passed in, with logger
+	resolver   TenantResolver // passed in
+	baseLogger log.Logger     // passed in
+
+	// cachedLogger is the composed logger (baseLogger + user + trace_id), eagerly built during
+	// construction (New, NewOTel, FromContext). It is written once at construction time and
+	// never modified afterwards.
+	cachedLogger log.Logger
+	// mutatedLogger is non-nil only after SetSpanAndLogTag has been called. When set, getLogger
+	// returns its value instead of cachedLogger.
+	mutatedLogger atomic.Pointer[log.Logger]
 
 	opentracingSpan opentracing.Span
 	otelSpan        trace.Span
 
 	sampled      bool
 	debugEnabled bool
+}
+
+// buildCachedLogger builds the composed logger (base + user + trace_id) and stores it in
+// cachedLogger. It reuses the already-extracted traceID to avoid a redundant
+// ExtractSampledTraceID call.
+func (s *SpanLogger) buildCachedLogger(traceID string) {
+	logger := s.baseLogger
+	userID, err := s.resolver.TenantID(s.ctx)
+	if err == nil && userID != "" {
+		logger = log.With(logger, "user", userID)
+	}
+
+	if traceID != "" {
+		logger = log.With(logger, "trace_id", traceID)
+	}
+
+	s.cachedLogger = logger
 }
 
 // New makes a new SpanLogger with a log.Logger to send logs to. The provided context will have the logger attached
@@ -67,7 +91,7 @@ func New(ctx context.Context, logger log.Logger, method string, resolver TenantR
 	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
 		span.SetTag(TenantIDsTagName, ids)
 	}
-	_, sampled := tracing.ExtractSampledTraceID(ctx)
+	traceID, sampled := tracing.ExtractSampledTraceID(ctx)
 	l := &SpanLogger{
 		ctx:        ctx,
 		resolver:   resolver,
@@ -79,6 +103,7 @@ func New(ctx context.Context, logger log.Logger, method string, resolver TenantR
 		sampled:      sampled,
 		debugEnabled: debugEnabled(logger),
 	}
+	l.buildCachedLogger(traceID)
 	if len(kvps) > 0 {
 		l.DebugLog(kvps...)
 	}
@@ -94,6 +119,16 @@ func NewOTel(ctx context.Context, logger log.Logger, tracer trace.Tracer, method
 	}
 	sampled := span.SpanContext().IsSampled()
 
+	// Extract the trace ID from the OTel span context directly, avoiding the
+	// heavier ExtractSampledTraceID which also probes Jaeger.
+	var traceID string
+	if sampled {
+		sc := span.SpanContext()
+		if sc.HasTraceID() {
+			traceID = sc.TraceID().String()
+		}
+	}
+
 	l := &SpanLogger{
 		ctx:        ctx,
 		resolver:   resolver,
@@ -105,6 +140,7 @@ func NewOTel(ctx context.Context, logger log.Logger, tracer trace.Tracer, method
 		sampled:      sampled,
 		debugEnabled: debugEnabled(logger),
 	}
+	l.buildCachedLogger(traceID)
 	if len(kvps) > 0 {
 		l.DebugLog(kvps...)
 	}
@@ -124,7 +160,7 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 	}
 	otelSpan, opentracingSpan, sampled := tracing.SpanFromContext(ctx)
 
-	return &SpanLogger{
+	l := &SpanLogger{
 		ctx:        ctx,
 		baseLogger: logger,
 		resolver:   resolver,
@@ -135,6 +171,15 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 		sampled:      sampled,
 		debugEnabled: debugEnabled(logger),
 	}
+
+	// Extract trace ID for the logger.
+	var traceID string
+	if sampled {
+		traceID, _ = tracing.ExtractSampledTraceID(ctx)
+	}
+	l.buildCachedLogger(traceID)
+
+	return l
 }
 
 // Detect whether we should output debug logging.
@@ -199,28 +244,12 @@ func (s *SpanLogger) Error(err error) error {
 }
 
 func (s *SpanLogger) getLogger() log.Logger {
-	pLogger := s.logger.Load()
-	if pLogger != nil {
-		return *pLogger
+	// Fast path: check if SetSpanAndLogTag has mutated the logger.
+	if p := s.mutatedLogger.Load(); p != nil {
+		return *p
 	}
-	// If no logger stored in the pointer, start to make one.
-	logger := s.baseLogger
-	userID, err := s.resolver.TenantID(s.ctx)
-	if err == nil && userID != "" {
-		logger = log.With(logger, "user", userID)
-	}
-
-	traceID, ok := tracing.ExtractSampledTraceID(s.ctx)
-	if ok {
-		logger = log.With(logger, "trace_id", traceID)
-	}
-
-	// If the value has been set by another goroutine, fetch that other value and discard the one we made.
-	if !s.logger.CompareAndSwap(nil, &logger) {
-		pLogger := s.logger.Load()
-		logger = *pLogger
-	}
-	return logger
+	// Return the eagerly-built cached logger.
+	return s.cachedLogger
 }
 
 // SetSpanAndLogTag sets a tag on the span used by this SpanLogger, and appends a key/value pair to the logger used for
@@ -234,7 +263,7 @@ func (s *SpanLogger) SetSpanAndLogTag(key string, value interface{}) {
 
 	logger := s.getLogger()
 	wrappedLogger := log.With(logger, key, value)
-	s.logger.Store(&wrappedLogger)
+	s.mutatedLogger.Store(&wrappedLogger)
 }
 
 // SetError will set the error flag on the span.

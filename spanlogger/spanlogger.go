@@ -157,10 +157,14 @@ func (s *SpanLogger) Log(kvps ...interface{}) error {
 // Also it swallows the error return because nobody checks for errors on debug logs.
 func (s *SpanLogger) DebugLog(kvps ...interface{}) {
 	if s.debugEnabled {
-		// The call to Log() through an interface makes its argument escape, so make a copy here,
-		// in the debug-only path, so the function is faster for the non-debug path.
-		localCopy := append([]any{}, kvps...)
-		level.Debug(s.getLogger()).Log(localCopy...)
+		// Build a single slice with the level key/value prepended to the caller's kvps.
+		// This avoids the intermediate allocations that level.Debug() (via log.WithPrefix)
+		// would introduce: a context struct and its keyvals slice.
+		debugKVPs := make([]any, len(kvps)+2)
+		debugKVPs[0] = level.Key()
+		debugKVPs[1] = level.DebugValue()
+		copy(debugKVPs[2:], kvps)
+		s.getLogger().Log(debugKVPs...)
 	}
 	_ = s.spanLog(kvps...)
 }

@@ -51,6 +51,7 @@ type SpanLogger struct {
 	ctx        context.Context            // context passed in, with logger
 	resolver   TenantResolver             // passed in
 	baseLogger log.Logger                 // passed in
+	method     string                     // method name, applied lazily in getLogger
 	logger     atomic.Pointer[log.Logger] // initialized on first use
 
 	opentracingSpan opentracing.Span
@@ -71,7 +72,8 @@ func New(ctx context.Context, logger log.Logger, method string, resolver TenantR
 	l := &SpanLogger{
 		ctx:        ctx,
 		resolver:   resolver,
-		baseLogger: log.With(logger, "method", method),
+		baseLogger: logger,
+		method:     method,
 
 		opentracingSpan: span,
 		otelSpan:        nil,
@@ -97,7 +99,8 @@ func NewOTel(ctx context.Context, logger log.Logger, tracer trace.Tracer, method
 	l := &SpanLogger{
 		ctx:        ctx,
 		resolver:   resolver,
-		baseLogger: log.With(logger, "method", method),
+		baseLogger: logger,
+		method:     method,
 
 		opentracingSpan: nil,
 		otelSpan:        span,
@@ -205,6 +208,9 @@ func (s *SpanLogger) getLogger() log.Logger {
 	}
 	// If no logger stored in the pointer, start to make one.
 	logger := s.baseLogger
+	if s.method != "" {
+		logger = log.With(logger, "method", s.method)
+	}
 	userID, err := s.resolver.TenantID(s.ctx)
 	if err == nil && userID != "" {
 		logger = log.With(logger, "user", userID)

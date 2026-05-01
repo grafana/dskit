@@ -123,6 +123,90 @@ func TestInstanceDesc_GetLastHeartbeatAt(t *testing.T) {
 	}
 }
 
+func TestClampTimestamp(t *testing.T) {
+	now := time.Now()
+	nowUnix := now.Unix()
+
+	tests := map[string]struct {
+		ts       int64
+		expected int64
+	}{
+		"timestamp in the past": {
+			ts:       nowUnix - 3600,
+			expected: nowUnix - 3600,
+		},
+		"timestamp at current time": {
+			ts:       nowUnix,
+			expected: nowUnix,
+		},
+		"timestamp slightly in the future (within drift)": {
+			ts:       nowUnix + 1800, // 30 minutes
+			expected: nowUnix + 1800,
+		},
+		"timestamp at exactly max drift boundary": {
+			ts:       now.Add(maxAllowedClockDrift).Unix(),
+			expected: now.Add(maxAllowedClockDrift).Unix(),
+		},
+		"timestamp beyond max drift": {
+			ts:       nowUnix + 7200, // 2 hours
+			expected: nowUnix,
+		},
+		"timestamp far in the future (year 2034)": {
+			ts:       time.Date(2034, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+			expected: nowUnix,
+		},
+		"zero timestamp": {
+			ts:       0,
+			expected: 0,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			result := clampTimestamp(testData.ts, now)
+			assert.Equal(t, testData.expected, result)
+		})
+	}
+}
+
+func TestIsHeartbeatHealthy_FarFutureTimestamp(t *testing.T) {
+	now := time.Now()
+	timeout := time.Minute
+
+	tests := map[string]struct {
+		timestamp int64
+		expected  bool
+	}{
+		"recent heartbeat": {
+			timestamp: now.Add(-30 * time.Second).Unix(),
+			expected:  true,
+		},
+		"expired heartbeat": {
+			timestamp: now.Add(-90 * time.Second).Unix(),
+			expected:  false,
+		},
+		"heartbeat slightly in the future (within drift)": {
+			timestamp: now.Add(30 * time.Minute).Unix(),
+			expected:  true,
+		},
+		"heartbeat far in the future (beyond drift)": {
+			timestamp: now.Add(2 * time.Hour).Unix(),
+			expected:  false,
+		},
+		"heartbeat in year 2034": {
+			timestamp: time.Date(2034, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+			expected:  false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ing := &InstanceDesc{Timestamp: testData.timestamp}
+			assert.Equal(t, testData.expected, ing.IsHeartbeatHealthy(timeout, now))
+		})
+	}
+}
+
 func normalizedSource() *Desc {
 	r := NewDesc()
 	r.Ingesters["first"] = InstanceDesc{

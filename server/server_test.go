@@ -131,6 +131,35 @@ func TestDefaultAddresses(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGRPCDisabled(t *testing.T) {
+	var cfg Config
+	cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+	setAutoAssignedPorts(DefaultNetwork, &cfg)
+	cfg.GRPCDisabled = true
+	cfg.Registerer = prometheus.NewRegistry()
+	cfg.MetricsNamespace = "testing_grpc_disabled"
+
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	server.HTTP.HandleFunc("/test", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	go func() {
+		require.NoError(t, server.Run())
+	}()
+	defer server.Shutdown()
+
+	require.Nil(t, server.GRPCListenAddr())
+
+	req, err := http.NewRequest("GET", httpTarget(server, "/test"), nil)
+	require.NoError(t, err)
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, res.StatusCode)
+}
+
 func TestErrorInstrumentationMiddleware(t *testing.T) {
 	newRegistry := prometheus.NewRegistry()
 	prometheus.DefaultRegisterer = newRegistry

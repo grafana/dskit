@@ -144,6 +144,7 @@ type KVConfig struct {
 	GossipToTheDeadTime       time.Duration `yaml:"gossip_to_dead_nodes_time" category:"advanced"`
 	DeadNodeReclaimTime       time.Duration `yaml:"dead_node_reclaim_time" category:"advanced"`
 	EnableCompression         bool          `yaml:"compression_enabled" category:"advanced"`
+	CompressionAlgorithm      string        `yaml:"compression_algorithm" category:"advanced"`
 	NotifyInterval            time.Duration `yaml:"notify_interval" category:"advanced"`
 	ReceivedMessagesQueueSize int           `yaml:"received_messages_queue_size" category:"advanced"`
 
@@ -231,6 +232,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.DeadNodeReclaimTime, prefix+"memberlist.dead-node-reclaim-time", mlDefaults.DeadNodeReclaimTime, "How soon can dead node's name be reclaimed with new address. 0 to disable.")
 	f.IntVar(&cfg.MessageHistoryBufferBytes, prefix+"memberlist.message-history-buffer-bytes", 0, "How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.")
 	f.BoolVar(&cfg.EnableCompression, prefix+"memberlist.compression-enabled", mlDefaults.EnableCompression, "Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization.")
+	f.StringVar(&cfg.CompressionAlgorithm, prefix+"memberlist.compression-algorithm", string(memberlist.CompressionAlgorithmLZW), "Algorithm used to compress outgoing memberlist messages. Valid values: lzw, snappy. Snappy uses substantially less CPU and allocates less than LZW for similar bandwidth. Only takes effect when -memberlist.compression-enabled is true. WARNING: every cluster member must run a build that can decode the chosen algorithm before any member is configured to emit it; otherwise messages are dropped.")
 	f.DurationVar(&cfg.NotifyInterval, prefix+"memberlist.notify-interval", 0, "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.")
 	f.IntVar(&cfg.ReceivedMessagesQueueSize, prefix+"memberlist.received-messages-queue-size", mlDefaults.HandoffQueueDepth, "Size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes.")
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
@@ -259,6 +261,11 @@ func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KVConfig) Validate() error {
 	if cfg.ReceivedMessagesQueueSize <= 0 {
 		return fmt.Errorf("memberlist received messages queue size must be greater than 0")
+	}
+	switch memberlist.CompressionAlgorithm(cfg.CompressionAlgorithm) {
+	case "", memberlist.CompressionAlgorithmLZW, memberlist.CompressionAlgorithmSnappy:
+	default:
+		return fmt.Errorf("invalid memberlist compression algorithm %q (valid: lzw, snappy)", cfg.CompressionAlgorithm)
 	}
 	return cfg.ZoneAwareRouting.Validate()
 }
@@ -493,6 +500,7 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	mlCfg.GossipToTheDeadTime = m.cfg.GossipToTheDeadTime
 	mlCfg.DeadNodeReclaimTime = m.cfg.DeadNodeReclaimTime
 	mlCfg.EnableCompression = m.cfg.EnableCompression
+	mlCfg.CompressionAlgorithm = memberlist.CompressionAlgorithm(m.cfg.CompressionAlgorithm)
 	mlCfg.HandoffQueueDepth = m.cfg.ReceivedMessagesQueueSize
 
 	mlCfg.AdvertiseAddr = m.cfg.AdvertiseAddr

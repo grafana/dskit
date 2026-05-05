@@ -175,7 +175,7 @@ func TestNewOverridesManager(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -223,7 +223,7 @@ func TestManagerGzip(t *testing.T) {
 	defaultTestLimits = &TestLimits{Limit1: 100}
 	t.Run("gzipped with .gz extension should succeed", func(t *testing.T) {
 		file := writeConfig("overrides.yaml.gz", true)
-		manager, err := New(cfg(file), "overrides", nil, nil, log.NewNopLogger())
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
@@ -237,7 +237,7 @@ func TestManagerGzip(t *testing.T) {
 
 	t.Run("non-gzipped with .gz extension should fail", func(t *testing.T) {
 		file := writeConfig("overrides.yaml.gz", false)
-		manager, err := New(cfg(file), "overrides", nil, nil, log.NewNopLogger())
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
 		require.NoError(t, err)
 		err = services.StartAndAwaitRunning(context.Background(), manager)
 		require.Error(t, err)
@@ -246,7 +246,7 @@ func TestManagerGzip(t *testing.T) {
 
 	t.Run("gzipped without .gz extension should mention that in the error", func(t *testing.T) {
 		file := writeConfig("overrides.yaml", true)
-		manager, err := New(cfg(file), "overrides", nil, nil, log.NewNopLogger())
+		manager, err := New(cfg(file), "overrides", nil, log.NewNopLogger())
 		require.NoError(t, err)
 		err = services.StartAndAwaitRunning(context.Background(), manager)
 		require.Error(t, err)
@@ -277,7 +277,7 @@ func TestOverridesManagerMultipleFilesAppend(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -311,7 +311,7 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -345,7 +345,7 @@ overrides:
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	err = services.StartAndAwaitRunning(context.Background(), overridesManager)
 	require.Error(t, err)
@@ -367,7 +367,7 @@ func TestOverridesManagerMultipleFilesWithEmptyFile(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -405,7 +405,7 @@ func TestOverridesManagerMultipleFilesWithNilValues(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	err = services.StartAndAwaitRunning(context.Background(), overridesManager)
 	require.NoError(t, err)
@@ -437,7 +437,7 @@ func TestOverridesManagerPreprocessor(t *testing.T) {
 		Preprocessor: testPreprocessor([]byte(alteredTo), nil),
 	}
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -466,7 +466,7 @@ func TestOverridesManagerFailingPreprocessor(t *testing.T) {
 		Preprocessor: testPreprocessor(nil, errors.New("some preprocessor error")),
 	}
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	err = services.StartAndAwaitRunning(context.Background(), overridesManager)
 	require.Error(t, err)
@@ -502,7 +502,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 
-	overridesManager, err := New(overridesManagerConfig, "overrides", reg, nil, log.NewNopLogger())
+	overridesManager, err := New(overridesManagerConfig, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -562,7 +562,7 @@ func TestManager_ListenerChannel(t *testing.T) {
 
 	writeValueToFile(t, cfg.LoadPath.String(), value{Value: 555})
 
-	overridesManager, err := New(cfg, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	// need to use buffer, otherwise loadConfig will throw away update
@@ -598,7 +598,7 @@ func TestManager_ListenerChannel(t *testing.T) {
 func TestManager_StopClosesListenerChannels(t *testing.T) {
 	cfg := newTestOverridesManagerConfig(t, time.Second, valueLoader)
 
-	overridesManager, err := New(cfg, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
 
@@ -633,7 +633,7 @@ func TestManager_ShouldFastFailOnInvalidConfigAtStartup(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	m, err := New(cfg, "overrides", nil, nil, log.NewNopLogger())
+	m, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Error(t, services.StartAndAwaitRunning(context.Background(), m))
 }
@@ -668,7 +668,7 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 
 		reg := prometheus.NewPedanticRegistry()
 
-		manager, err := New(managerConfig, "overrides", reg, nil, log.NewNopLogger())
+		manager, err := New(managerConfig, "overrides", reg, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 
@@ -721,7 +721,7 @@ func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
 			return valueLoader(reader)
 		}
 
-		overridesManager, err := New(cfg, "overrides", nil, nil, log.NewNopLogger())
+		overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 		require.NoError(t, err)
 
 		ch := overridesManager.CreateListenerChannel(10) // must be big enough to hold all modifications.
@@ -750,7 +750,7 @@ func TestManager_UnchangedFileDoesntTriggerReload(t *testing.T) {
 func TestManager_GetConfigNilBeforeStarting(t *testing.T) {
 	cfg := newTestOverridesManagerConfig(t, time.Second, valueLoader)
 
-	overridesManager, err := New(cfg, "overrides", nil, nil, log.NewNopLogger())
+	overridesManager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	// We haven't started the manager yet, so the config should be nil. Which is legal.
 	require.NoError(t, err)
 	require.Nil(t, overridesManager.GetConfig())
@@ -773,52 +773,13 @@ func TestManager_URLPath(t *testing.T) {
 		Loader:       valueLoader,
 	}
 
-	manager, err := New(cfg, "overrides", nil, nil, log.NewNopLogger())
+	manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
 
 	require.NotNil(t, manager.GetConfig())
 	require.Equal(t, value{Value: 42}, manager.GetConfig())
-}
-
-// roundTripperFunc adapts a function to http.RoundTripper.
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-
-func TestManager_URLPathCustomRoundTripper(t *testing.T) {
-	const headerName = "X-Custom-RT"
-	const headerValue = "round-tripper-was-here"
-
-	var seenHeader atomic.String
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seenHeader.Store(r.Header.Get(headerName))
-		_, _ = w.Write([]byte("value: 42\n"))
-	}))
-	t.Cleanup(srv.Close)
-
-	var rtCalls atomic.Int32
-	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		rtCalls.Inc()
-		req.Header.Set(headerName, headerValue)
-		return http.DefaultTransport.RoundTrip(req)
-	})
-
-	cfg := Config{
-		ReloadPeriod: time.Second,
-		LoadPath:     []string{srv.URL + "/config.yaml"},
-		Loader:       valueLoader,
-	}
-
-	manager, err := New(cfg, "overrides", nil, rt, log.NewNopLogger())
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
-
-	require.Equal(t, value{Value: 42}, manager.GetConfig())
-	require.Equal(t, headerValue, seenHeader.Load(), "custom RoundTripper should have injected header")
-	require.GreaterOrEqual(t, rtCalls.Load(), int32(1))
 }
 
 func TestManager_URLPathFirstLoadFailure(t *testing.T) {
@@ -833,7 +794,7 @@ func TestManager_URLPathFirstLoadFailure(t *testing.T) {
 		Loader:       valueLoader,
 	}
 
-	manager, err := New(cfg, "overrides", nil, nil, log.NewNopLogger())
+	manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	err = services.StartAndAwaitRunning(context.Background(), manager)
@@ -867,7 +828,7 @@ func TestManager_URLPathReloadFailure(t *testing.T) {
 		Loader:       valueLoader,
 	}
 
-	manager, err := New(cfg, "overrides", reg, nil, log.NewNopLogger())
+	manager, err := New(cfg, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
@@ -921,7 +882,7 @@ func TestManager_MixedPaths(t *testing.T) {
 		Loader:       testLoadOverrides,
 	}
 
-	manager, err := New(cfg, "overrides", nil, nil, log.NewNopLogger())
+	manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
@@ -942,7 +903,7 @@ func TestManager_URLPathMetrics(t *testing.T) {
 		Loader:       valueLoader,
 	}
 
-	manager, err := New(cfg, "overrides", reg, nil, log.NewNopLogger())
+	manager, err := New(cfg, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })

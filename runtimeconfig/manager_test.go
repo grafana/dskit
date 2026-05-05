@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -993,8 +994,53 @@ func TestManager_URLPath_ClusterValidationLabel_RejectedByServer(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP client_invalid_cluster_validation_label_requests_total Number of requests with invalid cluster validation label.
 		# TYPE client_invalid_cluster_validation_label_requests_total counter
-		client_invalid_cluster_validation_label_requests_total{client="runtime-config",config="overrides",method="GET",protocol="http"} 1
+		client_invalid_cluster_validation_label_requests_total{client="runtime-config/overrides",method="GET",protocol="http"} 1
 	`), "client_invalid_cluster_validation_label_requests_total"))
+}
+
+// TestManager_URLPath_ClusterValidationLabel_SharedRegistry verifies that the
+// cluster-validation counter is registered with a label set ({client, protocol,
+// method}) that matches the convention used by other client-side cluster-
+// validation counters in the calling application (e.g. gRPC clients). Per-
+// manager disambiguation is done via the "client" label value. A regression
+// here would cause a MustRegister panic on startup in deployments that run
+// multiple Managers (or a Manager alongside cluster-validated gRPC clients) on
+// the same registry.
+func TestManager_URLPath_ClusterValidationLabel_SharedRegistry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
+	t.Cleanup(srv.Close)
+
+	reg := prometheus.NewPedanticRegistry()
+
+	// Pre-register a counter mimicking what a gRPC client of the calling application would
+	// register: same name, same label set ({client, protocol, method}), no "config" label.
+	_ = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "client_invalid_cluster_validation_label_requests_total",
+		Help: "Number of requests with invalid cluster validation label.",
+		ConstLabels: map[string]string{
+			"client":   "some-grpc-client",
+			"protocol": "grpc",
+		},
+	}, []string{"method"})
+
+	mk := func(name string) *Manager {
+		cfg := Config{
+			ReloadPeriod: time.Second,
+			LoadPath:     []string{srv.URL + "/" + name + ".yaml"},
+			Loader:       valueLoader,
+			HTTPClientClusterValidation: clusterutil.ClusterValidationConfig{
+				Label: "shared-cluster",
+			},
+		}
+		mgr, err := New(cfg, name, reg, log.NewNopLogger())
+		require.NoError(t, err)
+		return mgr
+	}
+
+	require.NotPanics(t, func() {
+		_ = mk("first")
+		_ = mk("second")
+	})
 }
 
 func TestManager_URLPath_NoClusterValidationLabelByDefault(t *testing.T) {

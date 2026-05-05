@@ -4,6 +4,8 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -929,4 +932,125 @@ func TestManager_URLPathMetrics(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "expected runtime_config_http_request_duration_seconds metric")
+}
+
+func TestManager_URLPath_ClusterValidationLabel(t *testing.T) {
+	var receivedCluster atomic.String
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedCluster.Store(r.Header.Get(clusterutil.ClusterValidationLabelHeader))
+		_, _ = w.Write([]byte("value: 42\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     []string{srv.URL + "/config.yaml"},
+		Loader:       valueLoader,
+		HTTPClientClusterValidation: clusterutil.ClusterValidationConfig{
+			Label: "my-cluster",
+		},
+	}
+
+	manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	require.Equal(t, value{Value: 42}, manager.GetConfig())
+	require.Equal(t, "my-cluster", receivedCluster.Load())
+}
+
+func TestManager_URLPath_ClusterValidationLabel_RejectedByServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		body, err := json.Marshal(map[string]string{
+			"cluster_validation_error_message": "wrong cluster",
+			"route":                            "GET",
+		})
+		require.NoError(t, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNetworkAuthenticationRequired)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+
+	reg := prometheus.NewPedanticRegistry()
+	cfg := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     []string{srv.URL + "/config.yaml"},
+		Loader:       valueLoader,
+		HTTPClientClusterValidation: clusterutil.ClusterValidationConfig{
+			Label: "client-cluster",
+		},
+	}
+
+	manager, err := New(cfg, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	err = services.StartAndAwaitRunning(context.Background(), manager)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "request rejected by the server: wrong cluster")
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP client_invalid_cluster_validation_label_requests_total Number of requests with invalid cluster validation label.
+		# TYPE client_invalid_cluster_validation_label_requests_total counter
+		client_invalid_cluster_validation_label_requests_total{client="runtime-config",config="overrides",method="GET",protocol="http"} 1
+	`), "client_invalid_cluster_validation_label_requests_total"))
+}
+
+func TestManager_URLPath_NoClusterValidationLabelByDefault(t *testing.T) {
+	var receivedCluster atomic.String
+	receivedCluster.Store("<unset>")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v, ok := r.Header[clusterutil.ClusterValidationLabelHeader]; ok {
+			receivedCluster.Store(strings.Join(v, ","))
+		} else {
+			receivedCluster.Store("")
+		}
+		_, _ = w.Write([]byte("value: 7\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     []string{srv.URL + "/config.yaml"},
+		Loader:       valueLoader,
+	}
+
+	manager, err := New(cfg, "overrides", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	require.Equal(t, value{Value: 7}, manager.GetConfig())
+	require.Equal(t, "", receivedCluster.Load())
+}
+
+func TestConfig_RegisterFlagsWithPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		prefix string
+	}{
+		{name: "default prefix via RegisterFlags", prefix: "runtime-config."},
+		{name: "custom prefix", prefix: "my-runtime-config."},
+		{name: "empty prefix", prefix: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := flag.NewFlagSet("test", flag.PanicOnError)
+			var cfg Config
+			if tc.prefix == "runtime-config." {
+				cfg.RegisterFlags(fs)
+			} else {
+				cfg.RegisterFlagsWithPrefix(tc.prefix, fs)
+			}
+
+			for _, name := range []string{
+				tc.prefix + "file",
+				tc.prefix + "reload-period",
+				tc.prefix + "http-client-timeout",
+				tc.prefix + "http-client-cluster-validation.label",
+			} {
+				require.NotNil(t, fs.Lookup(name), "expected flag %q to be registered", name)
+			}
+		})
+	}
 }

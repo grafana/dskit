@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -273,6 +274,96 @@ func checkMemberlistEntry(t *testing.T, kv *Client, key string, duration time.Du
 		}
 		return nil
 	})
+}
+
+func TestKVConfig_Validate(t *testing.T) {
+	testCases := map[string]struct {
+		modify  func(*KVConfig)
+		wantErr string
+	}{
+		"default config is valid": {
+			modify:  func(_ *KVConfig) {},
+			wantErr: "",
+		},
+		"empty compression algorithm is valid": {
+			modify:  func(cfg *KVConfig) { cfg.CompressionAlgorithm = "" },
+			wantErr: "",
+		},
+		"compression algorithm lzw is valid": {
+			modify:  func(cfg *KVConfig) { cfg.CompressionAlgorithm = "lzw" },
+			wantErr: "",
+		},
+		"compression algorithm snappy is valid": {
+			modify:  func(cfg *KVConfig) { cfg.CompressionAlgorithm = "snappy" },
+			wantErr: "",
+		},
+		"unsupported compression algorithm is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.CompressionAlgorithm = "gzip" },
+			wantErr: `memberlist compression algorithm "gzip" is not supported`,
+		},
+		"compression algorithm is ignored when compression is disabled": {
+			modify: func(cfg *KVConfig) {
+				cfg.EnableCompression = false
+				cfg.CompressionAlgorithm = "snappy"
+			},
+			wantErr: "",
+		},
+		"compression algorithm set with enable is valid": {
+			modify: func(cfg *KVConfig) {
+				cfg.EnableCompression = true
+				cfg.CompressionAlgorithm = "snappy"
+			},
+			wantErr: "",
+		},
+		"zero received messages queue size is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.ReceivedMessagesQueueSize = 0 },
+			wantErr: "memberlist received messages queue size must be greater than 0",
+		},
+		"negative received messages queue size is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.ReceivedMessagesQueueSize = -1 },
+			wantErr: "memberlist received messages queue size must be greater than 0",
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			var cfg KVConfig
+			flagext.DefaultValues(&cfg)
+			tc.modify(&cfg)
+
+			err := cfg.Validate()
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestKV_BuildMemberlistConfig_CompressionAlgorithm(t *testing.T) {
+	testCases := map[string]struct {
+		configured string
+		expected   memberlist.CompressionAlgorithm
+	}{
+		"empty propagates literally": {configured: "", expected: memberlist.CompressionAlgorithm("")},
+		"lzw propagates":             {configured: "lzw", expected: memberlist.CompressionAlgorithmLZW},
+		"snappy propagates":          {configured: "snappy", expected: memberlist.CompressionAlgorithmSnappy},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			var cfg KVConfig
+			flagext.DefaultValues(&cfg)
+			cfg.TCPTransport = TCPTransportConfig{BindAddrs: getLocalhostAddrs()}
+			cfg.CompressionAlgorithm = tc.configured
+
+			mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+			mlCfg, err := mkv.buildMemberlistConfig()
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, mlCfg.Transport.Shutdown()) })
+			require.Equal(t, tc.expected, mlCfg.CompressionAlgorithm)
+		})
+	}
 }
 
 func TestBasicGetAndCas(t *testing.T) {

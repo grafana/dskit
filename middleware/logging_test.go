@@ -229,7 +229,7 @@ func TestResponseBodyEscapingInLogs(t *testing.T) {
 	output := buf.String()
 	require.Contains(t, output, "level=warn")
 	require.Contains(t, output, "POST /loki/api/v1/push (504)")
-	require.Contains(t, output, `Response: \"{\\\"status\\\":\\\"error\\\",\\\"errorType\\\":\\\"timeout\\\",\\\"error\\\":\\\"rpc error: code = DeadlineExceeded desc = context deadline exceeded\\\"}\\n\"`)
+	require.Contains(t, output, `Response: {\"status\":\"error\",\"errorType\":\"timeout\",\"error\":\"rpc error: code = DeadlineExceeded desc = context deadline exceeded\"}\n`)
 }
 
 type errorWriter struct {

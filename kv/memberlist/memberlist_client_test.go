@@ -323,6 +323,14 @@ func TestKVConfig_Validate(t *testing.T) {
 			modify:  func(cfg *KVConfig) { cfg.ReceivedMessagesQueueSize = -1 },
 			wantErr: "memberlist received messages queue size must be greater than 0",
 		},
+		"zero processed messages queue size is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.ProcessedMessagesQueueSize = 0 },
+			wantErr: "memberlist processed messages queue size must be greater than 0",
+		},
+		"negative processed messages queue size is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.ProcessedMessagesQueueSize = -1 },
+			wantErr: "memberlist processed messages queue size must be greater than 0",
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {

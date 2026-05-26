@@ -43,10 +43,6 @@ func (v *URLValue) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // MarshalYAML implements yaml.Marshaler.
 func (v URLValue) MarshalYAML() (interface{}, error) {
-	if v.URL == nil {
-		return "", nil
-	}
-
 	// Mask out passwords when marshalling URLs back to YAML.
-	return v.URL.Redacted(), nil
+	return v.Redacted(), nil
 }

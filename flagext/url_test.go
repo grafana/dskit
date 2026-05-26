@@ -80,7 +80,7 @@ func TestURLValueYAML(t *testing.T) {
 
 		var testStruct TestStruct
 		require.NoError(t, testStruct.URL.Set("http://username:password@google.com"))
-		expected := []byte(`url: http://username:%2A%2A%2A%2A%2A%2A%2A%2A@google.com
+		expected := []byte(`url: http://username:xxxxx@google.com
 `)
 
 		actual, err := yaml.Marshal(testStruct)

@@ -79,9 +79,8 @@ func TestURLValueYAML(t *testing.T) {
 		}
 
 		var testStruct TestStruct
-		require.NoError(t, testStruct.URL.Set("http://username:password@google.com"))
-		expected := []byte(`url: http://username:%2A%2A%2A%2A%2A%2A%2A%2A@google.com
-`)
+		require.NoError(t, testStruct.URL.Set("http://username:password@google.com")) // trufflehog:ignore
+		expected := []byte("url: http://username:xxxxx@google.com\n")                 // trufflehog:ignore
 
 		actual, err := yaml.Marshal(testStruct)
 		require.NoError(t, err)

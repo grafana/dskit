@@ -1,4 +1,7 @@
 name: CI
+# This workflow runs on pull_request, which includes PRs from forks. It must
+# remain free of repository secrets and must NOT switch to pull_request_target,
+# otherwise untrusted fork code would gain access to write-capable tokens.
 on:
   push:
     branches:
@@ -40,7 +43,6 @@ jobs:
         run: make test-benchmarks
       - name: Check protos
         run: |
-          apt-get update && apt-get -y install unzip
           go mod vendor
           make check-protos
 

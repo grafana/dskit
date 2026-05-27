@@ -11,9 +11,12 @@ UNAME_S := $(shell uname -s)
 PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/
 ifeq ($(UNAME_S), Linux)
 	PROTO_ZIP=protoc-3.6.1-linux-x86_64.zip
+	# Bump together with PROTO_ZIP when changing the protobuf version.
+	PROTO_ZIP_SHA256=6003de742ea3fcf703cfec1cd4a3380fd143081a2eb0e559065563496af27807
 endif
 ifeq ($(UNAME_S), Darwin)
 	PROTO_ZIP=protoc-3.6.1-osx-x86_64.zip
+	PROTO_ZIP_SHA256=0decc6ce5beed07f8c20361ddeb5ac7666f09cf34572cca530e16814093f9c0c
 endif
 GO_MODS=$(shell find . $(DONT_FIND) -type f -name 'go.mod' -print)
 
@@ -82,13 +85,17 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 .tools/bin/faillint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
+GOLANGCI_LINT_VERSION := v2.9.0
 .tools/bin/golangci-lint: .tools
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b .tools/bin v2.9.0
+	# Pin install.sh to the release tag, not HEAD.
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh | sh -s -- -b .tools/bin $(GOLANGCI_LINT_VERSION)
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")
 	mkdir -p .tools/protoc
 	cd .tools/protoc && curl -LO $(PROTO_PATH)$(PROTO_ZIP)
+	# Verify the archive against the pinned SHA256 before unzip.
+	cd .tools/protoc && echo "$(PROTO_ZIP_SHA256)  $(PROTO_ZIP)" | shasum -a 256 --check --strict -
 	unzip -n .tools/protoc/$(PROTO_ZIP) -d .tools/protoc/
 endif
 

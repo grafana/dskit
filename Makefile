@@ -85,9 +85,6 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 .tools/bin/faillint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
-# Download the golangci-lint release tarball directly and verify it
-# against the official checksums file from the same release, instead of
-# piping a fetched install.sh into the shell.
 GOLANGCI_LINT_VERSION := 2.9.0
 .tools/bin/golangci-lint: .tools
 	@set -o pipefail && \

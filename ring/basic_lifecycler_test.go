@@ -521,15 +521,8 @@ func TestBasicLifecycler_ChangeReadOnlyState(t *testing.T) {
 		require.InDelta(t, readOnlySince.Sub(readOnlyChange), 0, float64(time.Second))
 	}
 
-	// Let the clock advance a little bit.
-	// Read only timestamp has seconds precision.
-	time.Sleep(time.Second + 500*time.Millisecond)
-
 	// Change the read-only state to false.
 	{
-		_, prevReadOnlySince := lifecycler.GetReadOnlyState()
-		require.NotZero(t, prevReadOnlySince)
-
 		err := lifecycler.ChangeReadOnlyState(context.Background(), false)
 		require.NoError(t, err)
 		assert.Equal(t, float64(0), testutil.ToFloat64(lifecycler.metrics.readOnly))
@@ -539,9 +532,34 @@ func TestBasicLifecycler_ChangeReadOnlyState(t *testing.T) {
 		assert.True(t, ok)
 		readOnly, readOnlySince := desc.GetReadOnlyState()
 		require.False(t, readOnly)
-		// Since this has seconds precision we can forget about monotonic clocks and just assert that new timestamp is higher.
-		require.True(t, readOnlySince.After(prevReadOnlySince))
+		require.Zero(t, readOnlySince)
 	}
+}
+
+func TestBasicLifecycler_ChangeReadOnlyState_ClearsTimestampWhenDisabled(t *testing.T) {
+	ctx := context.Background()
+	cfg := prepareBasicLifecyclerConfig()
+	lifecycler, _, store, err := prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+
+	// Enable read-only; timestamp must be set.
+	require.NoError(t, lifecycler.ChangeReadOnlyState(ctx, true))
+	desc, ok := getInstanceFromStore(t, store, testInstanceID)
+	require.True(t, ok)
+	readOnly, readOnlySince := desc.GetReadOnlyState()
+	require.True(t, readOnly)
+	require.NotZero(t, readOnlySince)
+
+	// Disable read-only; timestamp must be zeroed.
+	require.NoError(t, lifecycler.ChangeReadOnlyState(ctx, false))
+	desc, ok = getInstanceFromStore(t, store, testInstanceID)
+	require.True(t, ok)
+	readOnly, readOnlySince = desc.GetReadOnlyState()
+	require.False(t, readOnly)
+	require.Zero(t, readOnlySince)
+	require.Zero(t, desc.ReadOnlyUpdatedTimestamp)
 }
 
 func TestBasicLifecycler_TokensObservePeriod(t *testing.T) {

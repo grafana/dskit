@@ -87,8 +87,7 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 
 GOLANGCI_LINT_VERSION := 2.9.0
 .tools/bin/golangci-lint: .tools
-	@set -o pipefail && \
-	mkdir -p .tools/bin && \
+	@mkdir -p .tools/bin && \
 	OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && \
 	ARCH=$$(go env GOARCH) && \
 	SLUG=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$OS-$$ARCH && \

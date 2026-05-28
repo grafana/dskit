@@ -1,3 +1,5 @@
+SHELL = /usr/bin/env bash
+
 # put tools at the root of the folder
 PATH := $(CURDIR)/.tools/bin:$(PATH)
 # We don't want find to scan inside a bunch of directories
@@ -87,17 +89,18 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 
 GOLANGCI_LINT_VERSION := 2.9.0
 .tools/bin/golangci-lint: .tools
-	@mkdir -p .tools/bin && \
-	OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && \
-	ARCH=$$(go env GOARCH) && \
-	SLUG=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$OS-$$ARCH && \
-	BASE=https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION) && \
-	curl -sSfL "$$BASE/$$SLUG.tar.gz" -o ".tools/$$SLUG.tar.gz" && \
-	curl -sSfL "$$BASE/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt" \
-	  | grep -E "[[:space:]]+$$SLUG\.tar\.gz$$" \
-	  | (cd .tools && sha256sum --check --strict -) && \
-	tar -xzf ".tools/$$SLUG.tar.gz" -C .tools/bin --strip-components=1 "$$SLUG/golangci-lint" && \
-	rm ".tools/$$SLUG.tar.gz"
+	@set -e; \
+	mkdir -p .tools/bin; \
+	OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+	ARCH=$$(go env GOARCH); \
+	SLUG=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$OS-$$ARCH; \
+	BASE=https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION); \
+	curl -sSfL "$$BASE/$$SLUG.tar.gz" -o ".tools/$$SLUG.tar.gz"; \
+	curl -sSfL "$$BASE/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt" -o ".tools/golangci-lint-checksums.txt"; \
+	grep -E "[[:space:]]+$$SLUG\.tar\.gz$$" ".tools/golangci-lint-checksums.txt" > ".tools/$$SLUG.sha256"; \
+	(cd .tools && sha256sum --check --strict "$$SLUG.sha256"); \
+	tar -xzf ".tools/$$SLUG.tar.gz" -C .tools/bin --strip-components=1 "$$SLUG/golangci-lint"; \
+	rm ".tools/$$SLUG.tar.gz" ".tools/golangci-lint-checksums.txt" ".tools/$$SLUG.sha256"
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")

@@ -95,7 +95,7 @@ GOLANGCI_LINT_VERSION := 2.9.0
 	curl -sSfL "$$BASE/$$SLUG.tar.gz" -o ".tools/$$SLUG.tar.gz" && \
 	curl -sSfL "$$BASE/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt" \
 	  | grep -E "[[:space:]]+$$SLUG\.tar\.gz$$" \
-	  | (cd .tools && shasum -a 256 --check --strict -) && \
+	  | (cd .tools && sha256sum --check --strict -) && \
 	tar -xzf ".tools/$$SLUG.tar.gz" -C .tools/bin --strip-components=1 "$$SLUG/golangci-lint" && \
 	rm ".tools/$$SLUG.tar.gz"
 
@@ -104,7 +104,7 @@ ifeq ("$(wildcard .tools/protoc/bin/protoc)","")
 	mkdir -p .tools/protoc
 	cd .tools/protoc && curl -LO $(PROTO_PATH)$(PROTO_ZIP)
 	# Verify the archive against the pinned SHA256 before unzip.
-	cd .tools/protoc && echo "$(PROTO_ZIP_SHA256)  $(PROTO_ZIP)" | shasum -a 256 --check --strict -
+	cd .tools/protoc && echo "$(PROTO_ZIP_SHA256)  $(PROTO_ZIP)" | sha256sum --check --strict -
 	unzip -n .tools/protoc/$(PROTO_ZIP) -d .tools/protoc/
 endif
 

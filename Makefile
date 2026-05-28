@@ -85,10 +85,23 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 .tools/bin/faillint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
-GOLANGCI_LINT_VERSION := v2.9.0
+# Download the golangci-lint release tarball directly and verify it
+# against the official checksums file from the same release, instead of
+# piping a fetched install.sh into the shell.
+GOLANGCI_LINT_VERSION := 2.9.0
 .tools/bin/golangci-lint: .tools
-	# Pin install.sh to the release tag, not HEAD.
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh | sh -s -- -b .tools/bin $(GOLANGCI_LINT_VERSION)
+	@set -o pipefail && \
+	mkdir -p .tools/bin && \
+	OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && \
+	ARCH=$$(go env GOARCH) && \
+	SLUG=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$OS-$$ARCH && \
+	BASE=https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION) && \
+	curl -sSfL "$$BASE/$$SLUG.tar.gz" -o ".tools/$$SLUG.tar.gz" && \
+	curl -sSfL "$$BASE/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt" \
+	  | grep -E "[[:space:]]+$$SLUG\.tar\.gz$$" \
+	  | (cd .tools && shasum -a 256 --check --strict -) && \
+	tar -xzf ".tools/$$SLUG.tar.gz" -C .tools/bin --strip-components=1 "$$SLUG/golangci-lint" && \
+	rm ".tools/$$SLUG.tar.gz"
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")

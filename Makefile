@@ -1,3 +1,5 @@
+SHELL = /usr/bin/env bash
+
 # put tools at the root of the folder
 PATH := $(CURDIR)/.tools/bin:$(PATH)
 # We don't want find to scan inside a bunch of directories
@@ -11,9 +13,12 @@ UNAME_S := $(shell uname -s)
 PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/
 ifeq ($(UNAME_S), Linux)
 	PROTO_ZIP=protoc-3.6.1-linux-x86_64.zip
+	# Bump together with PROTO_ZIP when changing the protobuf version.
+	PROTO_ZIP_SHA256=6003de742ea3fcf703cfec1cd4a3380fd143081a2eb0e559065563496af27807
 endif
 ifeq ($(UNAME_S), Darwin)
 	PROTO_ZIP=protoc-3.6.1-osx-x86_64.zip
+	PROTO_ZIP_SHA256=0decc6ce5beed07f8c20361ddeb5ac7666f09cf34572cca530e16814093f9c0c
 endif
 GO_MODS=$(shell find . $(DONT_FIND) -type f -name 'go.mod' -print)
 
@@ -82,13 +87,27 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 .tools/bin/faillint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
+GOLANGCI_LINT_VERSION := 2.9.0
 .tools/bin/golangci-lint: .tools
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b .tools/bin v2.9.0
+	@set -e; \
+	mkdir -p .tools/bin; \
+	OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+	ARCH=$$(go env GOARCH); \
+	SLUG=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$OS-$$ARCH; \
+	BASE=https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION); \
+	curl -sSfL "$$BASE/$$SLUG.tar.gz" -o ".tools/$$SLUG.tar.gz"; \
+	curl -sSfL "$$BASE/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt" -o ".tools/golangci-lint-checksums.txt"; \
+	grep -E "[[:space:]]+$$SLUG\.tar\.gz$$" ".tools/golangci-lint-checksums.txt" > ".tools/$$SLUG.sha256"; \
+	(cd .tools && sha256sum --check --strict "$$SLUG.sha256"); \
+	tar -xzf ".tools/$$SLUG.tar.gz" -C .tools/bin --strip-components=1 "$$SLUG/golangci-lint"; \
+	rm ".tools/$$SLUG.tar.gz" ".tools/golangci-lint-checksums.txt" ".tools/$$SLUG.sha256"
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")
 	mkdir -p .tools/protoc
 	cd .tools/protoc && curl -LO $(PROTO_PATH)$(PROTO_ZIP)
+	# Verify the archive against the pinned SHA256 before unzip.
+	cd .tools/protoc && echo "$(PROTO_ZIP_SHA256)  $(PROTO_ZIP)" | sha256sum --check --strict -
 	unzip -n .tools/protoc/$(PROTO_ZIP) -d .tools/protoc/
 endif
 

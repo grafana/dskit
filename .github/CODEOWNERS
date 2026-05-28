@@ -1,0 +1,12 @@
+# Default owners for everything in the repo.
+* @grafana/mimir-maintainers
+
+# Supply-chain-sensitive paths, re-stated for visibility. Owners match the
+# catch-all; a more-specific rule added below would still override.
+/.github/                    @grafana/mimir-maintainers
+/Makefile                    @grafana/mimir-maintainers
+/.scripts/                   @grafana/mimir-maintainers
+/go.mod                      @grafana/mimir-maintainers
+/go.sum                      @grafana/mimir-maintainers
+/ring/example/local/go.mod   @grafana/mimir-maintainers
+/ring/example/local/go.sum   @grafana/mimir-maintainers

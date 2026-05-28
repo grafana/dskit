@@ -111,6 +111,28 @@ ifeq ("$(wildcard .tools/protoc/bin/protoc)","")
 	unzip -n .tools/protoc/$(PROTO_ZIP) -d .tools/protoc/
 endif
 
+# Invoked by Renovate's postUpgradeTasks after it bumps the protoc version in
+# this Makefile. Re-downloads both archives at the new version and rewrites the
+# two PROTO_ZIP_SHA256 lines in place. The first PROTO_ZIP_SHA256 occurrence is
+# Linux, the second is Darwin, matching the structural ordering of the ifeq
+# blocks above; if those blocks are reordered, update this target too.
+.PHONY: update-protoc-sha
+update-protoc-sha: ## Recompute pinned protoc archive SHA256 values from upstream.
+	@set -e; \
+	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	base=$$(awk '/^PROTO_PATH := / {print $$3}' Makefile); \
+	linux_zip=$$(awk -F= '/^[[:space:]]+PROTO_ZIP=protoc-.*-linux-x86_64\.zip$$/ {print $$2}' Makefile); \
+	darwin_zip=$$(awk -F= '/^[[:space:]]+PROTO_ZIP=protoc-.*-osx-x86_64\.zip$$/  {print $$2}' Makefile); \
+	curl -sSfL "$$base$$linux_zip"  -o "$$tmp/$$linux_zip"; \
+	curl -sSfL "$$base$$darwin_zip" -o "$$tmp/$$darwin_zip"; \
+	linux_sha=$$(sha256sum "$$tmp/$$linux_zip"  | awk '{print $$1}'); \
+	darwin_sha=$$(sha256sum "$$tmp/$$darwin_zip" | awk '{print $$1}'); \
+	awk -v ls="$$linux_sha" -v ds="$$darwin_sha" ' \
+	  /^[[:space:]]+PROTO_ZIP_SHA256=/ && !linux_done { sub(/=.*/, "=" ls); linux_done=1; print; next } \
+	  /^[[:space:]]+PROTO_ZIP_SHA256=/                { sub(/=.*/, "=" ds);                 print; next } \
+	  { print } \
+	' Makefile > Makefile.new && mv Makefile.new Makefile
+
 .tools/bin/protoc-gen-gogoslick: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0
 

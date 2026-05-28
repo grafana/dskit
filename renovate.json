@@ -5,12 +5,47 @@
     "schedule:daily"
   ],
   "baseBranchPatterns": ["main"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "protobuf/releases/download/v(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)/",
+        "protoc-(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)-linux",
+        "protoc-(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)-osx",
+        "protoc-(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)-win32"
+      ],
+      "depNameTemplate": "protocolbuffers/protobuf",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "GOLANGCI_LINT_VERSION\\s*:=\\s*(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "golangci/golangci-lint",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    }
+  ],
   "packageRules": [
     {
       "description": "Group Go module updates across all go.mod files",
       "matchManagers": ["gomod"],
       "matchFileNames": ["go.mod", "ring/example/local/go.mod"],
       "groupName": "go-dependencies"
+    },
+    {
+      "description": "Recompute pinned protoc archive SHA256 values after a version bump. Requires 'make update-protoc-sha' on the Renovate runner allowedPostUpgradeCommands allowlist; if not allowed, CI sha256sum --check will fail until a human refreshes the hashes.",
+      "matchPackageNames": ["protocolbuffers/protobuf"],
+      "postUpgradeTasks": {
+        "commands": ["make update-protoc-sha"],
+        "fileFilters": ["Makefile"],
+        "executionMode": "update"
+      }
     },
     {
       "description": "Don't update replace directives",

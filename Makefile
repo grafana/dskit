@@ -11,14 +11,16 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 # If you need windows for some reason it's at https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/protoc-3.6.1-win32.zip
 UNAME_S := $(shell uname -s)
 PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/
+# Pinned SHA256 hashes maintained by `make update-protoc-sha` (Renovate postUpgradeTasks hook).
+PROTO_ZIP_SHA256_LINUX  := 6003de742ea3fcf703cfec1cd4a3380fd143081a2eb0e559065563496af27807
+PROTO_ZIP_SHA256_DARWIN := 0decc6ce5beed07f8c20361ddeb5ac7666f09cf34572cca530e16814093f9c0c
 ifeq ($(UNAME_S), Linux)
 	PROTO_ZIP=protoc-3.6.1-linux-x86_64.zip
-	# Bump together with PROTO_ZIP when changing the protobuf version.
-	PROTO_ZIP_SHA256=6003de742ea3fcf703cfec1cd4a3380fd143081a2eb0e559065563496af27807
+	PROTO_ZIP_SHA256=$(PROTO_ZIP_SHA256_LINUX)
 endif
 ifeq ($(UNAME_S), Darwin)
 	PROTO_ZIP=protoc-3.6.1-osx-x86_64.zip
-	PROTO_ZIP_SHA256=0decc6ce5beed07f8c20361ddeb5ac7666f09cf34572cca530e16814093f9c0c
+	PROTO_ZIP_SHA256=$(PROTO_ZIP_SHA256_DARWIN)
 endif
 GO_MODS=$(shell find . $(DONT_FIND) -type f -name 'go.mod' -print)
 
@@ -110,6 +112,28 @@ ifeq ("$(wildcard .tools/protoc/bin/protoc)","")
 	cd .tools/protoc && echo "$(PROTO_ZIP_SHA256)  $(PROTO_ZIP)" | sha256sum --check --strict -
 	unzip -n .tools/protoc/$(PROTO_ZIP) -d .tools/protoc/
 endif
+
+# Invoked by Renovate's postUpgradeTasks after it bumps the protoc version in
+# this Makefile. Re-downloads both archives at the new version and rewrites the
+# PROTO_ZIP_SHA256_LINUX and PROTO_ZIP_SHA256_DARWIN top-level constants.
+.PHONY: update-protoc-sha
+update-protoc-sha: ## Recompute pinned protoc archive SHA256 values from upstream.
+	@set -e; \
+	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp" Makefile.new' EXIT; \
+	base=$$(awk '/^PROTO_PATH := / {print $$3}' Makefile); \
+	linux_zip=$$(awk -F= '/^[[:space:]]+PROTO_ZIP=protoc-.*-linux-x86_64\.zip$$/ {print $$2}' Makefile); \
+	darwin_zip=$$(awk -F= '/^[[:space:]]+PROTO_ZIP=protoc-.*-osx-x86_64\.zip$$/  {print $$2}' Makefile); \
+	[ -n "$$base" ] && [ -n "$$linux_zip" ] && [ -n "$$darwin_zip" ] \
+	  || { echo "update-protoc-sha: failed to extract PROTO_PATH or PROTO_ZIP values from Makefile" >&2; exit 1; }; \
+	curl -sSfL "$$base$$linux_zip"  -o "$$tmp/$$linux_zip"; \
+	curl -sSfL "$$base$$darwin_zip" -o "$$tmp/$$darwin_zip"; \
+	linux_sha=$$(sha256sum "$$tmp/$$linux_zip"  | awk '{print $$1}'); \
+	darwin_sha=$$(sha256sum "$$tmp/$$darwin_zip" | awk '{print $$1}'); \
+	awk -v ls="$$linux_sha" -v ds="$$darwin_sha" ' \
+	  /^PROTO_ZIP_SHA256_LINUX[[:space:]]*:=/  { sub(/:=.*/, ":= " ls); print; next } \
+	  /^PROTO_ZIP_SHA256_DARWIN[[:space:]]*:=/ { sub(/:=.*/, ":= " ds); print; next } \
+	  { print } \
+	' Makefile > Makefile.new && mv Makefile.new Makefile
 
 .tools/bin/protoc-gen-gogoslick: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0

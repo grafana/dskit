@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	protobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -20,6 +19,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/grafana/dskit/test"
 )
@@ -34,8 +34,8 @@ func TestGrpcLimitCheckMalformedMethodName(t *testing.T) {
 
 	c := setupGrpcServerWithCheckAndClient(t, ts, limitCheck)
 
-	out := &protobuf.Empty{}
-	err := c.(*fakeServerClient).cc.Invoke(context.Background(), badMethodName, &protobuf.Empty{}, out)
+	out := &emptypb.Empty{}
+	err := c.(*fakeServerClient).cc.Invoke(context.Background(), badMethodName, &emptypb.Empty{}, out)
 
 	require.Error(t, err)
 	s, ok := status.FromError(err)
@@ -55,19 +55,19 @@ func checkGrpcStatusError(t *testing.T, err error, code codes.Code, msg string) 
 }
 
 func callToSucceed(ctx context.Context, c FakeServerClient) error {
-	_, err := c.Succeed(ctx, &protobuf.Empty{})
+	_, err := c.Succeed(ctx, &emptypb.Empty{})
 	return err
 }
 
 func callToSleep(ctx context.Context, c FakeServerClient) error {
-	_, err := c.Sleep(ctx, &protobuf.Empty{})
+	_, err := c.Sleep(ctx, &emptypb.Empty{})
 	return err
 }
 
 func callToStreaming(msgsPerStreamCall int) func(ctx context.Context, c FakeServerClient) error {
 	return func(ctx context.Context, c FakeServerClient) error {
 		rcvd := 0
-		s, err := c.StreamSleep(ctx, &protobuf.Empty{})
+		s, err := c.StreamSleep(ctx, &emptypb.Empty{})
 		if err != nil {
 			return err
 		}
@@ -289,7 +289,7 @@ func TestGrpcLimitCheckWithContextDeadlineExpiredRightAfterTapHandleCheck(t *tes
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err := c.Succeed(ctx, &protobuf.Empty{})
+	_, err := c.Succeed(ctx, &emptypb.Empty{})
 	require.Error(t, err)
 	s, ok := status.FromError(err)
 	require.True(t, ok)
@@ -367,7 +367,7 @@ func TestGrpcLimitCheckTimerFiresButRequestIsBeingProcessedCallsRPCCallFinishedO
 		close(ts.finishRequest)
 	}()
 
-	_, err := c.Succeed(ctx, &protobuf.Empty{})
+	_, err := c.Succeed(ctx, &emptypb.Empty{})
 	require.Error(t, err)
 	s, ok := status.FromError(err)
 	require.True(t, ok)
@@ -417,7 +417,7 @@ func TestGrpcLimitCheckSuccessfulRequestCancelsTheTimer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err := c.Succeed(ctx, &protobuf.Empty{})
+	_, err := c.Succeed(ctx, &emptypb.Empty{})
 	require.NoError(t, err)
 
 	// Check that stop was called
@@ -458,19 +458,19 @@ type testServer struct {
 	finishRequest    chan struct{}
 }
 
-func (ts *testServer) Succeed(_ context.Context, _ *protobuf.Empty) (*protobuf.Empty, error) {
+func (ts *testServer) Succeed(_ context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
 	<-ts.finishRequest
-	return &protobuf.Empty{}, nil
+	return &emptypb.Empty{}, nil
 }
 
-func (ts *testServer) Sleep(_ context.Context, _ *protobuf.Empty) (*protobuf.Empty, error) {
+func (ts *testServer) Sleep(_ context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
 	<-ts.finishRequest
-	return &protobuf.Empty{}, nil
+	return &emptypb.Empty{}, nil
 }
 
-func (ts *testServer) StreamSleep(_ *protobuf.Empty, stream FakeServer_StreamSleepServer) error {
+func (ts *testServer) StreamSleep(_ *emptypb.Empty, stream FakeServer_StreamSleepServer) error {
 	for i := 0; i < ts.msgPerStreamCall; i++ {
-		_ = stream.Send(&protobuf.Empty{})
+		_ = stream.Send(&emptypb.Empty{})
 		<-ts.finishRequest
 	}
 	return nil

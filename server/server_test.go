@@ -23,19 +23,18 @@ import (
 	"time"
 
 	gokit_log "github.com/go-kit/log"
+	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
-
-	protobuf "github.com/golang/protobuf/ptypes/empty"
-	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -45,27 +44,27 @@ import (
 
 type FakeServer struct{}
 
-func (f FakeServer) FailWithError(_ context.Context, _ *protobuf.Empty) (*protobuf.Empty, error) {
+func (f FakeServer) FailWithError(_ context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
 	return nil, errors.New("test error")
 }
 
-func (f FakeServer) FailWithHTTPError(_ context.Context, req *FailWithHTTPErrorRequest) (*protobuf.Empty, error) {
+func (f FakeServer) FailWithHTTPError(_ context.Context, req *FailWithHTTPErrorRequest) (*emptypb.Empty, error) {
 	return nil, httpgrpc.Errorf(int(req.Code), "%d", req.Code)
 }
 
-func (f FakeServer) Succeed(_ context.Context, _ *protobuf.Empty) (*protobuf.Empty, error) {
-	return &protobuf.Empty{}, nil
+func (f FakeServer) Succeed(_ context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
+	return &emptypb.Empty{}, nil
 }
 
-func (f FakeServer) Sleep(ctx context.Context, _ *protobuf.Empty) (*protobuf.Empty, error) {
+func (f FakeServer) Sleep(ctx context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
 	err := cancelableSleep(ctx, 10*time.Second)
-	return &protobuf.Empty{}, err
+	return &emptypb.Empty{}, err
 }
 
-func (f FakeServer) StreamSleep(_ *protobuf.Empty, stream FakeServer_StreamSleepServer) error {
+func (f FakeServer) StreamSleep(_ *emptypb.Empty, stream FakeServer_StreamSleepServer) error {
 	for x := 0; x < 100; x++ {
 		time.Sleep(time.Second / 100.0)
-		if err := stream.Send(&protobuf.Empty{}); err != nil {
+		if err := stream.Send(&emptypb.Empty{}); err != nil {
 			return err
 		}
 	}
@@ -80,7 +79,7 @@ func cancelableSleep(ctx context.Context, sleep time.Duration) error {
 	return ctx.Err()
 }
 
-func (f FakeServer) ReturnProxyProtoCallerIP(ctx context.Context, _ *protobuf.Empty) (*ProxyProtoIPResponse, error) {
+func (f FakeServer) ReturnProxyProtoCallerIP(ctx context.Context, _ *emptypb.Empty) (*ProxyProtoIPResponse, error) {
 	p, _ := peer.FromContext(ctx)
 	ip, _, err := net.SplitHostPort(p.Addr.String())
 	if err != nil {
@@ -120,7 +119,7 @@ func TestDefaultAddresses(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	empty := protobuf.Empty{}
+	empty := emptypb.Empty{}
 	client := NewFakeServerClient(conn)
 	_, err = client.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
@@ -166,7 +165,7 @@ func TestErrorInstrumentationMiddleware(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	empty := protobuf.Empty{}
+	empty := emptypb.Empty{}
 	client := NewFakeServerClient(conn)
 	res, err := client.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
@@ -654,7 +653,7 @@ func TestTLSServer(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	empty := protobuf.Empty{}
+	empty := emptypb.Empty{}
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
@@ -747,7 +746,7 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	empty := protobuf.Empty{}
+	empty := emptypb.Empty{}
 	grpcClient := NewFakeServerClient(conn)
 	grpcRes, err := grpcClient.Succeed(context.Background(), &empty)
 	require.NoError(t, err)
@@ -1038,7 +1037,7 @@ func TestGrpcOverProxyProtocol(t *testing.T) {
 	defer conn.Close()
 
 	client := NewFakeServerClient(conn)
-	res, err := client.ReturnProxyProtoCallerIP(context.Background(), &protobuf.Empty{})
+	res, err := client.ReturnProxyProtoCallerIP(context.Background(), &emptypb.Empty{})
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	require.Equal(t, fakeSourceIP, res.IP)

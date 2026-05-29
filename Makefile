@@ -11,16 +11,16 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 # If you need windows for some reason it's at https://github.com/protocolbuffers/protobuf/releases/download/$(PROTO_VERSION)/protoc-$(PROTO_VERSION:v%=%)-win32.zip
 UNAME_S := $(shell uname -s)
 # renovate: datasource=github-release-attachments depName=protocolbuffers/protobuf
-PROTO_VERSION := v3.6.1
+PROTO_VERSION := v3.20.3
 # Pinned SHA256 hashes for the protoc archives. Maintained by Renovate via the
 # github-release-attachments datasource: the digestVersion= marker pins each
 # digest to its release tag, and Renovate identifies which release asset each
 # SHA fingerprints (linux-x86_64 vs osx-x86_64) by hashing the assets, so a
 # version bump rewrites the marker and both SHAs in lockstep.
-# renovate: datasource=github-release-attachments depName=protocolbuffers/protobuf digestVersion=v3.6.1
-PROTO_ZIP_SHA256_LINUX  := 6003de742ea3fcf703cfec1cd4a3380fd143081a2eb0e559065563496af27807
-# renovate: datasource=github-release-attachments depName=protocolbuffers/protobuf digestVersion=v3.6.1
-PROTO_ZIP_SHA256_DARWIN := 0decc6ce5beed07f8c20361ddeb5ac7666f09cf34572cca530e16814093f9c0c
+# renovate: datasource=github-release-attachments depName=protocolbuffers/protobuf digestVersion=v3.20.3
+PROTO_ZIP_SHA256_LINUX  := 44a6b498e996b845edef83864734c0e52f42197e85c9d567af55f4e3ff09d755
+# renovate: datasource=github-release-attachments depName=protocolbuffers/protobuf digestVersion=v3.20.3
+PROTO_ZIP_SHA256_DARWIN := f3ac8c37e87cb345a509eef7ec614092995d9423b8effb42c207c8fbdacb97ee
 PROTO_PATH := https://github.com/protocolbuffers/protobuf/releases/download/$(PROTO_VERSION)/
 ifeq ($(UNAME_S), Linux)
 	PROTO_ZIP=protoc-$(PROTO_VERSION:v%=%)-linux-x86_64.zip

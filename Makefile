@@ -97,7 +97,7 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 .tools/bin/faillint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
-GOLANGCI_LINT_VERSION := 2.9.0
+GOLANGCI_LINT_VERSION := 2.12.2
 .tools/bin/golangci-lint: .tools
 	@set -e; \
 	mkdir -p .tools/bin; \

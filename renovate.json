@@ -10,8 +10,8 @@
       "customType": "regex",
       "managerFilePatterns": ["/^Makefile$/"],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\s+PROTO_VERSION\\s*:=\\s*(?<currentValue>v\\d+\\.\\d+(?:\\.\\d+)?)",
-        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+) digestVersion=(?<currentValue>v\\d+\\.\\d+(?:\\.\\d+)?)\\s+PROTO_ZIP_SHA256_(?:LINUX|DARWIN)\\s*:=\\s*(?<currentDigest>[a-f0-9]{64})"
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\s+[A-Za-z0-9_]+\\s*:=\\s*(?<currentValue>[^\\s]+)",
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+) digestVersion=(?<currentValue>[^\\s]+)\\s+[A-Za-z0-9_]+\\s*:=\\s*(?<currentDigest>[a-f0-9]{64})"
       ]
     },
     {

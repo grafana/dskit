@@ -14,6 +14,26 @@ import (
 	"github.com/grafana/dskit/loser"
 )
 
+const (
+	// maxAllowedClockDrift is the maximum allowed clock drift for ring instance
+	// heartbeat timestamps. Timestamps further in the future than now + maxAllowedClockDrift
+	// are considered corrupted and clamped to the current time. This prevents a
+	// corrupted far-future timestamp from permanently blocking ring state updates
+	// via the gossip merge protocol.
+	maxAllowedClockDrift = 1 * time.Hour
+)
+
+// clampTimestamp returns the given unix timestamp unchanged if it is within the
+// allowed clock drift from now. If it exceeds now + maxAllowedClockDrift, it
+// returns now's unix timestamp instead. This prevents corrupted far-future
+// timestamps from permanently winning ring state merges.
+func clampTimestamp(ts int64, now time.Time) int64 {
+	if ts > now.Add(maxAllowedClockDrift).Unix() {
+		return now.Unix()
+	}
+	return ts
+}
+
 // ByAddr is a sortable list of InstanceDesc.
 type ByAddr []InstanceDesc
 
@@ -180,9 +200,14 @@ func (i *InstanceDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, n
 }
 
 // IsHeartbeatHealthy returns whether the heartbeat timestamp for the ingester is within the
-// specified timeout period.
+// specified timeout period. Timestamps more than maxAllowedClockDrift in the future are
+// treated as unhealthy, since they indicate a corrupted timestamp.
 func (i *InstanceDesc) IsHeartbeatHealthy(heartbeatTimeout time.Duration, now time.Time) bool {
-	return now.Sub(time.Unix(i.Timestamp, 0)) <= heartbeatTimeout
+	heartbeatTime := time.Unix(i.Timestamp, 0)
+	if heartbeatTime.After(now.Add(maxAllowedClockDrift)) {
+		return false
+	}
+	return now.Sub(heartbeatTime) <= heartbeatTimeout
 }
 
 // IsReady returns no error if the instance is ACTIVE and healthy.
@@ -245,8 +270,24 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 	var updated []string
 	tokensChanged := false
 
+	// Clamp any local entries with corrupted far-future timestamps.
+	// This self-heals corruption by bringing timestamps back to the present,
+	// allowing normal heartbeat/merge semantics to resume.
+	for name, ting := range thisIngesterMap {
+		clamped := clampTimestamp(ting.Timestamp, now)
+		if clamped != ting.Timestamp {
+			ting.Timestamp = clamped
+			thisIngesterMap[name] = ting
+			updated = append(updated, name)
+		}
+	}
+
 	for name, oing := range otherIngesterMap {
 		ting := thisIngesterMap[name]
+
+		// Clamp incoming far-future timestamps before comparison.
+		oing.Timestamp = clampTimestamp(oing.Timestamp, now)
+
 		// ting.Timestamp will be 0, if there was no such ingester in our version
 		if oing.Timestamp > ting.Timestamp {
 			if !tokensEqual(ting.Tokens, oing.Tokens) {

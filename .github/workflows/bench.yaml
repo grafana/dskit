@@ -1,0 +1,36 @@
+name: Benchmark
+on: [push, pull_request]
+jobs:
+  test:
+    name: Bench
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Set up Go 1.22
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.22
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1024
+
+    # TODO: Pin release
+    # TODO: Remove git-base
+    # TODO: Provide output
+    - name: Run Benchmark
+      run: |
+        go run github.com/grafana/pyrobench@3fa67b1 -v compare --git-base 5eca05b1e4cf63df5d007ec6b13ce7394a0fffe3 >> results.txt
+
+    - name: Download test report
+      run: curl -sL https://raw.githubusercontent.com/grafana/hackathon-2024-08-pyrobench/main/js/report.js -o report.js
+
+    - uses: actions/github-script@v7
+      id: create-comment
+      if: ${{ github.event_name == 'pull_request' }}
+      with:
+        script: |
+          const report = require('./report.js');
+          report({ github, context });

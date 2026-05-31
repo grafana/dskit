@@ -124,7 +124,40 @@ func isUnsafe(r rune) bool {
 
 // needsSanitization reports whether s contains any character the
 // sanitizers would alter.
+//
+// Most log data is plain ASCII, so we optimize for that common case by
+// scanning bytes first:
+//
+//   - printable ASCII characters (0x20-0x7E) and tab are considered safe
+//   - all other ASCII control characters, including DEL, are unsafe
+//   - non-ASCII bytes trigger a fallback to rune-level validation
+//
+// The rune-level path checks for Unicode control, formatting, line, and
+// paragraph separator characters (for example U+2028 and U+2029) that
+// could be used to manipulate log output.
+//
+// This avoids decoding every rune in ordinary ASCII strings while still
+// correctly handling dangerous Unicode characters.
 func needsSanitization(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\t':
+			// Safe (matches the exception in isUnsafe).
+		case c >= 0x20 && c < 0x7f:
+			// Printable ASCII — safe.
+		case c < 0x80:
+			// ASCII C0 control or DEL — unsafe.
+			return true
+		default:
+			// Non-ASCII: defer to rune-level check from here.
+			return needsSanitizationRuneLevel(s[i:])
+		}
+	}
+	return false
+}
+
+func needsSanitizationRuneLevel(s string) bool {
 	for _, r := range s {
 		if isUnsafe(r) {
 			return true

@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -37,22 +34,15 @@ func init() {
 }
 
 func TestOTelTracing(t *testing.T) {
-	httpPort := 9099
 	httpAddress := "127.0.0.1"
 
 	httpMethod := http.MethodGet
 
 	helloRouteName := "hello"
 	helloRouteTmpl := "/hello"
-	hostport := net.JoinHostPort(httpAddress, strconv.Itoa(httpPort))
-	helloRouteURLRaw := fmt.Sprintf("http://%s/hello", hostport)
-	helloRouteURL, err := url.Parse(helloRouteURLRaw)
-	require.NoError(t, err)
-
 	helloPathParamRouteTmpl := "/hello/{pathParam}"
-	helloPathParamRouteURLRaw := fmt.Sprintf("http://%s/hello/world", hostport)
-	helloPathParamRouteURL, err := url.Parse(helloPathParamRouteURLRaw)
-	require.NoError(t, err)
+	helloRoutePath := "/hello"
+	helloPathParamRoutePath := "/hello/world"
 
 	// extracted route names or path templates are converted to a Prometheus-compatible label value
 	expectedHelloRouteLabel := middleware.MakeLabelValue(helloRouteName)
@@ -62,13 +52,13 @@ func TestOTelTracing(t *testing.T) {
 	// regardless of whether the request is routed through the gRPC Handle method first
 	expectedOpNameHelloHTTPSpan := "HTTP " + httpMethod + " - " + expectedHelloRouteLabel
 	expectedAttrsHelloHTTPSpan := []attribute.KeyValue{
-		attribute.String("url.path", helloRouteURL.Path),
+		attribute.String("url.path", helloRoutePath),
 		attribute.String("http.request.method", httpMethod),
 		attribute.String("http.route", helloRouteName),
 	}
 	expectedOpNameHelloPathParamHTTPSpan := "HTTP " + httpMethod + " - " + expectedHelloPathParamRouteLabel
 	expectedAttrsHelloPathParamHTTPSpan := []attribute.KeyValue{
-		attribute.String("url.path", helloPathParamRouteURL.Path),
+		attribute.String("url.path", helloPathParamRoutePath),
 		attribute.String("http.request.method", httpMethod),
 		attribute.String("http.route", expectedHelloPathParamRouteLabel),
 	}
@@ -78,7 +68,7 @@ func TestOTelTracing(t *testing.T) {
 		useOtherGRPC                 bool
 		routeName                    string // leave blank for unnamed route tests
 		routeTmpl                    string
-		reqURL                       string
+		reqPath                      string
 		reqHeaders                   map[string]string
 		expectedAttributesByOpName   map[string][]attribute.KeyValue
 		unexpectedAttributesByOpName map[string][]attribute.Key
@@ -90,7 +80,7 @@ func TestOTelTracing(t *testing.T) {
 			useHTTPOverGRPC: true,
 			routeName:       helloRouteName,
 			routeTmpl:       helloRouteTmpl,
-			reqURL:          helloRouteURLRaw,
+			reqPath:         helloRoutePath,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
 				"httpgrpc.HTTP/Handle":      expectedAttrsHelloHTTPSpan,
 				expectedOpNameHelloHTTPSpan: expectedAttrsHelloHTTPSpan,
@@ -100,7 +90,7 @@ func TestOTelTracing(t *testing.T) {
 			useHTTPOverGRPC: false,
 			routeName:       helloRouteName,
 			routeTmpl:       helloRouteTmpl,
-			reqURL:          helloRouteURLRaw,
+			reqPath:         helloRoutePath,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
 				expectedOpNameHelloHTTPSpan: expectedAttrsHelloHTTPSpan,
 			},
@@ -109,10 +99,10 @@ func TestOTelTracing(t *testing.T) {
 			useHTTPOverGRPC: true,
 			routeName:       "",
 			routeTmpl:       helloPathParamRouteTmpl,
-			reqURL:          helloPathParamRouteURLRaw,
+			reqPath:         helloPathParamRoutePath,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
 				"httpgrpc.HTTP/Handle": {
-					attribute.String("url.path", helloPathParamRouteURL.Path),
+					attribute.String("url.path", helloPathParamRoutePath),
 					attribute.String("http.request.method", httpMethod),
 					attribute.String("http.route", expectedHelloPathParamRouteLabel),
 				},
@@ -123,7 +113,7 @@ func TestOTelTracing(t *testing.T) {
 			useHTTPOverGRPC: false,
 			routeName:       "",
 			routeTmpl:       helloPathParamRouteTmpl,
-			reqURL:          helloPathParamRouteURLRaw,
+			reqPath:         helloPathParamRoutePath,
 			reqHeaders: map[string]string{
 				"X-Unexpected-Header": "42",
 			},
@@ -140,7 +130,7 @@ func TestOTelTracing(t *testing.T) {
 			useHTTPOverGRPC: false,
 			routeName:       "",
 			routeTmpl:       helloPathParamRouteTmpl,
-			reqURL:          helloPathParamRouteURLRaw,
+			reqPath:         helloPathParamRoutePath,
 			reqHeaders: map[string]string{
 				"X-Unexpected-Header": "42",
 				"X-Excluded-Header":   "private",
@@ -184,9 +174,9 @@ func TestOTelTracing(t *testing.T) {
 			require.NoError(t, lvl.Set("info"))
 			cfg := server.Config{
 				HTTPListenAddress:        httpAddress,
-				HTTPListenPort:           httpPort,
+				HTTPListenPort:           0,
 				GRPCListenAddress:        httpAddress,
-				GRPCListenPort:           1234,
+				GRPCListenPort:           0,
 				GRPCServerMaxRecvMsgSize: 4 * 1024 * 1024,
 				GRPCServerMaxSendMsgSize: 4 * 1024 * 1024,
 				MetricsNamespace:         "testing_httpgrpc_tracing_" + middleware.MakeLabelValue(testName),
@@ -198,6 +188,7 @@ func TestOTelTracing(t *testing.T) {
 			}
 			srv, err := server.New(cfg)
 			require.NoError(t, err)
+			reqURL := fmt.Sprintf("http://%s%s", srv.HTTPListenAddr().String(), test.reqPath)
 
 			grpc_health_v1.RegisterHealthServer(srv.GRPC, health.NewServer())
 
@@ -235,7 +226,7 @@ func TestOTelTracing(t *testing.T) {
 				return client.Handle(req.Context(), grpcReq)
 			}
 
-			req, err := http.NewRequest(httpMethod, test.reqURL, bytes.NewReader([]byte{}))
+			req, err := http.NewRequest(httpMethod, reqURL, bytes.NewReader([]byte{}))
 			require.NoError(t, err)
 			for header, value := range test.reqHeaders {
 				req.Header.Set(header, value)

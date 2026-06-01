@@ -211,6 +211,27 @@ func TestLoggingRequestWithExcludedHeaders(t *testing.T) {
 	}
 }
 
+func TestResponseBodyEscapingInLogs(t *testing.T) {
+	responseBody := `{"status":"error","errorType":"timeout","error":"rpc error: code = DeadlineExceeded desc = context deadline exceeded"}` + "\n"
+	buf := bytes.NewBuffer(nil)
+	loggingMiddleware := Log{
+		Log: log.NewGoKitWithWriter(log.LogfmtFormat, buf),
+	}
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+		_, _ = io.WriteString(w, responseBody)
+	}
+	loggingHandler := loggingMiddleware.Wrap(http.HandlerFunc(handler))
+
+	req := httptest.NewRequest("POST", "/loki/api/v1/push", nil)
+	loggingHandler.ServeHTTP(httptest.NewRecorder(), req)
+
+	output := buf.String()
+	require.Contains(t, output, "level=warn")
+	require.Contains(t, output, "POST /loki/api/v1/push (504)")
+	require.Contains(t, output, `Response: {\"status\":\"error\",\"errorType\":\"timeout\",\"error\":\"rpc error: code = DeadlineExceeded desc = context deadline exceeded\"}\n`)
+}
+
 type errorWriter struct {
 	err error
 

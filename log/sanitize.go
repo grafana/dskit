@@ -60,6 +60,16 @@ func (d DroppedUnsafeChars) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
+// MarshalText returns the sanitized value in text form. go-kit's logfmt
+// encoder prefers encoding.TextMarshaler over fmt.Stringer.
+//
+// This ensures typed-nil errors are encoded as the unquoted `key=null`
+// form that go-kit produces for the corresponding raw value, rather
+// than passing through the Stringer path.
+func (d DroppedUnsafeChars) MarshalText() ([]byte, error) {
+	return []byte(d.String()), nil
+}
+
 // EscapeUnsafeChars wraps v so that control and formatting characters
 // are replaced with printable escape sequences in its string
 // representation when logged.
@@ -110,6 +120,13 @@ func (e EscapedUnsafeChars) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 	return json.Marshal(e.String())
+}
+
+// MarshalText returns the sanitized form as bytes. See the rationale
+// on DroppedUnsafeChars.MarshalText for why this is needed alongside
+// String for correct logfmt encoding of typed-nil errors.
+func (e EscapedUnsafeChars) MarshalText() ([]byte, error) {
+	return []byte(e.String()), nil
 }
 
 // render returns the string representation of v, avoiding a

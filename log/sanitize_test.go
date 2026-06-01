@@ -16,6 +16,13 @@ type testUnsafeUserInputStringer struct{ s string }
 
 func (u testUnsafeUserInputStringer) String() string { return u.s }
 
+// testNilSafeError is an error type with a pointer receiver. A typed-nil
+// pointer of this type stored in an error interface would panic if
+// Error() were called, allowing the typed-nil guard to be tested.
+type testNilSafeError struct{ msg string }
+
+func (e *testNilSafeError) Error() string { return e.msg }
+
 // TestDropVsEscapeUnsafeChars compares the output of
 // DroppedUnsafeChars and EscapedUnsafeChars side-by-side. For each
 // input, the same row shows the result of calling String() on both
@@ -99,6 +106,11 @@ func TestDropVsEscapeUnsafeChars(t *testing.T) {
 			wantDrop:   "42",
 			wantEscape: "42",
 		},
+		"typed-nil error renders as \"null\" without panicking": {
+			input:      (*testNilSafeError)(nil),
+			wantDrop:   "null",
+			wantEscape: "null",
+		},
 	}
 
 	for name, tc := range testCases {
@@ -128,6 +140,25 @@ func TestEscapedUnsafeChars_MarshalJSON(t *testing.T) {
 	got, err := json.Marshal(EscapeUnsafeChars("Mozilla\nlevel=info msg=fake\x1b[31m!"))
 	require.NoError(t, err)
 	require.JSONEq(t, `"Mozilla\\x0alevel=info msg=fake\\x1b[31m!"`, string(got))
+}
+
+// TestUnsafeChars_TypedNilError_MarshalJSON verifies that wrapping a
+// typed-nil error encodes to the JSON null literal (not the string
+// "null"), matching what go-kit's JSON encoder writes for an unwrapped
+// typed-nil error.
+func TestUnsafeChars_TypedNilError_MarshalJSON(t *testing.T) {
+	var typed *testNilSafeError
+
+	for name, marshaler := range map[string]json.Marshaler{
+		"DroppedUnsafeChars": DropUnsafeChars(typed),
+		"EscapedUnsafeChars": EscapeUnsafeChars(typed),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := json.Marshal(marshaler)
+			require.NoError(t, err)
+			require.Equal(t, "null", string(got))
+		})
+	}
 }
 
 // benchSink prevents benchmark results from being optimized away by the
@@ -250,6 +281,13 @@ func TestEndToEnd_logfmt(t *testing.T) {
 				"escape": "user_agent=\"path=/foo\\\\x0aFAKE\"\n",
 			},
 		},
+		"typed-nil error renders as null, matching go-kit raw output": {
+			value: (*testNilSafeError)(nil),
+			wantOnWire: map[string]string{
+				"drop":   "user_agent=null\n",
+				"escape": "user_agent=null\n",
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -297,6 +335,13 @@ func TestEndToEnd_json(t *testing.T) {
 			wantOnWire: map[string]string{
 				"drop":   `{"user_agent":"path=/fooFAKE"}`,
 				"escape": `{"user_agent":"path=/foo\\x0aFAKE"}`,
+			},
+		},
+		"typed-nil error renders as JSON null, matching go-kit raw output": {
+			value: (*testNilSafeError)(nil),
+			wantOnWire: map[string]string{
+				"drop":   `{"user_agent":null}`,
+				"escape": `{"user_agent":null}`,
 			},
 		},
 	}

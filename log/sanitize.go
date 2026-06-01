@@ -3,6 +3,7 @@ package log
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"unicode"
 )
@@ -49,7 +50,13 @@ func (d DroppedUnsafeChars) String() string {
 // MarshalJSON encodes the sanitized value as a JSON string. Without this
 // method, json.Marshal would encode the wrapper as an empty object
 // because its fields are unexported.
+//
+// A typed-nil error is encoded as the JSON null literal so the output
+// matches the behavior of the underlying go-kit logger.
 func (d DroppedUnsafeChars) MarshalJSON() ([]byte, error) {
+	if e, ok := d.v.(error); ok && isNilPointer(e) {
+		return []byte("null"), nil
+	}
 	return json.Marshal(d.String())
 }
 
@@ -95,20 +102,42 @@ func (e EscapedUnsafeChars) String() string {
 }
 
 // MarshalJSON serialises the sanitized form as a JSON string.
+//
+// A typed-nil error is encoded as the JSON null literal so the output
+// matches what go-kit would produce for the same value.
 func (e EscapedUnsafeChars) MarshalJSON() ([]byte, error) {
+	if err, ok := e.v.(error); ok && isNilPointer(err) {
+		return []byte("null"), nil
+	}
 	return json.Marshal(e.String())
 }
 
 // render returns the string representation of v, avoiding a
 // fmt.Sprint allocation when v is already a string or an error.
+//
+// For errors, it handles the typed-nil case (a non-nil error interface
+// wrapping a nil concrete pointer). Calling Error() on such a value may
+// panic, so render returns "null" to match the behavior of go-kit's
+// logfmt encoder.
 func render(v any) string {
 	switch t := v.(type) {
 	case string:
 		return t
 	case error:
+		if isNilPointer(t) {
+			return "null"
+		}
 		return t.Error()
 	}
 	return fmt.Sprint(v)
+}
+
+// isNilPointer reports whether v is an interface whose dynamic value is
+// a nil pointer. The interface itself is non-nil, but the value it contains
+// is nil.
+func isNilPointer(v any) bool {
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
 
 // isUnsafe reports whether r should be sanitized. It matches Unicode

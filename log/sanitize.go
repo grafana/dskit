@@ -63,10 +63,10 @@ func (d DroppedUnsafeChars) String() string {
 // method, json.Marshal would encode the wrapper as an empty object
 // because its fields are unexported.
 //
-// A typed-nil error is encoded as the JSON null literal so the output
-// matches the behavior of the underlying go-kit logger.
+// A nil value (a nil interface or a typed-nil pointer) is encoded as
+// the JSON null literal so the output matches go-kit's behaviour.
 func (d DroppedUnsafeChars) MarshalJSON() ([]byte, error) {
-	if e, ok := d.v.(error); ok && isNilPointer(e) {
+	if isNullValue(d.v) {
 		return []byte("null"), nil
 	}
 	return json.Marshal(d.String())
@@ -136,10 +136,10 @@ func (e EscapedUnsafeChars) String() string {
 
 // MarshalJSON serialises the sanitized form as a JSON string.
 //
-// A typed-nil error is encoded as the JSON null literal so the output
-// matches what go-kit would produce for the same value.
+// A nil value (a nil interface or a typed-nil pointer) is encoded as
+// the JSON null literal so the output matches go-kit's behaviour.
 func (e EscapedUnsafeChars) MarshalJSON() ([]byte, error) {
-	if err, ok := e.v.(error); ok && isNilPointer(err) {
+	if isNullValue(e.v) {
 		return []byte("null"), nil
 	}
 	return json.Marshal(e.String())
@@ -155,27 +155,30 @@ func (e EscapedUnsafeChars) MarshalText() ([]byte, error) {
 // render returns the string representation of v, avoiding a
 // fmt.Sprint allocation when v is already a string or an error.
 //
-// For errors, it handles the typed-nil case (a non-nil error interface
-// wrapping a nil concrete pointer). Calling Error() on such a value may
-// panic, so render returns "null" to match the behavior of go-kit's
-// logfmt encoder.
+// Nil values (a nil interface or a non-nil interface wrapping a nil
+// concrete pointer) render as "null" to match what go-kit's encoders
+// produce for the same input and to avoid calling Error() on a nil
+// receiver.
 func render(v any) string {
+	if isNullValue(v) {
+		return "null"
+	}
 	switch t := v.(type) {
 	case string:
 		return t
 	case error:
-		if isNilPointer(t) {
-			return "null"
-		}
 		return t.Error()
 	}
 	return fmt.Sprint(v)
 }
 
-// isNilPointer reports whether v is an interface whose dynamic value is
-// a nil pointer. The interface itself is non-nil, but the value it contains
-// is nil.
-func isNilPointer(v any) bool {
+// isNullValue reports whether v should be encoded as a null literal —
+// either a nil interface (the dynamic type and value are both nil) or
+// a non-nil interface wrapping a nil concrete pointer.
+func isNullValue(v any) bool {
+	if v == nil {
+		return true
+	}
 	rv := reflect.ValueOf(v)
 	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }

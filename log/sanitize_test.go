@@ -129,6 +129,20 @@ func TestDropVsEscapeUnsafeChars(t *testing.T) {
 			wantDrop:   "null",
 			wantEscape: "null",
 		},
+		"nil any renders as \"null\" (matches go-kit's encoding of nil)": {
+			input:      nil,
+			wantDrop:   "null",
+			wantEscape: "null",
+		},
+		"nil error interface renders as \"null\"": {
+			// `var err error` becomes a nil interface when boxed into
+			// any; the case error: branch of render does not match,
+			// so without the isNullValue guard at the top this would
+			// fall through to fmt.Sprint(nil) → "<nil>".
+			input:      error(nil),
+			wantDrop:   "null",
+			wantEscape: "null",
+		},
 	}
 
 	for name, tc := range testCases {
@@ -160,22 +174,31 @@ func TestEscapedUnsafeChars_MarshalJSON(t *testing.T) {
 	require.JSONEq(t, `"Mozilla\\x0alevel=info msg=fake\\x1b[31m!"`, string(got))
 }
 
-// TestUnsafeChars_TypedNilError_MarshalJSON verifies that wrapping a
-// typed-nil error encodes to the JSON null literal (not the string
-// "null"), matching what go-kit's JSON encoder writes for an unwrapped
-// typed-nil error.
-func TestUnsafeChars_TypedNilError_MarshalJSON(t *testing.T) {
-	var typed *testNilSafeError
+// TestUnsafeChars_NullValue_MarshalJSON verifies that wrapping any
+// nil-like value (nil any, nil interface error, typed-nil pointer)
+// encodes to the JSON null literal — not the string "null" or "<nil>" —
+// matching what go-kit's JSON encoder writes for the same input.
+func TestUnsafeChars_NullValue_MarshalJSON(t *testing.T) {
+	var typedNil *testNilSafeError
+	var nilIface error
 
-	for name, marshaler := range map[string]json.Marshaler{
-		"DroppedUnsafeChars": DropUnsafeChars(typed),
-		"EscapedUnsafeChars": EscapeUnsafeChars(typed),
-	} {
-		t.Run(name, func(t *testing.T) {
-			got, err := json.Marshal(marshaler)
-			require.NoError(t, err)
-			require.Equal(t, "null", string(got))
-		})
+	inputs := map[string]any{
+		"nil any":             nil,
+		"nil error interface": nilIface,
+		"typed-nil error ptr": typedNil,
+	}
+
+	for inputName, in := range inputs {
+		for wrapperName, marshaler := range map[string]json.Marshaler{
+			"DroppedUnsafeChars": DropUnsafeChars(in),
+			"EscapedUnsafeChars": EscapeUnsafeChars(in),
+		} {
+			t.Run(inputName+"/"+wrapperName, func(t *testing.T) {
+				got, err := json.Marshal(marshaler)
+				require.NoError(t, err)
+				require.Equal(t, "null", string(got))
+			})
+		}
 	}
 }
 
@@ -306,6 +329,13 @@ func TestEndToEnd_logfmt(t *testing.T) {
 				"escape": "user_agent=null\n",
 			},
 		},
+		"nil any renders as null, matching go-kit raw output": {
+			value: nil,
+			wantOnWire: map[string]string{
+				"drop":   "user_agent=null\n",
+				"escape": "user_agent=null\n",
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -357,6 +387,13 @@ func TestEndToEnd_json(t *testing.T) {
 		},
 		"typed-nil error renders as JSON null, matching go-kit raw output": {
 			value: (*testNilSafeError)(nil),
+			wantOnWire: map[string]string{
+				"drop":   `{"user_agent":null}`,
+				"escape": `{"user_agent":null}`,
+			},
+		},
+		"nil any renders as JSON null, matching go-kit raw output": {
+			value: nil,
 			wantOnWire: map[string]string{
 				"drop":   `{"user_agent":null}`,
 				"escape": `{"user_agent":null}`,

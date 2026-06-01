@@ -10,16 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testUnsafeUserInputStringer is a stand-in for a custom type that wraps
-// attacker-influenced text behind fmt.Stringer.
+// testUnsafeUserInputStringer is a stand-in for a custom fmt.Stringer
+// that exposes attacker-controlled input.
 type testUnsafeUserInputStringer struct{ s string }
 
 func (u testUnsafeUserInputStringer) String() string { return u.s }
 
-// TestDropVsEscapeUnsafeChars compares the two wrappers side-by-side:
-// for every input, the same row shows what DroppedUnsafeChars and
-// EscapedUnsafeChars each render via String(). The any-typed input
-// exercises both string and Stringer paths through fmt.Sprint.
+// TestDropVsEscapeUnsafeChars compares the output of
+// DroppedUnsafeChars and EscapedUnsafeChars side-by-side. For each
+// input, the same row shows the result of calling String() on both
+// wrappers.
+//
+// The any-typed input exercises both string and fmt.Stringer code
+// paths.
 func TestDropVsEscapeUnsafeChars(t *testing.T) {
 	testCases := map[string]struct {
 		input      any
@@ -106,35 +109,37 @@ func TestDropVsEscapeUnsafeChars(t *testing.T) {
 	}
 }
 
-// TestDroppedUnsafeChars_MarshalJSON verifies that json.Marshal on a
-// DroppedUnsafeChars returns a JSON string containing the inner value
-// with unsafe characters dropped.
+// TestDroppedUnsafeChars_MarshalJSON verifies that json.Marshal
+// encodes a DroppedUnsafeChars as a JSON string containing the
+// sanitized value.
 func TestDroppedUnsafeChars_MarshalJSON(t *testing.T) {
 	got, err := json.Marshal(DropUnsafeChars("Mozilla\nlevel=info msg=fake\x1b[31m!"))
 	require.NoError(t, err)
 	require.JSONEq(t, `"Mozillalevel=info msg=fake[31m!"`, string(got))
 }
 
-// TestEscapedUnsafeChars_MarshalJSON verifies that json.Marshal on an
-// EscapedUnsafeChars returns a JSON string containing the inner value
-// with unsafe characters replaced by their printable escape sequences.
-// Note that JSON's own backslash escaping doubles ours: the on-wire
-// bytes show `\\x0a` for a sanitized string containing `\x0a` (a
-// single backslash followed by x0a).
+// TestEscapedUnsafeChars_MarshalJSON verifies that json.Marshal
+// encodes an EscapedUnsafeChars as a JSON string with unsafe
+// characters replaced by printable escape sequences.
+//
+// JSON escaping is applied on top of the sanitization, so the encoded
+// output contains `\\x0a` for a sanitized string containing `\x0a`.
 func TestEscapedUnsafeChars_MarshalJSON(t *testing.T) {
 	got, err := json.Marshal(EscapeUnsafeChars("Mozilla\nlevel=info msg=fake\x1b[31m!"))
 	require.NoError(t, err)
 	require.JSONEq(t, `"Mozilla\\x0alevel=info msg=fake\\x1b[31m!"`, string(got))
 }
 
-// benchSink prevents the compiler from optimising away benchmark calls.
+// benchSink prevents benchmark results from being optimized away by the
+// compiler.
 var benchSink string
 
-// Sample values shared by the benchmarks and the allocation test.
-// These represent a single field value a caller would wrap at a log
-// call site (a user-agent header is the canonical case): "clean" is a
-// well-formed value; "dirty" mixes in an ANSI escape and a newline so
-// the strings.Builder path is exercised.
+// Sample values shared by the benchmarks and allocation test.
+//
+// Each value represents a single log field that would be wrapped at a
+// logging call site. "clean" is a typical user-agent string, while
+// "dirty" includes an ANSI escape sequence and a newline to exercise
+// the sanitization path.
 var (
 	benchClean = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 	benchDirty = "Mozilla\x1b[31mFAKE\x1b[0m\nlevel=info msg=hacked"
@@ -171,9 +176,9 @@ func BenchmarkEscapeUnsafeChars(b *testing.B) {
 }
 
 // BenchmarkRawSprint measures fmt.Sprint(v) on the same inputs. This
-// is the work the underlying logger performs per value when no wrapper
-// is used; the delta against BenchmarkDropUnsafeChars and
-// BenchmarkEscapeUnsafeChars approximates the wrapper's added cost.
+// represents the baseline cost of logging an unwrapped value; the
+// difference from BenchmarkDropUnsafeChars and
+// BenchmarkEscapeUnsafeChars approximates the cost of sanitization.
 func BenchmarkRawSprint(b *testing.B) {
 	b.Run("clean", func(b *testing.B) {
 		b.ReportAllocs()
@@ -189,11 +194,10 @@ func BenchmarkRawSprint(b *testing.B) {
 	})
 }
 
-// TestZeroAllocsOnCleanStringPath is a regression guard: wrapping a
-// clean string and calling String() must not allocate. The wrapper is
-// constructed outside the closure so the measurement captures only
-// String()'s allocation behaviour, not any string-to-any boxing at the
-// call site.
+// TestZeroAllocsOnCleanStringPath is a regression test that verifies
+// String() does not allocate for a clean string input. The wrapper is
+// constructed outside the measurement so only String()'s allocation
+// behavior is counted.
 func TestZeroAllocsOnCleanStringPath(t *testing.T) {
 	dropped := DropUnsafeChars(benchClean)
 	escaped := EscapeUnsafeChars(benchClean)
@@ -207,9 +211,9 @@ func TestZeroAllocsOnCleanStringPath(t *testing.T) {
 	}), "EscapedUnsafeChars.String must not allocate on a clean string input")
 }
 
-// TestEndToEnd_logfmt verifies that values wrapped with DropUnsafeChars
-// or EscapeUnsafeChars produce the expected bytes on the wire when
-// logged through go-kit's logfmt encoder.
+// TestEndToEnd_logfmt verifies that values wrapped with
+// DropUnsafeChars or EscapeUnsafeChars are encoded as expected by
+// go-kit's logfmt logger.
 func TestEndToEnd_logfmt(t *testing.T) {
 	testCases := map[string]struct {
 		value      any
@@ -225,24 +229,24 @@ func TestEndToEnd_logfmt(t *testing.T) {
 		"embedded newline is sanitized before reaching the encoder": {
 			value: "Mozilla\nFAKE",
 			wantOnWire: map[string]string{
-				// Drop yields "MozillaFAKE" — no whitespace, so logfmt
-				// emits it unquoted.
+				// Drop yields "MozillaFAKE". Because the result contains no whitespace,
+				// logfmt emits it without quotes.
 				"drop": "user_agent=MozillaFAKE\n",
-				// Escape yields "Mozilla\x0aFAKE" (literal backslash);
-				// logfmt does not quote on backslash alone, so it
-				// reaches the wire as-is.
+				// Escape yields "Mozilla\x0aFAKE" (with a literal backslash). Because
+				// the result contains no whitespace, logfmt does not quote it and it
+				// reaches the output unchanged.
 				"escape": "user_agent=Mozilla\\x0aFAKE\n",
 			},
 		},
 		"custom Stringer rendering user-controlled text is sanitized": {
 			value: testUnsafeUserInputStringer{"path=/foo\nFAKE"},
 			wantOnWire: map[string]string{
-				// Drop yields "path=/fooFAKE"; the embedded '=' forces
-				// logfmt to quote the whole value.
+				// Drop yields "path=/fooFAKE". Because the value contains '=',
+				// logfmt quotes it in the output.
 				"drop": "user_agent=\"path=/fooFAKE\"\n",
-				// Escape yields "path=/foo\x0aFAKE"; '=' still forces
-				// quoting, and inside the quote logfmt doubles the
-				// backslash to keep the output unambiguously parseable.
+				// Escape yields "path=/foo\x0aFAKE". The embedded '=' causes logfmt to
+				// quote the value, and the backslash in `\x0a` is escaped within the
+				// quoted string.
 				"escape": "user_agent=\"path=/foo\\\\x0aFAKE\"\n",
 			},
 		},
@@ -266,9 +270,9 @@ func TestEndToEnd_logfmt(t *testing.T) {
 	}
 }
 
-// TestEndToEnd_json verifies that values wrapped with DropUnsafeChars
-// or EscapeUnsafeChars produce the expected bytes on the wire when
-// logged through go-kit's JSON encoder.
+// TestEndToEnd_json verifies the final JSON output produced by go-kit
+// when logging values wrapped with DropUnsafeChars or
+// EscapeUnsafeChars.
 func TestEndToEnd_json(t *testing.T) {
 	testCases := map[string]struct {
 		value      any

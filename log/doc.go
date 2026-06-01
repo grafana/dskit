@@ -2,15 +2,13 @@
 // used across dskit-based services.
 //
 // It includes constructors for logfmt and JSON loggers (NewGoKit), a
-// Level type wired to a command-line flag, buffered and rate-limited
-// loggers, and a global-logger accessor.
+// Level type integrated with command-line flags, buffered and
+// rate-limited loggers, and a global logger accessor.
 //
-// For values that may originate from user input (HTTP headers, parsed
-// errors, custom Stringers wrapping request data), wrap them at the
-// call site with DropUnsafeChars or EscapeUnsafeChars to neutralise
-// log injection, terminal escape sequences, and trojan-source attacks
-// before they reach the encoder. Only wrapped values are sanitised;
-// an unwrapped Stringer carrying user input still reaches the encoder
-// verbatim, so review call sites that log non-string, non-error values
-// carefully.
+// When logging values that may originate from untrusted sources, use
+// DropUnsafeChars or EscapeUnsafeChars to sanitize control and
+// formatting characters before they reach the encoder. These helpers
+// help prevent log injection, terminal escape sequence injection, and
+// similar attacks while preserving compatibility with both logfmt and
+// JSON logging.
 package log

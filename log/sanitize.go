@@ -7,29 +7,29 @@ import (
 	"unicode"
 )
 
-// DropUnsafeChars wraps v so that control and formatting characters
-// (newlines, ANSI escape codes, bidi overrides, etc.) are stripped
-// from its string representation when logged. Use it for values that
-// may carry user input to defend against log injection and terminal-
-// escape attacks.
+// DropUnsafeChars wraps v so that control and formatting characters are
+// removed from its string representation when logged. This helps prevent
+// log injection, terminal escape sequence injection, and other attacks
+// that rely on special characters in untrusted input.
 //
-// Usage:
+// Use it when logging values that may originate from users or other
+// untrusted sources.
 //
 //	level.Info(logger).Log("user_agent", log.DropUnsafeChars(r.UserAgent()))
 func DropUnsafeChars(v any) DroppedUnsafeChars {
 	return DroppedUnsafeChars{v: v}
 }
 
-// DroppedUnsafeChars is the value type returned by DropUnsafeChars. It
-// implements fmt.Stringer and json.Marshaler so it works correctly with
+// DroppedUnsafeChars is the value returned by DropUnsafeChars. It
+// implements fmt.Stringer and json.Marshaler for compatibility with
 // both logfmt and JSON go-kit encoders.
 type DroppedUnsafeChars struct {
 	v any
 }
 
-// String renders v with unsafe characters removed. Tab is preserved.
-// Returns the rendered string unchanged when it contains nothing
-// dangerous.
+// String returns the string representation of v with unsafe characters
+// removed. Tab is preserved. If no unsafe characters are present, the
+// original string is returned unchanged.
 func (d DroppedUnsafeChars) String() string {
 	s := render(d.v)
 	if !needsSanitization(s) {
@@ -46,35 +46,37 @@ func (d DroppedUnsafeChars) String() string {
 	return b.String()
 }
 
-// MarshalJSON serialises the sanitized form as a JSON string. Without
-// this, json.Marshal would emit "{}" for the unexported field.
+// MarshalJSON encodes the sanitized value as a JSON string. Without this
+// method, json.Marshal would encode the wrapper as an empty object
+// because its fields are unexported.
 func (d DroppedUnsafeChars) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
 // EscapeUnsafeChars wraps v so that control and formatting characters
-// (newlines, ANSI escape codes, bidi overrides, etc.) are replaced
-// with printable \xNN, \uNNNN, or \UNNNNNNNN sequences in its string
-// representation when logged. Use it for values that may carry user
-// input to defend against log injection and terminal-escape attacks
-// while keeping a readable record of what was sanitized.
+// are replaced with printable escape sequences in its string
+// representation when logged.
 //
-// Usage:
+// Use it for values that may originate from untrusted sources to help
+// prevent log injection and terminal escape sequence injection while
+// preserving a readable representation of the original value.
 //
 //	level.Info(logger).Log("user_agent", log.EscapeUnsafeChars(r.UserAgent()))
 func EscapeUnsafeChars(v any) EscapedUnsafeChars {
 	return EscapedUnsafeChars{v: v}
 }
 
-// EscapedUnsafeChars is the value type returned by EscapeUnsafeChars.
-// It implements fmt.Stringer and json.Marshaler.
+// EscapedUnsafeChars is the value returned by EscapeUnsafeChars. It
+// implements fmt.Stringer and json.Marshaler for compatibility with
+// both logfmt and JSON go-kit encoders.
 type EscapedUnsafeChars struct {
 	v any
 }
 
-// String renders v with unsafe characters replaced by their printable
-// escape form. Tab is preserved. Returns the rendered string unchanged
-// when it contains nothing dangerous.
+// String returns the string representation of v with unsafe characters
+// replaced by printable escape sequences. Tab is preserved. If no
+// unsafe characters are present, the original string is returned
+// unchanged.
 func (e EscapedUnsafeChars) String() string {
 	s := render(e.v)
 	if !needsSanitization(s) {
@@ -97,8 +99,8 @@ func (e EscapedUnsafeChars) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.String())
 }
 
-// render returns v's string form, avoiding a fmt.Sprint allocation
-// when v is already a string or an error.
+// render returns the string representation of v, avoiding a
+// fmt.Sprint allocation when v is already a string or an error.
 func render(v any) string {
 	switch t := v.(type) {
 	case string:
@@ -109,12 +111,14 @@ func render(v any) string {
 	return fmt.Sprint(v)
 }
 
-// isUnsafe reports whether r is a control or formatting character that
-// should be sanitized. Covers Unicode categories Cc (ASCII C0 + DEL +
-// C1), Cf (formatting incl. bidi overrides), Zl (line separator U+2028),
-// and Zp (paragraph separator U+2029). Tab is treated as safe because
-// it has legitimate uses (stack traces, tabular output) and is already
-// escaped by logfmt and JSON encoders.
+// isUnsafe reports whether r should be sanitized. It matches Unicode
+// categories Cc (control characters), Cf (formatting characters,
+// including bidi overrides), Zl (line separators), and Zp (paragraph
+// separators).
+//
+// Tab is treated as safe because it has legitimate uses (for example,
+// stack traces and tabular output) and is already escaped by logfmt and
+// JSON encoders.
 func isUnsafe(r rune) bool {
 	if r == '\t' {
 		return false
@@ -166,8 +170,8 @@ func needsSanitizationRuneLevel(s string) bool {
 	return false
 }
 
-// writeEscape appends r's printable escape sequence to b, choosing
-// \xNN, \uNNNN, or \UNNNNNNNN according to the rune's width.
+// writeEscape appends a printable escape sequence for r to b, using
+// \xNN, \uNNNN, or \UNNNNNNNN depending on the rune's value.
 func writeEscape(b *strings.Builder, r rune) {
 	switch {
 	case r < 0x100:

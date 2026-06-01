@@ -179,6 +179,13 @@ func isNullValue(v any) bool {
 	if v == nil {
 		return true
 	}
+	// Fast path: a string is a value type and cannot be a typed-nil
+	// pointer, so we can return false without using reflection. Strings
+	// are the most common values logged at call sites, making this a
+	// worthwhile optimization.
+	if _, ok := v.(string); ok {
+		return false
+	}
 	rv := reflect.ValueOf(v)
 	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }

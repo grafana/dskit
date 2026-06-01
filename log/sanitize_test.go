@@ -71,6 +71,24 @@ func TestDropVsEscapeUnsafeChars(t *testing.T) {
 			wantDrop:   "abcdef",
 			wantEscape: "abc\\x85def",
 		},
+		"lone 0x85 byte (invalid UTF-8, would be U+0085 NEL in valid encoding)": {
+			// Without the fix, this byte would survive untouched
+			// because for/range decodes it as utf8.RuneError which
+			// isUnsafe does not flag.
+			input:      "abc\x85def",
+			wantDrop:   "abcdef",
+			wantEscape: "abc\\x85def",
+		},
+		"lone C1 continuation byte unrelated to NEL (0x82)": {
+			input:      "abc\x82def",
+			wantDrop:   "abcdef",
+			wantEscape: "abc\\x82def",
+		},
+		"truncated U+2028 prefix (0xe2 0x80 with no continuation byte)": {
+			input:      "first\xe2\x80second",
+			wantDrop:   "firstsecond",
+			wantEscape: "first\\xe2\\x80second",
+		},
 		"Unicode LINE SEPARATOR (U+2028)": {
 			input:      "first\u2028second",
 			wantDrop:   "firstsecond",

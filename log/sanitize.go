@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // DropUnsafeChars wraps v so that control and formatting characters are
@@ -38,11 +39,22 @@ func (d DroppedUnsafeChars) String() string {
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for _, r := range s {
-		if isUnsafe(r) {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		// An invalid UTF-8 byte (e.g. a lone C1 continuation byte such
+		// as 0x85) decodes to RuneError with size 1. Drop it so that
+		// malformed bytes cannot smuggle control characters past the
+		// sanitiser.
+		if r == utf8.RuneError && size == 1 {
+			i++
 			continue
 		}
-		b.WriteRune(r)
+		if isUnsafe(r) {
+			i += size
+			continue
+		}
+		b.WriteString(s[i : i+size])
+		i += size
 	}
 	return b.String()
 }
@@ -101,12 +113,23 @@ func (e EscapedUnsafeChars) String() string {
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for _, r := range s {
-		if isUnsafe(r) {
-			writeEscape(&b, r)
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		// An invalid UTF-8 byte (e.g. a lone C1 continuation byte such
+		// as 0x85) decodes to RuneError with size 1. Emit \xNN for the
+		// raw byte so its value survives sanitisation for forensic use.
+		if r == utf8.RuneError && size == 1 {
+			writeEscape(&b, rune(s[i]))
+			i++
 			continue
 		}
-		b.WriteRune(r)
+		if isUnsafe(r) {
+			writeEscape(&b, r)
+			i += size
+			continue
+		}
+		b.WriteString(s[i : i+size])
+		i += size
 	}
 	return b.String()
 }
@@ -201,16 +224,11 @@ func needsSanitization(s string) bool {
 			return true
 		default:
 			// Non-ASCII: defer to rune-level check from here.
-			return needsSanitizationRuneLevel(s[i:])
-		}
-	}
-	return false
-}
-
-func needsSanitizationRuneLevel(s string) bool {
-	for _, r := range s {
-		if isUnsafe(r) {
-			return true
+			remainder := s[i:]
+			if !utf8.ValidString(remainder) {
+				return true
+			}
+			return strings.ContainsFunc(remainder, isUnsafe)
 		}
 	}
 	return false

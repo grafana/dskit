@@ -78,6 +78,67 @@ func TestRingPageHandler_handle(t *testing.T) {
 		}, `\s*`))), recorder.Body.String())
 	})
 
+	t.Run("always renders the read-only state and keeps the read-only updated timestamp", func(t *testing.T) {
+		readOnlyChange := now.Add(-time.Hour)
+		roRing := fakeRingAccess{
+			desc: &Desc{
+				Ingesters: map[string]InstanceDesc{
+					"read-only": {
+						Zone:                     "zone-a",
+						State:                    ACTIVE,
+						Addr:                     "addr-ro",
+						Timestamp:                now.Unix(),
+						ReadOnly:                 true,
+						ReadOnlyUpdatedTimestamp: readOnlyChange.Unix(),
+					},
+					"read-write-was-read-only": {
+						Zone:                     "zone-b",
+						State:                    ACTIVE,
+						Addr:                     "addr-rw",
+						Timestamp:                now.Unix(),
+						ReadOnly:                 false,
+						ReadOnlyUpdatedTimestamp: readOnlyChange.Unix(),
+					},
+					"never-read-only": {
+						Zone:      "zone-c",
+						State:     ACTIVE,
+						Addr:      "addr-never",
+						Timestamp: now.Unix(),
+						ReadOnly:  false,
+					},
+				},
+			},
+		}
+		roHandler := newRingPageHandler(&roRing, 10*time.Second, StatusPageConfig{})
+
+		recorder := httptest.NewRecorder()
+		roHandler.handle(recorder, httptest.NewRequest(http.MethodGet, "/ring", nil))
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		body := recorder.Body.String()
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "addr-ro", "</td>",
+			"<td>", "</td>",
+			"<td>", "true", "</td>",
+			"<td>", ".+ago.+", "</td>",
+		}, `\s*`))), body)
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "addr-rw", "</td>",
+			"<td>", "</td>",
+			"<td>", "false", "</td>",
+			"<td>", `\d{4}-\d{2}-\d{2}T.+Z`, "</td>",
+		}, `\s*`))), body)
+
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "addr-never", "</td>",
+			"<td>", "</td>",
+			"<td>", "false", "</td>",
+			"<td>", "</td>",
+		}, `\s*`))), body)
+	})
+
 	t.Run("displays Show Tokens button by default", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		handler.handle(recorder, httptest.NewRequest(http.MethodGet, "/ring", nil))

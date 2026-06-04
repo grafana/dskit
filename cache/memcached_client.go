@@ -75,6 +75,14 @@ type MemcachedClientConfig struct {
 	// resolved with the DNS provider.
 	Addresses flagext.StringSliceCSV `yaml:"addresses"`
 
+	// AddressesLookupPeriod specifies how often addresses are resolved with the
+	// DNS provider.
+	AddressesLookupPeriod time.Duration `yaml:"addresses_lookup_period" category:"advanced"`
+
+	// AddressesLookupPoolSize specifies how many idle connections to the DNS provider
+	// are kept open. Use 0 to disable keeping any idle connections open.
+	AddressesLookupPoolSize uint `yaml:"addresses_lookup_pool_size" category:"advanced"`
+
 	// Timeout specifies the socket read/write timeout.
 	Timeout time.Duration `yaml:"timeout"`
 
@@ -120,6 +128,8 @@ type MemcachedClientConfig struct {
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&c.Addresses, prefix+"addresses", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
+	f.DurationVar(&c.AddressesLookupPeriod, prefix+"addresses-lookup-period", dnsProviderUpdateInterval, "How often each address is resolved to an IP address or list of host names.")
+	f.UintVar(&c.AddressesLookupPoolSize, prefix+"addresses-lookup-pool-size", 0, "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.")
 	f.DurationVar(&c.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
 	f.DurationVar(&c.ConnectTimeout, prefix+"connect-timeout", 200*time.Millisecond, "The connection timeout.")
 	f.Float64Var(&c.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
@@ -245,7 +255,7 @@ func newMemcachedClient(
 	reg = prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
-	addressProvider := dns.NewProvider(logger, reg, dns.MiekgdnsResolverType)
+	addressProvider := dns.NewProvider(dns.MiekgdnsResolverType, config.AddressesLookupPoolSize, logger, reg)
 	metrics := newClientMetrics(reg)
 
 	c := &MemcachedClient{
@@ -825,7 +835,7 @@ func (c *MemcachedClient) sortKeysByServer(keys []string) []string {
 }
 
 func (c *MemcachedClient) resolveAddrsLoop() {
-	ticker := time.NewTicker(dnsProviderUpdateInterval)
+	ticker := time.NewTicker(c.config.AddressesLookupPeriod)
 	defer ticker.Stop()
 
 	for {

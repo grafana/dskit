@@ -36,6 +36,7 @@ const (
 var (
 	ErrNoMemcachedAddresses                    = errors.New("no memcached addresses provided")
 	ErrMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
+	ErrMemcachedAddressLookupPeriodNotPositive = errors.New("address lookup period must be greater than 0")
 
 	_ Cache = (*MemcachedClient)(nil)
 )
@@ -151,6 +152,10 @@ func (c *MemcachedClientConfig) Validate() error {
 	// Set async only available when MaxAsyncConcurrency > 0.
 	if c.MaxAsyncConcurrency <= 0 {
 		return ErrMemcachedMaxAsyncConcurrencyNotPositive
+	}
+
+	if c.AddressesLookupPeriod <= 0 {
+		return ErrMemcachedAddressLookupPeriodNotPositive
 	}
 
 	return nil

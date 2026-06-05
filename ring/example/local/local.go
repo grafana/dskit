@@ -177,7 +177,7 @@ func SimpleMemberlistKV(bindaddr string, bindport int, joinmembers []string) *me
 
 	// resolver defines how each peers IP address should be resolved.
 	// We use default resolver comes with Go.
-	resolver := dns.NewProvider(log.With(logger, "component", "dns"), prometheus.NewPedanticRegistry(), dns.GolangResolverType)
+	resolver := dns.NewProvider(dns.GolangResolverType, 0, log.With(logger, "component", "dns"), prometheus.NewPedanticRegistry())
 
 	config.NodeName = bindaddr
 	config.StreamTimeout = 5 * time.Second

@@ -6,7 +6,7 @@ toolchain go1.26.4
 
 require (
 	github.com/go-kit/log v0.2.1
-	github.com/grafana/dskit v0.0.0-20260326142830-3dd00ce01fc0
+	github.com/grafana/dskit v0.0.0-20260605182923-6446a4562a3e
 	github.com/prometheus/client_golang v1.23.2
 )
 
@@ -108,6 +108,8 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
+// Replace memberlist with our fork which includes some fixes that haven't been
+// merged upstream yet.
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260515134459-1798cf41aca7
 
 replace github.com/grafana/dskit => ../../../

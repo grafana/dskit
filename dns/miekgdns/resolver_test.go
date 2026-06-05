@@ -321,31 +321,36 @@ func TestPoolingClient(t *testing.T) {
 
 func TestPool(t *testing.T) {
 	// NOTE: This test talks to the local DNS server over the network
-
 	conf := getClientConfig(t)
 	server := net.JoinHostPort(conf.Servers[0], conf.Port)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
 
-	pool := NewPool(defaultMaxConnsPerHost)
-	var conn *dns.Conn
-	var err error
+	for name, numConns := range map[string]uint{"pooling disabled": 0, "pooling enabled": 1} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
 
-	t.Run("get connection", func(t *testing.T) {
-		conn, err = pool.Get(ctx, "tcp", server)
-		require.NoError(t, err)
-		require.NotNil(t, conn)
-	})
+			pool := NewPool(numConns)
+			var conn *dns.Conn
+			var err error
 
-	t.Run("put connection", func(t *testing.T) {
-		require.NoError(t, pool.Put(conn))
-	})
+			t.Run("get connection", func(t *testing.T) {
+				conn, err = pool.Get(ctx, "tcp", server)
+				require.NoError(t, err)
+				require.NotNil(t, conn)
+			})
 
-	t.Run("close", func(t *testing.T) {
-		pool.Close()
-		_, err = pool.Get(ctx, "tcp", server)
-		require.Error(t, err)
-	})
+			t.Run("put connection", func(t *testing.T) {
+				require.NoError(t, pool.Put(conn))
+				require.Len(t, pool.conns, int(numConns))
+			})
+
+			t.Run("close", func(t *testing.T) {
+				pool.Close()
+				_, err = pool.Get(ctx, "tcp", server)
+				require.Error(t, err)
+			})
+		})
+	}
 }
 
 type mockClient struct {

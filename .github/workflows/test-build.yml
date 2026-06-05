@@ -37,6 +37,8 @@ jobs:
           go-version: '1.26.x'
       - name: Go mod check
         run: make mod-check
+      - name: Build submodules
+        run: make build-submodules
       - name: Lint
         run: make lint
       - name: Test benchmarks

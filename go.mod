@@ -1,6 +1,6 @@
 module github.com/grafana/dskit
 
-go 1.26
+go 1.25.8
 
 toolchain go1.26.4
 

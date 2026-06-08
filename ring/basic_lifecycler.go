@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -353,7 +354,17 @@ func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 	})
 
 	if err != nil {
-		return err
+		// If the KV store detected no change (the instance's ring entry already matches
+		// what we tried to write), the registration is effectively successful. This can
+		// happen when the stored timestamp is ahead of the current time (e.g., clock
+		// corruption) — the merge function sees no forward progress and returns
+		// "no change detected." Treating this as fatal causes a permanent CrashLoopBackOff
+		// because the same no-change result recurs on every restart (issue grafana/loki#21733).
+		if strings.Contains(err.Error(), "no change detected") {
+			level.Warn(l.logger).Log("msg", "CAS detected no change during registration; instance already registered with identical state", "ring", l.ringName, "instance", l.cfg.ID, "err", err)
+		} else {
+			return err
+		}
 	}
 
 	l.currState.Lock()

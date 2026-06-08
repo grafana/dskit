@@ -31,6 +31,7 @@ ifeq ($(UNAME_S), Darwin)
 	PROTO_ZIP_SHA256=$(PROTO_ZIP_SHA256_DARWIN)
 endif
 GO_MODS=$(shell find . $(DONT_FIND) -type f -name 'go.mod' -print)
+SUBMODULE_GO_MODS=$(filter-out ./go.mod,$(GO_MODS))
 
 .DEFAULT_GOAL := help
 
@@ -45,6 +46,10 @@ test: ## Runs Go tests
 .PHONY: test-benchmarks
 test-benchmarks: ## Runs Go benchmarks with 1 iteration to make sure they still make sense
 	go test -tags netgo -run=NONE -bench=. -benchtime=1x -timeout 30m ./...
+
+.PHONY: build-submodules
+build-submodules: ## Vets each nested module (separate go.mod) not covered by the root ./...
+	@./.scripts/build-submodules.sh $(SUBMODULE_GO_MODS)
 
 .PHONY: lint
 lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint ## Runs misspell, golangci-lint, and faillint

@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1093,10 +1094,72 @@ func TestConfig_RegisterFlagsWithPrefix(t *testing.T) {
 				tc.prefix + "file",
 				tc.prefix + "reload-period",
 				tc.prefix + "http-client-timeout",
+				tc.prefix + "http-client-disable-keep-alives",
 				tc.prefix + "http-client-cluster-validation.label",
 			} {
 				require.NotNil(t, fs.Lookup(name), "expected flag %q to be registered", name)
 			}
+
+			// HTTP keep-alives are disabled by default to avoid pinning long-lived
+			// connections to a single backend behind a connection-level load balancer.
+			require.Equal(t, "true", fs.Lookup(tc.prefix+"http-client-disable-keep-alives").DefValue)
+			require.True(t, cfg.HTTPClientDisableKeepAlives)
+		})
+	}
+}
+
+func TestHTTPTransport_DisableKeepAlives(t *testing.T) {
+	t.Run("sets DisableKeepAlives on the transport", func(t *testing.T) {
+		for _, disable := range []bool{true, false} {
+			rt := httpTransport(Config{HTTPClientDisableKeepAlives: disable}, "test", prometheus.NewRegistry(), log.NewNopLogger())
+			tr, ok := rt.(*http.Transport)
+			require.True(t, ok, "expected an *http.Transport when no cluster validation label is set")
+			require.Equal(t, disable, tr.DisableKeepAlives)
+		}
+	})
+
+	t.Run("does not mutate http.DefaultTransport", func(t *testing.T) {
+		_ = httpTransport(Config{HTTPClientDisableKeepAlives: true}, "test", prometheus.NewRegistry(), log.NewNopLogger())
+		require.False(t, http.DefaultTransport.(*http.Transport).DisableKeepAlives, "httpTransport must clone http.DefaultTransport, not mutate it")
+	})
+}
+
+// TestHTTPClient_DisableKeepAlives verifies that, with keep-alives disabled, every
+// fetch opens a fresh connection (so requests get re-balanced across backends), while
+// with keep-alives enabled the connection is reused.
+func TestHTTPClient_DisableKeepAlives(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		disableKeepAlives bool
+		wantNewConns      int64
+	}{
+		{name: "disabled opens a new connection per fetch", disableKeepAlives: true, wantNewConns: 5},
+		{name: "enabled reuses a single connection", disableKeepAlives: false, wantNewConns: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var newConns atomic.Int64
+			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte("value: 1\n"))
+			}))
+			srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+				if state == http.StateNew {
+					newConns.Inc()
+				}
+			}
+			srv.Start()
+			t.Cleanup(srv.Close)
+
+			cfg := Config{HTTPClientDisableKeepAlives: tc.disableKeepAlives}
+			client := &http.Client{Transport: httpTransport(cfg, "test", prometheus.NewRegistry(), log.NewNopLogger())}
+			p := newHTTPProvider(srv.URL+"/config.yaml", client, newHTTPRequestDuration(prometheus.NewRegistry()))
+
+			const fetches = 5
+			for i := 0; i < fetches; i++ {
+				_, err := p.Read(context.Background())
+				require.NoError(t, err)
+			}
+
+			require.Equal(t, tc.wantNewConns, newConns.Load())
 		})
 	}
 }

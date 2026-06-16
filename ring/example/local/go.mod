@@ -30,7 +30,7 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/grafana/otel-profiling-go v0.5.1 // indirect
+	github.com/grafana/otel-profiling-go v0.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/hashicorp/consul/api v1.33.7 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

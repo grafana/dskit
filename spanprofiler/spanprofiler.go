@@ -2,6 +2,7 @@ package spanprofiler
 
 import (
 	"context"
+	"fmt"
 	"runtime/pprof"
 
 	"github.com/opentracing/opentracing-go"
@@ -12,8 +13,9 @@ import (
 // any Span found within `ctx` as a ChildOfRef. If no such parent could be
 // found, StartSpanFromContext creates a root (parentless) Span.
 //
-// The call sets `operationName` as `span_name` pprof label, and the new span
-// identifier as `span_id` pprof label, if the trace is sampled.
+// The call sets `operationName` as `span_name` pprof label, the new span
+// identifier as `span_id` pprof label, and the trace identifier as `trace_id`
+// pprof label, if the trace is sampled.
 //
 // The second return value is a context.Context object built around the
 // returned Span.
@@ -34,8 +36,9 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...ope
 // it creates a root span. It also returns a context.Context object built
 // around the returned span.
 //
-// The call sets `operationName` as `span_name` pprof label, and the new span
-// identifier as `span_id` pprof label, if the trace is sampled.
+// The call sets `operationName` as `span_name` pprof label, the new span
+// identifier as `span_id` pprof label, and the trace identifier as `trace_id`
+// pprof label, if the trace is sampled.
 //
 // It's behavior is identical to StartSpanFromContext except that it takes an explicit
 // tracer as opposed to using the global tracer.
@@ -43,7 +46,7 @@ func StartSpanFromContextWithTracer(ctx context.Context, tracer opentracing.Trac
 	span, ctx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, operationName, opts...)
 	spanCtx, ok := span.Context().(jaeger.SpanContext)
 	if ok {
-		span = wrapJaegerSpanWithGoroutineLabels(ctx, span, operationName, sampledSpanID(spanCtx))
+		span = wrapJaegerSpanWithGoroutineLabels(ctx, span, operationName, sampledSpanID(spanCtx), sampledTraceID(spanCtx))
 	}
 	return span, ctx
 }
@@ -53,6 +56,7 @@ func wrapJaegerSpanWithGoroutineLabels(
 	span opentracing.Span,
 	operationName string,
 	spanID string,
+	traceID string,
 ) *spanWrapper {
 	// Note that pprof labels are propagated through the goroutine's local
 	// storage and are always copied to child goroutines. This way, stack
@@ -62,7 +66,8 @@ func wrapJaegerSpanWithGoroutineLabels(
 	if spanID != "" {
 		ctx = pprof.WithLabels(parentCtx, pprof.Labels(
 			spanNameLabelName, operationName,
-			spanIDLabelName, spanID))
+			spanIDLabelName, spanID,
+			traceIDLabelName, traceID))
 	} else {
 		// Even if the trace has not been sampled, we still need to keep track
 		// of samples that belong to the span (all spans with the given name).
@@ -104,4 +109,15 @@ func sampledSpanID(spanCtx jaeger.SpanContext) string {
 		return spanCtx.SpanID().String()
 	}
 	return ""
+}
+
+// sampledTraceID returns the trace ID as a 32-character W3C hex string, if the
+// span is sampled, otherwise an empty string is returned. Unlike
+// jaeger.TraceID.String, it always zero-pads to 32 characters.
+func sampledTraceID(spanCtx jaeger.SpanContext) string {
+	if !spanCtx.IsSampled() {
+		return ""
+	}
+	t := spanCtx.TraceID()
+	return fmt.Sprintf("%016x%016x", t.High, t.Low)
 }

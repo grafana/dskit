@@ -47,7 +47,7 @@ type Config struct {
 	HTTPClientTimeout           time.Duration                       `yaml:"http_client_timeout" category:"advanced"`
 	HTTPClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"http_client_cluster_validation" category:"advanced"`
 	// HTTPClientDisableKeepAlives disables HTTP keep-alives for the runtime config HTTP client.
-	HTTPClientDisableKeepAlives bool `yaml:"http_client_disable_keep_alives" category:"experimental"`
+	HTTPClientDisableKeepAlives bool `yaml:"http_client_disable_keep_alives" category:"advanced"`
 }
 
 // RegisterFlagsWithPrefix registers flags under the specified prefix, which could be empty.

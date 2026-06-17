@@ -66,6 +66,79 @@ func TestRateLimiter_AllowN(t *testing.T) {
 	assert.Equal(t, true, limiter.AllowN(now.Add(time.Second), "tenant-2", 2))
 }
 
+func TestRateLimiter_ReserveN(t *testing.T) {
+	strategy := &staticLimitStrategy{tenants: map[string]struct {
+		limit float64
+		burst int
+	}{
+		"tenant-1": {limit: 10, burst: 20},
+	}}
+
+	limiter := NewRateLimiter(strategy, 10*time.Second)
+	now := time.Now()
+
+	// A reservation within the burst is OK and requires no wait.
+	r := limiter.ReserveN(now, "tenant-1", 5)
+	assert.True(t, r.OK())
+	assert.Equal(t, time.Duration(0), r.DelayFrom(now))
+
+	// Exhaust the remaining burst.
+	r = limiter.ReserveN(now, "tenant-1", 15)
+	assert.True(t, r.OK())
+	assert.Equal(t, time.Duration(0), r.DelayFrom(now))
+
+	// Once the burst is exhausted, a further reservation is OK but must wait.
+	r = limiter.ReserveN(now, "tenant-1", 5)
+	assert.True(t, r.OK())
+	assert.Greater(t, r.DelayFrom(now), time.Duration(0))
+}
+
+func TestRateLimiter_ReserveN_Cancel(t *testing.T) {
+	strategy := &staticLimitStrategy{tenants: map[string]struct {
+		limit float64
+		burst int
+	}{
+		"tenant-1": {limit: 10, burst: 20},
+	}}
+
+	limiter := NewRateLimiter(strategy, 10*time.Second)
+	now := time.Now()
+
+	// Reserve the whole burst.
+	r := limiter.ReserveN(now, "tenant-1", 20)
+	assert.True(t, r.OK())
+	assert.Equal(t, time.Duration(0), r.DelayFrom(now))
+
+	// With the bucket exhausted, a full-burst request can't be served immediately.
+	assert.False(t, limiter.AllowN(now, "tenant-1", 20))
+
+	// Cancelling the reservation should return the tokens to the bucket. We use
+	// CancelAt(now) rather than Cancel() to keep the test deterministic: Cancel()
+	// uses time.Now() internally, which would have advanced past the fixed now and
+	// turned the cancellation into a no-op.
+	r.CancelAt(now)
+
+	// Now the same amount can be consumed again at the same instant, proving
+	// that cancellation restored the tokens.
+	assert.True(t, limiter.AllowN(now, "tenant-1", 20))
+}
+
+func TestRateLimiter_ReserveN_ExceedsBurst(t *testing.T) {
+	strategy := &staticLimitStrategy{tenants: map[string]struct {
+		limit float64
+		burst int
+	}{
+		"tenant-1": {limit: 10, burst: 20},
+	}}
+
+	limiter := NewRateLimiter(strategy, 10*time.Second)
+	now := time.Now()
+
+	// A reservation larger than the burst can never be satisfied.
+	r := limiter.ReserveN(now, "tenant-1", 21)
+	assert.False(t, r.OK())
+}
+
 func TestRateLimiter_WaitN(t *testing.T) {
 	strategy := &staticLimitStrategy{tenants: map[string]struct {
 		limit float64

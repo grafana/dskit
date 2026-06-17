@@ -25,6 +25,12 @@ func TestTracer_pprof_labels_propagation(t *testing.T) {
 		require.Equal(t, pprofLabels["span_name"], "RootSpan")
 		_, err := jaeger.SpanIDFromString(pprofLabels["span_id"])
 		require.NoError(t, err)
+		// trace_id is the 32-character W3C form of the span's trace ID.
+		traceID := pprofLabels["trace_id"]
+		require.Len(t, traceID, 32)
+		parsed, err := jaeger.TraceIDFromString(traceID)
+		require.NoError(t, err)
+		require.Equal(t, rootSpan.Context().(jaeger.SpanContext).TraceID(), parsed)
 		// Make sure the root span has "pyroscope.profile.id" attribute,
 		// and it matches the corresponding pprof label.
 		require.Equal(t, pprofLabels["span_id"], spanTags(rootSpan)["pyroscope.profile.id"])

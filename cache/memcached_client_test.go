@@ -344,6 +344,12 @@ func TestMemcachedClient_Delete(t *testing.T) {
 	require.Empty(t, afterDeletionResult)
 }
 
+func TestMemcachedClient_Name(t *testing.T) {
+	client, _, err := setupDefaultMemcachedClient()
+	require.NoError(t, err)
+	require.Equal(t, "test", client.Name())
+}
+
 func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 	mockSelector := &mockServerSelector{
 		servers: []mockServer{

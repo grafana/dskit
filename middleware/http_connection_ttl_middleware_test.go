@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -380,6 +381,36 @@ func TestHTTPConnectionTTLMiddleware_ConcurrentRemoveExpiredConnection(t *testin
 		closed_connections_with_ttl_total{reason="limit"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "closed_connections_with_ttl_total"))
+}
+
+func TestHTTPConnectionTTLMiddleware_StopIsSafeToCallConcurrently(t *testing.T) {
+	const iterations = 1000
+	const goroutines = 32
+
+	prevGOMAXPROCS := runtime.GOMAXPROCS(goroutines)
+	t.Cleanup(func() {
+		runtime.GOMAXPROCS(prevGOMAXPROCS)
+	})
+
+	for range iterations {
+		m, err := NewHTTPConnectionTTLMiddleware(time.Second, time.Second, time.Second, prometheus.NewRegistry())
+		require.NoError(t, err)
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+
+		for range goroutines {
+			go func() {
+				defer wg.Done()
+				<-start
+				m.Stop()
+			}()
+		}
+
+		close(start)
+		wg.Wait()
+	}
 }
 
 func TestHTTPConnectionTTLMiddleware_IdleCleanupThenRequest(t *testing.T) {

@@ -450,3 +450,63 @@ func createPropagationDelayTrackerTestKV(t *testing.T) *KV {
 
 	return mkv
 }
+
+func TestPropagationDelayTrackerConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		cfg     PropagationDelayTrackerConfig
+		wantErr string
+	}{
+		"disabled config is always valid": {
+			cfg: PropagationDelayTrackerConfig{
+				Enabled:        false,
+				BeaconInterval: 0,
+				BeaconLifetime: 0,
+			},
+			wantErr: "",
+		},
+		"valid config": {
+			cfg: PropagationDelayTrackerConfig{
+				Enabled:        true,
+				BeaconInterval: 1 * time.Minute,
+				BeaconLifetime: 10 * time.Minute,
+			},
+			wantErr: "",
+		},
+		"invalid - zero beacon interval": {
+			cfg: PropagationDelayTrackerConfig{
+				Enabled:        true,
+				BeaconInterval: 0,
+				BeaconLifetime: 10 * time.Minute,
+			},
+			wantErr: "propagation delay tracker beacon interval must be greater than 0",
+		},
+		"invalid - negative beacon interval": {
+			cfg: PropagationDelayTrackerConfig{
+				Enabled:        true,
+				BeaconInterval: -1 * time.Minute,
+				BeaconLifetime: 10 * time.Minute,
+			},
+			wantErr: "propagation delay tracker beacon interval must be greater than 0",
+		},
+		"invalid - zero beacon lifetime": {
+			cfg: PropagationDelayTrackerConfig{
+				Enabled:        true,
+				BeaconInterval: 1 * time.Minute,
+				BeaconLifetime: 0,
+			},
+			wantErr: "propagation delay tracker beacon lifetime must be greater than 0",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

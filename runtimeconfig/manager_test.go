@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 
@@ -1109,12 +1110,13 @@ func TestConfig_RegisterFlagsWithPrefix(t *testing.T) {
 }
 
 func TestHTTPTransport_DisableKeepAlives(t *testing.T) {
-	t.Run("sets DisableKeepAlives on the transport", func(t *testing.T) {
+	t.Run("returns a transport wrapped for tracing", func(t *testing.T) {
 		for _, disable := range []bool{true, false} {
 			rt := httpTransport(Config{HTTPClientDisableKeepAlives: disable}, "test", prometheus.NewRegistry(), log.NewNopLogger())
-			tr, ok := rt.(*http.Transport)
-			require.True(t, ok, "expected an *http.Transport when no cluster validation label is set")
-			require.Equal(t, disable, tr.DisableKeepAlives)
+			_, ok := rt.(*otelhttp.Transport)
+			require.True(t, ok, "expected an *otelhttp.Transport when no cluster validation label is set")
+			// DisableKeepAlives is set on the underlying *http.Transport, which otelhttp.Transport
+			// doesn't expose; TestHTTPClient_DisableKeepAlives verifies the resulting behaviour end-to-end.
 		}
 	})
 

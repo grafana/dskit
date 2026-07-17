@@ -6,13 +6,13 @@ import (
 	"maps"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"

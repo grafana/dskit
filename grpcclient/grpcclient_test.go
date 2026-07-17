@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -46,6 +47,15 @@ func TestConfig(t *testing.T) {
 
 			require.EqualError(t, cfg.Validate(), `unsupported compression type: "invalid"`)
 		})
+	})
+
+	t.Run("keepalive defaults", func(t *testing.T) {
+		var cfg Config
+		fs := flag.NewFlagSet("test", flag.PanicOnError)
+		cfg.RegisterFlagsWithPrefix("test", fs)
+
+		require.Equal(t, 20*time.Second, cfg.KeepaliveTime)
+		require.Equal(t, 10*time.Second, cfg.KeepaliveTimeout)
 	})
 }
 

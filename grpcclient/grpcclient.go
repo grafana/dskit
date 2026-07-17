@@ -45,6 +45,9 @@ type Config struct {
 	ConnectBackoffBaseDelay time.Duration `yaml:"connect_backoff_base_delay" category:"advanced"`
 	ConnectBackoffMaxDelay  time.Duration `yaml:"connect_backoff_max_delay" category:"advanced"`
 
+	KeepaliveTime    time.Duration `yaml:"keepalive_time" category:"advanced"`
+	KeepaliveTimeout time.Duration `yaml:"keepalive_timeout" category:"advanced"`
+
 	Middleware       []grpc.UnaryClientInterceptor  `yaml:"-"`
 	StreamMiddleware []grpc.StreamClientInterceptor `yaml:"-"`
 
@@ -92,6 +95,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.ConnectTimeout, prefix+".connect-timeout", 5*time.Second, "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.")
 	f.DurationVar(&cfg.ConnectBackoffBaseDelay, prefix+".connect-backoff-base-delay", time.Second, "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0.")
 	f.DurationVar(&cfg.ConnectBackoffMaxDelay, prefix+".connect-backoff-max-delay", 5*time.Second, "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0.")
+	f.DurationVar(&cfg.KeepaliveTime, prefix+".keepalive-time", 20*time.Second, "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.")
+	f.DurationVar(&cfg.KeepaliveTimeout, prefix+".keepalive-timeout", 10*time.Second, "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.")
 
 	cfg.BackoffConfig.RegisterFlagsWithPrefix(prefix, f)
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
@@ -188,8 +193,8 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 		grpcWithChainUnaryInterceptor(unaryClientInterceptors...),
 		grpc.WithChainStreamInterceptor(streamClientInterceptors...),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                time.Second * 20,
-			Timeout:             time.Second * 10,
+			Time:                cfg.KeepaliveTime,
+			Timeout:             cfg.KeepaliveTimeout,
 			PermitWithoutStream: true,
 		}),
 	), nil

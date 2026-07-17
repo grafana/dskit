@@ -54,8 +54,28 @@ func TestConfig(t *testing.T) {
 		fs := flag.NewFlagSet("test", flag.PanicOnError)
 		cfg.RegisterFlagsWithPrefix("test", fs)
 
-		require.Equal(t, 20*time.Second, cfg.KeepaliveTime)
-		require.Equal(t, 10*time.Second, cfg.KeepaliveTimeout)
+		require.Equal(t, defaultKeepaliveTime, cfg.KeepaliveTime)
+		require.Equal(t, defaultKeepaliveTimeout, cfg.KeepaliveTimeout)
+	})
+
+	t.Run("keepalive params", func(t *testing.T) {
+		t.Run("uses configured values", func(t *testing.T) {
+			cfg := Config{KeepaliveTime: 5 * time.Second, KeepaliveTimeout: 2 * time.Second}
+			kp := cfg.keepaliveParams()
+			require.Equal(t, 5*time.Second, kp.Time)
+			require.Equal(t, 2*time.Second, kp.Timeout)
+			require.True(t, kp.PermitWithoutStream)
+		})
+
+		t.Run("falls back to defaults when unset", func(t *testing.T) {
+			// A zero-value Config (e.g. from YAML omitting the keys) must not
+			// disable keepalive: grpc-go treats a zero Time as "no pings".
+			var cfg Config
+			kp := cfg.keepaliveParams()
+			require.Equal(t, defaultKeepaliveTime, kp.Time)
+			require.Equal(t, defaultKeepaliveTimeout, kp.Timeout)
+			require.True(t, kp.PermitWithoutStream)
+		})
 	})
 }
 

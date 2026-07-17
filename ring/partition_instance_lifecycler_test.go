@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -339,6 +340,84 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 			2: {multiPartitionOwnerInstanceID(instanceID1, 2)},
 		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
 	})
+}
+
+func TestPartitionInstanceLifecycler_RemoveOwnerOnShutdown_WritesTombstoneWhenLocalCASViewIsStale(t *testing.T) {
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	const (
+		partitionID = int32(24)
+		instanceID  = "partition-ingester-a-24"
+	)
+
+	store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	// Converged ring has the owner registered.
+	require.NoError(t, store.CAS(ctx, ringKey, func(interface{}) (interface{}, bool, error) {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(partitionID, PartitionActive, time.Now())
+		desc.AddOrUpdateOwner(instanceID, OwnerActive, partitionID, time.Now())
+		return desc, true, nil
+	}))
+
+	// Simulate a memberlist node whose local CAS view has not converged and is missing the owner.
+	staleView := NewPartitionRingDesc()
+	staleView.AddPartition(partitionID, PartitionActive, time.Now())
+	staleStore := &stalePartitionRingCASClient{
+		Client:    store,
+		staleView: staleView,
+	}
+
+	cfg := createTestPartitionInstanceLifecyclerConfig(partitionID, instanceID)
+	cfg.PollingInterval = time.Hour
+	lifecycler := NewPartitionInstanceLifecycler(cfg, "test", ringKey, staleStore, logger, nil)
+	lifecycler.SetCreatePartitionOnStartup(false)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+	lifecycler.SetRemoveOwnerOnShutdown(true)
+	staleStore.useStaleView.Store(true)
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
+	require.Positive(t, staleStore.staleCASCalls.Load())
+
+	// Lifecycler shutdown uses DeleteOwner, so a tombstone is written even against the
+	// stale view and merges into the converged ring (memberlist gossip equivalent).
+	converged := getPartitionRingFromStore(t, store, ringKey)
+	require.NotNil(t, staleStore.lastWritten)
+	_, err := converged.Merge(staleStore.lastWritten, false)
+	require.NoError(t, err)
+
+	require.Equal(t, OwnerDeleted, converged.Owners[instanceID].State)
+	require.Equal(t, 0, converged.PartitionOwnersCount(partitionID))
+	require.Equal(t, map[int32][]string{}, converged.ownersByPartition())
+}
+
+// stalePartitionRingCASClient simulates a memberlist node whose local CAS view
+// has not converged with the view held by the rest of the cluster.
+type stalePartitionRingCASClient struct {
+	kv.Client
+
+	useStaleView  atomic.Bool
+	staleCASCalls atomic.Int64
+	staleView     *PartitionRingDesc
+	lastWritten   *PartitionRingDesc
+}
+
+func (c *stalePartitionRingCASClient) CAS(ctx context.Context, key string, f func(interface{}) (interface{}, bool, error)) error {
+	if !c.useStaleView.Load() {
+		return c.Client.CAS(ctx, key, f)
+	}
+
+	c.staleCASCalls.Add(1)
+	out, _, err := f(c.staleView.Clone())
+	if err != nil {
+		return err
+	}
+	if out != nil {
+		c.lastWritten = out.(*PartitionRingDesc)
+	}
+	return nil
 }
 
 func assertMapElementsMatch[K cmp.Ordered, V any, S ~[]V](t *testing.T, expected map[K]S, actual map[K]S) {

@@ -21,12 +21,12 @@ require (
 	github.com/grafana/gomemcache v0.0.0-20251127154401-74f93547077b
 	github.com/grafana/otel-profiling-go v0.6.0
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.12
-	github.com/hashicorp/consul/api v1.34.4
+	github.com/hashicorp/consul/api v1.34.0
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-metrics v0.6.0
 	github.com/hashicorp/go-sockaddr v1.0.7
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/hashicorp/memberlist v0.5.3
+	github.com/hashicorp/memberlist v0.6.0
 	github.com/miekg/dns v1.1.72
 	github.com/opentracing-contrib/go-grpc v0.1.4
 	github.com/opentracing-contrib/go-stdlib v1.1.1
@@ -42,9 +42,9 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
-	go.etcd.io/etcd/api/v3 v3.7.0
-	go.etcd.io/etcd/client/pkg/v3 v3.7.0
-	go.etcd.io/etcd/client/v3 v3.7.0
+	go.etcd.io/etcd/api/v3 v3.6.13
+	go.etcd.io/etcd/client/pkg/v3 v3.6.13
+	go.etcd.io/etcd/client/v3 v3.6.13
 	go.opentelemetry.io/contrib/exporters/autoexport v0.69.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.69.0
@@ -68,7 +68,7 @@ require (
 
 require (
 	github.com/HdrHistogram/hdrhistogram-go v1.3.0 // indirect
-	github.com/armon/go-metrics v0.6.0 // indirect
+	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
@@ -134,8 +134,8 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

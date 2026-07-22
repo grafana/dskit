@@ -153,6 +153,9 @@ type KVConfig struct {
 	NotifyInterval             time.Duration `yaml:"notify_interval" category:"advanced"`
 	ReceivedMessagesQueueSize  int           `yaml:"received_messages_queue_size" category:"advanced"`
 	ProcessedMessagesQueueSize int           `yaml:"processed_messages_queue_size" category:"advanced"`
+	ProbeInterval              time.Duration `yaml:"probe_interval" category:"advanced"`
+	ProbeTimeout               time.Duration `yaml:"probe_timeout" category:"advanced"`
+	SuspicionMult              int           `yaml:"suspicion_multiplier" category:"advanced"`
 
 	CompressionAlgorithm string `yaml:"compression_algorithm" category:"advanced"`
 
@@ -205,9 +208,6 @@ type KVConfig struct {
 	// This useful to override it in tests.
 	discoverMembersBackoff backoff.Config `yaml:"-"`
 
-	// probeInterval overrides the default probe interval when non-zero. This is useful for testing.
-	probeInterval time.Duration `yaml:"-"`
-
 	// Hooks used for testing.
 	beforeJoinMembersOnStartupHook func(_ context.Context)
 }
@@ -244,6 +244,9 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.NotifyInterval, prefix+"memberlist.notify-interval", 0, "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.")
 	f.IntVar(&cfg.ReceivedMessagesQueueSize, prefix+"memberlist.received-messages-queue-size", mlDefaults.HandoffQueueDepth, "Size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes.")
 	f.IntVar(&cfg.ProcessedMessagesQueueSize, prefix+"memberlist.processed-messages-queue-size", mlDefaults.HandoffQueueDepth, "Size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key.")
+	f.DurationVar(&cfg.ProbeInterval, prefix+"memberlist.probe-interval", 5*time.Second, "How often to probe a random node for failure detection. This is also the total timeout for the direct + indirect probes of a single node.")
+	f.DurationVar(&cfg.ProbeTimeout, prefix+"memberlist.probe-timeout", 2*time.Second, "Timeout for the direct failure-detection probe of a single node.")
+	f.IntVar(&cfg.SuspicionMult, prefix+"memberlist.suspicion-multiplier", mlDefaults.SuspicionMult, "Multiplier for the time a suspected node is given to refute the suspicion before being declared dead (timeout is multiplier * log10(cluster size) * probe-interval). Higher values tolerate longer transient disruption of a node's connectivity at the cost of slower detection of genuinely dead nodes.")
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
 	f.IntVar(&cfg.AdvertisePort, prefix+"memberlist.advertise-port", mlDefaults.AdvertisePort, "Gossip port to advertise to other members in the cluster. Used for NAT traversal.")
 	f.StringVar(&cfg.ClusterLabel, prefix+"memberlist.cluster-label", mlDefaults.Label, "The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.")
@@ -538,13 +541,23 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 
 	// For our use cases, we don't need a very fast detection of dead nodes. Since we use a TCP transport
 	// and we open a new TCP connection for each packet, we prefer to reduce the probe frequency and increase
-	// the timeout compared to defaults.
-	if m.cfg.probeInterval > 0 {
-		mlCfg.ProbeInterval = m.cfg.probeInterval
-		mlCfg.ProbeTimeout = m.cfg.probeInterval / 2
+	// the timeout compared to defaults. Zero values fall back to those relaxed defaults (not memberlist's)
+	// so that configs built without RegisterFlags keep the previous behavior.
+	if m.cfg.ProbeInterval > 0 {
+		mlCfg.ProbeInterval = m.cfg.ProbeInterval
 	} else {
-		mlCfg.ProbeInterval = 5 * time.Second // Probe a random node every this interval. This setting is also the total timeout for the direct + indirect probes.
-		mlCfg.ProbeTimeout = 2 * time.Second  // Timeout for the direct probe.
+		mlCfg.ProbeInterval = 5 * time.Second
+	}
+	if m.cfg.ProbeTimeout > 0 {
+		mlCfg.ProbeTimeout = m.cfg.ProbeTimeout
+	} else {
+		mlCfg.ProbeTimeout = 2 * time.Second
+	}
+	// SuspicionMult controls how long a suspected node has to refute the suspicion before being
+	// declared dead. Environments where all of a node's connections can fail together transiently
+	// (e.g. a service-mesh proxy in the gossip path) may need a higher value to avoid false evictions.
+	if m.cfg.SuspicionMult > 0 {
+		mlCfg.SuspicionMult = m.cfg.SuspicionMult
 	}
 
 	// Since we use a custom transport based on TCP, having TCP-based fallbacks doesn't give us any benefit.

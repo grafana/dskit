@@ -329,6 +329,61 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
 	require.Equal(t, 1234, conf.Overrides["user1"].Limit1)
 }
 
+func TestOverridesManagerMapLoader(t *testing.T) {
+	tempFiles, err := generateRuntimeFiles(t,
+		[]string{`overrides:
+  user1:
+    limit1: 101`,
+			`overrides:
+  user2:
+    limit2: 204`})
+	require.NoError(t, err)
+
+	reg := prometheus.NewPedanticRegistry()
+	cfg := Config{
+		ReloadPeriod: time.Second,
+		LoadPath:     generateLoadPath(tempFiles),
+		Loader: func(io.Reader) (interface{}, error) {
+			return nil, errors.New("Loader should not be called when MapLoader is set")
+		},
+		MapLoader: func(m map[string]interface{}) (interface{}, error) {
+			js, err := json.Marshal(m)
+			require.NoError(t, err)
+			var o testOverrides
+			err = json.Unmarshal(js, &o)
+			require.NoError(t, err)
+			return &o, nil
+		},
+	}
+
+	overridesManager, err := New(cfg, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager)) })
+
+	conf := overridesManager.GetConfig().(*testOverrides)
+	require.Equal(t, 101, conf.Overrides["user1"].Limit1)
+	require.Equal(t, 204, conf.Overrides["user2"].Limit2)
+
+	require.Equal(t, 1, testutil.CollectAndCount(overridesManager.configHash, "runtime_config_hash"))
+}
+
+func TestCombinedFilesHash(t *testing.T) {
+	base := map[string]string{"file-a": "hash1", "file-b": "hash2", "file-c": "hash3"}
+
+	// The hash is deterministic and independent of map insertion/iteration order.
+	reordered := map[string]string{"file-c": "hash3", "file-a": "hash1", "file-b": "hash2"}
+	require.Equal(t, combinedFilesHash(base), combinedFilesHash(reordered))
+
+	// Changing any file's content changes the hash.
+	changedContent := map[string]string{"file-a": "hash1", "file-b": "CHANGED", "file-c": "hash3"}
+	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedContent))
+
+	// Renaming a file changes the hash.
+	changedName := map[string]string{"file-a": "hash1", "file-b": "hash2", "file-d": "hash3"}
+	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedName))
+}
+
 func TestOverridesManagerMultipleIncompatibleFiles(t *testing.T) {
 	tempFiles, err := generateRuntimeFiles(t,
 		[]string{

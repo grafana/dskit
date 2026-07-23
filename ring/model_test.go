@@ -3,6 +3,7 @@ package ring
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -359,6 +360,42 @@ func TestDesc_RingsCompare(t *testing.T) {
 	}
 }
 
+func TestDesc_RingCompare_SharedTokenStorage(t *testing.T) {
+	tokens := []uint32{1, 2, 3}
+	d1 := &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: tokens}}}
+
+	t.Run("clone shares token storage", func(t *testing.T) {
+		d2 := d1.Clone().(*Desc)
+		assert.Equal(t, Equal, d1.RingCompare(d2))
+
+		ing := d2.Ingesters["ing1"]
+		ing.Timestamp++
+		d2.Ingesters["ing1"] = ing
+		assert.Equal(t, EqualButStatesAndTimestamps, d1.RingCompare(d2))
+	})
+
+	t.Run("same backing array, different length", func(t *testing.T) {
+		d2 := &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: tokens[:2]}}}
+		assert.Equal(t, Different, d1.RingCompare(d2))
+	})
+
+	t.Run("equal content, different storage", func(t *testing.T) {
+		d2 := &Desc{Ingesters: map[string]InstanceDesc{"ing1": {Addr: "addr1", Tokens: slices.Clone(tokens)}}}
+		assert.Equal(t, Equal, d1.RingCompare(d2))
+	})
+
+	t.Run("shared storage for unchanged instance, different tokens for changed one", func(t *testing.T) {
+		d1 := d1.Clone().(*Desc)
+		d1.Ingesters["ing2"] = InstanceDesc{Addr: "addr2", Tokens: []uint32{4, 5, 6}}
+
+		d2 := d1.Clone().(*Desc)
+		ing2 := d2.Ingesters["ing2"]
+		ing2.Tokens = []uint32{4, 5, 7}
+		d2.Ingesters["ing2"] = ing2
+		assert.Equal(t, Different, d1.RingCompare(d2))
+	})
+}
+
 func TestMergeTokens(t *testing.T) {
 	tests := map[string]struct {
 		input    [][]uint32
@@ -504,30 +541,75 @@ func TestDesc_Clone(t *testing.T) {
 	})
 }
 
+func buildBenchmarkDesc(numInstances, tokensPerInstance int) *Desc {
+	d := &Desc{Ingesters: make(map[string]InstanceDesc, numInstances)}
+	for i := 0; i < numInstances; i++ {
+		tokens := make([]uint32, tokensPerInstance)
+		for j := range tokens {
+			tokens[j] = uint32(i*tokensPerInstance + j)
+		}
+		id := fmt.Sprintf("instance-%d", i)
+		d.Ingesters[id] = InstanceDesc{
+			Addr:                fmt.Sprintf("10.0.%d.%d", i/256, i%256),
+			Timestamp:           123456,
+			State:               ACTIVE,
+			Tokens:              tokens,
+			Zone:                fmt.Sprintf("zone-%d", i%3),
+			RegisteredTimestamp: 234567,
+			Id:                  id,
+		}
+	}
+	return d
+}
+
 func BenchmarkDesc_Clone(b *testing.B) {
 	for _, numInstances := range []int{100, 1000, 10000} {
 		b.Run(fmt.Sprintf("instances=%d", numInstances), func(b *testing.B) {
-			d := &Desc{Ingesters: make(map[string]InstanceDesc, numInstances)}
-			for i := 0; i < numInstances; i++ {
-				tokens := make([]uint32, 512)
-				for j := range tokens {
-					tokens[j] = uint32(i*512 + j)
-				}
-				id := fmt.Sprintf("instance-%d", i)
-				d.Ingesters[id] = InstanceDesc{
-					Addr:                fmt.Sprintf("10.0.%d.%d", i/256, i%256),
-					Timestamp:           123456,
-					State:               ACTIVE,
-					Tokens:              tokens,
-					Zone:                fmt.Sprintf("zone-%d", i%3),
-					RegisteredTimestamp: 234567,
-					Id:                  id,
-				}
-			}
+			d := buildBenchmarkDesc(numInstances, 512)
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = d.Clone()
+			}
+		})
+	}
+}
+
+func BenchmarkDesc_RingCompare(b *testing.B) {
+	for _, numInstances := range []int{100, 1000, 10000} {
+		base := buildBenchmarkDesc(numInstances, 512)
+
+		// The common case for a memberlist watcher notification: the new state is a
+		// clone of the KV store's value where only heartbeat timestamps changed, so
+		// every instance's token slice shares its storage with the previous state.
+		heartbeat := base.Clone().(*Desc)
+		for id, ing := range heartbeat.Ingesters {
+			ing.Timestamp++
+			heartbeat.Ingesters[id] = ing
+		}
+
+		// Worst case: same ring content, but no token slice shares its storage with
+		// the previous state (e.g. states obtained from two independent decodes).
+		unshared := base.Clone().(*Desc)
+		for id, ing := range unshared.Ingesters {
+			ing.Timestamp++
+			ing.Tokens = slices.Clone(ing.Tokens)
+			unshared.Ingesters[id] = ing
+		}
+
+		b.Run(fmt.Sprintf("instances=%d/token storage=shared", numInstances), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				if base.RingCompare(heartbeat) != EqualButStatesAndTimestamps {
+					b.Fatal("unexpected compare result")
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("instances=%d/token storage=unshared", numInstances), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				if base.RingCompare(unshared) != EqualButStatesAndTimestamps {
+					b.Fatal("unexpected compare result")
+				}
 			}
 		})
 	}

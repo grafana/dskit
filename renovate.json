@@ -33,6 +33,19 @@
       "groupName": "go-dependencies"
     },
     {
+      "description": "Respect the go-metrics module rename boundary",
+      "matchManagers": ["gomod"],
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["github.com/armon/go-metrics"],
+      "allowedVersions": "<0.5.0"
+    },
+    {
+      "description": "Only update Go modules compatible with the minimum Go version",
+      "matchManagers": ["gomod"],
+      "matchDatasources": ["go"],
+      "constraintsFiltering": "strict"
+    },
+    {
       "description": "Don't update replace directives",
       "matchPackageNames": [
         "github.com/hashicorp/memberlist"

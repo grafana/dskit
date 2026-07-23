@@ -93,10 +93,10 @@ github.com/grafana/pyroscope-go/godeltaprof v0.1.12 h1:X6OemT2WcLtxdmNukEQuIp0c+
 github.com/grafana/pyroscope-go/godeltaprof v0.1.12/go.mod h1:aNSXN1bn1VHAd06EiepmwhAabHsMc67gx8itecdF2c8=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF28c5ZQfqCBQ5g2xfk=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0/go.mod h1:Hyl3n6Twe1hvtd9XUXDec4pTvgMSEixRuQKPTMH2bNs=
-github.com/hashicorp/consul/api v1.34.0 h1:9xohQbBmU7BxlrrKYXhEZzXKtqmVlR5RIB+c6pGE2uM=
-github.com/hashicorp/consul/api v1.34.0/go.mod h1:9Gka/GgMEmqxWGMaTkpVWp/Trx/ZMqa/C7A/tvmd5+I=
-github.com/hashicorp/consul/sdk v0.18.0 h1:WvrUz2IYZXY4MX0i45QE9aFrD2izjyuUI+NZv2duatE=
-github.com/hashicorp/consul/sdk v0.18.0/go.mod h1:jnOmYjiNfVRpBaujQ1DFFVs0N6g3S1y6wygSjLTzYfc=
+github.com/hashicorp/consul/api v1.34.1 h1:/qKFfBJ5GEmY3sIlK1HulRJciLoT1pCGBkq2gwILXVg=
+github.com/hashicorp/consul/api v1.34.1/go.mod h1:K+7fQ7o5QEyoFRyXtX3/iGSxDbg9jYWGJ5rDyrXzHU8=
+github.com/hashicorp/consul/sdk v0.17.2 h1:sC0jgNhJkZX3wo1DCrkG12r+1JlZQpWvk3AoL3yZE4Q=
+github.com/hashicorp/consul/sdk v0.17.2/go.mod h1:VjccKcw6YhMhjH84/ZhTXZ0OG4SUq+K25P6DiCV/Hvg=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
 github.com/hashicorp/errwrap v1.1.0 h1:OxrOeh75EUXMY8TBjag2fzXGZ40LB6IKw45YeGUDY2I=
 github.com/hashicorp/errwrap v1.1.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=

@@ -5,12 +5,11 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +34,8 @@ type Preprocessor func(b []byte) ([]byte, error)
 // Loader loads the configuration from files.
 type Loader func(r io.Reader) (interface{}, error)
 
-// MapLoader loads the configuration from a map.
+// MapLoader loads the configuration from a recursively string-keyed map.
+// Scalar values retain the types produced by YAML or JSON decoding.
 type MapLoader func(m map[string]interface{}) (interface{}, error)
 
 // Config holds the config for an Manager instance.
@@ -267,8 +267,19 @@ func (om *Manager) loadConfig(ctx context.Context) error {
 		err  error
 	)
 	if om.cfg.MapLoader != nil {
-		hash = combinedFilesHash(hashes)
-		cfg, err = om.cfg.MapLoader(mergedConfig)
+		hash, err = mergedConfigHash(mergedConfig)
+		if err != nil {
+			om.configLoadSuccess.Set(0)
+			return errors.Wrap(err, "marshal file")
+		}
+
+		normalizedConfig, err := normalizeMapLoaderConfig(mergedConfig)
+		if err != nil {
+			om.configLoadSuccess.Set(0)
+			return errors.Wrap(err, "normalize file")
+		}
+
+		cfg, err = om.cfg.MapLoader(normalizedConfig)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
 			return errors.Wrap(err, "load file")
@@ -301,23 +312,137 @@ func (om *Manager) loadConfig(ctx context.Context) error {
 	return nil
 }
 
-func combinedFilesHash(hashes map[string]string) [sha256.Size]byte {
-	names := make([]string, 0, len(hashes))
-	for name := range hashes {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
+func mergedConfigHash(config map[string]any) ([sha256.Size]byte, error) {
 	h := sha256.New()
-	for _, name := range names {
-		_, _ = io.WriteString(h, name)
-		_, _ = io.WriteString(h, "=")
-		_, _ = io.WriteString(h, hashes[name])
-		_, _ = io.WriteString(h, ";")
+	enc := yaml.NewEncoder(h)
+	if err := enc.Encode(config); err != nil {
+		return [sha256.Size]byte{}, err
 	}
+	if err := enc.Close(); err != nil {
+		return [sha256.Size]byte{}, err
+	}
+
 	var out [sha256.Size]byte
 	copy(out[:], h.Sum(nil))
-	return out
+	return out, nil
+}
+
+func normalizeMapLoaderConfig(config map[string]any) (map[string]any, error) {
+	normalized, err := normalizeMapLoaderValue(config, "")
+	if err != nil {
+		return nil, err
+	}
+	return normalized.(map[string]any), nil
+}
+
+func normalizeMapLoaderValue(value any, path string) (any, error) {
+	switch value := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, child := range value {
+			normalized, err := normalizeMapLoaderValue(child, configPath(path, key))
+			if err != nil {
+				return nil, err
+			}
+			out[key] = normalized
+		}
+		return out, nil
+
+	case map[any]any:
+		out := make(map[string]any, len(value))
+		for key, child := range value {
+			normalizedKey, err := canonicalYAMLMapKey(key)
+			if err != nil {
+				return nil, errors.Wrapf(err, "map key at %q", path)
+			}
+			if _, exists := out[normalizedKey]; exists {
+				return nil, errors.Errorf("map key collision at %q after normalization to %q", path, normalizedKey)
+			}
+
+			normalized, err := normalizeMapLoaderValue(child, configPath(path, normalizedKey))
+			if err != nil {
+				return nil, err
+			}
+			out[normalizedKey] = normalized
+		}
+		return out, nil
+
+	case []any:
+		out := make([]any, len(value))
+		for i, child := range value {
+			normalized, err := normalizeMapLoaderValue(child, fmt.Sprintf("%s[%d]", path, i))
+			if err != nil {
+				return nil, err
+			}
+			out[i] = normalized
+		}
+		return out, nil
+
+	default:
+		return value, nil
+	}
+}
+
+func canonicalYAMLMapKey(key any) (string, error) {
+	switch key := key.(type) {
+	case nil:
+		return "null", nil
+	case string:
+		return key, nil
+	case bool:
+		return strconv.FormatBool(key), nil
+	case int:
+		return strconv.FormatInt(int64(key), 10), nil
+	case int8:
+		return strconv.FormatInt(int64(key), 10), nil
+	case int16:
+		return strconv.FormatInt(int64(key), 10), nil
+	case int32:
+		return strconv.FormatInt(int64(key), 10), nil
+	case int64:
+		return strconv.FormatInt(key, 10), nil
+	case uint:
+		return strconv.FormatUint(uint64(key), 10), nil
+	case uint8:
+		return strconv.FormatUint(uint64(key), 10), nil
+	case uint16:
+		return strconv.FormatUint(uint64(key), 10), nil
+	case uint32:
+		return strconv.FormatUint(uint64(key), 10), nil
+	case uint64:
+		return strconv.FormatUint(key, 10), nil
+	case uintptr:
+		return strconv.FormatUint(uint64(key), 10), nil
+	case float32:
+		return canonicalYAMLFloat(float64(key), 32), nil
+	case float64:
+		return canonicalYAMLFloat(key, 64), nil
+	case time.Time:
+		return key.Format(time.RFC3339Nano), nil
+	default:
+		return "", errors.Errorf("unsupported type %T", key)
+	}
+}
+
+func canonicalYAMLFloat(value float64, bitSize int) string {
+	s := strconv.FormatFloat(value, 'g', -1, bitSize)
+	switch s {
+	case "+Inf":
+		return ".inf"
+	case "-Inf":
+		return "-.inf"
+	case "NaN":
+		return ".nan"
+	default:
+		return s
+	}
+}
+
+func configPath(path, key string) string {
+	if path == "" {
+		return key
+	}
+	return path + "." + key
 }
 
 func (om *Manager) unmarshalMaybeGzipped(filename string, data []byte) (map[string]any, error) {
@@ -348,8 +473,7 @@ func (om *Manager) unmarshalMaybeGzipped(filename string, data []byte) (map[stri
 // encoding/json, which is faster. YAML is used as a fallback
 func unmarshalJSONOrYAML(data []byte) (map[string]any, error) {
 	if looksLikeJSONObject(data) {
-		m := map[string]any{}
-		if err := json.Unmarshal(data, &m); err == nil {
+		if m, err := unmarshalYAMLCompatibleJSON(data); err == nil {
 			return m, nil
 		}
 	}
@@ -370,46 +494,93 @@ func isGzip(data []byte) bool {
 	return len(data) > 2 && data[0] == 0x1f && data[1] == 0x8b
 }
 
-func mergeConfigMaps(a, b map[string]interface{}, path string) (_ map[string]interface{}, err error) {
-	out := make(map[string]interface{}, len(a))
+func mergeConfigMaps(a, b map[string]interface{}, path string) (map[string]interface{}, error) {
+	return mergeStringConfigMaps(a, b, path)
+}
+
+func mergeStringConfigMaps(a, b map[string]any, path string) (map[string]any, error) {
+	out := make(map[string]any, len(a))
 	for k, v := range a {
 		out[k] = v
 	}
 	for k, v := range b {
-		aVal, aHasKey := a[k]
-		bVal, bHasKey := b[k]
-
-		_, aIsMap := a[k].(map[string]interface{})
-		_, bIsMap := b[k].(map[string]interface{})
-
-		if aHasKey && aVal == nil && bIsMap {
-			aIsMap = true
-			out[k] = make(map[string]interface{})
+		aVal, exists := out[k]
+		if !exists {
+			out[k] = v
+			continue
 		}
 
-		if bHasKey && bVal == nil && aIsMap {
-			bIsMap = true
-			v = make(map[string]interface{})
+		merged, err := mergeConfigValues(aVal, v, path+"."+k)
+		if err != nil {
+			return nil, err
 		}
-
-		if aHasKey && aIsMap != bIsMap {
-			return nil, errors.Errorf("conflicting types for %q: %T != %T", path+"."+k, a[k], b[k])
-		}
-
-		if v, ok := v.(map[string]interface{}); ok {
-			if bv, ok := out[k]; ok {
-				if bv, ok := bv.(map[string]interface{}); ok {
-					out[k], err = mergeConfigMaps(bv, v, path+"."+k)
-					if err != nil {
-						return nil, err
-					}
-					continue
-				}
-			}
-		}
-		out[k] = v
+		out[k] = merged
 	}
 	return out, nil
+}
+
+func mergeAnyConfigMaps(a, b map[any]any, path string) (map[any]any, error) {
+	out := make(map[any]any, len(a))
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		aVal, exists := out[k]
+		if !exists {
+			out[k] = v
+			continue
+		}
+
+		merged, err := mergeConfigValues(aVal, v, fmt.Sprintf("%s.%v", path, k))
+		if err != nil {
+			return nil, err
+		}
+		out[k] = merged
+	}
+	return out, nil
+}
+
+func mergeConfigValues(a, b any, path string) (any, error) {
+	if a == nil {
+		switch b.(type) {
+		case map[string]any:
+			a = map[string]any{}
+		case map[any]any:
+			a = map[any]any{}
+		}
+	}
+	if b == nil {
+		switch a.(type) {
+		case map[string]any:
+			b = map[string]any{}
+		case map[any]any:
+			b = map[any]any{}
+		}
+	}
+
+	switch a := a.(type) {
+	case map[string]any:
+		bMap, ok := b.(map[string]any)
+		if !ok {
+			return nil, errors.Errorf("conflicting types for %q: %T != %T", path, a, b)
+		}
+		return mergeStringConfigMaps(a, bMap, path)
+
+	case map[any]any:
+		bMap, ok := b.(map[any]any)
+		if !ok {
+			return nil, errors.Errorf("conflicting types for %q: %T != %T", path, a, b)
+		}
+		return mergeAnyConfigMaps(a, bMap, path)
+
+	default:
+		switch b.(type) {
+		case map[string]any, map[any]any:
+			return nil, errors.Errorf("conflicting types for %q: %T != %T", path, a, b)
+		default:
+			return b, nil
+		}
+	}
 }
 
 func (om *Manager) setConfig(config interface{}) {

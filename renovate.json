@@ -33,6 +33,12 @@
       "groupName": "go-dependencies"
     },
     {
+      "description": "Prevent automated major version upgrades of Go dependencies",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "description": "Respect the go-metrics module rename boundary",
       "matchManagers": ["gomod"],
       "matchDatasources": ["go"],

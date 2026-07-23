@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -332,10 +333,9 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
 func TestOverridesManagerMapLoader(t *testing.T) {
 	tempFiles, err := generateRuntimeFiles(t,
 		[]string{`overrides:
-  user1:
-    limit1: 101`,
-			`overrides:
-  user2:
+  123:
+    limit1: 101
+  456:
     limit2: 204`})
 	require.NoError(t, err)
 
@@ -362,26 +362,218 @@ func TestOverridesManagerMapLoader(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager)) })
 
 	conf := overridesManager.GetConfig().(*testOverrides)
-	require.Equal(t, 101, conf.Overrides["user1"].Limit1)
-	require.Equal(t, 204, conf.Overrides["user2"].Limit2)
+	require.Equal(t, 101, conf.Overrides["123"].Limit1)
+	require.Equal(t, 204, conf.Overrides["456"].Limit2)
 
 	require.Equal(t, 1, testutil.CollectAndCount(overridesManager.configHash, "runtime_config_hash"))
 }
 
-func TestCombinedFilesHash(t *testing.T) {
-	base := map[string]string{"file-a": "hash1", "file-b": "hash2", "file-c": "hash3"}
+func TestOverridesManagerMergesNumericKeysAcrossFiles(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		loader    Loader
+		mapLoader MapLoader
+	}{
+		{name: "Loader", loader: testLoadOverrides},
+		{
+			name: "MapLoader",
+			mapLoader: func(m map[string]interface{}) (interface{}, error) {
+				data, err := json.Marshal(m)
+				if err != nil {
+					return nil, err
+				}
+				var overrides testOverrides
+				if err := json.Unmarshal(data, &overrides); err != nil {
+					return nil, err
+				}
+				return &overrides, nil
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tempFiles, err := generateRuntimeFiles(t, []string{
+				`overrides:
+  123:
+    limit1: 101`,
+				`overrides:
+  456:
+    limit2: 204`,
+			})
+			require.NoError(t, err)
 
-	// The hash is deterministic and independent of map insertion/iteration order.
-	reordered := map[string]string{"file-c": "hash3", "file-a": "hash1", "file-b": "hash2"}
-	require.Equal(t, combinedFilesHash(base), combinedFilesHash(reordered))
+			manager, err := New(Config{
+				ReloadPeriod: time.Second,
+				LoadPath:     generateLoadPath(tempFiles),
+				Loader:       test.loader,
+				MapLoader:    test.mapLoader,
+			}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager))
+			})
 
-	// Changing any file's content changes the hash.
-	changedContent := map[string]string{"file-a": "hash1", "file-b": "CHANGED", "file-c": "hash3"}
-	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedContent))
+			config := manager.GetConfig().(*testOverrides)
+			require.Equal(t, 101, config.Overrides["123"].Limit1)
+			require.Equal(t, 204, config.Overrides["456"].Limit2)
+		})
+	}
+}
 
-	// Renaming a file changes the hash.
-	changedName := map[string]string{"file-a": "hash1", "file-b": "hash2", "file-d": "hash3"}
-	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedName))
+func TestMergedConfigHash(t *testing.T) {
+	first := map[string]any{
+		"overrides": map[string]any{
+			"tenant": map[string]any{"limit": 1},
+		},
+	}
+	second := map[string]any{
+		"overrides": map[string]any{
+			"tenant": map[string]any{"limit": 2},
+		},
+	}
+
+	merged, err := mergeConfigMaps(first, second, "")
+	require.NoError(t, err)
+	reversed, err := mergeConfigMaps(second, first, "")
+	require.NoError(t, err)
+
+	hash, err := mergedConfigHash(merged)
+	require.NoError(t, err)
+	reversedHash, err := mergedConfigHash(reversed)
+	require.NoError(t, err)
+	require.NotEqual(t, hash, reversedHash)
+
+	marshaled, err := yaml.Marshal(merged)
+	require.NoError(t, err)
+	require.Equal(t, sha256.Sum256(marshaled), hash)
+
+	equivalent := map[string]any{
+		"overrides": map[string]any{
+			"tenant": map[string]any{"limit": 2},
+		},
+	}
+	equivalentHash, err := mergedConfigHash(equivalent)
+	require.NoError(t, err)
+	require.Equal(t, hash, equivalentHash)
+}
+
+func TestMergedConfigHashWithNumericKeys(t *testing.T) {
+	first := map[string]any{
+		"overrides": map[any]any{
+			123: map[string]any{"limit": 1},
+		},
+	}
+	second := map[string]any{
+		"overrides": map[any]any{
+			456: map[string]any{"limit": 2},
+		},
+	}
+
+	merged, err := mergeConfigMaps(first, second, "")
+	require.NoError(t, err)
+	require.Equal(t, map[any]any{
+		123: map[string]any{"limit": 1},
+		456: map[string]any{"limit": 2},
+	}, merged["overrides"])
+
+	hash, err := mergedConfigHash(merged)
+	require.NoError(t, err)
+	marshaled, err := yaml.Marshal(merged)
+	require.NoError(t, err)
+	require.Equal(t, sha256.Sum256(marshaled), hash)
+
+	changedFirst := map[string]any{
+		"overrides": map[any]any{
+			123: map[string]any{"limit": 3},
+		},
+	}
+	changedMerged, err := mergeConfigMaps(changedFirst, second, "")
+	require.NoError(t, err)
+	changedHash, err := mergedConfigHash(changedMerged)
+	require.NoError(t, err)
+	require.NotEqual(t, hash, changedHash)
+
+	overriddenFirst := map[string]any{
+		"overrides": map[any]any{
+			123: map[string]any{"limit": 99},
+		},
+	}
+	override := map[string]any{
+		"overrides": map[any]any{
+			123: map[string]any{"limit": 1},
+			456: map[string]any{"limit": 2},
+		},
+	}
+	overriddenMerged, err := mergeConfigMaps(overriddenFirst, override, "")
+	require.NoError(t, err)
+	overriddenHash, err := mergedConfigHash(overriddenMerged)
+	require.NoError(t, err)
+	require.Equal(t, hash, overriddenHash)
+}
+
+func TestMergeConfigMapsWithNumericKeysAndNilValues(t *testing.T) {
+	first := map[string]any{
+		"overrides": map[any]any{
+			123: nil,
+			456: map[string]any{"limit": 2},
+		},
+	}
+	second := map[string]any{
+		"overrides": map[any]any{
+			123: map[string]any{"limit": 1},
+			456: nil,
+		},
+	}
+
+	merged, err := mergeConfigMaps(first, second, "")
+	require.NoError(t, err)
+	require.Equal(t, map[any]any{
+		123: map[string]any{"limit": 1},
+		456: map[string]any{"limit": 2},
+	}, merged["overrides"])
+}
+
+func TestNormalizeMapLoaderConfig(t *testing.T) {
+	timestamp := time.Date(2026, time.July, 23, 10, 11, 12, 123, time.UTC)
+	config := map[string]any{
+		"nested": map[any]any{
+			nil:         "nil",
+			true:        "bool",
+			int64(-12):  "int",
+			uint64(13):  "uint",
+			math.Inf(1): "float",
+			timestamp:   "timestamp",
+		},
+		"list": []any{
+			map[any]any{123: "value"},
+		},
+	}
+
+	normalized, err := normalizeMapLoaderConfig(config)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"nested": map[string]any{
+			"null":                           "nil",
+			"true":                           "bool",
+			"-12":                            "int",
+			"13":                             "uint",
+			".inf":                           "float",
+			"2026-07-23T10:11:12.000000123Z": "timestamp",
+		},
+		"list": []any{
+			map[string]any{"123": "value"},
+		},
+	}, normalized)
+
+	_, err = normalizeMapLoaderConfig(map[string]any{
+		"nested": map[any]any{[2]int{1, 2}: "unsupported"},
+	})
+	require.ErrorContains(t, err, `map key at "nested": unsupported type [2]int`)
+
+	_, err = normalizeMapLoaderConfig(map[string]any{
+		"nested": map[any]any{1: "number", "1": "string"},
+	})
+	require.ErrorContains(t, err, `map key collision at "nested" after normalization to "1"`)
 }
 
 func TestOverridesManagerMultipleIncompatibleFiles(t *testing.T) {

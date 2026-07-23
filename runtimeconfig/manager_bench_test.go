@@ -28,21 +28,33 @@ func BenchmarkManagerLoadConfig(b *testing.B) {
 	require.NoError(b, os.WriteFile(yamlPath, yamlData, 0600))
 	require.NoError(b, os.WriteFile(jsonPath, jsonData, 0600))
 
-	cfg := Config{
-		LoadPath: []string{yamlPath, jsonPath},
-		Loader:   benchLoader,
-	}
-	m, err := New(cfg, "bench", prometheus.NewPedanticRegistry(), log.NewNopLogger())
-	require.NoError(b, err)
+	for _, benchmark := range []struct {
+		name      string
+		loader    Loader
+		mapLoader MapLoader
+	}{
+		{name: "Loader", loader: benchLoader},
+		{name: "MapLoader", mapLoader: benchMapLoader},
+	} {
+		b.Run(benchmark.name, func(b *testing.B) {
+			cfg := Config{
+				LoadPath:  []string{yamlPath, jsonPath},
+				Loader:    benchmark.loader,
+				MapLoader: benchmark.mapLoader,
+			}
+			m, err := New(cfg, "bench", prometheus.NewPedanticRegistry(), log.NewNopLogger())
+			require.NoError(b, err)
 
-	ctx := context.Background()
+			ctx := context.Background()
 
-	b.ReportAllocs()
-	for b.Loop() {
-		// Reset the per-file hash cache so every iteration performs a full
-		// reload instead of short-circuiting on unchanged hashes.
-		m.fileHashes = nil
-		require.NoError(b, m.loadConfig(ctx))
+			b.ReportAllocs()
+			for b.Loop() {
+				// Reset the per-file hash cache so every iteration performs a full
+				// reload instead of short-circuiting on unchanged hashes.
+				m.fileHashes = nil
+				require.NoError(b, m.loadConfig(ctx))
+			}
+		})
 	}
 }
 
@@ -88,6 +100,18 @@ func generateOverrides(numTenants int) benchOverrides {
 func benchLoader(r io.Reader) (interface{}, error) {
 	o := &benchOverrides{}
 	if err := yaml.NewDecoder(r).Decode(o); err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+func benchMapLoader(m map[string]interface{}) (interface{}, error) {
+	data, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	o := &benchOverrides{}
+	if err := json.Unmarshal(data, o); err != nil {
 		return nil, err
 	}
 	return o, nil

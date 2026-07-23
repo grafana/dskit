@@ -205,6 +205,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/go-viper/mapstructure/v2/internal/errors"
 )
@@ -1570,8 +1571,10 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 	// Compile the list of all the fields that we're going to be decoding
 	// from all the structs.
 	type field struct {
-		field reflect.StructField
-		val   reflect.Value
+		name string
+		// nameVal is a cached reflect.ValueOf(name)
+		nameVal reflect.Value
+		val     reflect.Value
 	}
 
 	// remainField is set to a valid field set with the "remain" tag if
@@ -1645,31 +1648,26 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 
 			// Build our field
 			if remain {
-				remainField = &field{fieldType, fieldVal}
+				remainField = &field{val: fieldVal}
 			} else {
 				// Normal struct field, store it away
-				fields = append(fields, field{fieldType, fieldVal})
+				tagName, hasTagValue := getFieldKey(fieldType, d.config.TagName)
+				if !hasTagValue && d.config.IgnoreUntaggedFields {
+					continue
+				}
+				fieldName := tagName
+				if fieldName == "" {
+					fieldName = d.config.MapFieldName(fieldType.Name)
+				}
+				fields = append(fields, field{fieldName, getStringValue(fieldName), fieldVal})
 			}
 		}
 	}
 
-	// for fieldType, field := range fields {
 	for _, f := range fields {
-		field, fieldValue := f.field, f.val
-		fieldName := field.Name
+		fieldName, fieldValue := f.name, f.val
 
-		tagValue, _ := getTagValue(field, d.config.TagName)
-		if tagValue == "" && d.config.IgnoreUntaggedFields {
-			continue
-		}
-		tagValue = strings.SplitN(tagValue, ",", 2)[0]
-		if tagValue != "" {
-			fieldName = tagValue
-		} else {
-			fieldName = d.config.MapFieldName(fieldName)
-		}
-
-		rawMapKey := reflect.ValueOf(fieldName)
+		rawMapKey := f.nameVal
 		rawMapVal := dataVal.MapIndex(rawMapKey)
 		if !rawMapVal.IsValid() {
 			// Do a slower search by iterating over each key and
@@ -1691,7 +1689,7 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			if !rawMapVal.IsValid() {
 				// There was no matching key in the map for the value in
 				// the struct. Remember it for potential errors and metadata.
-				if !(d.config.AllowUnsetPointer && fieldValue.Kind() == reflect.Ptr) {
+				if shouldTrackUnused(d.config, fieldValue) {
 					targetValKeysUnused[fieldName] = struct{}{}
 				}
 				continue
@@ -1876,13 +1874,71 @@ func hasAnyTag(field reflect.StructField, tagName string) bool {
 	return ok
 }
 
-func getTagParts(field reflect.StructField, tagName string) []string {
-	tagValue, ok := getTagValue(field, tagName)
-	if !ok {
-		return nil
-	}
-	return strings.Split(tagValue, ",")
+func shouldTrackUnused(c *DecoderConfig, fieldValue reflect.Value) bool {
+	return (c.ErrorUnset || c.Metadata != nil) &&
+		!(c.AllowUnsetPointer && fieldValue.Kind() == reflect.Ptr)
 }
+
+// getFieldKey memoizes getTagValue(field, tagName)[0], ie. the map key to be
+// used to look up the field's value in the input.
+func getFieldKey(field reflect.StructField, tagName string) (string, bool) {
+	type cacheVal struct {
+		key string
+		ok  bool
+	}
+	key := tagKey{field.Tag, tagName}
+	if v, ok := fieldKeyCache.Load(key); ok {
+		r := v.(cacheVal)
+		return r.key, r.ok
+	}
+
+	var r cacheVal
+	if tagValue, ok := getTagValue(field, tagName); ok && tagValue != "" {
+		r = cacheVal{strings.SplitN(tagValue, ",", 2)[0], true}
+	}
+
+	fieldKeyCache.Store(key, r)
+	return r.key, r.ok
+}
+
+type tagKey struct {
+	tag     reflect.StructTag
+	tagName string // [DecoderConfig.TagName]
+}
+
+var fieldKeyCache sync.Map // owned by getFieldKey
+
+// getStringValue memoizes reflect.ValueOf(s).
+func getStringValue(s string) reflect.Value {
+	if v, ok := stringValueCache.Load(s); ok {
+		return v.(reflect.Value)
+	}
+
+	rv := reflect.ValueOf(s)
+
+	stringValueCache.Store(s, rv)
+	return rv
+}
+
+var stringValueCache sync.Map // owned by getStringValue
+
+// getTagParts memoizes getTagValue(field, tagName), split by ","
+func getTagParts(field reflect.StructField, tagName string) []string {
+	key := tagKey{field.Tag, tagName}
+	if v, ok := tagPartsCache.Load(key); ok {
+		return v.([]string)
+	}
+
+	var parts []string
+	if tagValue, ok := getTagValue(field, tagName); ok {
+		parts = strings.Split(tagValue, ",")
+	}
+
+	tagPartsCache.Store(key, parts)
+	return parts
+}
+
+var tagPartsCache sync.Map // owned by getTagParts
 
 func getTagValue(field reflect.StructField, tagName string) (string, bool) {
 	for _, name := range splitTagNames(tagName) {
@@ -1894,7 +1950,7 @@ func getTagValue(field reflect.StructField, tagName string) (string, bool) {
 }
 
 func splitTagNames(tagName string) []string {
-	if tagName == "" {
+	if tagName == "" || tagName == "mapstructure" {
 		return []string{"mapstructure"}
 	}
 	parts := strings.Split(tagName, ",")

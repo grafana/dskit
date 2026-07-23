@@ -1,6 +1,6 @@
 module github.com/grafana/dskit
 
-go 1.25.8
+go 1.25.9
 
 toolchain go1.26.5
 
@@ -21,7 +21,7 @@ require (
 	github.com/grafana/gomemcache v0.0.0-20251127154401-74f93547077b
 	github.com/grafana/otel-profiling-go v0.6.0
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.12
-	github.com/hashicorp/consul/api v1.34.0
+	github.com/hashicorp/consul/api v1.34.1
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-metrics v0.6.0
 	github.com/hashicorp/go-sockaddr v1.0.7

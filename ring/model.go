@@ -14,6 +14,15 @@ import (
 	"github.com/grafana/dskit/loser"
 )
 
+// acceptableClockSkew is how far in the future a ring entry's heartbeat timestamp is allowed to be,
+// relative to the local clock, before it is treated as corrupted rather than a real heartbeat.
+// It is deliberately generous, well above any realistic inter-node clock skew (the ring already
+// assumes clocks are synchronised within the heartbeat timeout, which defaults to one minute), so a
+// legitimately clock-skewed instance is never rejected; and far below the timestamps produced by
+// corruption (e.g. a serialization error yielding a timestamp years in the future), so those can be
+// detected and reclaimed. See mergeWithTime and grafana/loki#21733.
+const acceptableClockSkew = time.Hour
+
 // ByAddr is a sortable list of InstanceDesc.
 type ByAddr []InstanceDesc
 
@@ -245,10 +254,41 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 	var updated []string
 	tokensChanged := false
 
+	// A heartbeat timestamp more than acceptableClockSkew ahead of the local clock cannot come from a
+	// real heartbeat and is treated as corrupted (e.g. a clock error when the entry was written, see
+	// grafana/loki#21733). While a stored entry looks corrupted, an entry with a plausible timestamp
+	// wins the merge even though it is numerically older, so the owning instance can reclaim its entry
+	// with an ordinary now-dated write instead of being stuck (which otherwise CrashLoopBackOff-s the
+	// instance on registration). This test is relative to the current time, so it only holds while the
+	// timestamp is still implausibly far ahead: once the wall clock advances past it, the value is no
+	// longer distinguishable from a legitimate heartbeat and is compared normally again. In practice a
+	// genuinely corrupted timestamp is years ahead, so the healed value has long since propagated
+	// before that could happen; for a value only just beyond the skew window any such re-acceptance is
+	// bounded by acceptableClockSkew and self-heals as the owner keeps heartbeating.
+	maxAcceptableTimestamp := now.Add(acceptableClockSkew).Unix()
+
 	for name, oing := range otherIngesterMap {
-		ting := thisIngesterMap[name]
-		// ting.Timestamp will be 0, if there was no such ingester in our version
-		if oing.Timestamp > ting.Timestamp {
+		ting, tingExists := thisIngesterMap[name]
+		// ting.Timestamp will be 0, if there was no such ingester in our version.
+
+		// Normally the entry with the newer timestamp wins. The guard only changes the outcome when we
+		// already have an entry to compare against: a plausible timestamp beats an implausibly-future
+		// (corrupted) one even when it is numerically older, and a corrupted timestamp cannot overwrite
+		// a plausible one. When the instance is absent locally we keep the plain "newer wins" admission
+		// (which also admits a corrupted entry) so that non-CAS merges stay commutative and nodes do not
+		// diverge on whether the entry exists; a corrupted entry admitted this way is healed by the rule
+		// above once the owner writes a plausible timestamp.
+		accept := false
+		switch {
+		case !tingExists:
+			accept = oing.Timestamp > ting.Timestamp // ting.Timestamp is 0 here
+		case oing.Timestamp <= maxAcceptableTimestamp && ting.Timestamp > maxAcceptableTimestamp:
+			accept = true
+		case (oing.Timestamp <= maxAcceptableTimestamp) == (ting.Timestamp <= maxAcceptableTimestamp) && oing.Timestamp > ting.Timestamp:
+			accept = true
+		}
+
+		if accept {
 			if !tokensEqual(ting.Tokens, oing.Tokens) {
 				tokensChanged = true
 			}

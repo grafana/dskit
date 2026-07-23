@@ -98,3 +98,37 @@ func TestInstrumentedGate(t *testing.T) {
 		`), "gate_queries_in_flight"))
 	})
 }
+
+func TestTimeoutGate(t *testing.T) {
+	t.Run("timeout but eventual success", func(t *testing.T) {
+		gate := NewTimeoutGate(time.Nanosecond, &alwaysSuccessfulAfterDelayGate{time.Second})
+		err := gate.Start(context.Background())
+		require.NoError(t, err, "must not return failure if delegated gate returns success even after timeout expires")
+	})
+
+	t.Run("timeout and wrapped gate checks context", func(t *testing.T) {
+		gate := NewTimeoutGate(time.Nanosecond, &blockingInterruptibleGate{})
+		err := gate.Start(context.Background())
+		require.ErrorIs(t, err, ErrGateTimeout, "expected timeout error from delegate gate blocked on context")
+	})
+}
+
+type alwaysSuccessfulAfterDelayGate struct {
+	delay time.Duration
+}
+
+func (a alwaysSuccessfulAfterDelayGate) Start(context.Context) error {
+	<-time.After(a.delay)
+	return nil
+}
+
+func (a alwaysSuccessfulAfterDelayGate) Done() {}
+
+type blockingInterruptibleGate struct{}
+
+func (a blockingInterruptibleGate) Start(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (a blockingInterruptibleGate) Done() {}

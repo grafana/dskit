@@ -1,6 +1,8 @@
 package ring
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -440,6 +442,93 @@ func TestMergeTokensByZone(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expected, MergeTokensByZone(testData.input))
+		})
+	}
+}
+
+func TestDesc_Clone(t *testing.T) {
+	t.Run("nil desc", func(t *testing.T) {
+		var d *Desc
+		assert.Equal(t, (*Desc)(nil), d.Clone())
+	})
+
+	t.Run("empty desc", func(t *testing.T) {
+		assert.Equal(t, &Desc{}, (&Desc{}).Clone())
+	})
+
+	t.Run("populated desc", func(t *testing.T) {
+		orig := &Desc{
+			Ingesters: map[string]InstanceDesc{
+				"ing1": {
+					Addr:                     "addr1",
+					Timestamp:                123456,
+					State:                    LEAVING,
+					Tokens:                   []uint32{1, 2, 3},
+					Zone:                     "zone1",
+					RegisteredTimestamp:      234567,
+					Id:                       "ing1",
+					ReadOnlyUpdatedTimestamp: 345678,
+					ReadOnly:                 true,
+					Versions:                 map[uint64]uint64{1: 2},
+				},
+				"ing2": {
+					Addr:   "addr2",
+					Tokens: []uint32{4, 5, 6},
+				},
+			},
+		}
+
+		// Every InstanceDesc field must be non-zero in "ing1": it guarantees that when a
+		// new field is added in the future, this test fails until the field is set here
+		// and its sharing semantics in Clone() are considered.
+		origVal := reflect.ValueOf(orig.Ingesters["ing1"])
+		for i := 0; i < origVal.NumField(); i++ {
+			assert.False(t, origVal.Field(i).IsZero(), "field %s must be set to a non-zero value in this test", origVal.Type().Field(i).Name)
+		}
+
+		clone := orig.Clone().(*Desc)
+		assert.Equal(t, orig, clone)
+
+		// The Ingesters map itself must not be shared: mutating the clone's map must not
+		// affect the original.
+		clone.Ingesters["ing3"] = InstanceDesc{Addr: "addr3"}
+		delete(clone.Ingesters, "ing2")
+		ing1 := clone.Ingesters["ing1"]
+		ing1.State = ACTIVE
+		clone.Ingesters["ing1"] = ing1
+
+		assert.Len(t, orig.Ingesters, 2)
+		assert.NotContains(t, orig.Ingesters, "ing3")
+		assert.Contains(t, orig.Ingesters, "ing2")
+		assert.Equal(t, LEAVING, orig.Ingesters["ing1"].State)
+	})
+}
+
+func BenchmarkDesc_Clone(b *testing.B) {
+	for _, numInstances := range []int{100, 1000, 10000} {
+		b.Run(fmt.Sprintf("instances=%d", numInstances), func(b *testing.B) {
+			d := &Desc{Ingesters: make(map[string]InstanceDesc, numInstances)}
+			for i := 0; i < numInstances; i++ {
+				tokens := make([]uint32, 512)
+				for j := range tokens {
+					tokens[j] = uint32(i*512 + j)
+				}
+				id := fmt.Sprintf("instance-%d", i)
+				d.Ingesters[id] = InstanceDesc{
+					Addr:                fmt.Sprintf("10.0.%d.%d", i/256, i%256),
+					Timestamp:           123456,
+					State:               ACTIVE,
+					Tokens:              tokens,
+					Zone:                fmt.Sprintf("zone-%d", i%3),
+					RegisteredTimestamp: 234567,
+					Id:                  id,
+				}
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = d.Clone()
+			}
 		})
 	}
 }

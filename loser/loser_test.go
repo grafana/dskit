@@ -109,15 +109,12 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-func FuzzMerge(f *testing.F) {
-	f.Fuzz(func(t *testing.T, seed int64) {
-		r := rand.New(rand.NewSource(seed))
-		listCount := r.Intn(9) + 1
+func createRandomData(r *rand.Rand, listCount int, elementCountMax int) ([][]uint64, []uint64) {
 		lists := make([][]uint64, listCount)
 		allElements := []uint64{}
 
 		for listIdx := 0; listIdx < listCount; listIdx++ {
-			elementCount := r.Intn(5)
+		elementCount := r.Intn(elementCountMax)
 			list := make([]uint64, elementCount)
 
 			for elementIdx := 0; elementIdx < elementCount; elementIdx++ {
@@ -128,11 +125,36 @@ func FuzzMerge(f *testing.F) {
 			allElements = append(allElements, list...)
 			lists[listIdx] = list
 		}
+	return lists, allElements
+}
+
+func FuzzMerge(f *testing.F) {
+	f.Fuzz(func(t *testing.T, seed int64) {
+		r := rand.New(rand.NewSource(seed))
+		listCount := r.Intn(9) + 1
+		lists, allElements := createRandomData(r, listCount, 5)
 
 		lt := loser.New(lists, math.MaxUint64)
 		slices.Sort(allElements)
 		checkTreeEqual(t, lt, allElements, fmt.Sprintf("merging %v", lists))
 	})
+}
+
+func BenchmarkMerge(b *testing.B) {
+	const (
+		entriesMax = 10000
+		listCount  = 100
+	)
+	r := rand.New(rand.NewSource(1)) // Hard-coded seed for consistent benchmarks
+	lists, _ := createRandomData(r, listCount, entriesMax)
+
+	b.ResetTimer()
+	for b.Loop() {
+		lt := loser.New(lists, math.MaxUint64)
+		for lt.Next() {
+			lt.Winner()
+		}
+	}
 }
 
 func TestPush(t *testing.T) {

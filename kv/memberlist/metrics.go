@@ -196,6 +196,17 @@ func (m *KV) createAndRegisterMetrics() {
 		Help:      "Number of pending notifications in WatchPrefix function",
 	})
 
+	m.numberOfKeyWorkers = promauto.With(m.registerer).NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: m.cfg.MetricsNamespace,
+		Subsystem: subsystem,
+		Name:      "kv_store_key_workers",
+		Help:      "Number of per-key value-processing worker goroutines currently running. Obsolete workers are reaped after the key is removed from the store.",
+	}, func() float64 {
+		m.workersMu.Lock()
+		defer m.workersMu.Unlock()
+		return float64(len(m.workersChannels))
+	})
+
 	if m.registerer == nil {
 		return
 	}

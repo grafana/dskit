@@ -449,6 +449,17 @@ func TestCombinedFilesHash(t *testing.T) {
 		{name: "file-a", digest: digest("contents-b")},
 	}
 	require.NotEqual(t, combinedFilesHash(duplicates), combinedFilesHash([]providerHash{duplicates[1], duplicates[0]}))
+
+	t.Run("length prefix disambiguates provider sequences", func(t *testing.T) {
+		separateProviders := base[:2]
+		combinedProvider := []providerHash{{
+			// Without the name-length prefix, these sequences produce the same hash input.
+			name:   base[0].name + string(base[0].digest[:]) + base[1].name,
+			digest: base[1].digest,
+		}}
+
+		require.NotEqual(t, combinedFilesHash(separateProviders), combinedFilesHash(combinedProvider))
+	})
 }
 
 func TestOverridesManagerMultipleIncompatibleFiles(t *testing.T) {

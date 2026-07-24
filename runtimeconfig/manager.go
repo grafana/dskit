@@ -5,12 +5,13 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,11 @@ type Loader func(r io.Reader) (interface{}, error)
 
 // MapLoader loads the configuration from a map.
 type MapLoader func(m map[string]interface{}) (interface{}, error)
+
+type providerHash struct {
+	name   string
+	digest [sha256.Size]byte
+}
 
 // Config holds the config for an Manager instance.
 // It holds config related to loading per-tenant config.
@@ -89,8 +95,8 @@ type Manager struct {
 	configLoadSuccess prometheus.Gauge
 	configHash        *prometheus.GaugeVec
 
-	// Maps provider name to hash. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
-	fileHashes map[string]string
+	// Provider hashes in LoadPath order. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
+	fileHashes []providerHash
 
 	providers []provider
 }
@@ -210,7 +216,7 @@ func (om *Manager) loop(ctx context.Context) error {
 // and notifies listeners if successful.
 func (om *Manager) loadConfig(ctx context.Context) error {
 	rawData := make([][]byte, len(om.providers))
-	hashes := map[string]string{}
+	hashes := make([]providerHash, len(om.providers))
 
 	for i, p := range om.providers {
 		buf, err := p.Read(ctx)
@@ -228,19 +234,13 @@ func (om *Manager) loadConfig(ctx context.Context) error {
 		}
 
 		rawData[i] = buf
-		hashes[p.Name()] = fmt.Sprintf("%x", sha256.Sum256(buf))
-	}
-
-	// check if new hashes are the same as before
-	sameHashes := true
-	for name, h := range hashes {
-		if om.fileHashes[name] != h {
-			sameHashes = false
-			break
+		hashes[i] = providerHash{
+			name:   p.Name(),
+			digest: sha256.Sum256(buf),
 		}
 	}
 
-	if sameHashes {
+	if slices.Equal(om.fileHashes, hashes) {
 		// No need to rebuild runtime config.
 		om.configLoadSuccess.Set(1)
 		return nil
@@ -301,19 +301,14 @@ func (om *Manager) loadConfig(ctx context.Context) error {
 	return nil
 }
 
-func combinedFilesHash(hashes map[string]string) [sha256.Size]byte {
-	names := make([]string, 0, len(hashes))
-	for name := range hashes {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
+func combinedFilesHash(hashes []providerHash) [sha256.Size]byte {
 	h := sha256.New()
-	for _, name := range names {
-		_, _ = io.WriteString(h, name)
-		_, _ = io.WriteString(h, "=")
-		_, _ = io.WriteString(h, hashes[name])
-		_, _ = io.WriteString(h, ";")
+	var nameLength [8]byte
+	for _, providerHash := range hashes {
+		binary.BigEndian.PutUint64(nameLength[:], uint64(len(providerHash.name)))
+		_, _ = h.Write(nameLength[:])
+		_, _ = io.WriteString(h, providerHash.name)
+		_, _ = h.Write(providerHash.digest[:])
 	}
 	var out [sha256.Size]byte
 	copy(out[:], h.Sum(nil))

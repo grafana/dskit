@@ -374,6 +374,79 @@ func TestKV_BuildMemberlistConfig_CompressionAlgorithm(t *testing.T) {
 	}
 }
 
+func newTestKV(t *testing.T) *KV {
+	t.Helper()
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.Codecs = []codec.Codec{dataCodec{}}
+	return NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+}
+
+func newTestWorker() *kvWorker {
+	return &kvWorker{ch: make(chan valueUpdate, 1), retire: make(chan struct{}, 1)}
+}
+
+// TestReapObsoleteWorkers checks that reapObsoleteWorkers asks (only) workers whose
+// key is absent from the store to retire, and does not remove workers itself.
+func TestReapObsoleteWorkers(t *testing.T) {
+	mkv := newTestKV(t)
+
+	// "live": key present in the store -> must not be asked to retire.
+	// "obsolete": no store entry -> must be asked to retire.
+	live := newTestWorker()
+	obsolete := newTestWorker()
+
+	mkv.storeMu.Lock()
+	mkv.store["live"] = ValueDesc{}
+	mkv.storeMu.Unlock()
+
+	mkv.workersMu.Lock()
+	mkv.workersChannels["live"] = live
+	mkv.workersChannels["obsolete"] = obsolete
+	mkv.workersMu.Unlock()
+
+	mkv.reapObsoleteWorkers()
+
+	require.Len(t, obsolete.retire, 1, "worker for a key absent from the store must be asked to retire")
+	require.Len(t, live.retire, 0, "worker for a key still in the store must not be asked to retire")
+
+	// reapObsoleteWorkers does not remove workers itself; the worker retires on its
+	// own only while idle (see retireWorkerIfIdle), so nothing is removed here.
+	mkv.workersMu.Lock()
+	require.Len(t, mkv.workersChannels, 2)
+	mkv.workersMu.Unlock()
+}
+
+// TestRetireWorkerIfIdle checks that a worker removes itself only when it has no
+// queued update, so a worker that is still processing is never removed (which would
+// allow a second, concurrent worker for the same key).
+func TestRetireWorkerIfIdle(t *testing.T) {
+	mkv := newTestKV(t)
+
+	idle := newTestWorker()
+	busy := newTestWorker()
+	busy.ch <- valueUpdate{} // a queued update -> must not retire
+
+	mkv.workersMu.Lock()
+	mkv.workersChannels["idle"] = idle
+	mkv.workersChannels["busy"] = busy
+	mkv.workersMu.Unlock()
+
+	require.True(t, mkv.retireWorkerIfIdle("idle", idle), "idle worker must retire")
+	require.False(t, mkv.retireWorkerIfIdle("busy", busy), "worker with a queued update must not retire")
+
+	mkv.workersMu.Lock()
+	_, idleKept := mkv.workersChannels["idle"]
+	_, busyKept := mkv.workersChannels["busy"]
+	remaining := len(mkv.workersChannels)
+	mkv.workersMu.Unlock()
+
+	require.False(t, idleKept, "retired worker must be removed from workersChannels")
+	require.True(t, busyKept, "worker with a queued update must stay")
+	require.Equal(t, 1, remaining)
+	require.Equal(t, float64(1), testutil.ToFloat64(mkv.numberOfKeyWorkers))
+}
+
 func TestBasicGetAndCas(t *testing.T) {
 	c := dataCodec{}
 

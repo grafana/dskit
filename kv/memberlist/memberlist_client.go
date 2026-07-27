@@ -353,7 +353,7 @@ type KV struct {
 
 	// Per-key value update workers
 	workersMu       sync.Mutex
-	workersChannels map[string]chan valueUpdate
+	workersChannels map[string]*kvWorker
 
 	// closed on shutdown
 	shutdown chan struct{}
@@ -379,6 +379,7 @@ type KV struct {
 	casSuccesses                        prometheus.Counter
 	watchPrefixDroppedNotifications     *prometheus.CounterVec
 	numberOfKeyNotifications            prometheus.Gauge
+	numberOfKeyWorkers                  prometheus.GaugeFunc
 
 	storeValuesDesc        *prometheus.Desc
 	storeTombstones        *prometheus.GaugeVec
@@ -443,6 +444,19 @@ type valueUpdate struct {
 	updateTime  time.Time
 }
 
+// kvWorker is a per-key worker goroutine that processes incoming value updates
+// for a single key, one at a time, preserving per-key ordering. The maintenance
+// loop (reapObsoleteWorkers) asks an obsolete worker to retire by sending on
+// retire (buffered, size 1); the worker then removes itself from workersChannels,
+// but only while idle (see retireWorkerIfIdle). It is never removed while applying
+// an update, so there is never more than one worker per key and updates for a key
+// are never processed concurrently or out of order. This keeps goroutines from
+// accumulating for workloads that use many short-lived keys.
+type kvWorker struct {
+	ch     chan valueUpdate
+	retire chan struct{}
+}
+
 func (v ValueDesc) String() string {
 	return fmt.Sprintf("version: %d, codec: %s", v.Version, v.CodecID)
 }
@@ -471,7 +485,7 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 		watchers:         make(map[string][]chan string),
 		keyNotifications: make(map[string]struct{}),
 		prefixWatchers:   make(map[string][]chan string),
-		workersChannels:  make(map[string]chan valueUpdate),
+		workersChannels:  make(map[string]*kvWorker),
 		shutdown:         make(chan struct{}),
 		maxCasRetries:    maxCasRetries,
 	}
@@ -1479,34 +1493,46 @@ func (m *KV) NotifyMsg(msg []byte) {
 		return
 	}
 
-	ch := m.getKeyWorkerChannel(kvPair.Key)
-	select {
-	case ch <- valueUpdate{value: kvPair.Value, codec: codec, messageSize: len(msg), deleted: kvPair.Deleted, updateTime: updateTime(kvPair.UpdateTimeMillis)}:
-	default:
+	update := valueUpdate{value: kvPair.Value, codec: codec, messageSize: len(msg), deleted: kvPair.Deleted, updateTime: updateTime(kvPair.UpdateTimeMillis)}
+	if !m.enqueueValueUpdate(kvPair.Key, update) {
 		m.numberOfDroppedMessages.Inc()
 		level.Warn(m.logger).Log("msg", "notify queue full, dropping message", "key", kvPair.Key)
 	}
 }
 
-func (m *KV) getKeyWorkerChannel(key string) chan<- valueUpdate {
+// enqueueValueUpdate hands an update to the per-key worker for key, spawning the
+// worker on first use, and reports whether the update was queued. The get-or-create
+// and the (non-blocking) send are done under workersMu so that they are serialized
+// against reapObsoleteWorkers: a worker cannot be reaped between the caller looking
+// it up and sending, which would otherwise drop the update onto an orphaned buffer.
+func (m *KV) enqueueValueUpdate(key string, update valueUpdate) bool {
 	m.workersMu.Lock()
 	defer m.workersMu.Unlock()
 
-	ch := m.workersChannels[key]
-	if ch == nil {
+	w := m.workersChannels[key]
+	if w == nil {
 		// spawn a key associated worker goroutine to process updates in background
-		ch = make(chan valueUpdate, m.cfg.ProcessedMessagesQueueSize)
-		go m.processValueUpdate(ch, key)
+		w = &kvWorker{
+			ch:     make(chan valueUpdate, m.cfg.ProcessedMessagesQueueSize),
+			retire: make(chan struct{}, 1),
+		}
+		go m.processValueUpdate(w, key)
 
-		m.workersChannels[key] = ch
+		m.workersChannels[key] = w
 	}
-	return ch
+
+	select {
+	case w.ch <- update:
+		return true
+	default:
+		return false
+	}
 }
 
-func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
+func (m *KV) processValueUpdate(w *kvWorker, key string) {
 	for {
 		select {
-		case update := <-workerCh:
+		case update := <-w.ch:
 			// we have a value update! Let's merge it with our current version for given key
 			mod, version, deleted, updated, err := m.mergeBytesValueForKey(key, update.value, update.codec, update.deleted, update.updateTime)
 
@@ -1538,11 +1564,41 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 				m.broadcastNewValue(key, mod, version, update.codec, false, deleted, updated)
 			}
 
+		case <-w.retire:
+			// The maintenance loop asked this worker to retire because its key is no
+			// longer in the store. We are at the select here (not applying an update),
+			// so retiring now is safe: retireWorkerIfIdle removes us from
+			// workersChannels under workersMu only if no update is queued, guaranteeing
+			// at most one worker per key. A later update lazily spawns a new worker via
+			// enqueueValueUpdate.
+			if m.retireWorkerIfIdle(key, w) {
+				return
+			}
+
 		case <-m.shutdown:
 			// stop running on shutdown
 			return
 		}
 	}
+}
+
+// retireWorkerIfIdle removes the worker for key from workersChannels and reports
+// whether it did. It only retires an idle worker (no queued update): because both
+// this and enqueueValueUpdate hold workersMu, a send and a retire cannot interleave,
+// so no update handed to enqueueValueUpdate is ever dropped, and the removed worker
+// has nothing left to process.
+func (m *KV) retireWorkerIfIdle(key string, w *kvWorker) bool {
+	m.workersMu.Lock()
+	defer m.workersMu.Unlock()
+
+	if len(w.ch) > 0 {
+		// An update was enqueued after the retire request; keep processing it.
+		return false
+	}
+	if m.workersChannels[key] == w {
+		delete(m.workersChannels, key)
+	}
+	return true
 }
 
 // GetBroadcasts is method from Memberlist Delegate interface
@@ -1900,11 +1956,69 @@ func (m *KV) deleteSentReceivedMessages() {
 
 func (m *KV) cleanupObsoleteEntries() {
 	m.storeMu.Lock()
-	defer m.storeMu.Unlock()
-
 	for k, v := range m.store {
 		if v.Deleted && time.Since(v.UpdateTime) > m.cfg.ObsoleteEntriesTimeout {
 			delete(m.store, k)
+		}
+	}
+	m.storeMu.Unlock()
+
+	// Stop per-key workers whose key has just been removed from the store, so that
+	// workersChannels doesn't grow without bound for high-churn / short-lived keys.
+	m.reapObsoleteWorkers()
+}
+
+// reapObsoleteWorkers asks per-key worker goroutines whose key is no longer present
+// in the store to retire. A per-key worker is created on the first received update
+// for a key (see enqueueValueUpdate) and was otherwise only stopped on shutdown, so
+// workloads that use many short-lived keys would accumulate goroutines without bound.
+// The worker removes itself only while idle (see retireWorkerIfIdle), so a worker
+// that is currently applying an update is never removed and replaced by a second,
+// concurrent worker for the same key.
+//
+// workersMu and storeMu are never held at the same time: doing so would couple
+// ingestion (enqueueValueUpdate takes workersMu on every received message) to the
+// store lock, which LocalState holds for the whole state encode during push/pull.
+// Instead this runs in three phases with each lock taken independently. Because the
+// snapshot can go stale between phases, asking a worker whose key became live again
+// to retire is harmless: it retires only while idle, and a later update respawns it.
+func (m *KV) reapObsoleteWorkers() {
+	// Phase 1: snapshot the current worker keys (workersMu only).
+	m.workersMu.Lock()
+	keys := make([]string, 0, len(m.workersChannels))
+	for key := range m.workersChannels {
+		keys = append(keys, key)
+	}
+	m.workersMu.Unlock()
+
+	if len(keys) == 0 {
+		return
+	}
+
+	// Phase 2: find keys no longer present in the store (storeMu only).
+	m.storeMu.RLock()
+	obsolete := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if _, exists := m.store[key]; !exists {
+			obsolete = append(obsolete, key)
+		}
+	}
+	m.storeMu.RUnlock()
+
+	// Phase 3: ask the obsolete workers to retire (workersMu only). The worker removes
+	// itself while idle rather than being deleted here, so a worker that is currently
+	// applying an update is never removed and replaced by a second concurrent worker.
+	m.workersMu.Lock()
+	defer m.workersMu.Unlock()
+	for _, key := range obsolete {
+		w := m.workersChannels[key]
+		if w == nil {
+			continue
+		}
+		select {
+		case w.retire <- struct{}{}:
+		default:
+			// A retire request is already pending for this worker.
 		}
 	}
 }

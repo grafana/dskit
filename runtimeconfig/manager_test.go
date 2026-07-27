@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -327,6 +328,138 @@ func TestOverridesManagerMultipleFilesWithOverrides(t *testing.T) {
 	require.NotNil(t, overridesManager.GetConfig())
 	conf := overridesManager.GetConfig().(*testOverrides)
 	require.Equal(t, 1234, conf.Overrides["user1"].Limit1)
+}
+
+func TestOverridesManagerMapLoader(t *testing.T) {
+	t.Run("loads merged config", func(t *testing.T) {
+		tempFiles, err := generateRuntimeFiles(t,
+			[]string{`overrides:
+  user1:
+    limit1: 101`,
+				`overrides:
+  user2:
+    limit2: 204`})
+		require.NoError(t, err)
+
+		reg := prometheus.NewPedanticRegistry()
+		cfg := Config{
+			ReloadPeriod: time.Second,
+			LoadPath:     generateLoadPath(tempFiles),
+			Loader: func(io.Reader) (interface{}, error) {
+				return nil, errors.New("Loader should not be called when MapLoader is set")
+			},
+			MapLoader: func(m map[string]interface{}) (interface{}, error) {
+				js, err := json.Marshal(m)
+				require.NoError(t, err)
+				var o testOverrides
+				err = json.Unmarshal(js, &o)
+				require.NoError(t, err)
+				return &o, nil
+			},
+		}
+
+		overridesManager, err := New(cfg, "overrides", reg, log.NewNopLogger())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), overridesManager))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager)) })
+
+		conf := overridesManager.GetConfig().(*testOverrides)
+		require.Equal(t, 101, conf.Overrides["user1"].Limit1)
+		require.Equal(t, 204, conf.Overrides["user2"].Limit2)
+
+		require.Equal(t, 1, testutil.CollectAndCount(overridesManager.configHash, "runtime_config_hash"))
+	})
+
+	t.Run("hash preserves provider order", func(t *testing.T) {
+		tempFiles, err := generateRuntimeFiles(t, []string{
+			"winner: first",
+			"winner: second",
+		})
+		require.NoError(t, err)
+
+		load := func(paths []string) (interface{}, string) {
+			reg := prometheus.NewPedanticRegistry()
+			manager, err := New(Config{
+				LoadPath: paths,
+				MapLoader: func(m map[string]interface{}) (interface{}, error) {
+					return m["winner"], nil
+				},
+			}, "overrides", reg, log.NewNopLogger())
+			require.NoError(t, err)
+			require.NoError(t, manager.loadConfig(context.Background()))
+			return manager.GetConfig(), runtimeConfigHash(t, reg)
+		}
+
+		paths := generateLoadPath(tempFiles)
+		forwardConfig, forwardHash := load(paths)
+		reversedConfig, reversedHash := load([]string{paths[1], paths[0]})
+
+		require.Equal(t, "second", forwardConfig)
+		require.Equal(t, "first", reversedConfig)
+		require.NotEqual(t, forwardHash, reversedHash)
+	})
+}
+
+func runtimeConfigHash(t *testing.T, reg *prometheus.Registry) string {
+	t.Helper()
+
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+	for _, family := range metricFamilies {
+		if family.GetName() != "runtime_config_hash" {
+			continue
+		}
+		require.Len(t, family.Metric, 1)
+		for _, label := range family.Metric[0].Label {
+			if label.GetName() == "sha256" {
+				return label.GetValue()
+			}
+		}
+	}
+
+	t.Fatal("runtime_config_hash metric has no sha256 label")
+	return ""
+}
+
+func TestCombinedFilesHash(t *testing.T) {
+	digest := func(contents string) [sha256.Size]byte {
+		return sha256.Sum256([]byte(contents))
+	}
+	base := []providerHash{
+		{name: "file-a", digest: digest("contents-a")},
+		{name: "file-b", digest: digest("contents-b")},
+		{name: "file-c", digest: digest("contents-c")},
+	}
+
+	require.Equal(t, combinedFilesHash(base), combinedFilesHash(slices.Clone(base)))
+
+	reversed := []providerHash{base[2], base[1], base[0]}
+	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(reversed))
+
+	changedContent := slices.Clone(base)
+	changedContent[1].digest = digest("changed")
+	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedContent))
+
+	changedName := slices.Clone(base)
+	changedName[2].name = "file-d"
+	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedName))
+
+	duplicates := []providerHash{
+		{name: "file-a", digest: digest("contents-a")},
+		{name: "file-a", digest: digest("contents-b")},
+	}
+	require.NotEqual(t, combinedFilesHash(duplicates), combinedFilesHash([]providerHash{duplicates[1], duplicates[0]}))
+
+	t.Run("length prefix disambiguates provider sequences", func(t *testing.T) {
+		separateProviders := base[:2]
+		combinedProvider := []providerHash{{
+			// Without the name-length prefix, these sequences produce the same hash input.
+			name:   base[0].name + string(base[0].digest[:]) + base[1].name,
+			digest: base[1].digest,
+		}}
+
+		require.NotEqual(t, combinedFilesHash(separateProviders), combinedFilesHash(combinedProvider))
+	})
 }
 
 func TestOverridesManagerMultipleIncompatibleFiles(t *testing.T) {

@@ -153,22 +153,65 @@ func TestPartitionRing_ActivePartitionForKey_NoMemoryAllocations(t *testing.T) {
 }
 
 func BenchmarkPartitionRing_ActivePartitionForKey(b *testing.B) {
-	const (
-		numActivePartitions   = 100
-		numInactivePartitions = 10
-	)
+	tests := []struct {
+		numActivePartitions   int
+		numInactivePartitions int
+	}{
+		{numActivePartitions: 100, numInactivePartitions: 0},
+		{numActivePartitions: 100, numInactivePartitions: 10},
+		{numActivePartitions: 100, numInactivePartitions: 100},
+		{numActivePartitions: 1000, numInactivePartitions: 100},
+	}
 
-	ring := createPartitionRingWithPartitions(DefaultPartitionRingOptions(), numActivePartitions, numInactivePartitions, 0)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for _, testCase := range tests {
+		b.Run(fmt.Sprintf("active=%d,inactive=%d", testCase.numActivePartitions, testCase.numInactivePartitions), func(b *testing.B) {
+			ring := createPartitionRingWithRandomTokens(DefaultPartitionRingOptions(), testCase.numActivePartitions, testCase.numInactivePartitions)
+			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	b.ResetTimer()
+			b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
-		_, err := ring.ActivePartitionForKey(r.Uint32())
-		if err != nil {
-			b.Fail()
+			for n := 0; n < b.N; n++ {
+				_, err := ring.ActivePartitionForKey(r.Uint32())
+				if err != nil {
+					b.Fail()
+				}
+			}
+		})
+	}
+}
+
+// createPartitionRingWithRandomTokens is like createPartitionRingWithPartitions, but partitions get
+// random tokens instead of spread-minimizing ones. Spread-minimizing token generation is too expensive
+// for benchmarks creating rings with a large number of partitions.
+func createPartitionRingWithRandomTokens(opts PartitionRingOptions, numActive, numInactive int) *PartitionRing {
+	desc := NewPartitionRingDesc()
+	gen := NewRandomTokenGeneratorWithSeed(0)
+	var takenTokens []uint32
+
+	addPartition := func(id int32, state PartitionState) {
+		tokens := gen.GenerateTokens(optimalTokensPerInstance, takenTokens)
+		takenTokens = append(takenTokens, tokens...)
+
+		desc.Partitions[id] = PartitionDesc{
+			Id:             id,
+			Tokens:         tokens,
+			State:          state,
+			StateTimestamp: time.Now().Unix(),
 		}
 	}
+
+	for i := 0; i < numActive; i++ {
+		addPartition(int32(i), PartitionActive)
+	}
+	for i := numActive; i < numActive+numInactive; i++ {
+		addPartition(int32(i), PartitionInactive)
+	}
+
+	ring, err := NewPartitionRingWithOptions(*desc, opts)
+	if err != nil {
+		panic(err)
+	}
+	return ring
 }
 
 func TestPartitionRing_ShuffleShard(t *testing.T) {

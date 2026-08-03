@@ -2066,6 +2066,20 @@ func TestCleanupObsoleteEntriesStopsKeyWorkers(t *testing.T) {
 		}}))
 
 	require.Eventually(t, func() bool { return numKeyWorkers() == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	// A tombstone for a key that is not in the store is a no-op merge which doesn't
+	// (re)create the key, so cleanupObsoleteEntries would never see it: the spawned
+	// worker must deregister itself instead of staying around forever.
+	kvp := keyValuePair(t, "already-purged-key", c, &data{
+		Members: map[string]member{
+			"a": {Timestamp: time.Now().Unix(), State: JOINING},
+		}})
+	kvp.Deleted = true
+	msg, err := kvp.Marshal()
+	require.NoError(t, err)
+	kv.NotifyMsg(msg)
+
+	require.Eventually(t, func() bool { return numKeyWorkers() == 1 }, 5*time.Second, 10*time.Millisecond)
 }
 
 func marshalKeyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) []byte {

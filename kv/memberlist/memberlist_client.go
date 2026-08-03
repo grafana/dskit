@@ -1553,11 +1553,51 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 				m.broadcastNewValue(key, mod, version, update.codec, false, deleted, updated)
 			}
 
+			if version == 0 && !m.keyExists(key) {
+				// The update didn't (re)create the key in the store — e.g. a tombstone
+				// received for a key that was already removed by cleanupObsoleteEntries,
+				// which is a no-op merge. The cleanup will therefore never stop this
+				// worker, so it deregisters itself instead of staying around forever.
+				if m.tryDeregisterKeyWorker(key, workerCh) {
+					return
+				}
+			}
+
 		case <-m.shutdown:
 			// stop running on shutdown
 			return
 		}
 	}
+}
+
+func (m *KV) keyExists(key string) bool {
+	m.storeMu.Lock()
+	defer m.storeMu.Unlock()
+
+	_, ok := m.store[key]
+	return ok
+}
+
+// tryDeregisterKeyWorker removes the worker's entry from workersChannels, and returns
+// true if the worker must stop. It returns false if the worker has to keep running,
+// either because more updates were enqueued to it in the meantime, or because it's not
+// the registered worker for the key anymore (stopKeyWorkers removed it already, in
+// which case the closed channel stops the worker instead).
+func (m *KV) tryDeregisterKeyWorker(key string, workerCh <-chan valueUpdate) bool {
+	m.workersMu.Lock()
+	defer m.workersMu.Unlock()
+
+	if ch, ok := m.workersChannels[key]; !ok || ch != workerCh {
+		return false
+	}
+
+	// Sends happen while holding workersMu, so the channel length cannot change here.
+	if len(workerCh) > 0 {
+		return false
+	}
+
+	delete(m.workersChannels, key)
+	return true
 }
 
 // GetBroadcasts is method from Memberlist Delegate interface

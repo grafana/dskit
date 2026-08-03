@@ -1479,16 +1479,20 @@ func (m *KV) NotifyMsg(msg []byte) {
 		return
 	}
 
-	ch := m.getKeyWorkerChannel(kvPair.Key)
-	select {
-	case ch <- valueUpdate{value: kvPair.Value, codec: codec, messageSize: len(msg), deleted: kvPair.Deleted, updateTime: updateTime(kvPair.UpdateTimeMillis)}:
-	default:
+	update := valueUpdate{value: kvPair.Value, codec: codec, messageSize: len(msg), deleted: kvPair.Deleted, updateTime: updateTime(kvPair.UpdateTimeMillis)}
+	if !m.enqueueKeyUpdate(kvPair.Key, update) {
 		m.numberOfDroppedMessages.Inc()
 		level.Warn(m.logger).Log("msg", "notify queue full, dropping message", "key", kvPair.Key)
 	}
 }
 
-func (m *KV) getKeyWorkerChannel(key string) chan<- valueUpdate {
+// enqueueKeyUpdate hands the update over to the worker goroutine for the given key,
+// spawning the worker if it doesn't exist yet. It returns false if the worker's queue
+// is full and the update was dropped.
+//
+// The channel send happens while holding workersMu. This guarantees that no update
+// can be sent to a channel after stopKeyWorkers has closed it.
+func (m *KV) enqueueKeyUpdate(key string, update valueUpdate) bool {
 	m.workersMu.Lock()
 	defer m.workersMu.Unlock()
 
@@ -1500,13 +1504,24 @@ func (m *KV) getKeyWorkerChannel(key string) chan<- valueUpdate {
 
 		m.workersChannels[key] = ch
 	}
-	return ch
+
+	select {
+	case ch <- update:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 	for {
 		select {
-		case update := <-workerCh:
+		case update, ok := <-workerCh:
+			if !ok {
+				// The channel was closed because the key was removed from the store.
+				// Stop the worker; if the key is seen again, a new worker will be spawned.
+				return
+			}
 			// we have a value update! Let's merge it with our current version for given key
 			mod, version, deleted, updated, err := m.mergeBytesValueForKey(key, update.value, update.codec, update.deleted, update.updateTime)
 
@@ -1900,11 +1915,38 @@ func (m *KV) deleteSentReceivedMessages() {
 
 func (m *KV) cleanupObsoleteEntries() {
 	m.storeMu.Lock()
-	defer m.storeMu.Unlock()
-
+	var removedKeys []string
 	for k, v := range m.store {
 		if v.Deleted && time.Since(v.UpdateTime) > m.cfg.ObsoleteEntriesTimeout {
 			delete(m.store, k)
+			removedKeys = append(removedKeys, k)
+		}
+	}
+	m.storeMu.Unlock()
+
+	m.stopKeyWorkers(removedKeys)
+}
+
+// stopKeyWorkers stops the update-processing worker goroutines for the given keys.
+// Workers of removed keys must be stopped: otherwise every key ever seen keeps a
+// goroutine alive for the lifetime of the process, which is a goroutine leak in
+// clusters where keys are created and deleted over time.
+func (m *KV) stopKeyWorkers(keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+
+	m.workersMu.Lock()
+	defer m.workersMu.Unlock()
+
+	for _, k := range keys {
+		if ch, ok := m.workersChannels[k]; ok {
+			delete(m.workersChannels, k)
+			// Closing the channel is safe: enqueueKeyUpdate only sends while holding
+			// workersMu, so there is no concurrent sender, and no future sender can
+			// obtain this channel anymore. The worker drains any buffered updates
+			// and then exits.
+			close(ch)
 		}
 	}
 }

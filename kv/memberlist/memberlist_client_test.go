@@ -2016,6 +2016,58 @@ func keyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}
 
 }
 
+func TestCleanupObsoleteEntriesStopsKeyWorkers(t *testing.T) {
+	c := dataCodec{}
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
+	cfg.Codecs = append(cfg.Codecs, c)
+	cfg.ObsoleteEntriesTimeout = 100 * time.Millisecond
+
+	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
+	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
+
+	numKeyWorkers := func() int {
+		kv.workersMu.Lock()
+		defer kv.workersMu.Unlock()
+		return len(kv.workersChannels)
+	}
+
+	// Receiving an update for a key spawns a worker goroutine for that key.
+	kv.NotifyMsg(marshalKeyValuePair(t, key, c, &data{
+		Members: map[string]member{
+			"a": {Timestamp: time.Now().Unix(), State: JOINING},
+		}}))
+
+	require.Eventually(t, func() bool { return numKeyWorkers() == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	// Wait until the update has been merged into the store, as Delete is a no-op for
+	// keys that don't exist yet.
+	require.Eventually(t, func() bool {
+		val, err := kv.Get(key, c)
+		return err == nil && val != nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	// Delete the key. Once the tombstone is older than ObsoleteEntriesTimeout, the
+	// cleanup removes the key from the store, and must also stop the key's worker.
+	require.NoError(t, kv.Delete(key))
+
+	require.Eventually(t, func() bool {
+		kv.cleanupObsoleteEntries()
+		return numKeyWorkers() == 0
+	}, 5*time.Second, 50*time.Millisecond)
+
+	// If the key is seen again, a new worker is spawned.
+	kv.NotifyMsg(marshalKeyValuePair(t, key, c, &data{
+		Members: map[string]member{
+			"b": {Timestamp: time.Now().Unix(), State: JOINING},
+		}}))
+
+	require.Eventually(t, func() bool { return numKeyWorkers() == 1 }, 5*time.Second, 10*time.Millisecond)
+}
+
 func marshalKeyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) []byte {
 	kvp := keyValuePair(t, key, codec, value)
 

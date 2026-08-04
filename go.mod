@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/go-cmp v0.7.0
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/gomemcache v0.0.0-20251127154401-74f93547077b
+	github.com/grafana/gomemcache v0.0.0-20260728143316-9448343bd654
 	github.com/grafana/otel-profiling-go v0.6.0
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.12
 	github.com/hashicorp/consul/api v1.34.1

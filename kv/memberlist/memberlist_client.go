@@ -1554,10 +1554,13 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 			}
 
 			if version == 0 && !m.keyExists(key) {
-				// The update didn't (re)create the key in the store — e.g. a tombstone
-				// received for a key that was already removed by cleanupObsoleteEntries,
-				// which is a no-op merge. The cleanup will therefore never stop this
-				// worker, so it deregisters itself instead of staying around forever.
+				// The update didn't (re)create the key in the store. This happens when
+				// the merge was a no-op (e.g. a tombstone received for a key that was
+				// already removed by cleanupObsoleteEntries), and also when the merge
+				// failed for a key we don't have. In both cases the cleanup will never
+				// run for this key and would never stop this worker, so it deregisters
+				// itself instead of staying around forever. If the key is seen again,
+				// a new worker is spawned.
 				if m.tryDeregisterKeyWorker(key, workerCh) {
 					return
 				}

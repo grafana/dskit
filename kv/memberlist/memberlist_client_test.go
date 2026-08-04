@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -2016,70 +2017,76 @@ func keyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}
 
 }
 
+// numKeyWorkers returns the number of registered key worker goroutines.
+func (m *KV) numKeyWorkers() int {
+	m.workersMu.Lock()
+	defer m.workersMu.Unlock()
+
+	return len(m.workersChannels)
+}
+
 func TestCleanupObsoleteEntriesStopsKeyWorkers(t *testing.T) {
-	c := dataCodec{}
+	synctest.Test(t, func(t *testing.T) {
+		c := dataCodec{}
 
-	var cfg KVConfig
-	flagext.DefaultValues(&cfg)
-	cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
-	cfg.Codecs = append(cfg.Codecs, c)
-	cfg.ObsoleteEntriesTimeout = 100 * time.Millisecond
+		var cfg KVConfig
+		flagext.DefaultValues(&cfg)
+		cfg.TCPTransport.BindAddrs = getLocalhostAddrs()
+		cfg.Codecs = append(cfg.Codecs, c)
+		cfg.ObsoleteEntriesTimeout = 100 * time.Millisecond
 
-	kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), kv))
-	defer services.StopAndAwaitTerminated(context.Background(), kv) //nolint:errcheck
+		// The KV service is not started: the real TCP transport would block goroutines
+		// in Accept syscalls, which is incompatible with the synctest bubble. Updates
+		// are driven through enqueueKeyUpdate, which is what NotifyMsg uses. Only the
+		// broadcast queues (normally created on service start) are stubbed, because
+		// workers queue forwarded updates into them.
+		kv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+		kv.localBroadcasts = &memberlist.TransmitLimitedQueue{NumNodes: func() int { return 1 }, RetransmitMult: cfg.RetransmitMult}
+		kv.gossipBroadcasts = &memberlist.TransmitLimitedQueue{NumNodes: func() int { return 1 }, RetransmitMult: cfg.RetransmitMult}
 
-	numKeyWorkers := func() int {
-		kv.workersMu.Lock()
-		defer kv.workersMu.Unlock()
-		return len(kv.workersChannels)
-	}
+		enqueueUpdate := func(key string, deleted bool) {
+			t.Helper()
+			encoded, err := c.Encode(&data{Members: map[string]member{
+				"a": {Timestamp: time.Now().Unix(), State: JOINING},
+			}})
+			require.NoError(t, err)
+			require.True(t, kv.enqueueKeyUpdate(key, valueUpdate{value: encoded, codec: c, deleted: deleted, updateTime: time.Now()}))
+		}
 
-	// Receiving an update for a key spawns a worker goroutine for that key.
-	kv.NotifyMsg(marshalKeyValuePair(t, key, c, &data{
-		Members: map[string]member{
-			"a": {Timestamp: time.Now().Unix(), State: JOINING},
-		}}))
-
-	require.Eventually(t, func() bool { return numKeyWorkers() == 1 }, 5*time.Second, 10*time.Millisecond)
-
-	// Wait until the update has been merged into the store, as Delete is a no-op for
-	// keys that don't exist yet.
-	require.Eventually(t, func() bool {
+		// Receiving an update for a key spawns a worker goroutine for that key, which
+		// merges the update into the store.
+		enqueueUpdate(key, false)
+		synctest.Wait()
+		require.Equal(t, 1, kv.numKeyWorkers())
 		val, err := kv.Get(key, c)
-		return err == nil && val != nil
-	}, 5*time.Second, 10*time.Millisecond)
+		require.NoError(t, err)
+		require.NotNil(t, val)
 
-	// Delete the key. Once the tombstone is older than ObsoleteEntriesTimeout, the
-	// cleanup removes the key from the store, and must also stop the key's worker.
-	require.NoError(t, kv.Delete(key))
-
-	require.Eventually(t, func() bool {
+		// Delete the key. Once the tombstone is older than ObsoleteEntriesTimeout, the
+		// cleanup removes the key from the store, and must also stop the key's worker.
+		require.NoError(t, kv.Delete(key))
+		time.Sleep(2 * cfg.ObsoleteEntriesTimeout)
 		kv.cleanupObsoleteEntries()
-		return numKeyWorkers() == 0
-	}, 5*time.Second, 50*time.Millisecond)
+		synctest.Wait()
+		require.Equal(t, 0, kv.numKeyWorkers())
 
-	// If the key is seen again, a new worker is spawned.
-	kv.NotifyMsg(marshalKeyValuePair(t, key, c, &data{
-		Members: map[string]member{
-			"b": {Timestamp: time.Now().Unix(), State: JOINING},
-		}}))
+		// If the key is seen again, a new worker is spawned, and it stays running.
+		enqueueUpdate(key, false)
+		synctest.Wait()
+		require.Equal(t, 1, kv.numKeyWorkers())
 
-	require.Eventually(t, func() bool { return numKeyWorkers() == 1 }, 5*time.Second, 10*time.Millisecond)
+		// A tombstone for a key that is not in the store spawns a worker, but the merge
+		// is a no-op that doesn't (re)create the key, so the worker immediately
+		// deregisters itself and stops. The live key's worker above keeps running, so
+		// the count stays at 1.
+		enqueueUpdate("already-purged-key", true)
+		synctest.Wait()
+		require.Equal(t, 1, kv.numKeyWorkers())
 
-	// A tombstone for a key that is not in the store is a no-op merge which doesn't
-	// (re)create the key, so cleanupObsoleteEntries would never see it: the spawned
-	// worker must deregister itself instead of staying around forever.
-	kvp := keyValuePair(t, "already-purged-key", c, &data{
-		Members: map[string]member{
-			"a": {Timestamp: time.Now().Unix(), State: JOINING},
-		}})
-	kvp.Deleted = true
-	msg, err := kvp.Marshal()
-	require.NoError(t, err)
-	kv.NotifyMsg(msg)
-
-	require.Eventually(t, func() bool { return numKeyWorkers() == 1 }, 5*time.Second, 10*time.Millisecond)
+		// Stop the remaining worker: the synctest bubble requires all goroutines
+		// started inside it to exit before the test returns.
+		close(kv.shutdown)
+	})
 }
 
 func marshalKeyValuePair(t *testing.T, key string, codec codec.Codec, value interface{}) []byte {

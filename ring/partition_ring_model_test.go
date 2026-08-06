@@ -183,6 +183,121 @@ func TestPartitionRingDesc_AddOrUpdateOwner(t *testing.T) {
 	})
 }
 
+func TestPartitionRingDesc_DeleteOwner(t *testing.T) {
+	now := time.Now()
+
+	t.Run("should write an OwnerDeleted tombstone when the owner exists", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		desc.AddOrUpdateOwner("instance-1", OwnerActive, 1, now)
+
+		require.True(t, desc.DeleteOwner("instance-1", 1, now.Add(time.Second)))
+		assert.Equal(t, OwnerDesc{
+			OwnedPartition:   1,
+			State:            OwnerDeleted,
+			UpdatedTimestamp: now.Add(time.Second).Unix(),
+		}, desc.Owners["instance-1"])
+		assert.Equal(t, 0, desc.PartitionOwnersCount(1))
+		assert.Equal(t, map[int32][]string{}, desc.ownersByPartition())
+	})
+
+	t.Run("should write an OwnerDeleted tombstone when the owner is absent from the local view", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+
+		require.True(t, desc.DeleteOwner("instance-1", 24, now))
+		assert.Equal(t, OwnerDesc{
+			OwnedPartition:   24,
+			State:            OwnerDeleted,
+			UpdatedTimestamp: now.Unix(),
+		}, desc.Owners["instance-1"])
+		assert.Equal(t, 0, desc.PartitionOwnersCount(24))
+	})
+
+	t.Run("should preserve OwnedPartition from the existing owner entry", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		desc.AddOrUpdateOwner("instance-1", OwnerActive, 7, now)
+
+		require.True(t, desc.DeleteOwner("instance-1", 99, now.Add(time.Second)))
+		assert.Equal(t, int32(7), desc.Owners["instance-1"].OwnedPartition)
+	})
+
+	t.Run("should be a no-op if the owner is already deleted", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		require.True(t, desc.DeleteOwner("instance-1", 1, now))
+		require.False(t, desc.DeleteOwner("instance-1", 1, now.Add(time.Second)))
+		assert.Equal(t, now.Unix(), desc.Owners["instance-1"].UpdatedTimestamp)
+	})
+}
+
+func TestPartitionRingDesc_PartitionOwnersCount_IgnoresDeleted(t *testing.T) {
+	now := time.Now()
+	desc := NewPartitionRingDesc()
+	desc.AddOrUpdateOwner("owner-active", OwnerActive, 1, now)
+	desc.AddOrUpdateOwner("owner-deleted", OwnerDeleted, 1, now)
+
+	assert.Equal(t, 1, desc.PartitionOwnersCount(1))
+	assert.ElementsMatch(t, []string{"owner-active"}, desc.ownersByPartition()[1])
+}
+
+// TestPartitionRingDesc_StaleLocalCASView_RemoveOwnerVsDeleteOwner compares the two
+// owner-removal strategies when the local CAS view is missing the owner entry
+// (the failure mode that leaves a stale partition owner after prepare_shutdown).
+//
+// RemoveOwner is a no-op against the stale view, so nothing is gossiped and the
+// owner survives in the converged ring. DeleteOwner always writes an OwnerDeleted
+// tombstone, which merges into the converged ring and clears the owner.
+func TestPartitionRingDesc_StaleLocalCASView_RemoveOwnerVsDeleteOwner(t *testing.T) {
+	const (
+		partitionID = int32(24)
+		instanceID  = "partition-ingester-a-24"
+	)
+	now := time.Now()
+
+	newConvergedRing := func() *PartitionRingDesc {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(partitionID, PartitionActive, now)
+		desc.AddOrUpdateOwner(instanceID, OwnerActive, partitionID, now)
+		return desc
+	}
+
+	newStaleLocalView := func() *PartitionRingDesc {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(partitionID, PartitionActive, now)
+		return desc
+	}
+
+	t.Run("RemoveOwner leaves the owner in the converged ring", func(t *testing.T) {
+		converged := newConvergedRing()
+		localView := newStaleLocalView()
+
+		changed := localView.RemoveOwner(instanceID)
+		require.False(t, changed, "RemoveOwner must be a no-op when the owner is absent from the local view")
+
+		// Nothing was written, so gossip has no deletion to merge.
+		_, err := converged.Merge(localView, false)
+		require.NoError(t, err)
+
+		require.True(t, converged.HasOwner(instanceID))
+		require.Equal(t, OwnerActive, converged.Owners[instanceID].State)
+		require.Equal(t, 1, converged.PartitionOwnersCount(partitionID))
+	})
+
+	t.Run("DeleteOwner clears the owner from the converged ring", func(t *testing.T) {
+		converged := newConvergedRing()
+		localView := newStaleLocalView()
+
+		changed := localView.DeleteOwner(instanceID, partitionID, now.Add(time.Second))
+		require.True(t, changed, "DeleteOwner must write a tombstone even when the owner is absent from the local view")
+		require.Equal(t, OwnerDeleted, localView.Owners[instanceID].State)
+
+		_, err := converged.Merge(localView, false)
+		require.NoError(t, err)
+
+		require.Equal(t, OwnerDeleted, converged.Owners[instanceID].State)
+		require.Equal(t, 0, converged.PartitionOwnersCount(partitionID))
+		require.Equal(t, map[int32][]string{}, converged.ownersByPartition())
+	})
+}
+
 func TestPartitionRingDesc_Merge_AddPartition(t *testing.T) {
 	tests := map[string]struct {
 		local                *PartitionRingDesc
@@ -1186,6 +1301,7 @@ func TestPartitionRingDesc_PartitionOwnersCountUpdatedBefore(t *testing.T) {
 	desc.AddOrUpdateOwner("owner-1-a", OwnerActive, 1, now)
 	desc.AddOrUpdateOwner("owner-1-b", OwnerActive, 1, now.Add(-1*time.Second))
 	desc.AddOrUpdateOwner("owner-1-c", OwnerActive, 1, now.Add(-2*time.Second))
+	desc.AddOrUpdateOwner("owner-1-deleted", OwnerDeleted, 1, now.Add(-3*time.Second))
 	desc.AddOrUpdateOwner("owner-2-a", OwnerActive, 2, now.Add(-3*time.Second))
 
 	assert.Equal(t, 2, desc.PartitionOwnersCountUpdatedBefore(1, now))

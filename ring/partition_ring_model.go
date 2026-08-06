@@ -123,9 +123,13 @@ func (m *PartitionRingDesc) countTokens() map[int32]int64 {
 }
 
 // ownersByPartition returns a map where the key is the partition ID and the value is a list of owner IDs.
+// Deleted owners (tombstones) are excluded.
 func (m *PartitionRingDesc) ownersByPartition() map[int32][]string {
 	out := make(map[int32][]string, len(m.Partitions))
 	for id, o := range m.Owners {
+		if o.State == OwnerDeleted {
+			continue
+		}
 		out[o.OwnedPartition] = append(out[o.OwnedPartition], id)
 	}
 
@@ -290,12 +294,40 @@ func (m *PartitionRingDesc) AddOrUpdateOwner(id string, state OwnerState, ownedP
 }
 
 // RemoveOwner removes a partition owner. Returns true if the ring has been changed.
+//
+// Prefer DeleteOwner when the deletion must propagate via memberlist: RemoveOwner is a
+// no-op if the owner is absent from the local view, so a stale CAS view will not write
+// a tombstone and the owner can remain in the cluster.
 func (m *PartitionRingDesc) RemoveOwner(id string) bool {
 	if _, ok := m.Owners[id]; !ok {
 		return false
 	}
 
 	delete(m.Owners, id)
+	return true
+}
+
+// DeleteOwner marks a partition owner as deleted by writing an OwnerDeleted tombstone.
+// Unlike RemoveOwner, this always updates the ring even if the owner is absent from the
+// local view, which is required for the deletion to propagate under memberlist when the
+// local CAS view is stale.
+//
+// If the owner already exists, its OwnedPartition is preserved. Otherwise ownedPartition
+// is used. Returns true if the ring was changed.
+func (m *PartitionRingDesc) DeleteOwner(id string, ownedPartition int32, now time.Time) bool {
+	prev, ok := m.Owners[id]
+	if ok {
+		if prev.State == OwnerDeleted {
+			return false
+		}
+		ownedPartition = prev.OwnedPartition
+	}
+
+	m.Owners[id] = OwnerDesc{
+		OwnedPartition:   ownedPartition,
+		State:            OwnerDeleted,
+		UpdatedTimestamp: now.Unix(),
+	}
 	return true
 }
 
@@ -306,10 +338,11 @@ func (m *PartitionRingDesc) HasOwner(id string) bool {
 }
 
 // PartitionOwnersCount returns the number of owners for a given partition.
+// Deleted owners (tombstones) are excluded.
 func (m *PartitionRingDesc) PartitionOwnersCount(partitionID int32) int {
 	count := 0
 	for _, o := range m.Owners {
-		if o.OwnedPartition == partitionID {
+		if o.OwnedPartition == partitionID && o.State != OwnerDeleted {
 			count++
 		}
 	}
@@ -318,12 +351,13 @@ func (m *PartitionRingDesc) PartitionOwnersCount(partitionID int32) int {
 
 // PartitionOwnersCountUpdatedBefore returns the number of owners for a given partition,
 // including only owners which have been updated the last time before the input timestamp.
+// Deleted owners (tombstones) are excluded.
 func (m *PartitionRingDesc) PartitionOwnersCountUpdatedBefore(partitionID int32, before time.Time) int {
 	count := 0
 	beforeSeconds := before.Unix()
 
 	for _, o := range m.Owners {
-		if o.OwnedPartition == partitionID && o.GetUpdatedTimestamp() < beforeSeconds {
+		if o.OwnedPartition == partitionID && o.State != OwnerDeleted && o.GetUpdatedTimestamp() < beforeSeconds {
 			count++
 		}
 	}

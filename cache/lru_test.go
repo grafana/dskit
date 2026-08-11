@@ -164,3 +164,77 @@ func TestLRUCache_GetMultiWithError_PropagatesError(t *testing.T) {
 	require.Empty(t, result)
 	require.ErrorIs(t, err, backendErr)
 }
+
+// blockingMockCache wraps MockCache and blocks inside GetMultiWithError until release is closed.
+// It closes started as soon as a call enters GetMultiWithError, so a test can wait for the fetch
+// to be in flight before checking that other LRUCache operations are not stalled by it.
+type blockingMockCache struct {
+	*MockCache
+	started chan struct{}
+	release chan struct{}
+}
+
+func newBlockingMockCache() *blockingMockCache {
+	return &blockingMockCache{
+		MockCache: NewMockCache(),
+		started:   make(chan struct{}),
+		release:   make(chan struct{}),
+	}
+}
+
+func (b *blockingMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	result, _ := b.GetMultiWithError(ctx, keys, opts...)
+	return result
+}
+
+func (b *blockingMockCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	close(b.started)
+	<-b.release
+	return b.MockCache.GetMultiWithError(ctx, keys, opts...)
+}
+
+func TestLRUCache_GetMultiWithError_DoesNotBlockOtherCallersDuringBackendFetch(t *testing.T) {
+	backend := newBlockingMockCache()
+
+	reg := prometheus.NewPedanticRegistry()
+	lru, err := WrapWithLRUCache(backend, "test", reg, 10000, time.Hour, log.NewNopLogger())
+	require.NoError(t, err)
+
+	lru.SetMultiAsync(map[string][]byte{"cached": []byte("value")}, time.Hour)
+
+	// "missing" is not in the LRU, so this call must fall through to the backend
+	// and block there until the test releases it.
+	blockedCallDone := make(chan struct{})
+	go func() {
+		defer close(blockedCallDone)
+		lru.GetMulti(context.Background(), []string{"missing"})
+	}()
+
+	select {
+	case <-backend.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("backend fetch never started")
+	}
+
+	// While the fetch for "missing" is still blocked in the backend, a lookup for an
+	// already-cached key must complete immediately instead of queueing behind it.
+	otherCallResult := make(chan map[string][]byte, 1)
+	go func() {
+		otherCallResult <- lru.GetMulti(context.Background(), []string{"cached"})
+	}()
+
+	select {
+	case result := <-otherCallResult:
+		require.Equal(t, map[string][]byte{"cached": []byte("value")}, result)
+	case <-time.After(2 * time.Second):
+		t.Fatal("GetMulti for an already-cached key blocked behind the in-flight backend fetch")
+	}
+
+	close(backend.release)
+
+	select {
+	case <-blockedCallDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocked GetMulti call never completed after the backend fetch was released")
+	}
+}

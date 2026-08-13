@@ -27,7 +27,8 @@ type PartitionRingWatcher struct {
 	ring   *PartitionRing
 
 	// Metrics.
-	numPartitionsGaugeVec *prometheus.GaugeVec
+	numPartitionsGaugeVec            *prometheus.GaugeVec
+	partitionsWithDerivedTokensGauge prometheus.Gauge
 
 	// opts is used to propagate the options each time the ring is updated.
 	opts PartitionRingOptions
@@ -57,6 +58,11 @@ func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts Par
 			Help:        "Number of partitions by state in the partitions ring.",
 			ConstLabels: map[string]string{"name": name},
 		}, []string{"state"}),
+		partitionsWithDerivedTokensGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name:        "partition_ring_partitions_with_derived_tokens",
+			Help:        "Number of partitions in the partitions ring whose tokens have been derived from their token scheme.",
+			ConstLabels: map[string]string{"name": name},
+		}),
 		opts: opts,
 	}
 

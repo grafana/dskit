@@ -258,6 +258,7 @@ func TestPartitionRingPageHandler_ChangePartitionState(t *testing.T) {
 				State:          PartitionActive,
 				StateTimestamp: time.Now().Unix(),
 				Tokens:         desc.Partitions[1].Tokens,
+				TokenScheme:    desc.Partitions[1].TokenScheme,
 			}
 			return desc, true, nil
 		}))
@@ -303,6 +304,7 @@ func TestPartitionRingPageHandler_ChangePartitionState(t *testing.T) {
 				State:          PartitionActive,
 				StateTimestamp: time.Now().Unix(),
 				Tokens:         desc.Partitions[1].Tokens,
+				TokenScheme:    desc.Partitions[1].TokenScheme,
 			}
 			return desc, true, nil
 		}))

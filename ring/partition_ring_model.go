@@ -17,7 +17,13 @@ type partitionRingCodec struct {
 	codec.Codec
 }
 
-// Decode wraps Codec.Decode and ensure PartitionRingDesc maps are not nil.
+// Decode wraps Codec.Decode, ensures PartitionRingDesc maps are not nil and validates that the
+// tokens of every partition can be resolved.
+//
+// The tokens are not materialized here: that happens when a partition ring is built, so that the
+// members which only relay the ring never run the token generator. Validating is generator-free and
+// stays on the relays on purpose: without it, a value no ring builder can use would survive in
+// their stores and keep being gossiped back to the members which reject it.
 func (c *partitionRingCodec) Decode(in []byte) (interface{}, error) {
 	out, err := c.Codec.Decode(in)
 	if err != nil {
@@ -31,6 +37,14 @@ func (c *partitionRingCodec) Decode(in []byte) (interface{}, error) {
 		}
 		if actual.Owners == nil {
 			actual.Owners = map[string]OwnerDesc{}
+		}
+
+		// A partition admitted with no tokens can never be repaired, because merge doesn't update
+		// the tokens of a partition this member already holds: it would silently drop the writes
+		// routed to it until the process restarts. Panicking makes the failure a fleet-wide crash
+		// loop with the reason in the panic message instead.
+		if err := validatePartitionRingTokens(actual); err != nil {
+			panic(err)
 		}
 	}
 
@@ -199,19 +213,26 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 	}
 }
 
-// AddPartition adds a new partition to the ring. Tokens are auto-generated using the spread minimizing strategy
-// which generates deterministic unique tokens.
+// AddPartition adds a new partition to the ring. The partition declares the scheme its tokens are
+// generated with, so that the readers derive them instead of receiving them: see
+// partition_ring_derived_tokens.go. Tokens are stored in the partition only if no scheme is
+// configured, using the spread minimizing strategy which generates deterministic unique tokens.
 func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now time.Time) {
-	// Spread-minimizing token generator is deterministic unique-token generator for given id and zone.
-	// Partitions don't use zones.
-	spreadMinimizing := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
-
-	m.Partitions[id] = PartitionDesc{
+	partition := PartitionDesc{
 		Id:             id,
-		Tokens:         spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil),
+		TokenScheme:    writtenTokenScheme.Load(),
 		State:          state,
 		StateTimestamp: now.Unix(),
 	}
+
+	if partition.TokenScheme == "" {
+		// Spread-minimizing token generator is deterministic unique-token generator for given id and zone.
+		// Partitions don't use zones.
+		spreadMinimizing := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
+		partition.Tokens = spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil)
+	}
+
+	m.Partitions[id] = partition
 }
 
 // UpdatePartitionState changes the state of a partition. Returns true if the state was changed,
@@ -360,7 +381,8 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 			changed = true
 			thisPart = otherPart
 		} else {
-			// We don't merge changes to partition ID and tokens because we expect them to be immutable.
+			// We don't merge changes to partition ID, tokens and token scheme because we expect them
+			// to be immutable.
 			//
 			// If in the future we'll change the tokens generation algorithm and we'll have to handle migration to
 			// a different set of tokens then we'll add the support. For example, we could add "token generation version"

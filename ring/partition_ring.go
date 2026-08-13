@@ -56,6 +56,10 @@ type PartitionRing struct {
 
 	// opts is used to propagate the options to sub rings when shuffle sharding.
 	opts PartitionRingOptions
+
+	// partitionsWithDerivedTokens is the number of partitions whose tokens have been derived from the
+	// scheme they declare, rather than read from the partition itself.
+	partitionsWithDerivedTokens int
 }
 
 // PartitionRingOptions holds optional configuration parameters for creating a PartitionRing.
@@ -85,6 +89,10 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
 	}
 
+	// Partitions declaring a token scheme don't carry their tokens: this is the only place where
+	// partition tokens are consumed, so it's where they get derived.
+	desc, partitionsWithDerivedTokens := materializeDerivedTokens(desc)
+
 	ringTokens := desc.tokens()
 	partitionByToken := desc.partitionByToken()
 	ringPartitionIDs, ringPartitionActive, err := buildRingTokenPartitionLookups(ringTokens, partitionByToken, desc.Partitions)
@@ -103,6 +111,8 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 		maxPartitionID:        desc.maxPartitionID(),
 		shuffleShardCache:     shuffleShardCache,
 		opts:                  opts,
+
+		partitionsWithDerivedTokens: partitionsWithDerivedTokens,
 	}, nil
 }
 

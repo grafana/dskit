@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -79,12 +80,22 @@ func (w *PartitionRingWatcher) WithDelegate(delegate PartitionRingWatcherDelegat
 }
 
 func (w *PartitionRingWatcher) starting(ctx context.Context) error {
+	// Derive the tokens of every derivable partition before reading the ring, so that the first ring
+	// build doesn't pay for it. Only the members watching a partition ring do this: the ones which
+	// just relay the ring never run the token generator. The derivable range is fixed, so this is
+	// the only derivation pass the process runs.
+	startTime := time.Now()
+	if err := WarmDerivedPartitionTokens(); err != nil {
+		return errors.Wrap(err, "unable to derive partition tokens")
+	}
+	level.Info(w.logger).Log("msg", "derived partition tokens", "max_partition_id", maxDerivedPartitionID.Load(), "duration", time.Since(startTime))
+
 	// Get the initial ring state so that, as soon as the service will be running, the in-memory
 	// ring would be already populated and there's no race condition between when the service is
 	// running and the WatchKey() callback is called for the first time.
-	value, err := w.kv.Get(ctx, w.key)
-	if err != nil {
-		return errors.Wrap(err, "unable to initialise ring state")
+	value, getErr := w.kv.Get(ctx, w.key)
+	if getErr != nil {
+		return errors.Wrap(getErr, "unable to initialise ring state")
 	}
 
 	if value == nil {
@@ -123,13 +134,16 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) erro
 	w.ringMx.Unlock()
 
 	if w.delegate != nil {
-		w.delegate.OnPartitionRingChanged(&oldRing.desc, desc)
+		// Both descs are the ones held by a ring, so the tokens of the partitions declaring a token
+		// scheme are materialized in both.
+		w.delegate.OnPartitionRingChanged(&oldRing.desc, &newRing.desc)
 	}
 
 	// Update metrics.
 	for state, count := range desc.countPartitionsByState() {
 		w.numPartitionsGaugeVec.WithLabelValues(state.CleanName()).Set(float64(count))
 	}
+	w.partitionsWithDerivedTokensGauge.Set(float64(newRing.partitionsWithDerivedTokens))
 
 	// Check partitions whose state change lock status has changed and log them.
 	for partitionID, partition := range desc.Partitions {

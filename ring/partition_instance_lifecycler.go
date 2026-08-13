@@ -282,7 +282,7 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 
 		partitionDesc, exists := ring.Partitions[l.cfg.PartitionID]
 		if exists {
-			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID, "state", partitionDesc.GetState(), "state_timestamp", partitionDesc.GetState().String(), "tokens", len(partitionDesc.GetTokens()))
+			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID, "state", partitionDesc.GetState(), "state_timestamp", partitionDesc.GetState().String(), "tokens", len(partitionDesc.GetTokens()), "token_scheme", partitionDesc.GetTokenScheme())
 		} else {
 			level.Info(l.logger).Log("msg", "partition not found in the ring", "partition", l.cfg.PartitionID)
 		}

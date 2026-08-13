@@ -290,6 +290,24 @@ func TestGenerateAllTokensUpTo_ShouldMatchTheTokensGeneratedForASingleID(t *test
 	}
 }
 
+// BenchmarkGenerateAllTokensUpTo measures a whole derivation pass, which is what a process pays
+// once when it warms up the memo, for the whole derivable partition ID range. The generator computes
+// the tokens of every lower partition to place the ones of maxID anyway, so this is also the cost of
+// deriving a single partition ID.
+func BenchmarkGenerateAllTokensUpTo(b *testing.B) {
+	for _, maxID := range []int32{128, 1024, DefaultMaxDerivedPartitionID, 8192} {
+		b.Run(fmt.Sprintf("max partition ID %d", maxID), func(b *testing.B) {
+			b.ReportAllocs()
+
+			for n := 0; n < b.N; n++ {
+				if _, err := GenerateAllTokensUpTo(maxID); err != nil {
+					b.Fatal("unexpected error:", err)
+				}
+			}
+		})
+	}
+}
+
 func TestPartitionRingWatcher_ShouldExportDerivedTokensMetrics(t *testing.T) {
 	const ringKey = "ring"
 

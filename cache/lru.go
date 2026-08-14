@@ -176,9 +176,12 @@ func (l *LRUCache) GetMultiWithError(ctx context.Context, keys []string, opts ..
 	l.mtx.Unlock()
 	l.hits.Add(float64(len(found)))
 
-	// Fetch misses from the backing cache with no lock held: this can be a slow,
-	// blocking network round trip, and must not stall unrelated callers of this
-	// LRUCache instance while it's in flight.
+	// Fetch misses from the backing cache with no lock held.
+	// The GetMultiWithError against remote backing cache can run several network roundtrips,
+	// during which all other LRU GetMultiWithError callers queue waiting for the mutex lock.
+	// Fetching from backing cache without the lock significantly reduces tail latency.
+	// May result in extra trips to memcached and extra local LRU set operations
+	// in the case that multiple callers experience local LRU miss on the same keys concurrently.
 	if len(miss) > 0 {
 		result, err = l.c.GetMultiWithError(ctx, miss, opts...)
 

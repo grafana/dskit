@@ -69,6 +69,19 @@ func (l *RateLimiter) Limit(now time.Time, tenantID string) float64 {
 	return float64(l.getTenantLimiter(now, tenantID).Limit())
 }
 
+// TokensAt returns the number of tokens available for the given tenant at
+// time now, without consuming any of them. It can be used to cheaply check
+// whether a tenant is currently able to afford a request of a known (or
+// estimated) cost before doing any expensive work on their behalf, e.g. to
+// reject over-limit requests before reading and parsing the request body.
+//
+// The returned value can be negative if the tenant has over-consumed via
+// ReserveN, and increases over time up to Burst(tenantID) as tokens are
+// replenished.
+func (l *RateLimiter) TokensAt(now time.Time, tenantID string) float64 {
+	return l.getTenantLimiter(now, tenantID).TokensAt(now)
+}
+
 // Burst returns the currently configured maximum burst size.
 func (l *RateLimiter) Burst(now time.Time, tenantID string) int {
 	return l.getTenantLimiter(now, tenantID).Burst()

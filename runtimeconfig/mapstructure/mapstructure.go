@@ -481,7 +481,7 @@ func WeakDecodeMetadata(input any, output any, metadata *Metadata) error {
 // again.
 func NewDecoder(config *DecoderConfig) (*Decoder, error) {
 	val := reflect.ValueOf(config.Result)
-	if val.Kind() != reflect.Ptr {
+	if val.Kind() != reflect.Pointer {
 		return nil, errors.New("result must be a pointer")
 	}
 
@@ -537,7 +537,7 @@ func NewDecoder(config *DecoderConfig) (*Decoder, error) {
 func (d *Decoder) Decode(input any) error {
 	err := d.decode(d.config.RootName, input, reflect.ValueOf(d.config.Result).Elem())
 
-	// Retain some of the original behavior when multiple errors ocurr
+	// Retain some of the original behavior when multiple errors occur
 	var joinedErr interface{ Unwrap() []error }
 	if errors.As(err, &joinedErr) {
 		return fmt.Errorf("decoding failed due to the following error(s):\n\n%w", err)
@@ -552,7 +552,7 @@ func isNil(input any) bool {
 		return true
 	}
 	val := reflect.ValueOf(input)
-	return val.Kind() == reflect.Ptr && val.IsNil()
+	return val.Kind() == reflect.Pointer && val.IsNil()
 }
 
 // Decodes an unknown data type into a specific reflection value.
@@ -649,7 +649,7 @@ func (d *Decoder) decode(name string, input any, outVal reflect.Value) error {
 			err = d.decodeStruct(name, input, outVal)
 		case reflect.Map:
 			err = d.decodeMap(name, input, outVal)
-		case reflect.Ptr:
+		case reflect.Pointer:
 			addMetaKey, err = d.decodePtr(name, input, outVal)
 		case reflect.Slice:
 			err = d.decodeSlice(name, input, outVal)
@@ -711,7 +711,7 @@ func (d *Decoder) decodeBasic(name string, data any, val reflect.Value) error {
 	// If the input data is a pointer, and the assigned type is the dereference
 	// of that exact pointer, then indirect it so that we can assign it.
 	// Example: *string to string
-	if dataVal.Kind() == reflect.Ptr && dataVal.Type().Elem() == val.Type() {
+	if dataVal.Kind() == reflect.Pointer && dataVal.Type().Elem() == val.Type() {
 		dataVal = reflect.Indirect(dataVal)
 	}
 
@@ -1005,8 +1005,8 @@ func (d *Decoder) decodeComplex(name string, data any, val reflect.Value) error 
 	dataVal := reflect.Indirect(reflect.ValueOf(data))
 	dataKind := getKind(dataVal)
 
-	switch {
-	case dataKind == reflect.Complex64:
+	switch dataKind {
+	case reflect.Complex64:
 		val.SetComplex(dataVal.Complex())
 	default:
 		return newDecodeError(name, &UnconvertibleTypeError{
@@ -1185,7 +1185,7 @@ func (d *Decoder) decodeMapFromStruct(name string, dataVal reflect.Value, val re
 			squash = squash || strings.Contains(tagValue[index+1:], d.config.SquashTagOption)
 			if squash {
 				// When squashing, the embedded type can be a pointer to a struct.
-				if v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Struct {
+				if v.Kind() == reflect.Pointer && v.Elem().Kind() == reflect.Struct {
 					v = v.Elem()
 				}
 
@@ -1318,7 +1318,7 @@ func (d *Decoder) decodePtr(name string, data any, val reflect.Value) (bool, err
 			reflect.Func,
 			reflect.Interface,
 			reflect.Map,
-			reflect.Ptr,
+			reflect.Pointer,
 			reflect.Slice:
 			isNil = v.IsNil()
 		}
@@ -1456,9 +1456,9 @@ func (d *Decoder) decodeArray(name string, data any, val reflect.Value) error {
 		// Check input type
 		if dataValKind != reflect.Array && dataValKind != reflect.Slice {
 			if d.config.WeaklyTypedInput {
-				switch {
+				switch dataValKind {
 				// Empty maps turn into empty arrays
-				case dataValKind == reflect.Map:
+				case reflect.Map:
 					if dataVal.Len() == 0 {
 						val.Set(reflect.Zero(arrayType))
 						return nil
@@ -1595,7 +1595,7 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 		for i := 0; i < structType.NumField(); i++ {
 			fieldType := structType.Field(i)
 			fieldVal := structVal.Field(i)
-			if fieldVal.Kind() == reflect.Ptr && fieldVal.Elem().Kind() == reflect.Struct {
+			if fieldVal.Kind() == reflect.Pointer && fieldVal.Elem().Kind() == reflect.Struct {
 				// Handle embedded struct pointers as embedded structs.
 				fieldVal = fieldVal.Elem()
 			}
@@ -1629,7 +1629,7 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 					if !fieldVal.IsNil() {
 						structs = append(structs, fieldVal.Elem().Elem())
 					}
-				case reflect.Ptr:
+				case reflect.Pointer:
 					if fieldVal.Type().Elem().Kind() == reflect.Struct {
 						if fieldVal.IsNil() {
 							fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
@@ -1815,7 +1815,7 @@ func isEmptyValue(v reflect.Value) bool {
 		return v.Uint() == 0
 	case reflect.Float32, reflect.Float64:
 		return v.Float() == 0
-	case reflect.Interface, reflect.Ptr:
+	case reflect.Interface, reflect.Pointer:
 		return v.IsNil()
 	}
 	return false
@@ -1852,7 +1852,7 @@ func isStructTypeConvertibleToMap(typ reflect.Type, checkMapstructureTags bool, 
 }
 
 func dereferencePtrToStructIfNeeded(v reflect.Value, tagName string) reflect.Value {
-	if v.Kind() != reflect.Ptr {
+	if v.Kind() != reflect.Pointer {
 		return v
 	}
 
@@ -1880,7 +1880,7 @@ func hasAnyTag(field reflect.StructField, tagName string) bool {
 
 func shouldTrackUnused(c *DecoderConfig, fieldValue reflect.Value) bool {
 	return (c.ErrorUnset || c.Metadata != nil) &&
-		!(c.AllowUnsetPointer && fieldValue.Kind() == reflect.Ptr)
+		(!c.AllowUnsetPointer || fieldValue.Kind() != reflect.Pointer)
 }
 
 // getFieldKey memoizes getTagValue(field, tagName)[0], ie. the map key to be

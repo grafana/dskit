@@ -46,7 +46,6 @@ type BasicPointer struct {
 	Vbool       *bool
 	Vfloat      *float64
 	Vextra      *string
-	vsilent     *bool
 	Vdata       *any
 	VjsonInt    *int
 	VjsonFloat  *float64
@@ -2956,7 +2955,7 @@ func TestDecode_StructTaggedWithOmitempty_OmitEmptyValues(t *testing.T) {
 	}
 
 	actual := &map[string]any{}
-	Decode(input, actual)
+	_ = Decode(input, actual)
 
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("Decode() expected: %#v, got: %#v", expected, actual)
@@ -3000,7 +2999,7 @@ func TestDecode_StructTaggedWithOmitempty_KeepNonEmptyValues(t *testing.T) {
 	}
 
 	actual := &map[string]any{}
-	Decode(input, actual)
+	_ = Decode(input, actual)
 
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("Decode() expected: %#v, got: %#v", expected, actual)
@@ -3044,7 +3043,7 @@ func TestDecode_StructTaggedWithOmitzero_KeepNonZeroValues(t *testing.T) {
 	}
 
 	actual := &map[string]any{}
-	Decode(input, actual)
+	_ = Decode(input, actual)
 
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("Decode() expected: %#v, got: %#v", expected, actual)
@@ -3082,7 +3081,7 @@ func TestDecode_StructTaggedWithOmitzero_DropZeroValues(t *testing.T) {
 	}
 
 	actual := &map[string]any{}
-	Decode(input, actual)
+	_ = Decode(input, actual)
 
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("Decode() expected: %#v, got: %#v", expected, actual)
@@ -3266,8 +3265,8 @@ func TestDecoder_MultiTagInline(t *testing.T) {
 		t.Fatalf("Decode error: %v", err)
 	}
 
-	if result.Inner.A != 1 {
-		t.Fatalf("expected inline field A=1, got %d", result.Inner.A)
+	if result.A != 1 {
+		t.Fatalf("expected inline field A=1, got %d", result.A)
 	}
 }
 
@@ -3639,7 +3638,7 @@ func TestDecoder_ExpandNilStructPointersHookFunc(t *testing.T) {
 	decodeHook := func(from reflect.Value, to reflect.Value) (any, error) {
 		if from.Kind() == reflect.Map && to.Kind() == reflect.Map {
 			toElem := to.Type().Elem()
-			if toElem.Kind() == reflect.Ptr && toElem.Elem().Kind() == reflect.Struct {
+			if toElem.Kind() == reflect.Pointer && toElem.Elem().Kind() == reflect.Struct {
 				fromRange := from.MapRange()
 				for fromRange.Next() {
 					fromKey := fromRange.Key()

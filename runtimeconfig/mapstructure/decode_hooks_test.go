@@ -895,7 +895,7 @@ func TestWeaklyTypedHook(t *testing.T) {
 }
 
 func TestStructToMapHookFuncTabled(t *testing.T) {
-	var f DecodeHookFunc = RecursiveStructToMapHookFunc()
+	f := RecursiveStructToMapHookFunc()
 
 	type b struct {
 		TestKey string

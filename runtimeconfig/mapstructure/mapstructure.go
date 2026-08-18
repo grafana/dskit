@@ -205,14 +205,13 @@ package mapstructure
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/grafana/dskit/runtimeconfig/mapstructure/internal/errors"
 )
 
 // DecodeHookFunc is the callback function that can be used for
@@ -1453,7 +1452,7 @@ func (d *Decoder) decodeArray(name string, data any, val reflect.Value) error {
 
 	valArray := val
 
-	if isComparable(valArray) && valArray.Interface() == reflect.Zero(valArray.Type()).Interface() || d.config.ZeroFields {
+	if valArray.Comparable() && valArray.Interface() == reflect.Zero(valArray.Type()).Interface() || d.config.ZeroFields {
 		// Check input type
 		if dataValKind != reflect.Array && dataValKind != reflect.Slice {
 			if d.config.WeaklyTypedInput {

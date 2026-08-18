@@ -32,6 +32,7 @@ import (
 
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/runtimeconfig/mapstructure"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 )
@@ -349,12 +350,9 @@ func TestOverridesManagerMapLoader(t *testing.T) {
 				return nil, errors.New("Loader should not be called when MapLoader is set")
 			},
 			MapLoader: func(m map[string]interface{}) (interface{}, error) {
-				js, err := json.Marshal(m)
-				require.NoError(t, err)
 				var o testOverrides
-				err = json.Unmarshal(js, &o)
-				require.NoError(t, err)
-				return &o, nil
+				err := mapstructure.Decode(m, &o)
+				return &o, err
 			},
 		}
 

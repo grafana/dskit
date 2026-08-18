@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+// Provenance-includes-location: https://github.com/go-viper/mapstructure/blob/main/internal/errors/errors.go
+// Provenance-includes-license: MIT
+// Provenance-includes-copyright: Mitchell Hashimoto
+
 package errors
 
 import "errors"

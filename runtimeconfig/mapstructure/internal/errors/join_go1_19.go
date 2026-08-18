@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+// Provenance-includes-location: https://github.com/go-viper/mapstructure/blob/main/internal/errors/join_go1_19.go
+// Provenance-includes-license: MIT
+// Provenance-includes-copyright: Mitchell Hashimoto
+
 //go:build !go1.20
 
 // Copyright 2022 The Go Authors. All rights reserved.

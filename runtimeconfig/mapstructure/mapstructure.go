@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+// Provenance-includes-location: https://github.com/go-viper/mapstructure/blob/main/mapstructure.go
+// Provenance-includes-license: MIT
+// Provenance-includes-copyright: Mitchell Hashimoto
+
 // Package mapstructure exposes functionality to convert one arbitrary
 // Go type into another, typically to convert a map[string]any
 // into a native Go structure.
@@ -207,7 +212,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-viper/mapstructure/v2/internal/errors"
+	"github.com/grafana/dskit/runtimeconfig/mapstructure/internal/errors"
 )
 
 // DecodeHookFunc is the callback function that can be used for

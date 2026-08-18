@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+// Provenance-includes-location: https://github.com/go-viper/mapstructure/blob/main/decode_hooks.go
+// Provenance-includes-license: MIT
+// Provenance-includes-copyright: Mitchell Hashimoto
+
 package mapstructure
 
 import (

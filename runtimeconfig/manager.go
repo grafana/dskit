@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 
@@ -465,5 +466,8 @@ func httpTransport(cfg Config, configName string, registerer prometheus.Register
 		}
 		rt = middleware.ClusterValidationRoundTripper(cfg.HTTPClientClusterValidation.Label, reporter, transport)
 	}
-	return rt
+
+	return otelhttp.NewTransport(rt, otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+		return "RuntimeConfig " + r.Method
+	}))
 }

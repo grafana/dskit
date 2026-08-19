@@ -3,7 +3,6 @@ package ring
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -28,11 +27,12 @@ type PartitionRingWatcher struct {
 	ring   *PartitionRing
 
 	// Metrics.
-	numPartitionsGaugeVec            *prometheus.GaugeVec
-	partitionsWithDerivedTokensGauge prometheus.Gauge
+	numPartitionsGaugeVec *prometheus.GaugeVec
 
 	// opts is used to propagate the options each time the ring is updated.
 	opts PartitionRingOptions
+
+	tokenGenerator *PartitionTokenGenerator
 }
 
 type PartitionRingWatcherDelegate interface {
@@ -45,7 +45,7 @@ func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, 
 }
 
 func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts PartitionRingOptions, logger log.Logger, reg prometheus.Registerer) *PartitionRingWatcher {
-	emptyRing, err := NewPartitionRingWithOptions(*NewPartitionRingDesc(), opts)
+	emptyRing, err := newPartitionRing(*NewPartitionRingDesc(), opts, nil)
 	if err != nil {
 		panic(err) // This should never executes.
 	}
@@ -59,11 +59,6 @@ func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts Par
 			Help:        "Number of partitions by state in the partitions ring.",
 			ConstLabels: map[string]string{"name": name},
 		}, []string{"state"}),
-		partitionsWithDerivedTokensGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name:        "partition_ring_partitions_with_derived_tokens",
-			Help:        "Number of partitions in the partitions ring whose tokens have been derived from their token scheme.",
-			ConstLabels: map[string]string{"name": name},
-		}),
 		opts: opts,
 	}
 
@@ -79,23 +74,21 @@ func (w *PartitionRingWatcher) WithDelegate(delegate PartitionRingWatcherDelegat
 	return w
 }
 
-func (w *PartitionRingWatcher) starting(ctx context.Context) error {
-	// Derive the tokens of every derivable partition before reading the ring, so that the first ring
-	// build doesn't pay for it. Only the members watching a partition ring do this: the ones which
-	// just relay the ring never run the token generator. The derivable range is fixed, so this is
-	// the only derivation pass the process runs.
-	startTime := time.Now()
-	if err := WarmDerivedPartitionTokens(); err != nil {
-		return errors.Wrap(err, "unable to derive partition tokens")
-	}
-	level.Info(w.logger).Log("msg", "derived partition tokens", "max_partition_id", maxDerivedPartitionID.Load(), "duration", time.Since(startTime))
+// WithPartitionTokenGenerator sets the generator used to resolve partition token schemes.
+//
+// Not concurrency safe.
+func (w *PartitionRingWatcher) WithPartitionTokenGenerator(generator *PartitionTokenGenerator) *PartitionRingWatcher {
+	w.tokenGenerator = generator
+	return w
+}
 
+func (w *PartitionRingWatcher) starting(ctx context.Context) error {
 	// Get the initial ring state so that, as soon as the service will be running, the in-memory
 	// ring would be already populated and there's no race condition between when the service is
 	// running and the WatchKey() callback is called for the first time.
-	value, getErr := w.kv.Get(ctx, w.key)
-	if getErr != nil {
-		return errors.Wrap(getErr, "unable to initialise ring state")
+	value, err := w.kv.Get(ctx, w.key)
+	if err != nil {
+		return errors.Wrap(err, "unable to initialise ring state")
 	}
 
 	if value == nil {
@@ -124,7 +117,7 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 }
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) error {
-	newRing, err := NewPartitionRingWithOptions(*desc, w.opts)
+	newRing, err := newPartitionRing(*desc, w.opts, w.tokenGenerator)
 	if err != nil {
 		return errors.Wrap(err, "failed to create partition ring from descriptor")
 	}
@@ -134,8 +127,6 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) erro
 	w.ringMx.Unlock()
 
 	if w.delegate != nil {
-		// Both descs are the ones held by a ring, so the tokens of the partitions declaring a token
-		// scheme are materialized in both.
 		w.delegate.OnPartitionRingChanged(&oldRing.desc, &newRing.desc)
 	}
 
@@ -143,7 +134,6 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) erro
 	for state, count := range desc.countPartitionsByState() {
 		w.numPartitionsGaugeVec.WithLabelValues(state.CleanName()).Set(float64(count))
 	}
-	w.partitionsWithDerivedTokensGauge.Set(float64(newRing.partitionsWithDerivedTokens))
 
 	// Check partitions whose state change lock status has changed and log them.
 	for partitionID, partition := range desc.Partitions {

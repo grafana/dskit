@@ -55,6 +55,10 @@ type PartitionInstanceLifecyclerConfig struct {
 	// PollingInterval is the internal polling interval. This setting is useful to let
 	// upstream projects to lower it in unit tests.
 	PollingInterval time.Duration
+
+	// TokenScheme makes new partitions declare how to derive their tokens. Empty stores the tokens.
+	// Enable it only after every reader in the cluster supports the scheme.
+	TokenScheme string
 }
 
 // PartitionInstanceLifecycler is responsible to manage the lifecycle of a single
@@ -171,6 +175,10 @@ func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, 
 }
 
 func (l *PartitionInstanceLifecycler) starting(ctx context.Context) error {
+	if err := validatePartitionTokenScheme(l.cfg.TokenScheme); err != nil {
+		return err
+	}
+
 	if l.CreatePartitionOnStartup() {
 		return errors.Wrap(l.createPartitionAndRegisterOwner(ctx), "create partition and register owner")
 	}
@@ -282,7 +290,7 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 
 		partitionDesc, exists := ring.Partitions[l.cfg.PartitionID]
 		if exists {
-			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID, "state", partitionDesc.GetState(), "state_timestamp", partitionDesc.GetState().String(), "tokens", len(partitionDesc.GetTokens()), "token_scheme", partitionDesc.GetTokenScheme())
+			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID, "state", partitionDesc.GetState().CleanName(), "state_timestamp", partitionDesc.GetStateTime().String(), "tokens", len(partitionDesc.GetTokens()), "token_scheme", partitionDesc.GetTokenScheme())
 		} else {
 			level.Info(l.logger).Log("msg", "partition not found in the ring", "partition", l.cfg.PartitionID)
 		}
@@ -290,7 +298,9 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 		if !exists {
 			// The partition doesn't exist, so we create a new one. A new partition should always be created
 			// in PENDING state.
-			ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
+			if err := ring.AddPartitionWithTokenScheme(l.cfg.PartitionID, PartitionPending, l.cfg.TokenScheme, now); err != nil {
+				return false, err
+			}
 			changed = true
 		}
 

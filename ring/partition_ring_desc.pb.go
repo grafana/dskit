@@ -155,13 +155,9 @@ type PartitionDesc struct {
 	// Unique tokens, generated with deterministic token generator. Tokens MUST be immutable:
 	// if tokens get changed, the change will not be propagated via memberlist.
 	//
-	// Tokens are not set when token_scheme is: the reader derives them from the scheme and the
-	// partition ID instead.
+	// Tokens are not set when token_scheme is set.
 	Tokens []uint32 `protobuf:"varint,1,rep,packed,name=tokens,proto3" json:"tokens,omitempty"`
-	// The scheme used to derive the tokens of this partition, e.g. "smt-v1-512". The name carries
-	// the generator, its version and the number of tokens, and must be one of the schemes registered
-	// in the reader (unknown schemes are rejected). An empty scheme means the tokens are carried by
-	// the tokens field instead.
+	// The token derivation scheme. Empty means tokens are carried in the tokens field.
 	TokenScheme string `protobuf:"bytes,7,opt,name=token_scheme,json=tokenScheme,proto3" json:"token_scheme,omitempty"`
 	// The state of the partition.
 	State PartitionState `protobuf:"varint,2,opt,name=state,proto3,enum=ring.PartitionState" json:"state,omitempty"`

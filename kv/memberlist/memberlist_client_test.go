@@ -482,6 +482,56 @@ func TestCASFailedBecauseOfVersionChanges(t *testing.T) {
 	})
 }
 
+// TestCASFailedBecauseOfVersionChanges_ConfiguredMaxCasRetries verifies that
+// KVConfig.MaxCasRetries, not just the maxCasRetries constant, governs how many times
+// CAS retries before giving up — the same scenario as
+// TestCASFailedBecauseOfVersionChanges, but with a configured value on both sides of
+// the default.
+func TestCASFailedBecauseOfVersionChanges_ConfiguredMaxCasRetries(t *testing.T) {
+	testCASRetries := func(t *testing.T, configuredRetries, wantRetries int) {
+		c := dataCodec{}
+
+		var cfg KVConfig
+		flagext.DefaultValues(&cfg)
+		cfg.TCPTransport = TCPTransportConfig{BindAddrs: getLocalhostAddrs()}
+		cfg.Codecs = []codec.Codec{c}
+		cfg.MaxCasRetries = configuredRetries
+
+		mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
+		defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
+
+		kv, err := NewClient(mkv, c)
+		require.NoError(t, err)
+
+		require.NoError(t, cas(kv, key, func(*data) (*data, bool, error) {
+			return &data{Members: map[string]member{"nonempty": {Timestamp: time.Now().Unix()}}}, true, nil
+		}))
+
+		calls := 0
+		err = casWithErr(context.Background(), kv, key, func(d *data) (*data, bool, error) {
+			calls++
+			// An inner CAS that always succeeds makes the outer CAS lose the race every time.
+			require.NoError(t, cas(kv, key, func(d *data) (*data, bool, error) {
+				d.Members[fmt.Sprintf("%d", calls)] = member{Timestamp: time.Now().Unix()}
+				return d, true, nil
+			}))
+			d.Members["world"] = member{Timestamp: time.Now().Unix()}
+			return d, true, nil
+		})
+
+		require.EqualError(t, err, "failed to CAS-update key test: too many retries")
+		require.Equal(t, wantRetries, calls)
+	}
+
+	t.Run("configured value overrides the built-in default", func(t *testing.T) {
+		testCASRetries(t, 3, 3)
+	})
+	t.Run("zero falls back to the built-in default", func(t *testing.T) {
+		testCASRetries(t, 0, maxCasRetries)
+	})
+}
+
 func TestMultipleCAS(t *testing.T) {
 	t.Parallel()
 

@@ -162,6 +162,13 @@ type KVConfig struct {
 	AbortIfJoinFails     bool                `yaml:"abort_if_cluster_join_fails"`
 	RejoinInterval       time.Duration       `yaml:"rejoin_interval" category:"advanced"`
 
+	// MaxCasRetries is the maximum number of retries for a CAS (compare-and-swap)
+	// operation on a key before giving up. A CAS retries when it detects the local
+	// value has changed since it was read (e.g. a concurrent update gossiped in from
+	// another node), which happens more often on keys with many concurrent writers
+	// (e.g. a ring with many members). 0 uses the built-in default.
+	MaxCasRetries int `yaml:"max_cas_retries" category:"advanced"`
+
 	// Remove LEFT ingesters from ring after this timeout.
 	LeftIngestersTimeout   time.Duration `yaml:"left_ingesters_timeout" category:"advanced"`
 	ObsoleteEntriesTimeout time.Duration `yaml:"obsolete_entries_timeout" category:"experimental"`
@@ -210,6 +217,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.AbortIfFastJoinFails, prefix+"memberlist.abort-if-fast-join-fails", false, "Abort if this node fails the fast memberlist cluster joining procedure at startup. When enabled, it's guaranteed that other services, depending on memberlist, have an updated view over the cluster state when they're started.")
 	f.BoolVar(&cfg.AbortIfJoinFails, prefix+"memberlist.abort-if-join-fails", cfg.AbortIfJoinFails, "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.")
 	f.DurationVar(&cfg.RejoinInterval, prefix+"memberlist.rejoin-interval", 0, "If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.")
+	f.IntVar(&cfg.MaxCasRetries, prefix+"memberlist.max-cas-retries", maxCasRetries, "Maximum number of retries for a CAS (compare-and-swap) operation on a key before giving up. Raise this for keys with many concurrent writers (e.g. a large ring), where a CAS is more likely to lose the race against a concurrent update before it can commit.")
 	f.DurationVar(&cfg.LeftIngestersTimeout, prefix+"memberlist.left-ingesters-timeout", 5*time.Minute, "How long to keep LEFT ingesters in the ring.")
 	f.DurationVar(&cfg.ObsoleteEntriesTimeout, prefix+"memberlist.obsolete-entries-timeout", mlDefaults.PushPullInterval, "How long to keep obsolete entries in the KV store.")
 	f.DurationVar(&cfg.LeaveTimeout, prefix+"memberlist.leave-timeout", 20*time.Second, "Timeout for leaving memberlist cluster.")
@@ -339,9 +347,10 @@ type KV struct {
 	memberlistMembersCount prometheus.GaugeFunc
 	memberlistHealthScore  prometheus.GaugeFunc
 
-	// make this configurable for tests. Default value is fine for normal usage
-	// where updates are coming from network, but when running tests with many
-	// goroutines using same KV, default can be too low.
+	// maxCasRetries is normally sourced from KVConfig.MaxCasRetries (falling back to
+	// the maxCasRetries constant if unset). Tests that drive many goroutines against
+	// the same KV concurrently can also override it directly, since the default can
+	// be too low for that level of induced contention.
 	maxCasRetries int
 }
 
@@ -414,6 +423,11 @@ var (
 func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer prometheus.Registerer) *KV {
 	cfg.TCPTransport.MetricsNamespace = cfg.MetricsNamespace
 
+	casRetries := cfg.MaxCasRetries
+	if casRetries <= 0 {
+		casRetries = maxCasRetries
+	}
+
 	mlkv := &KV{
 		cfg:              cfg,
 		logger:           logger,
@@ -426,7 +440,7 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 		prefixWatchers:   make(map[string][]chan string),
 		workersChannels:  make(map[string]chan valueUpdate),
 		shutdown:         make(chan struct{}),
-		maxCasRetries:    maxCasRetries,
+		maxCasRetries:    casRetries,
 	}
 
 	mlkv.createAndRegisterMetrics()

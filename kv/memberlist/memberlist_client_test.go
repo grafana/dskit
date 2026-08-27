@@ -592,6 +592,47 @@ func TestCASFailedBecauseOfVersionChanges(t *testing.T) {
 	})
 }
 
+func TestCASRetryBackoff(t *testing.T) {
+	c := dataCodec{}
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{BindAddrs: getLocalhostAddrs()}
+	cfg.Codecs = []codec.Codec{c}
+	cfg.CasRetryMinBackoff = 5 * time.Millisecond
+	cfg.CasRetryMaxBackoff = 20 * time.Millisecond
+
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
+
+	kv, err := NewClient(mkv, c)
+	require.NoError(t, err)
+
+	require.NoError(t, cas(kv, key, func(*data) (*data, bool, error) {
+		return &data{Members: map[string]member{"nonempty": {Timestamp: time.Now().Unix()}}}, true, nil
+	}))
+
+	calls := 0
+	start := time.Now()
+	err = casWithErr(context.Background(), kv, key, func(d *data) (*data, bool, error) {
+		calls++
+		require.NoError(t, cas(kv, key, func(d *data) (*data, bool, error) {
+			d.Members[fmt.Sprintf("%d", calls)] = member{Timestamp: time.Now().Unix()}
+			return d, true, nil
+		}))
+		d.Members["world"] = member{Timestamp: time.Now().Unix()}
+		return d, true, nil
+	})
+	elapsed := time.Since(start)
+
+	require.EqualError(t, err, "failed to CAS-update key test: too many retries: version mismatch")
+	require.Equal(t, maxCasRetries, calls)
+	// maxCasRetries-1 delays of at least MinBackoff each — a lower bound that only
+	// holds if the delay actually ran (it wouldn't with MinBackoff=0).
+	require.GreaterOrEqual(t, elapsed, time.Duration(maxCasRetries-1)*cfg.CasRetryMinBackoff)
+}
+
 func TestMultipleCAS(t *testing.T) {
 	t.Parallel()
 

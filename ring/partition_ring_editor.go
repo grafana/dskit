@@ -34,7 +34,7 @@ func (l *PartitionRingEditor) ChangePartitionState(ctx context.Context, partitio
 
 func (l *PartitionRingEditor) RemoveMultiPartitionOwner(ctx context.Context, instanceID string, partitionID int32) error {
 	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-		return ring.RemoveOwner(multiPartitionOwnerInstanceID(instanceID, partitionID)), nil
+		return ring.DeleteOwner(multiPartitionOwnerInstanceID(instanceID, partitionID), partitionID, time.Now()), nil
 	})
 }
 

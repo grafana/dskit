@@ -1,7 +1,9 @@
 package flagext
 
 import (
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -28,6 +30,15 @@ var fakeStringValidator = func(_ string, v string) error {
 		return errors.New("value cannot be empty")
 	}
 	return nil
+}
+
+func requireJSONUnmarshalTypeError[T any](t *testing.T, err error, value string) {
+	t.Helper()
+
+	var typeErr *json.UnmarshalTypeError
+	require.ErrorAs(t, err, &typeErr)
+	require.Equal(t, value, typeErr.Value)
+	require.Equal(t, reflect.TypeFor[T](), typeErr.Type)
 }
 
 func TestNewLimitsMap(t *testing.T) {
@@ -76,9 +87,10 @@ func TestLimitsMap_IsNil(t *testing.T) {
 func TestLimitsMap_SetAndString(t *testing.T) {
 	t.Run("numeric", func(t *testing.T) {
 		tc := map[string]struct {
-			input    string
-			expected map[string]float64
-			error    string
+			input          string
+			expected       map[string]float64
+			error          string
+			typeErrorValue string
 		}{
 
 			"set without error": {
@@ -94,8 +106,8 @@ func TestLimitsMap_SetAndString(t *testing.T) {
 				error: "value cannot be negative",
 			},
 			"set with incompatible value type": {
-				input: `{"key1": "abc", "key2": "def"}`,
-				error: "json: cannot unmarshal string into Go value of type float64",
+				input:          `{"key1": "abc", "key2": "def"}`,
+				typeErrorValue: "string",
 			},
 		}
 
@@ -103,7 +115,9 @@ func TestLimitsMap_SetAndString(t *testing.T) {
 			t.Run("numeric/"+name, func(t *testing.T) {
 				lm := NewLimitsMap(fakeFloat64Validator)
 				err := lm.Set(tt.input)
-				if tt.error != "" {
+				if tt.typeErrorValue != "" {
+					requireJSONUnmarshalTypeError[float64](t, err, tt.typeErrorValue)
+				} else if tt.error != "" {
 					require.Error(t, err)
 					require.Equal(t, tt.error, err.Error())
 				} else {
@@ -117,9 +131,10 @@ func TestLimitsMap_SetAndString(t *testing.T) {
 
 	t.Run("string", func(t *testing.T) {
 		tc := map[string]struct {
-			input    string
-			expected map[string]string
-			error    string
+			input          string
+			expected       map[string]string
+			error          string
+			typeErrorValue string
 		}{
 
 			"set without error": {
@@ -135,8 +150,8 @@ func TestLimitsMap_SetAndString(t *testing.T) {
 				error: "value cannot be empty",
 			},
 			"set with incompatible value type": {
-				input: `{"key1": 10, "key2": 20}`,
-				error: "json: cannot unmarshal number into Go value of type string",
+				input:          `{"key1": 10, "key2": 20}`,
+				typeErrorValue: "number",
 			},
 		}
 
@@ -144,7 +159,9 @@ func TestLimitsMap_SetAndString(t *testing.T) {
 			t.Run("string/"+name, func(t *testing.T) {
 				lm := NewLimitsMap(fakeStringValidator)
 				err := lm.Set(tt.input)
-				if tt.error != "" {
+				if tt.typeErrorValue != "" {
+					requireJSONUnmarshalTypeError[string](t, err, tt.typeErrorValue)
+				} else if tt.error != "" {
 					require.Error(t, err)
 					require.Equal(t, tt.error, err.Error())
 				} else {

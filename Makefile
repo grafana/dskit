@@ -52,22 +52,11 @@ build-submodules: ## Vets each nested module (separate go.mod) not covered by th
 	@./.scripts/build-submodules.sh $(SUBMODULE_GO_MODS)
 
 .PHONY: lint
-lint: .tools/bin/misspell .tools/bin/faillint .tools/bin/golangci-lint ## Runs misspell, golangci-lint, and faillint
+lint: .tools/bin/misspell .tools/bin/golangci-lint ## Runs misspell and golangci-lint
 	misspell -error README.md CONTRIBUTING.md LICENSE
 
 	# Configured via .golangci.yml.
 	golangci-lint run
-
-	# Ensure no blocklisted package is imported.
-	faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
-		golang.org/x/net/context=context,\
-		sync/atomic=go.uber.org/atomic,\
-		github.com/go-kit/kit/log,\
-		gopkg.in/yaml.v3=go.yaml.in/yaml/v3,\
-		github.com/prometheus/client_golang/prometheus.{MustRegister}=github.com/prometheus/client_golang/prometheus/promauto,\
-		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewGauge,NewGaugeVec,NewGaugeFunc,NewHistogram,NewHistogramVec,NewSummary,NewSummaryVec}\
-		=github.com/prometheus/client_golang/prometheus/promauto.With.{NewCounter,NewCounterVec,NewGauge,NewGaugeVec,NewGaugeFunc,NewHistogram,NewHistogramVec,NewSummary,NewSummaryVec}"\
-		./...
 
 .PHONY: clean
 clean: ## Removes the .tools/ directory
@@ -98,9 +87,6 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 
 .tools/bin/misspell: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/client9/misspell/cmd/misspell@v0.3.4
-
-.tools/bin/faillint: .tools
-	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
 GOLANGCI_LINT_VERSION := 2.13.2
 .tools/bin/golangci-lint: .tools

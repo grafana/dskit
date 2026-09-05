@@ -34,7 +34,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.x'
       - name: Go mod check
         run: make mod-check
       - name: Build submodules
@@ -55,7 +55,7 @@ jobs:
       matrix:
         # We want to make sure dskit can support multiple golang versions
         # by ensuring the test would pass using all these supported versions.
-        go-version: ['1.25.x', '1.26.x']
+        go-version: ['1.26.x', '1.27.x']
         # Split tests into 3 groups by *_test.go file (each group runs matching
         # Test*/Fuzz*/Example* names via -run), with per-package retry.
         test_group_id:    [0, 1, 2]

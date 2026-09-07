@@ -1326,6 +1326,13 @@ func (f *flakyServer) setBroken(broken bool) {
 	f.broken = broken
 }
 
+func (f *flakyServer) setBody(body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.body = body
+	f.broken = false
+}
+
 func (f *flakyServer) url() string { return f.srv.URL + "/config.yaml" }
 
 // twoKeys lets a test tell apart the contribution of each source, because each source can set a
@@ -1356,7 +1363,7 @@ func newTestConfigFile(t *testing.T, content string) string {
 
 func sourceMetrics(file, serverURL string, fileValue, serverValue int) string {
 	return fmt.Sprintf(`
-		# HELP runtime_config_source_last_reload_successful Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
+		# HELP runtime_config_source_last_reload_successful Whether the last reload of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
 		# TYPE runtime_config_source_last_reload_successful gauge
 		runtime_config_source_last_reload_successful{config="overrides",source="%s"} %d
 		runtime_config_source_last_reload_successful{config="overrides",source="%s"} %d
@@ -1507,6 +1514,42 @@ func TestManager_OptionalUseLastValue(t *testing.T) {
 	`), "runtime_config_last_reload_successful"))
 
 	// Unlike optional-on-startup, the other sources keep being applied while it is down.
+	require.NoError(t, os.WriteFile(file, []byte("from_file: 7\n"), 0600))
+	test.Poll(t, 5*time.Second, twoKeys{FromFile: 7, FromServer: 42}, func() interface{} {
+		return manager.GetConfig()
+	})
+}
+
+func TestManager_OptionalUseLastValue_InvalidContentDoesNotPoisonLastGood(t *testing.T) {
+	file := newTestConfigFile(t, "from_file: 1\n")
+	srv := newFlakyServer(t, "from_server: 42\n")
+
+	reg := prometheus.NewPedanticRegistry()
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{file, srv.url() + ";optional-use-last-value"},
+		Loader:       twoKeysLoader,
+	}, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+	require.Equal(t, twoKeys{FromFile: 1, FromServer: 42}, manager.GetConfig())
+
+	// A successful HTTP read of unreadable YAML must not replace the last applied bytes.
+	srv.setBody(":\n")
+	test.Poll(t, 5*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+		# TYPE runtime_config_last_reload_successful gauge
+		runtime_config_last_reload_successful{config="overrides"} 0
+	`), "runtime_config_last_reload_successful")
+	})
+	require.Equal(t, twoKeys{FromFile: 1, FromServer: 42}, manager.GetConfig())
+
+	// After the source goes down, the last applied value is still used, so the other
+	// sources keep updating.
+	srv.setBroken(true)
 	require.NoError(t, os.WriteFile(file, []byte("from_file: 7\n"), 0600))
 	test.Poll(t, 5*time.Second, twoKeys{FromFile: 7, FromServer: 42}, func() interface{} {
 		return manager.GetConfig()

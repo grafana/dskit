@@ -102,7 +102,7 @@ type Manager struct {
 	// Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes []providerHash
 
-	// Bytes each provider supplied the last time it was read successfully, in LoadPath order.
+	// Bytes each provider last contributed to an applied config, in LoadPath order.
 	// Only read for sources whose failure policy keeps the last value, and like fileHashes it is
 	// only used by loadConfig, so it doesn't need synchronization.
 	lastGoodData [][]byte
@@ -135,7 +135,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		}),
 		sourceLoadSuccess: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "runtime_config_source_last_reload_successful",
-			Help: "Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.",
+			Help: "Whether the last reload of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.",
 		}, []string{"source"}),
 		configHash: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "runtime_config_hash",
@@ -260,6 +260,10 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// contributes says whether rawData[i] takes part in the merge. A source whose failure is
 	// tolerated contributes nothing until it has been read successfully at least once.
 	contributes := make([]bool, len(om.providers))
+	// readOK is true for sources whose Read (and preprocess) succeeded this attempt.
+	// lastGoodData is only updated for an applied config, so a body that later fails to
+	// unmarshal cannot poison the value kept for optional-use-last-value.
+	readOK := make([]bool, len(om.providers))
 	// Only providers that contribute are hashed, so that a source joining or leaving the merge
 	// changes the hash list and triggers a rebuild.
 	hashes := make([]providerHash, 0, len(om.providers))
@@ -298,9 +302,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 			continue
 		}
 
-		om.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(1)
-		om.lastGoodData[i] = buf
-
+		readOK[i] = true
 		rawData[i] = buf
 		contributes[i] = true
 		hashes = append(hashes, providerHash{
@@ -313,6 +315,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// as nil, which compares equal to an empty hash list, and we still need to apply the
 	// empty merge ("{}") so GetConfig is the Loader's result rather than nil.
 	if !initial && slices.Equal(om.fileHashes, hashes) {
+		om.markReadSourcesSuccessful(readOK)
 		om.configLoadSuccess.Set(1)
 		return nil
 	}
@@ -326,11 +329,13 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		data := rawData[i]
 		yamlFile, err := om.unmarshalMaybeGzipped(p.Name(), data)
 		if err != nil {
+			om.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
 			om.configLoadSuccess.Set(0)
 			return errors.Wrapf(err, "unmarshal %q", p.Name())
 		}
 		mergedConfig, err = mergeConfigMaps(mergedConfig, yamlFile, "")
 		if err != nil {
+			om.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
 			om.configLoadSuccess.Set(0)
 			return errors.Wrapf(err, "can't merge %q on top of the previous providers", p.Name())
 		}
@@ -363,6 +368,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		}
 	}
 	om.configLoadSuccess.Set(1)
+	om.markReadSourcesSuccessful(readOK)
 
 	om.setConfig(cfg)
 	om.callListeners(cfg)
@@ -371,9 +377,23 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	om.configHash.Reset()
 	om.configHash.WithLabelValues(fmt.Sprintf("%x", hash)).Set(1)
 
-	// preserve hashes for next loop
+	// preserve hashes and last-good bytes for next loop; only bytes that made it
+	// into this applied config are kept.
 	om.fileHashes = hashes
+	for i := range om.providers {
+		if contributes[i] {
+			om.lastGoodData[i] = bytes.Clone(rawData[i])
+		}
+	}
 	return nil
+}
+
+func (om *Manager) markReadSourcesSuccessful(readOK []bool) {
+	for i, ok := range readOK {
+		if ok {
+			om.sourceLoadSuccess.WithLabelValues(sourceLabel(om.providers[i])).Set(1)
+		}
+	}
 }
 
 func combinedFilesHash(hashes []providerHash) [sha256.Size]byte {

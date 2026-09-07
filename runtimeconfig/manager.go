@@ -119,6 +119,17 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		return nil, errors.New("LoadPath is empty")
 	}
 
+	// Parse every entry before registering any metric, so that a bad entry leaves the
+	// registerer untouched and New can be called again once the config is corrected.
+	sources := make([]source, 0, len(cfg.LoadPath))
+	for _, entry := range cfg.LoadPath {
+		src, err := parseSource(entry)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, src)
+	}
+
 	// The cluster-validation counter shares its name with similarly-named counters from other
 	// client-side cluster-validation reporters in the calling application (e.g. gRPC clients), so
 	// its label set must match theirs: {client, protocol, method}, with no per-manager "config"
@@ -149,12 +160,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 
 	var httpClient *http.Client
 	var httpDuration *prometheus.HistogramVec
-	for _, entry := range cfg.LoadPath {
-		src, err := parseSource(entry)
-		if err != nil {
-			return nil, err
-		}
-
+	for _, src := range sources {
 		var p provider
 		if isURL(src.path) {
 			if httpClient == nil {

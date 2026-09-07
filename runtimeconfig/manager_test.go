@@ -1650,3 +1650,32 @@ func TestManager_SourceMetricIsNotStaleWhenALaterSourceFails(t *testing.T) {
 			"runtime_config_source_last_reload_successful")
 	})
 }
+
+// A bad entry must leave the registerer untouched, so that the caller can correct the config
+// and call New again on the same registry without a duplicate-registration panic.
+func TestManager_InvalidSourceRegistersNothing(t *testing.T) {
+	file := newTestConfigFile(t, "from_file: 1\n")
+	reg := prometheus.NewPedanticRegistry()
+
+	_, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{file, file + ";optional-on-startup;optional-use-last-value"},
+		Loader:       twoKeysLoader,
+	}, "overrides", reg, log.NewNopLogger())
+	require.Error(t, err)
+
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	assert.Empty(t, families, "a failed New must not leave metrics behind")
+
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{file},
+		Loader:       twoKeysLoader,
+	}, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+	require.Equal(t, twoKeys{FromFile: 1}, manager.GetConfig())
+}

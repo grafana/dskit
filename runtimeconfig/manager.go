@@ -63,7 +63,7 @@ type Config struct {
 // RegisterFlagsWithPrefix registers flags under the specified prefix, which could be empty.
 // If a non-empty prefix is provided, it's expected to end with a dot.
 func (mc *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.Var(&mc.LoadPath, prefix+"file", "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with semicolon-separated parameters that say what happens when it cannot be read: \";optional-on-startup\" lets the process start without it, but a later failure still fails the reload; \";optional-use-last-value\" also lets the process start without it, and a later failure keeps the value the source supplied last. Without a parameter, a source that cannot be read fails the load. Quote the value in a shell, because \";\" starts a new command.")
+	f.Var(&mc.LoadPath, prefix+"file", "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with semicolon-separated parameters that say what happens when it cannot be read: \";optional-on-startup\" lets the process start without it, but a later failure still fails the reload; \";optional-keep-last-value-on-failure\" also lets the process start without it, and a later failure keeps the value the source supplied last. Without a parameter, a source that cannot be read fails the load. Quote the value in a shell, because \";\" starts a new command.")
 	f.DurationVar(&mc.ReloadPeriod, prefix+"reload-period", 10*time.Second, "How often to check runtime config files.")
 	f.DurationVar(&mc.HTTPClientTimeout, prefix+"http-client-timeout", 30*time.Second, "HTTP client timeout when fetching runtime config from URLs.")
 	f.BoolVar(&mc.HTTPClientDisableKeepAlives, prefix+"http-client-disable-keep-alives", true, "Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service.")
@@ -79,7 +79,7 @@ func (mc *Config) RegisterFlags(f *flag.FlagSet) {
 // behaves, and the state loadConfig keeps for it.
 //
 // path and parameters are set by parseConfigSource. provider is set in New.
-// loadConfig updates lastGood and lastDigest; they need no synchronization
+// loadConfig updates lastValue and lastDigest; they need no synchronization
 // because only loadConfig touches them, and only in the Starting and Running
 // states.
 type configSource struct {
@@ -87,9 +87,9 @@ type configSource struct {
 	provider   provider
 	parameters sourceParameters
 
-	// Bytes last applied from this source. Stays nil unless the source keeps a
-	// last value, to not waste memory.
-	lastGood []byte
+	// Bytes last applied from this source. Stays nil unless the source keeps its
+	// last value on failure, to not waste memory.
+	lastValue []byte
 
 	// Digest of the bytes this source contributed to the last applied merge,
 	// zero when it contributed nothing. A digest of real bytes is never zero,
@@ -295,8 +295,8 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 
 			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", s.name, "err", err)
 
-			if cs.parameters.keepsLastValue() && cs.lastGood != nil {
-				s.rawData = cs.lastGood
+			if cs.parameters.keepsLastValueOnFailure() && cs.lastValue != nil {
+				s.rawData = cs.lastValue
 				s.contributes = true
 				s.digest = sha256.Sum256(s.rawData)
 			}
@@ -390,8 +390,8 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	for i := range om.configSources {
 		s := sourcesToLoad[i]
 		om.configSources[i].lastDigest = s.digest
-		if s.readOK && om.configSources[i].parameters.keepsLastValue() {
-			om.configSources[i].lastGood = bytes.Clone(s.rawData)
+		if s.readOK && om.configSources[i].parameters.keepsLastValueOnFailure() {
+			om.configSources[i].lastValue = bytes.Clone(s.rawData)
 		}
 	}
 	return nil

@@ -32,10 +32,10 @@ func TestParseConfigSource(t *testing.T) {
 			wantParameters: sourceParameters{parameterOptionalOnStartup},
 		},
 		{
-			name:           "optional use last value",
-			entry:          "/etc/overrides.yaml;optional-use-last-value",
+			name:           "optional keep last value on failure",
+			entry:          "/etc/overrides.yaml;optional-keep-last-value-on-failure",
 			wantPath:       "/etc/overrides.yaml",
-			wantParameters: sourceParameters{parameterOptionalUseLastValue},
+			wantParameters: sourceParameters{parameterOptionalKeepLastValueOnFailure},
 		},
 		{
 			name:     "IPv6 URL keeps its brackets",
@@ -57,9 +57,9 @@ func TestParseConfigSource(t *testing.T) {
 		},
 		{
 			name:           "URL path parameter then a known parameter",
-			entry:          "http://config-server/overrides.yaml;jsessionid=ABC;optional-use-last-value",
+			entry:          "http://config-server/overrides.yaml;jsessionid=ABC;optional-keep-last-value-on-failure",
 			wantPath:       "http://config-server/overrides.yaml;jsessionid=ABC",
-			wantParameters: sourceParameters{parameterOptionalUseLastValue},
+			wantParameters: sourceParameters{parameterOptionalKeepLastValueOnFailure},
 		},
 		{
 			// Only the exact parameter suffixes are parameters, so a misspelling is a path and
@@ -85,12 +85,12 @@ func TestParseConfigSource(t *testing.T) {
 		},
 		{
 			name:    "conflicting parameters",
-			entry:   "/etc/overrides.yaml;optional-on-startup;optional-use-last-value",
+			entry:   "/etc/overrides.yaml;optional-on-startup;optional-keep-last-value-on-failure",
 			wantErr: `more than one parameter`,
 		},
 		{
 			name:    "conflicting parameters in reverse order",
-			entry:   "/etc/overrides.yaml;optional-use-last-value;optional-on-startup",
+			entry:   "/etc/overrides.yaml;optional-keep-last-value-on-failure;optional-on-startup",
 			wantErr: `more than one parameter`,
 		},
 		{
@@ -100,7 +100,7 @@ func TestParseConfigSource(t *testing.T) {
 		},
 		{
 			name:    "two parameters without a path",
-			entry:   ";optional-on-startup;optional-use-last-value",
+			entry:   ";optional-on-startup;optional-keep-last-value-on-failure",
 			wantErr: `has no path`,
 		},
 	} {
@@ -120,23 +120,23 @@ func TestParseConfigSource(t *testing.T) {
 
 func TestSourceTolerates(t *testing.T) {
 	for _, tc := range []struct {
-		parameter      sourceParameter
-		onStartup      bool
-		afterStartup   bool
-		keepsLastValue bool
+		parameter               sourceParameter
+		onStartup               bool
+		afterStartup            bool
+		keepsLastValueOnFailure bool
 	}{
-		{parameter: "", onStartup: false, afterStartup: false, keepsLastValue: false},
-		{parameter: parameterOptionalOnStartup, onStartup: true, afterStartup: false, keepsLastValue: false},
-		{parameter: parameterOptionalUseLastValue, onStartup: true, afterStartup: true, keepsLastValue: true},
+		{parameter: "", onStartup: false, afterStartup: false, keepsLastValueOnFailure: false},
+		{parameter: parameterOptionalOnStartup, onStartup: true, afterStartup: false, keepsLastValueOnFailure: false},
+		{parameter: parameterOptionalKeepLastValueOnFailure, onStartup: true, afterStartup: true, keepsLastValueOnFailure: true},
 	} {
 		assert.Equal(t, tc.onStartup, tc.parameter.toleratesFailure(true), "parameter %q on startup", tc.parameter)
 		assert.Equal(t, tc.afterStartup, tc.parameter.toleratesFailure(false), "parameter %q after startup", tc.parameter)
-		assert.Equal(t, tc.keepsLastValue, tc.parameter.keepsLastValue(), "parameter %q keeps last value", tc.parameter)
+		assert.Equal(t, tc.keepsLastValueOnFailure, tc.parameter.keepsLastValueOnFailure(), "parameter %q keeps last value on failure", tc.parameter)
 
 		ps := sourceParameters{tc.parameter}
 		assert.Equal(t, tc.onStartup, ps.toleratesFailure(true), "parameters %v on startup", ps)
 		assert.Equal(t, tc.afterStartup, ps.toleratesFailure(false), "parameters %v after startup", ps)
-		assert.Equal(t, tc.keepsLastValue, ps.keepsLastValue(), "parameters %v keeps last value", ps)
+		assert.Equal(t, tc.keepsLastValueOnFailure, ps.keepsLastValueOnFailure(), "parameters %v keeps last value on failure", ps)
 	}
 }
 
@@ -144,5 +144,5 @@ func TestSourceParametersEmpty(t *testing.T) {
 	var none sourceParameters
 	assert.False(t, none.toleratesFailure(true))
 	assert.False(t, none.toleratesFailure(false))
-	assert.False(t, none.keepsLastValue())
+	assert.False(t, none.keepsLastValueOnFailure())
 }

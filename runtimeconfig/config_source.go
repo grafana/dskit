@@ -10,13 +10,13 @@ import (
 type sourceParameter string
 
 const (
-	parameterOptionalOnStartup    sourceParameter = "optional-on-startup"
-	parameterOptionalUseLastValue sourceParameter = "optional-use-last-value"
+	parameterOptionalOnStartup              sourceParameter = "optional-on-startup"
+	parameterOptionalKeepLastValueOnFailure sourceParameter = "optional-keep-last-value-on-failure"
 )
 
 var knownParameters = []sourceParameter{
 	parameterOptionalOnStartup,
-	parameterOptionalUseLastValue,
+	parameterOptionalKeepLastValueOnFailure,
 }
 
 // sourceParameters are the parameters parsed from one LoadPath entry, in the order
@@ -29,16 +29,16 @@ func (p sourceParameter) toleratesFailure(initial bool) bool {
 	switch p {
 	case parameterOptionalOnStartup:
 		return initial
-	case parameterOptionalUseLastValue:
+	case parameterOptionalKeepLastValueOnFailure:
 		return true
 	default:
 		return false
 	}
 }
 
-// keepsLastValue reports whether a tolerated failure keeps the bytes the source last supplied.
-func (p sourceParameter) keepsLastValue() bool {
-	return p == parameterOptionalUseLastValue
+// keepsLastValueOnFailure reports whether a tolerated failure keeps the bytes the source last supplied.
+func (p sourceParameter) keepsLastValueOnFailure() bool {
+	return p == parameterOptionalKeepLastValueOnFailure
 }
 
 // toleratesFailure reports whether a failed read can be ignored given these parameters.
@@ -51,9 +51,9 @@ func (ps sourceParameters) toleratesFailure(initial bool) bool {
 	return false
 }
 
-// keepsLastValue reports whether a tolerated failure keeps the bytes the source last supplied.
-func (ps sourceParameters) keepsLastValue() bool {
-	return slices.ContainsFunc(ps, sourceParameter.keepsLastValue)
+// keepsLastValueOnFailure reports whether a tolerated failure keeps the bytes the source last supplied.
+func (ps sourceParameters) keepsLastValueOnFailure() bool {
+	return slices.ContainsFunc(ps, sourceParameter.keepsLastValueOnFailure)
 }
 
 // parseConfigSource splits one Config.LoadPath entry into a configSource's path
@@ -61,7 +61,7 @@ func (ps sourceParameters) keepsLastValue() bool {
 //
 //	/etc/overrides.yaml
 //	http://config-server/overrides;optional-on-startup
-//	http://config-server/overrides;optional-use-last-value
+//	http://config-server/overrides;optional-keep-last-value-on-failure
 //
 // Known parameters are peeled from the right, so several can be appended as
 // ;parameter1;parameter2. Only these exact suffixes are parameters. Anything else after
@@ -95,7 +95,7 @@ func checkParameters(entry string, parameters sourceParameters) error {
 	if len(parameters) > 1 {
 		return fmt.Errorf(
 			"runtime config source %q has more than one parameter, specify only one of %q and %q",
-			entry, parameterOptionalOnStartup, parameterOptionalUseLastValue,
+			entry, parameterOptionalOnStartup, parameterOptionalKeepLastValueOnFailure,
 		)
 	}
 	return nil

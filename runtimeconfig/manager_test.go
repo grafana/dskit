@@ -1398,7 +1398,7 @@ func TestManager_RequiredSourceFailsStartup(t *testing.T) {
 func TestManager_MultipleSourceParameters(t *testing.T) {
 	_, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{"/etc/overrides.yaml;optional-on-startup;optional-use-last-value"},
+		LoadPath:     []string{"/etc/overrides.yaml;optional-on-startup;optional-keep-last-value-on-failure"},
 		Loader:       twoKeysLoader,
 	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
@@ -1412,7 +1412,7 @@ func TestManager_OptionalSourceAloneDownAtStartup(t *testing.T) {
 
 	manager, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{srv.url() + ";optional-use-last-value"},
+		LoadPath:     []string{srv.url() + ";optional-keep-last-value-on-failure"},
 		Loader:       twoKeysLoader,
 	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
 	require.NoError(t, err)
@@ -1482,7 +1482,7 @@ func TestManager_OptionalOnStartup(t *testing.T) {
 	require.Equal(t, twoKeys{FromFile: 1, FromServer: 42}, manager.GetConfig())
 }
 
-func TestManager_OptionalUseLastValue(t *testing.T) {
+func TestManager_OptionalKeepLastValueOnFailure(t *testing.T) {
 	file := newTestConfigFile(t, "from_file: 1\n")
 	srv := newFlakyServer(t, "from_server: 42\n")
 	srv.setBroken(true)
@@ -1490,7 +1490,7 @@ func TestManager_OptionalUseLastValue(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	manager, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{file, srv.url() + ";optional-use-last-value"},
+		LoadPath:     []string{file, srv.url() + ";optional-keep-last-value-on-failure"},
 		Loader:       twoKeysLoader,
 	}, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
@@ -1528,14 +1528,14 @@ func TestManager_OptionalUseLastValue(t *testing.T) {
 	})
 }
 
-func TestManager_OptionalUseLastValue_InvalidContentDoesNotPoisonLastGood(t *testing.T) {
+func TestManager_OptionalKeepLastValueOnFailure_InvalidContentDoesNotPoisonLastValue(t *testing.T) {
 	file := newTestConfigFile(t, "from_file: 1\n")
 	srv := newFlakyServer(t, "from_server: 42\n")
 
 	reg := prometheus.NewPedanticRegistry()
 	manager, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{file, srv.url() + ";optional-use-last-value"},
+		LoadPath:     []string{file, srv.url() + ";optional-keep-last-value-on-failure"},
 		Loader:       twoKeysLoader,
 	}, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
@@ -1566,7 +1566,7 @@ func TestManager_OptionalUseLastValue_InvalidContentDoesNotPoisonLastGood(t *tes
 
 // Only a source that can replay its last value keeps bytes. The retention is not observable
 // through GetConfig, because the other parameters never read it back, so assert the field.
-func TestManager_LastGoodKeptOnlyForReplayingSources(t *testing.T) {
+func TestManager_LastValueKeptOnlyForReplayingSources(t *testing.T) {
 	file := newTestConfigFile(t, "from_file: 1\n")
 	replaying := newFlakyServer(t, "from_server: 42\n")
 
@@ -1575,7 +1575,7 @@ func TestManager_LastGoodKeptOnlyForReplayingSources(t *testing.T) {
 		LoadPath: []string{
 			file,
 			file + ";optional-on-startup",
-			replaying.url() + ";optional-use-last-value",
+			replaying.url() + ";optional-keep-last-value-on-failure",
 		},
 		Loader: twoKeysLoader,
 	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
@@ -1586,9 +1586,9 @@ func TestManager_LastGoodKeptOnlyForReplayingSources(t *testing.T) {
 	require.Equal(t, twoKeys{FromFile: 1, FromServer: 42}, manager.GetConfig())
 
 	require.Len(t, manager.configSources, 3)
-	assert.Nil(t, manager.configSources[0].lastGood, "a required source never replays")
-	assert.Nil(t, manager.configSources[1].lastGood, "optional-on-startup never replays")
-	assert.Equal(t, "from_server: 42\n", string(manager.configSources[2].lastGood))
+	assert.Nil(t, manager.configSources[0].lastValue, "a required source never replays")
+	assert.Nil(t, manager.configSources[1].lastValue, "optional-on-startup never replays")
+	assert.Equal(t, "from_server: 42\n", string(manager.configSources[2].lastValue))
 }
 
 // The "source" label is the LoadPath entry verbatim, so two URLs that differ only in their
@@ -1609,7 +1609,7 @@ func TestManager_SourceMetricIsPerSource(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	manager, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{healthy, broken + ";optional-use-last-value"},
+		LoadPath:     []string{healthy, broken + ";optional-keep-last-value-on-failure"},
 		Loader:       twoKeysLoader,
 	}, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
@@ -1634,7 +1634,7 @@ func TestManager_SourceMetricIsNotStaleWhenALaterSourceFails(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	manager, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{optional.url() + ";optional-use-last-value", required.url()},
+		LoadPath:     []string{optional.url() + ";optional-keep-last-value-on-failure", required.url()},
 		Loader:       twoKeysLoader,
 	}, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
@@ -1667,7 +1667,7 @@ func TestManager_InvalidSourceRegistersNothing(t *testing.T) {
 
 	_, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{file, file + ";optional-on-startup;optional-use-last-value"},
+		LoadPath:     []string{file, file + ";optional-on-startup;optional-keep-last-value-on-failure"},
 		Loader:       twoKeysLoader,
 	}, "overrides", reg, log.NewNopLogger())
 	require.Error(t, err)

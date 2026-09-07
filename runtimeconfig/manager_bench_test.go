@@ -42,7 +42,7 @@ func BenchmarkManagerLoadConfig(b *testing.B) {
 		// Reset the per-file hash cache so every iteration performs a full
 		// reload instead of short-circuiting on unchanged hashes.
 		m.fileHashes = nil
-		require.NoError(b, m.loadConfig(ctx))
+		require.NoError(b, m.loadConfig(ctx, false))
 	}
 }
 

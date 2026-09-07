@@ -69,7 +69,7 @@ type Config struct {
 // RegisterFlagsWithPrefix registers flags under the specified prefix, which could be empty.
 // If a non-empty prefix is provided, it's expected to end with a dot.
 func (mc *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.Var(&mc.LoadPath, prefix+"file", "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.")
+	f.Var(&mc.LoadPath, prefix+"file", "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with one option in square brackets to say what happens when it cannot be read: \"[optional-on-startup]\" lets the process start without it, but a later failure still fails the reload; \"[optional-use-last-value]\" also lets the process start without it, and a later failure keeps the value the source supplied last. Without an option, a source that cannot be read fails the load.")
 	f.DurationVar(&mc.ReloadPeriod, prefix+"reload-period", 10*time.Second, "How often to check runtime config files.")
 	f.DurationVar(&mc.HTTPClientTimeout, prefix+"http-client-timeout", 30*time.Second, "HTTP client timeout when fetching runtime config from URLs.")
 	f.BoolVar(&mc.HTTPClientDisableKeepAlives, prefix+"http-client-disable-keep-alives", true, "Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service.")
@@ -95,12 +95,22 @@ type Manager struct {
 	configPtr atomic.Pointer[interface{}]
 
 	configLoadSuccess prometheus.Gauge
+	sourceLoadSuccess *prometheus.GaugeVec
 	configHash        *prometheus.GaugeVec
 
-	// Provider hashes in LoadPath order. Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
+	// Provider hashes of the providers that contributed to the merged config, in LoadPath order.
+	// Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes []providerHash
 
+	// Bytes each provider supplied the last time it was read successfully, in LoadPath order.
+	// Only read for sources whose failure policy keeps the last value, and like fileHashes it is
+	// only used by loadConfig, so it doesn't need synchronization.
+	lastGoodData [][]byte
+
 	providers []provider
+
+	// Failure policy of each provider, in LoadPath order.
+	policies []failurePolicy
 }
 
 // New creates an instance of Manager. Manager is a services.Service, and must be explicitly started to perform any work.
@@ -123,6 +133,10 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 			Name: "runtime_config_last_reload_successful",
 			Help: "Whether the last runtime-config reload attempt was successful.",
 		}),
+		sourceLoadSuccess: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "runtime_config_source_last_reload_successful",
+			Help: "Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.",
+		}, []string{"source"}),
 		configHash: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "runtime_config_hash",
 			Help: "Hash of the currently active runtime configuration, merged from all configured files.",
@@ -132,8 +146,14 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 
 	var httpClient *http.Client
 	var httpDuration *prometheus.HistogramVec
-	for _, p := range cfg.LoadPath {
-		if isURL(p) {
+	for _, entry := range cfg.LoadPath {
+		src, err := parseSource(entry)
+		if err != nil {
+			return nil, err
+		}
+
+		var p provider
+		if isURL(src.path) {
 			if httpClient == nil {
 				timeout := cfg.HTTPClientTimeout
 				if timeout == 0 {
@@ -142,14 +162,30 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 				httpClient = &http.Client{Timeout: timeout, Transport: httpTransport(cfg, configName, clusterValidationRegisterer, logger)}
 				httpDuration = newHTTPRequestDuration(registerer)
 			}
-			mgr.providers = append(mgr.providers, newHTTPProvider(p, httpClient, httpDuration))
+			p = newHTTPProvider(src.path, httpClient, httpDuration)
 		} else {
-			mgr.providers = append(mgr.providers, newFileProvider(p))
+			p = newFileProvider(src.path)
 		}
+
+		mgr.providers = append(mgr.providers, p)
+		mgr.policies = append(mgr.policies, src.policy)
+		// Create the series up front so that it exists before the first read, and start at 0
+		// because nothing has been read successfully yet.
+		mgr.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
 	}
+	mgr.lastGoodData = make([][]byte, len(mgr.providers))
 
 	mgr.Service = services.NewBasicService(mgr.starting, mgr.loop, mgr.stopping)
 	return &mgr, nil
+}
+
+// sourceLabel returns the value to use for the "source" metric label. Providers that hold
+// credentials in their name, such as URLs with basic auth, supply a redacted form.
+func sourceLabel(p provider) string {
+	if n, ok := p.(interface{ NameForMetrics() string }); ok {
+		return n.NameForMetrics()
+	}
+	return p.Name()
 }
 
 func (om *Manager) starting(ctx context.Context) error {
@@ -157,7 +193,7 @@ func (om *Manager) starting(ctx context.Context) error {
 		return nil
 	}
 
-	return errors.Wrap(om.loadConfig(ctx), "failed to load runtime config")
+	return errors.Wrap(om.loadConfig(ctx, true), "failed to load runtime config")
 }
 
 // CreateListenerChannel creates new channel that can be used to receive new config values.
@@ -203,7 +239,7 @@ func (om *Manager) loop(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			err := om.loadConfig(ctx)
+			err := om.loadConfig(ctx, false)
 			if err != nil {
 				// Log but don't stop on error - we don't want to halt all ingesters because of a typo
 				level.Error(om.logger).Log("msg", "failed to load config", "err", err)
@@ -216,30 +252,61 @@ func (om *Manager) loop(ctx context.Context) error {
 
 // loadConfig loads all configuration files using the loader function then merges the yaml configuration files into one yaml document.
 // and notifies listeners if successful.
-func (om *Manager) loadConfig(ctx context.Context) error {
+//
+// initial must be true for the load performed while the Manager starts, because a source can be
+// configured to tolerate a failure only then.
+func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	rawData := make([][]byte, len(om.providers))
-	hashes := make([]providerHash, len(om.providers))
+	// contributes says whether rawData[i] takes part in the merge. A source whose failure is
+	// tolerated contributes nothing until it has been read successfully at least once.
+	contributes := make([]bool, len(om.providers))
+	// Only providers that contribute are hashed, so that a source joining or leaving the merge
+	// changes the hash list and triggers a rebuild.
+	hashes := make([]providerHash, 0, len(om.providers))
 
 	for i, p := range om.providers {
-		buf, err := p.Read(ctx)
-		if err != nil {
-			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "read %q", p.Name())
-		}
+		policy := om.policies[i]
 
-		if om.cfg.Preprocessor != nil {
+		buf, err := p.Read(ctx)
+		if err == nil && om.cfg.Preprocessor != nil {
 			buf, err = om.cfg.Preprocessor(buf)
 			if err != nil {
-				om.configLoadSuccess.Set(0)
-				return errors.Wrapf(err, "preprocess %q", p.Name())
+				err = errors.Wrapf(err, "preprocess %q", p.Name())
 			}
+		} else if err != nil {
+			err = errors.Wrapf(err, "read %q", p.Name())
 		}
 
+		if err != nil {
+			om.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
+
+			if !policy.tolerates(initial) {
+				om.configLoadSuccess.Set(0)
+				return err
+			}
+
+			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", p.Name(), "err", err)
+
+			if policy.keepsLastValue() && om.lastGoodData[i] != nil {
+				rawData[i] = om.lastGoodData[i]
+				contributes[i] = true
+				hashes = append(hashes, providerHash{
+					name:   p.Name(),
+					digest: sha256.Sum256(rawData[i]),
+				})
+			}
+			continue
+		}
+
+		om.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(1)
+		om.lastGoodData[i] = buf
+
 		rawData[i] = buf
-		hashes[i] = providerHash{
+		contributes[i] = true
+		hashes = append(hashes, providerHash{
 			name:   p.Name(),
 			digest: sha256.Sum256(buf),
-		}
+		})
 	}
 
 	if slices.Equal(om.fileHashes, hashes) {
@@ -250,6 +317,10 @@ func (om *Manager) loadConfig(ctx context.Context) error {
 
 	mergedConfig := map[string]interface{}{}
 	for i, p := range om.providers {
+		if !contributes[i] {
+			continue
+		}
+
 		data := rawData[i]
 		yamlFile, err := om.unmarshalMaybeGzipped(p.Name(), data)
 		if err != nil {

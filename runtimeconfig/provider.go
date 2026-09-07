@@ -76,6 +76,10 @@ func newHTTPRequestDuration(registerer prometheus.Registerer) *prometheus.Histog
 
 func (h *httpProvider) Name() string { return h.url }
 
+// NameForMetrics returns the URL without query and fragment, and with any credentials redacted,
+// so that it is safe to use as a metric label value.
+func (h *httpProvider) NameForMetrics() string { return h.urlForMetrics }
+
 func (h *httpProvider) Read(ctx context.Context) ([]byte, error) {
 	start := time.Now()
 

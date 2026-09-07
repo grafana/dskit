@@ -384,7 +384,7 @@ func TestOverridesManagerMapLoader(t *testing.T) {
 				},
 			}, "overrides", reg, log.NewNopLogger())
 			require.NoError(t, err)
-			require.NoError(t, manager.loadConfig(context.Background()))
+			require.NoError(t, manager.loadConfig(context.Background(), false))
 			return manager.GetConfig(), runtimeConfigHash(t, reg)
 		}
 
@@ -650,7 +650,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful{config="overrides"} 1
-				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
+				`, fmt.Sprintf("%x", sha256.Sum256(config)))), "runtime_config_hash", "runtime_config_last_reload_successful"))
 
 	// need to use buffer, otherwise loadConfig will throw away update
 	ch := overridesManager.CreateListenerChannel(1)
@@ -684,7 +684,7 @@ func TestManager_ListenerWithDefaultLimits(t *testing.T) {
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful{config="overrides"} 1
-				`, fmt.Sprintf("%x", sha256.Sum256(config))))))
+				`, fmt.Sprintf("%x", sha256.Sum256(config)))), "runtime_config_hash", "runtime_config_last_reload_successful"))
 
 	// Cleaning up
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), overridesManager))
@@ -816,7 +816,7 @@ func TestManager_ReloadMetricAfterBadConfigRecovery(t *testing.T) {
 					# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
 					# TYPE runtime_config_last_reload_successful gauge
 					runtime_config_last_reload_successful{config="overrides"} %d
-				`, fmt.Sprintf("%x", sha256.Sum256(config)), lastSuccessful))))
+				`, fmt.Sprintf("%x", sha256.Sum256(config)), lastSuccessful)), "runtime_config_hash", "runtime_config_last_reload_successful"))
 		}
 
 		// Now success metric should be 1
@@ -1293,4 +1293,199 @@ func TestHTTPClient_DisableKeepAlives(t *testing.T) {
 			require.Equal(t, tc.wantNewConns, newConns.Load())
 		})
 	}
+}
+
+// flakyServer serves a config document and can be switched to failing.
+type flakyServer struct {
+	mu     sync.Mutex
+	body   string
+	broken bool
+	srv    *httptest.Server
+}
+
+func newFlakyServer(t *testing.T, body string) *flakyServer {
+	f := &flakyServer{body: body}
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		f.mu.Lock()
+		broken, b := f.broken, f.body
+		f.mu.Unlock()
+
+		if broken {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(b))
+	}))
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+func (f *flakyServer) setBroken(broken bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.broken = broken
+}
+
+func (f *flakyServer) url() string { return f.srv.URL + "/config.yaml" }
+
+// twoKeys lets a test tell apart the contribution of each source, because each source can set a
+// key of its own.
+type twoKeys struct {
+	FromFile   int `yaml:"from_file"`
+	FromServer int `yaml:"from_server"`
+}
+
+func twoKeysLoader(r io.Reader) (interface{}, error) {
+	buf, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	v := twoKeys{}
+	if err := yaml.Unmarshal(buf, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func newTestConfigFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "runtime-config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0600))
+	return path
+}
+
+func sourceMetrics(file, serverURL string, fileValue, serverValue int) string {
+	return fmt.Sprintf(`
+		# HELP runtime_config_source_last_reload_successful Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
+		# TYPE runtime_config_source_last_reload_successful gauge
+		runtime_config_source_last_reload_successful{config="overrides",source="%s"} %d
+		runtime_config_source_last_reload_successful{config="overrides",source="%s"} %d
+	`, file, fileValue, serverURL, serverValue)
+}
+
+// A source with no option keeps today's behaviour: the Manager refuses to start when it cannot be
+// read.
+func TestManager_RequiredSourceFailsStartup(t *testing.T) {
+	srv := newFlakyServer(t, "from_server: 42\n")
+	srv.setBroken(true)
+
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{srv.url()},
+		Loader:       twoKeysLoader,
+	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.Error(t, services.StartAndAwaitRunning(context.Background(), manager))
+}
+
+// An unknown option is reported when the Manager is built, not when the source is first read.
+func TestManager_UnknownSourceOption(t *testing.T) {
+	_, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{"/etc/overrides.yaml[nonsense]"},
+		Loader:       twoKeysLoader,
+	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown option "nonsense"`)
+}
+
+func TestManager_OptionalOnStartup(t *testing.T) {
+	file := newTestConfigFile(t, "from_file: 1\n")
+	srv := newFlakyServer(t, "from_server: 42\n")
+	srv.setBroken(true)
+
+	reg := prometheus.NewPedanticRegistry()
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{file, srv.url() + "[optional-on-startup]"},
+		Loader:       twoKeysLoader,
+	}, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	// The server is down, but the Manager starts. The source contributes nothing, because it has
+	// no value yet.
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+	require.Equal(t, twoKeys{FromFile: 1}, manager.GetConfig())
+
+	// The reload counts as successful, and the failing source is visible on its own metric.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+		# TYPE runtime_config_last_reload_successful gauge
+		runtime_config_last_reload_successful{config="overrides"} 1
+	`), "runtime_config_last_reload_successful"))
+	require.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(sourceMetrics(file, srv.url(), 1, 0)),
+		"runtime_config_source_last_reload_successful"))
+
+	// When the server comes back the value is picked up without a restart.
+	srv.setBroken(false)
+	test.Poll(t, 5*time.Second, twoKeys{FromFile: 1, FromServer: 42}, func() interface{} {
+		return manager.GetConfig()
+	})
+
+	// After startup the source is required again, so a failure fails the whole reload and the
+	// previous config stays in place.
+	srv.setBroken(true)
+	test.Poll(t, 5*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+		# TYPE runtime_config_last_reload_successful gauge
+		runtime_config_last_reload_successful{config="overrides"} 0
+	`), "runtime_config_last_reload_successful")
+	})
+	require.Equal(t, twoKeys{FromFile: 1, FromServer: 42}, manager.GetConfig())
+
+	// The whole reload is blocked, so a change to the other source is not applied either.
+	require.NoError(t, os.WriteFile(file, []byte("from_file: 7\n"), 0600))
+	time.Sleep(500 * time.Millisecond)
+	require.Equal(t, twoKeys{FromFile: 1, FromServer: 42}, manager.GetConfig())
+}
+
+func TestManager_OptionalUseLastValue(t *testing.T) {
+	file := newTestConfigFile(t, "from_file: 1\n")
+	srv := newFlakyServer(t, "from_server: 42\n")
+	srv.setBroken(true)
+
+	reg := prometheus.NewPedanticRegistry()
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{file, srv.url() + "[optional-use-last-value]"},
+		Loader:       twoKeysLoader,
+	}, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	// Down at startup and never read successfully, so it contributes nothing.
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+	require.Equal(t, twoKeys{FromFile: 1}, manager.GetConfig())
+
+	srv.setBroken(false)
+	test.Poll(t, 5*time.Second, twoKeys{FromFile: 1, FromServer: 42}, func() interface{} {
+		return manager.GetConfig()
+	})
+
+	// Now that it has a value, a failure keeps that value.
+	srv.setBroken(true)
+	test.Poll(t, 5*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg,
+			strings.NewReader(sourceMetrics(file, srv.url(), 1, 0)),
+			"runtime_config_source_last_reload_successful")
+	})
+	require.Equal(t, twoKeys{FromFile: 1, FromServer: 42}, manager.GetConfig())
+
+	// The reload itself still counts as successful, which is why the per-source metric exists.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP runtime_config_last_reload_successful Whether the last runtime-config reload attempt was successful.
+		# TYPE runtime_config_last_reload_successful gauge
+		runtime_config_last_reload_successful{config="overrides"} 1
+	`), "runtime_config_last_reload_successful"))
+
+	// Unlike optional-on-startup, the other sources keep being applied while it is down.
+	require.NoError(t, os.WriteFile(file, []byte("from_file: 7\n"), 0600))
+	test.Poll(t, 5*time.Second, twoKeys{FromFile: 7, FromServer: 42}, func() interface{} {
+		return manager.GetConfig()
+	})
 }

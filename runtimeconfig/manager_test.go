@@ -1582,3 +1582,37 @@ func TestManager_LastGoodDataKeptOnlyForReplayingSources(t *testing.T) {
 	assert.Nil(t, manager.lastGoodData[1], "optional-on-startup never replays")
 	assert.Equal(t, "from_server: 42\n", string(manager.lastGoodData[2]))
 }
+
+// The "source" label is the LoadPath entry verbatim, so two URLs that differ only in their
+// query string stay separate series and a healthy source cannot mask a failing one.
+func TestManager_SourceMetricIsPerSource(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("tenant") == "b" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte("from_file: 1\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	healthy := srv.URL + "/config?tenant=a"
+	broken := srv.URL + "/config?tenant=b"
+
+	reg := prometheus.NewPedanticRegistry()
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{healthy, broken + ";optional-use-last-value"},
+		Loader:       twoKeysLoader,
+	}, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP runtime_config_source_last_reload_successful Whether the last reload of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
+		# TYPE runtime_config_source_last_reload_successful gauge
+		runtime_config_source_last_reload_successful{config="overrides",source="%s"} 1
+		runtime_config_source_last_reload_successful{config="overrides",source="%s"} 0
+	`, healthy, broken)), "runtime_config_source_last_reload_successful"))
+}

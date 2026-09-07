@@ -133,6 +133,9 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 			Name: "runtime_config_last_reload_successful",
 			Help: "Whether the last runtime-config reload attempt was successful.",
 		}),
+		// The "source" label is the provider name, i.e. the LoadPath entry verbatim, so that
+		// entries differing only in query string stay separate series. Do not put secrets in
+		// a runtime config URL.
 		sourceLoadSuccess: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "runtime_config_source_last_reload_successful",
 			Help: "Whether the last reload of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.",
@@ -170,21 +173,12 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		mgr.providers = append(mgr.providers, p)
 		mgr.policies = append(mgr.policies, src.policy)
 		// Create the series up front, at 0: nothing has been read yet.
-		mgr.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
+		mgr.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
 	}
 	mgr.lastGoodData = make([][]byte, len(mgr.providers))
 
 	mgr.Service = services.NewBasicService(mgr.starting, mgr.loop, mgr.stopping)
 	return &mgr, nil
-}
-
-// sourceLabel returns the "source" metric label value. Providers whose name can hold
-// credentials supply a redacted form.
-func sourceLabel(p provider) string {
-	if n, ok := p.(interface{ NameForMetrics() string }); ok {
-		return n.NameForMetrics()
-	}
-	return p.Name()
 }
 
 func (om *Manager) starting(ctx context.Context) error {
@@ -278,7 +272,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		}
 
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
 
 			if !policy.tolerates(initial) {
 				om.configLoadSuccess.Set(0)
@@ -324,13 +318,13 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		data := rawData[i]
 		yamlFile, err := om.unmarshalMaybeGzipped(p.Name(), data)
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
 			om.configLoadSuccess.Set(0)
 			return errors.Wrapf(err, "unmarshal %q", p.Name())
 		}
 		mergedConfig, err = mergeConfigMaps(mergedConfig, yamlFile, "")
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
 			om.configLoadSuccess.Set(0)
 			return errors.Wrapf(err, "can't merge %q on top of the previous providers", p.Name())
 		}
@@ -387,7 +381,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 func (om *Manager) markReadSourcesSuccessful(readOK []bool) {
 	for i, ok := range readOK {
 		if ok {
-			om.sourceLoadSuccess.WithLabelValues(sourceLabel(om.providers[i])).Set(1)
+			om.sourceLoadSuccess.WithLabelValues(om.providers[i].Name()).Set(1)
 		}
 	}
 }

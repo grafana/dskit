@@ -1362,7 +1362,7 @@ func newTestConfigFile(t *testing.T, content string) string {
 
 func sourceMetrics(file, serverURL string, fileValue, serverValue int) string {
 	return fmt.Sprintf(`
-		# HELP runtime_config_source_last_reload_successful Whether the last reload of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
+		# HELP runtime_config_source_last_reload_successful Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
 		# TYPE runtime_config_source_last_reload_successful gauge
 		runtime_config_source_last_reload_successful{config="overrides",source="%s"} %d
 		runtime_config_source_last_reload_successful{config="overrides",source="%s"} %d
@@ -1610,9 +1610,43 @@ func TestManager_SourceMetricIsPerSource(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-		# HELP runtime_config_source_last_reload_successful Whether the last reload of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
+		# HELP runtime_config_source_last_reload_successful Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
 		# TYPE runtime_config_source_last_reload_successful gauge
 		runtime_config_source_last_reload_successful{config="overrides",source="%s"} 1
 		runtime_config_source_last_reload_successful{config="overrides",source="%s"} 0
 	`, healthy, broken)), "runtime_config_source_last_reload_successful"))
+}
+
+// Each source records its own outcome as soon as its read completes. A later source failing
+// must not leave an earlier source that read fine reporting a stale failure.
+func TestManager_SourceMetricIsNotStaleWhenALaterSourceFails(t *testing.T) {
+	optional := newFlakyServer(t, "from_file: 1\n")
+	required := newFlakyServer(t, "from_server: 42\n")
+
+	reg := prometheus.NewPedanticRegistry()
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{optional.url() + ";optional-use-last-value", required.url()},
+		Loader:       twoKeysLoader,
+	}, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	// Drive the first source to 0.
+	optional.setBroken(true)
+	test.Poll(t, 5*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg,
+			strings.NewReader(sourceMetrics(optional.url(), required.url(), 0, 1)),
+			"runtime_config_source_last_reload_successful")
+	})
+
+	// It recovers in the same load that the required source fails, which aborts the load.
+	optional.setBroken(false)
+	required.setBroken(true)
+	test.Poll(t, 5*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg,
+			strings.NewReader(sourceMetrics(optional.url(), required.url(), 1, 0)),
+			"runtime_config_source_last_reload_successful")
+	})
 }

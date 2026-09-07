@@ -138,7 +138,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		// a runtime config URL.
 		sourceLoadSuccess: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "runtime_config_source_last_reload_successful",
-			Help: "Whether the last reload of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.",
+			Help: "Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.",
 		}, []string{"source"}),
 		configHash: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "runtime_config_hash",
@@ -253,7 +253,8 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// contributes says whether rawData[i] takes part in the merge. A tolerated failure
 	// contributes nothing until the source has been read once.
 	contributes := make([]bool, len(om.providers))
-	// readOK is true for sources whose Read and preprocess succeeded this attempt.
+	// readOK is true for sources read fresh this attempt, as opposed to replaying their last
+	// value. Only used to decide what to retain.
 	readOK := make([]bool, len(om.providers))
 	// Only contributing providers are hashed, so a source joining or leaving triggers a rebuild.
 	hashes := make([]providerHash, 0, len(om.providers))
@@ -292,6 +293,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 			continue
 		}
 
+		om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(1)
 		readOK[i] = true
 		rawData[i] = buf
 		contributes[i] = true
@@ -304,7 +306,6 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// Skip the rebuild when nothing changed, but never on the initial load: nil fileHashes
 	// equals an empty hash list, and GetConfig must be the Loader's result rather than nil.
 	if !initial && slices.Equal(om.fileHashes, hashes) {
-		om.markReadSourcesSuccessful(readOK)
 		om.configLoadSuccess.Set(1)
 		return nil
 	}
@@ -357,7 +358,6 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		}
 	}
 	om.configLoadSuccess.Set(1)
-	om.markReadSourcesSuccessful(readOK)
 
 	om.setConfig(cfg)
 	om.callListeners(cfg)
@@ -376,14 +376,6 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		}
 	}
 	return nil
-}
-
-func (om *Manager) markReadSourcesSuccessful(readOK []bool) {
-	for i, ok := range readOK {
-		if ok {
-			om.sourceLoadSuccess.WithLabelValues(om.providers[i].Name()).Set(1)
-		}
-	}
 }
 
 func combinedFilesHash(hashes []providerHash) [sha256.Size]byte {

@@ -272,19 +272,22 @@ func (om *Manager) loop(ctx context.Context) error {
 // failure only then.
 func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	n := len(om.configSources)
-	rawData := make([][]byte, n)
-	// contributes says whether rawData[i] takes part in the merge. A tolerated failure
-	// contributes nothing until the source has been read once.
-	contributes := make([]bool, n)
-	// readOK is true for sources read fresh this attempt, as opposed to replaying their last
-	// value. Only used to decide what to retain.
-	readOK := make([]bool, n)
-	digests := make([][sha256.Size]byte, n)
+	bySource := make([]struct {
+		rawData []byte
+		// contributes says whether rawData takes part in the merge. A tolerated
+		// failure contributes nothing until the source has been read once.
+		contributes bool
+		// readOK is true for sources read fresh this attempt, as opposed to
+		// replaying their last value. Only used to decide what to retain.
+		readOK bool
+		digest [sha256.Size]byte
+	}, n)
 	// Only contributing config sources are hashed, so a source joining or leaving triggers a rebuild.
 	hashes := make([]providerHash, 0, n)
 
 	for i := range om.configSources {
 		cs := &om.configSources[i]
+		s := &bySource[i]
 		name := cs.provider.Name()
 
 		buf, err := cs.provider.Read(ctx)
@@ -308,25 +311,25 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", name, "err", err)
 
 			if cs.parameters.keepsLastValue() && cs.lastGood != nil {
-				rawData[i] = cs.lastGood
-				contributes[i] = true
-				digests[i] = sha256.Sum256(rawData[i])
+				s.rawData = cs.lastGood
+				s.contributes = true
+				s.digest = sha256.Sum256(s.rawData)
 				hashes = append(hashes, providerHash{
 					name:   name,
-					digest: digests[i],
+					digest: s.digest,
 				})
 			}
 			continue
 		}
 
 		om.sourceLoadSuccess.WithLabelValues(name).Set(1)
-		readOK[i] = true
-		rawData[i] = buf
-		contributes[i] = true
-		digests[i] = sha256.Sum256(buf)
+		s.readOK = true
+		s.rawData = buf
+		s.contributes = true
+		s.digest = sha256.Sum256(buf)
 		hashes = append(hashes, providerHash{
 			name:   name,
-			digest: digests[i],
+			digest: s.digest,
 		})
 	}
 
@@ -334,20 +337,29 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// contributedOnLastLoad is false for every source then, which would look
 	// equal to a load where nothing contributes, and GetConfig must be the
 	// Loader's result rather than nil.
-	if !initial && om.configSourcesUnchanged(contributes, digests) {
-		om.configLoadSuccess.Set(1)
-		return nil
+	if !initial {
+		unchanged := true
+		for i, cs := range om.configSources {
+			if !cs.unchangedSinceLastLoad(bySource[i].contributes, bySource[i].digest) {
+				unchanged = false
+				break
+			}
+		}
+		if unchanged {
+			om.configLoadSuccess.Set(1)
+			return nil
+		}
 	}
 
 	mergedConfig := map[string]interface{}{}
 	for i := range om.configSources {
-		if !contributes[i] {
+		s := bySource[i]
+		if !s.contributes {
 			continue
 		}
 
 		name := om.configSources[i].provider.Name()
-		data := rawData[i]
-		yamlFile, err := om.unmarshalMaybeGzipped(name, data)
+		yamlFile, err := om.unmarshalMaybeGzipped(name, s.rawData)
 		if err != nil {
 			om.sourceLoadSuccess.WithLabelValues(name).Set(0)
 			om.configLoadSuccess.Set(0)
@@ -400,26 +412,16 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// replay their last value keep bytes, and only bytes this load applied, so a
 	// body that failed to unmarshal cannot poison the replay.
 	for i := range om.configSources {
-		om.configSources[i].contributedOnLastLoad = contributes[i]
-		if contributes[i] {
-			om.configSources[i].lastDigest = digests[i]
+		s := bySource[i]
+		om.configSources[i].contributedOnLastLoad = s.contributes
+		if s.contributes {
+			om.configSources[i].lastDigest = s.digest
 		}
-		if readOK[i] && om.configSources[i].parameters.keepsLastValue() {
-			om.configSources[i].lastGood = bytes.Clone(rawData[i])
+		if s.readOK && om.configSources[i].parameters.keepsLastValue() {
+			om.configSources[i].lastGood = bytes.Clone(s.rawData)
 		}
 	}
 	return nil
-}
-
-// configSourcesUnchanged reports whether each config source contributes the same
-// bytes as it did in the last applied merge.
-func (om *Manager) configSourcesUnchanged(contributes []bool, digests [][sha256.Size]byte) bool {
-	for i, cs := range om.configSources {
-		if !cs.unchangedSinceLastLoad(contributes[i], digests[i]) {
-			return false
-		}
-	}
-	return true
 }
 
 func combinedFilesHash(hashes []providerHash) [sha256.Size]byte {

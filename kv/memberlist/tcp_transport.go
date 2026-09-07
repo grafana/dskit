@@ -411,19 +411,24 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 		switch t.cfg.BindAddrs[0] {
 		case zeroZeroZeroZero:
 			// Otherwise, if we're not bound to a specific IP, let's
-			// use a suitable private IP address.
+			// use a suitable private IP address if available, otherwise
+			// fall back to using the bound IP (the IP we're listening on).
 			var err error
 			ip, err = sockaddr.GetPrivateIP()
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to get interface addresses: %v", err)
 			}
 			if ip == "" {
-				return nil, 0, fmt.Errorf("no private IP address found, and explicit IP not provided")
-			}
-
-			advertiseAddr = net.ParseIP(ip)
-			if advertiseAddr == nil {
-				return nil, 0, fmt.Errorf("failed to parse advertise address %q", ip)
+				// No private IP found - use the bound IP instead
+				advertiseAddr = t.tcpListeners[0].Addr().(*net.TCPAddr).IP
+				if advertiseAddr == nil {
+					return nil, 0, fmt.Errorf("no IP address found, and explicit IP not provided")
+				}
+			} else {
+				advertiseAddr = net.ParseIP(ip)
+				if advertiseAddr == nil {
+					return nil, 0, fmt.Errorf("failed to parse advertise address %q", ip)
+				}
 			}
 		case colonColon:
 			inet6Ip, err := netutil.GetFirstAddressOf(nil, t.logger, true)
@@ -433,7 +438,11 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 
 			advertiseAddr = net.ParseIP(inet6Ip)
 			if advertiseAddr == nil {
-				return nil, 0, fmt.Errorf("failed to parse inet6 advertise address %q", ip)
+				// No IPv6 private IP found - use the bound IP instead
+				advertiseAddr = t.tcpListeners[0].Addr().(*net.TCPAddr).IP
+				if advertiseAddr == nil {
+					return nil, 0, fmt.Errorf("no IP address found, and explicit IP not provided")
+				}
 			}
 		default:
 			// Use the IP that we're bound to, based on the first

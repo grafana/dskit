@@ -98,13 +98,12 @@ type Manager struct {
 	sourceLoadSuccess *prometheus.GaugeVec
 	configHash        *prometheus.GaugeVec
 
-	// Provider hashes of the providers that contributed to the merged config, in LoadPath order.
+	// Hashes of the providers that contributed to the merged config, in LoadPath order.
 	// Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes []providerHash
 
 	// Bytes each provider last contributed to an applied config, in LoadPath order.
-	// Only read for sources whose failure policy keeps the last value, and like fileHashes it is
-	// only used by loadConfig, so it doesn't need synchronization.
+	// Like fileHashes, only loadConfig touches it, so it needs no synchronization.
 	lastGoodData [][]byte
 
 	providers []provider
@@ -169,8 +168,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 
 		mgr.providers = append(mgr.providers, p)
 		mgr.policies = append(mgr.policies, src.policy)
-		// Create the series up front so that it exists before the first read, and start at 0
-		// because nothing has been read successfully yet.
+		// Create the series up front, at 0: nothing has been read yet.
 		mgr.sourceLoadSuccess.WithLabelValues(sourceLabel(p)).Set(0)
 	}
 	mgr.lastGoodData = make([][]byte, len(mgr.providers))
@@ -179,8 +177,8 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 	return &mgr, nil
 }
 
-// sourceLabel returns the value to use for the "source" metric label. Providers that hold
-// credentials in their name, such as URLs with basic auth, supply a redacted form.
+// sourceLabel returns the "source" metric label value. Providers whose name can hold
+// credentials supply a redacted form.
 func sourceLabel(p provider) string {
 	if n, ok := p.(interface{ NameForMetrics() string }); ok {
 		return n.NameForMetrics()
@@ -253,19 +251,16 @@ func (om *Manager) loop(ctx context.Context) error {
 // loadConfig loads all configuration files using the loader function then merges the yaml configuration files into one yaml document.
 // and notifies listeners if successful.
 //
-// initial must be true for the load performed while the Manager starts, because a source can be
-// configured to tolerate a failure only then.
+// initial must be true for the load performed while the Manager starts: some sources tolerate a
+// failure only then.
 func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	rawData := make([][]byte, len(om.providers))
-	// contributes says whether rawData[i] takes part in the merge. A source whose failure is
-	// tolerated contributes nothing until it has been read successfully at least once.
+	// contributes says whether rawData[i] takes part in the merge. A tolerated failure
+	// contributes nothing until the source has been read once.
 	contributes := make([]bool, len(om.providers))
-	// readOK is true for sources whose Read (and preprocess) succeeded this attempt.
-	// lastGoodData is only updated for an applied config, so a body that later fails to
-	// unmarshal cannot poison the value kept for optional-use-last-value.
+	// readOK is true for sources whose Read and preprocess succeeded this attempt.
 	readOK := make([]bool, len(om.providers))
-	// Only providers that contribute are hashed, so that a source joining or leaving the merge
-	// changes the hash list and triggers a rebuild.
+	// Only contributing providers are hashed, so a source joining or leaving triggers a rebuild.
 	hashes := make([]providerHash, 0, len(om.providers))
 
 	for i, p := range om.providers {
@@ -311,9 +306,8 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		})
 	}
 
-	// Skip the rebuild when nothing changed, but not on the initial load: fileHashes starts
-	// as nil, which compares equal to an empty hash list, and we still need to apply the
-	// empty merge ("{}") so GetConfig is the Loader's result rather than nil.
+	// Skip the rebuild when nothing changed, but never on the initial load: nil fileHashes
+	// equals an empty hash list, and GetConfig must be the Loader's result rather than nil.
 	if !initial && slices.Equal(om.fileHashes, hashes) {
 		om.markReadSourcesSuccessful(readOK)
 		om.configLoadSuccess.Set(1)
@@ -377,8 +371,8 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	om.configHash.Reset()
 	om.configHash.WithLabelValues(fmt.Sprintf("%x", hash)).Set(1)
 
-	// preserve hashes and last-good bytes for next loop; only bytes that made it
-	// into this applied config are kept.
+	// Preserve hashes and last-good bytes for the next loop. Keeping only applied bytes stops
+	// a body that failed to unmarshal from poisoning optional-use-last-value.
 	om.fileHashes = hashes
 	for i := range om.providers {
 		if contributes[i] {

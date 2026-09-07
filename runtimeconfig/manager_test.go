@@ -1335,8 +1335,7 @@ func (f *flakyServer) setBody(body string) {
 
 func (f *flakyServer) url() string { return f.srv.URL + "/config.yaml" }
 
-// twoKeys lets a test tell apart the contribution of each source, because each source can set a
-// key of its own.
+// twoKeys lets a test tell the sources apart: each one sets its own key.
 type twoKeys struct {
 	FromFile   int `yaml:"from_file"`
 	FromServer int `yaml:"from_server"`

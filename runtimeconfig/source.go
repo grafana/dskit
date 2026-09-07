@@ -11,16 +11,14 @@ import (
 type failurePolicy int
 
 const (
-	// failureIsFatal aborts the whole load. This is the default, and it applies
-	// to every source that does not opt out.
+	// failureIsFatal aborts the whole load. It is the default.
 	failureIsFatal failurePolicy = iota
 
-	// failureToleratedOnStartup lets the Manager start when the source cannot be
-	// read, but aborts the load on every attempt after that.
+	// failureToleratedOnStartup lets the Manager start without the source, but aborts
+	// every load after that.
 	failureToleratedOnStartup
 
-	// failureUsesLastValue keeps the bytes the source supplied last time it was
-	// read successfully, at startup and after it.
+	// failureUsesLastValue keeps the bytes the source last supplied, at startup and after it.
 	failureUsesLastValue
 )
 
@@ -29,8 +27,7 @@ const (
 	optionOptionalUseLastValue = "optional-use-last-value"
 )
 
-// source is one entry of Config.LoadPath: where to read the config from, and
-// what to do when that read fails.
+// source is one entry of Config.LoadPath: where to read from, and what to do when that fails.
 type source struct {
 	path   string
 	policy failurePolicy
@@ -49,9 +46,7 @@ func (p failurePolicy) tolerates(initial bool) bool {
 	}
 }
 
-// keepsLastValue reports whether a tolerated failure keeps the bytes the source
-// supplied last time. A source that has never been read successfully supplies
-// nothing, because there is no last value to keep.
+// keepsLastValue reports whether a tolerated failure keeps the bytes the source last supplied.
 func (p failurePolicy) keepsLastValue() bool {
 	return p == failureUsesLastValue
 }
@@ -67,17 +62,16 @@ func policyForOption(option string) (failurePolicy, bool) {
 	}
 }
 
-// parseSource splits one Config.LoadPath entry into a path and a failure
-// policy. An entry can end with semicolon-separated options, for example:
+// parseSource splits one Config.LoadPath entry into a path and a failure policy.
+// An entry can end with a recognized option, for example:
 //
 //	/etc/overrides.yaml
 //	http://config-server/overrides;optional-on-startup
 //	http://config-server/overrides;optional-use-last-value
 //
-// Options are peeled from the right only when they are recognized, so a URL
-// path parameter such as ;jsessionid=ABC stays part of the path. Several
-// options can be appended as ;option1;option2; they are parsed, but currently
-// they cannot be combined because the two supported options contradict each other.
+// Options are peeled from the right only when recognized, so a URL path parameter
+// such as ;jsessionid=ABC stays part of the path. The two options contradict each
+// other, so naming both is an error.
 func parseSource(entry string) (source, error) {
 	path, options, err := splitSourceOptions(entry)
 	if err != nil {
@@ -118,9 +112,8 @@ func splitSourceOptions(entry string) (path string, options []string, err error)
 		if option == "" {
 			return "", nil, fmt.Errorf("runtime config source %q has an empty option", entry)
 		}
-		// A trailing token that looks like one of our option names but is not
-		// recognized is treated as a typo. Tokens with other characters (for
-		// example ";jsessionid=ABC") stay part of the path.
+		// An unrecognized token shaped like an option name is a typo. Anything else
+		// (";jsessionid=ABC") stays part of the path.
 		if isOptionName(option) {
 			return "", nil, fmt.Errorf(
 				"runtime config source %q has unknown option %q, supported options are %q and %q",
@@ -129,7 +122,7 @@ func splitSourceOptions(entry string) (path string, options []string, err error)
 		}
 		break
 	}
-	// Options were collected from the right, so reverse to left-to-right order.
+	// Collected from the right, so restore input order.
 	slices.Reverse(options)
 	return path, options, nil
 }

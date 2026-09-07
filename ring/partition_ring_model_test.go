@@ -1206,10 +1206,6 @@ func TestPartitionRingDesc_MergeContent(t *testing.T) {
 		desc.AddPartition(2, PartitionActive, now)
 		desc.AddOrUpdateOwner("ingester-zone-a-0", OwnerActive, 1, now)
 
-		// A make([]string, len(...)) followed by append would prefix this with one
-		// empty string per partition and owner, doubling the content set. That set
-		// is compared pairwise in ringBroadcast.Invalidates, so the padding costs
-		// 4x the comparisons and shows up in the memberlist status page.
 		require.ElementsMatch(t, []string{"1", "2", "ingester-zone-a-0"}, desc.MergeContent())
 	})
 }

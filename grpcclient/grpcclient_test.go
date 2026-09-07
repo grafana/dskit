@@ -128,16 +128,24 @@ func TestDialOptionWithClusterValidation(t *testing.T) {
 			cfg := Config{}
 			cfg.ClusterValidation = testCase.clusterValidation
 			cfg.RateLimit = testCase.rateLimit
+
+			var appendedClusterInterceptor grpc.UnaryClientInterceptor
+			clusterUnaryClientInterceptor = func(cluster string, reporter middleware.InvalidClusterValidationReporter) grpc.UnaryClientInterceptor {
+				appendedClusterInterceptor = middleware.ClusterUnaryClientInterceptor(cluster, reporter)
+				return appendedClusterInterceptor
+			}
+			t.Cleanup(func() { clusterUnaryClientInterceptor = middleware.ClusterUnaryClientInterceptor })
+
 			withChainUnaryInterceptorCalled := false
 			grpcWithChainUnaryInterceptor = func(unaryInterceptors ...grpc.UnaryClientInterceptor) grpc.DialOption {
 				withChainUnaryInterceptorCalled = true
 				require.Len(t, unaryInterceptors, testCase.expectedUnaryInterceptors)
 				if cfg.ClusterValidation.Label == "" {
-					require.Nil(t, cfg.clusterUnaryClientInterceptor)
+					require.Nil(t, appendedClusterInterceptor)
 				} else {
-					require.NotNil(t, cfg.clusterUnaryClientInterceptor)
+					require.NotNil(t, appendedClusterInterceptor)
 					lastUnaryInterceptor := unaryInterceptors[len(unaryInterceptors)-1]
-					require.Equal(t, fmt.Sprintf("%p", cfg.clusterUnaryClientInterceptor), fmt.Sprintf("%p", lastUnaryInterceptor))
+					require.Equal(t, fmt.Sprintf("%p", appendedClusterInterceptor), fmt.Sprintf("%p", lastUnaryInterceptor))
 				}
 				return grpc.WithChainUnaryInterceptor(unaryInterceptors...)
 			}

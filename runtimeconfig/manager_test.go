@@ -1385,16 +1385,17 @@ func TestManager_RequiredSourceFailsStartup(t *testing.T) {
 	require.Error(t, services.StartAndAwaitRunning(context.Background(), manager))
 }
 
-// An unknown option is reported when the Manager is built, not when the source is first read.
-func TestManager_UnknownSourceOption(t *testing.T) {
+// The two options contradict each other, and naming both is reported when the Manager is
+// built rather than when the source is first read.
+func TestManager_MultipleSourceOptions(t *testing.T) {
 	_, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{"/etc/overrides.yaml;nonsense"},
+		LoadPath:     []string{"/etc/overrides.yaml;optional-on-startup;optional-use-last-value"},
 		Loader:       twoKeysLoader,
 	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `unknown option "nonsense"`)
+	assert.Contains(t, err.Error(), "more than one option")
 }
 
 func TestManager_OptionalSourceAloneDownAtStartup(t *testing.T) {

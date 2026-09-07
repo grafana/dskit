@@ -66,19 +66,35 @@ func TestParseSource(t *testing.T) {
 			wantPolicy: failureUsesLastValue,
 		},
 		{
-			name:    "unknown option",
-			entry:   "/etc/overrides.yaml;optional",
-			wantErr: `unknown option "optional"`,
+			// Only the exact option suffixes are options, so a misspelling is a path and
+			// fails later when the source is read.
+			name:       "misspelled option stays part of the path",
+			entry:      "/etc/overrides.yaml;optional",
+			wantPath:   "/etc/overrides.yaml;optional",
+			wantPolicy: failureIsFatal,
+		},
+		{
+			name:       "short path parameter stays part of the path",
+			entry:      "http://config-server/overrides;v2",
+			wantPath:   "http://config-server/overrides;v2",
+			wantPolicy: failureIsFatal,
+		},
+		{
+			name:       "non-ASCII path parameter stays part of the path",
+			entry:      "/etc/overrides.yaml;café",
+			wantPath:   "/etc/overrides.yaml;café",
+			wantPolicy: failureIsFatal,
+		},
+		{
+			name:       "trailing semicolon stays part of the path",
+			entry:      "/etc/overrides.yaml;",
+			wantPath:   "/etc/overrides.yaml;",
+			wantPolicy: failureIsFatal,
 		},
 		{
 			name:    "two options",
 			entry:   "/etc/overrides.yaml;optional-on-startup;optional-use-last-value",
-			wantErr: `multiple options`,
-		},
-		{
-			name:    "empty option",
-			entry:   "/etc/overrides.yaml;",
-			wantErr: `empty option`,
+			wantErr: `more than one option`,
 		},
 		{
 			name:    "option without a path",

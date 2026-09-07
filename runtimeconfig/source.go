@@ -2,9 +2,7 @@ package runtimeconfig
 
 import (
 	"fmt"
-	"slices"
 	"strings"
-	"unicode"
 )
 
 // failurePolicy says what the Manager does when a source cannot be read.
@@ -51,95 +49,39 @@ func (p failurePolicy) keepsLastValue() bool {
 	return p == failureUsesLastValue
 }
 
-func policyForOption(option string) (failurePolicy, bool) {
-	switch option {
-	case optionOptionalOnStartup:
-		return failureToleratedOnStartup, true
-	case optionOptionalUseLastValue:
-		return failureUsesLastValue, true
-	default:
-		return 0, false
-	}
-}
-
 // parseSource splits one Config.LoadPath entry into a path and a failure policy.
-// An entry can end with a recognized option, for example:
+// An entry can end with one option, for example:
 //
 //	/etc/overrides.yaml
 //	http://config-server/overrides;optional-on-startup
 //	http://config-server/overrides;optional-use-last-value
 //
-// Options are peeled from the right only when recognized, so a URL path parameter
-// such as ;jsessionid=ABC stays part of the path. The two options contradict each
-// other, so naming both is an error.
+// Only these exact suffixes are options. Anything else after a ";" belongs to the
+// path, so a URL parameter such as ;jsessionid=ABC or ;v2 is left alone.
 func parseSource(entry string) (source, error) {
-	path, options, err := splitSourceOptions(entry)
-	if err != nil {
-		return source{}, err
+	path, policy, ok := cutOption(entry)
+	if !ok {
+		return source{path: entry, policy: failureIsFatal}, nil
 	}
 	if path == "" {
 		return source{}, fmt.Errorf("runtime config source %q has no path", entry)
 	}
-	switch len(options) {
-	case 0:
-		return source{path: path, policy: failureIsFatal}, nil
-	case 1:
-		policy, _ := policyForOption(options[0])
-		return source{path: path, policy: policy}, nil
-	default:
+	if _, _, again := cutOption(path); again {
 		return source{}, fmt.Errorf(
-			"runtime config source %q has multiple options %q; specify only one of %q and %q",
-			entry, strings.Join(options, ";"), optionOptionalOnStartup, optionOptionalUseLastValue,
+			"runtime config source %q has more than one option, specify only one of %q and %q",
+			entry, optionOptionalOnStartup, optionOptionalUseLastValue,
 		)
 	}
+	return source{path: path, policy: policy}, nil
 }
 
-// splitSourceOptions peels recognized options off the end of entry. Each
-// option is a semicolon-prefixed token, like JDBC URL parameters.
-func splitSourceOptions(entry string) (path string, options []string, err error) {
-	path = entry
-	for {
-		semi := strings.LastIndex(path, ";")
-		if semi < 0 {
-			break
-		}
-		option := path[semi+1:]
-		if _, ok := policyForOption(option); ok {
-			options = append(options, option)
-			path = path[:semi]
-			continue
-		}
-		if option == "" {
-			return "", nil, fmt.Errorf("runtime config source %q has an empty option", entry)
-		}
-		// An unrecognized token shaped like an option name is a typo. Anything else
-		// (";jsessionid=ABC") stays part of the path.
-		if isOptionName(option) {
-			return "", nil, fmt.Errorf(
-				"runtime config source %q has unknown option %q, supported options are %q and %q",
-				entry, option, optionOptionalOnStartup, optionOptionalUseLastValue,
-			)
-		}
-		break
+// cutOption removes a trailing option from entry and reports the policy it names.
+func cutOption(entry string) (path string, policy failurePolicy, ok bool) {
+	if path, ok := strings.CutSuffix(entry, ";"+optionOptionalOnStartup); ok {
+		return path, failureToleratedOnStartup, true
 	}
-	// Collected from the right, so restore input order.
-	slices.Reverse(options)
-	return path, options, nil
-}
-
-// isOptionName reports whether s could be one of our option names: lowercase
-// letters, digits, and hyphens, starting with a letter.
-func isOptionName(s string) bool {
-	if s == "" {
-		return false
+	if path, ok := strings.CutSuffix(entry, ";"+optionOptionalUseLastValue); ok {
+		return path, failureUsesLastValue, true
 	}
-	for i, r := range s {
-		switch {
-		case unicode.IsLower(r):
-		case i > 0 && (unicode.IsDigit(r) || r == '-'):
-		default:
-			return false
-		}
-	}
-	return true
+	return entry, failureIsFatal, false
 }

@@ -1383,7 +1383,7 @@ func TestManager_RequiredSourceFailsStartup(t *testing.T) {
 func TestManager_UnknownSourceOption(t *testing.T) {
 	_, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{"/etc/overrides.yaml[nonsense]"},
+		LoadPath:     []string{"/etc/overrides.yaml;nonsense"},
 		Loader:       twoKeysLoader,
 	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
@@ -1399,7 +1399,7 @@ func TestManager_OptionalOnStartup(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	manager, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{file, srv.url() + "[optional-on-startup]"},
+		LoadPath:     []string{file, srv.url() + ";optional-on-startup"},
 		Loader:       twoKeysLoader,
 	}, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)
@@ -1452,7 +1452,7 @@ func TestManager_OptionalUseLastValue(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	manager, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{file, srv.url() + "[optional-use-last-value]"},
+		LoadPath:     []string{file, srv.url() + ";optional-use-last-value"},
 		Loader:       twoKeysLoader,
 	}, "overrides", reg, log.NewNopLogger())
 	require.NoError(t, err)

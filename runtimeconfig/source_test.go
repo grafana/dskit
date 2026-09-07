@@ -29,18 +29,17 @@ func TestParseSource(t *testing.T) {
 		},
 		{
 			name:       "optional on startup",
-			entry:      "http://config-server/overrides[optional-on-startup]",
+			entry:      "http://config-server/overrides;optional-on-startup",
 			wantPath:   "http://config-server/overrides",
 			wantPolicy: failureToleratedOnStartup,
 		},
 		{
 			name:       "optional use last value",
-			entry:      "/etc/overrides.yaml[optional-use-last-value]",
+			entry:      "/etc/overrides.yaml;optional-use-last-value",
 			wantPath:   "/etc/overrides.yaml",
 			wantPolicy: failureUsesLastValue,
 		},
 		{
-			// Only a trailing option is parsed, so the brackets of an IPv6 host are left alone.
 			name:       "IPv6 URL keeps its brackets",
 			entry:      "http://[::1]:8080/overrides",
 			wantPath:   "http://[::1]:8080/overrides",
@@ -48,33 +47,43 @@ func TestParseSource(t *testing.T) {
 		},
 		{
 			name:       "IPv6 URL with an option",
-			entry:      "http://[::1]:8080/overrides[optional-on-startup]",
+			entry:      "http://[::1]:8080/overrides;optional-on-startup",
 			wantPath:   "http://[::1]:8080/overrides",
 			wantPolicy: failureToleratedOnStartup,
 		},
 		{
+			// A semicolon in the path that is not a known option stays part of the URL,
+			// matching JDBC-style path parameters.
+			name:       "URL path parameter is not an option",
+			entry:      "http://config-server/overrides.yaml;jsessionid=ABC",
+			wantPath:   "http://config-server/overrides.yaml;jsessionid=ABC",
+			wantPolicy: failureIsFatal,
+		},
+		{
+			name:       "URL path parameter then a known option",
+			entry:      "http://config-server/overrides.yaml;jsessionid=ABC;optional-use-last-value",
+			wantPath:   "http://config-server/overrides.yaml;jsessionid=ABC",
+			wantPolicy: failureUsesLastValue,
+		},
+		{
 			name:    "unknown option",
-			entry:   "/etc/overrides.yaml[optional]",
+			entry:   "/etc/overrides.yaml;optional",
 			wantErr: `unknown option "optional"`,
 		},
 		{
-			// The two options contradict each other, and a comma would in any case be split by
-			// the comma separated list before it ever reaches this function.
 			name:    "two options",
-			entry:   "/etc/overrides.yaml[optional-on-startup;optional-use-last-value]",
-			wantErr: `unknown option "optional-on-startup;optional-use-last-value"`,
+			entry:   "/etc/overrides.yaml;optional-on-startup;optional-use-last-value",
+			wantErr: `multiple options`,
 		},
 		{
 			name:    "empty option",
-			entry:   "/etc/overrides.yaml[]",
-			wantErr: `unknown option ""`,
+			entry:   "/etc/overrides.yaml;",
+			wantErr: `empty option`,
 		},
 		{
-			// A bare IPv6 URL with no port or path ends with "]", so it is reported rather than
-			// silently treated as a path.
-			name:    "closing bracket without an opening one",
-			entry:   "/etc/overrides]",
-			wantErr: `has no matching "["`,
+			name:    "option without a path",
+			entry:   ";optional-on-startup",
+			wantErr: `has no path`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

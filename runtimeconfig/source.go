@@ -2,7 +2,9 @@ package runtimeconfig
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+	"unicode"
 )
 
 // failurePolicy says what the Manager does when a source cannot be read.
@@ -54,37 +56,97 @@ func (p failurePolicy) keepsLastValue() bool {
 	return p == failureUsesLastValue
 }
 
-// parseSource splits one Config.LoadPath entry into a path and a failure
-// policy. An entry can end with one option in square brackets, for example:
-//
-//	/etc/overrides.yaml
-//	http://config-server/overrides[optional-on-startup]
-//	http://config-server/overrides[optional-use-last-value]
-//
-// Only a trailing "[...]" is an option, so an IPv6 URL such as
-// http://[::1]:8080/overrides keeps its brackets.
-func parseSource(entry string) (source, error) {
-	if !strings.HasSuffix(entry, "]") {
-		return source{path: entry, policy: failureIsFatal}, nil
-	}
-
-	open := strings.LastIndex(entry, "[")
-	if open < 0 {
-		return source{}, fmt.Errorf("runtime config source %q ends with %q but has no matching %q", entry, "]", "[")
-	}
-
-	path := entry[:open]
-	option := entry[open+1 : len(entry)-1]
-
+func policyForOption(option string) (failurePolicy, bool) {
 	switch option {
 	case optionOptionalOnStartup:
-		return source{path: path, policy: failureToleratedOnStartup}, nil
+		return failureToleratedOnStartup, true
 	case optionOptionalUseLastValue:
-		return source{path: path, policy: failureUsesLastValue}, nil
+		return failureUsesLastValue, true
+	default:
+		return 0, false
+	}
+}
+
+// parseSource splits one Config.LoadPath entry into a path and a failure
+// policy. An entry can end with semicolon-separated options, for example:
+//
+//	/etc/overrides.yaml
+//	http://config-server/overrides;optional-on-startup
+//	http://config-server/overrides;optional-use-last-value
+//
+// Options are peeled from the right only when they are recognized, so a URL
+// path parameter such as ;jsessionid=ABC stays part of the path. Several
+// options can be appended as ;option1;option2; they are parsed, but currently
+// they cannot be combined because the two supported options contradict each other.
+func parseSource(entry string) (source, error) {
+	path, options, err := splitSourceOptions(entry)
+	if err != nil {
+		return source{}, err
+	}
+	if path == "" {
+		return source{}, fmt.Errorf("runtime config source %q has no path", entry)
+	}
+	switch len(options) {
+	case 0:
+		return source{path: path, policy: failureIsFatal}, nil
+	case 1:
+		policy, _ := policyForOption(options[0])
+		return source{path: path, policy: policy}, nil
 	default:
 		return source{}, fmt.Errorf(
-			"runtime config source %q has unknown option %q, supported options are %q and %q",
-			entry, option, optionOptionalOnStartup, optionOptionalUseLastValue,
+			"runtime config source %q has multiple options %q; specify only one of %q and %q",
+			entry, strings.Join(options, ";"), optionOptionalOnStartup, optionOptionalUseLastValue,
 		)
 	}
+}
+
+// splitSourceOptions peels recognized options off the end of entry. Each
+// option is a semicolon-prefixed token, like JDBC URL parameters.
+func splitSourceOptions(entry string) (path string, options []string, err error) {
+	path = entry
+	for {
+		semi := strings.LastIndex(path, ";")
+		if semi < 0 {
+			break
+		}
+		option := path[semi+1:]
+		if _, ok := policyForOption(option); ok {
+			options = append(options, option)
+			path = path[:semi]
+			continue
+		}
+		if option == "" {
+			return "", nil, fmt.Errorf("runtime config source %q has an empty option", entry)
+		}
+		// A trailing token that looks like one of our option names but is not
+		// recognized is treated as a typo. Tokens with other characters (for
+		// example ";jsessionid=ABC") stay part of the path.
+		if isOptionName(option) {
+			return "", nil, fmt.Errorf(
+				"runtime config source %q has unknown option %q, supported options are %q and %q",
+				entry, option, optionOptionalOnStartup, optionOptionalUseLastValue,
+			)
+		}
+		break
+	}
+	// Options were collected from the right, so reverse to left-to-right order.
+	slices.Reverse(options)
+	return path, options, nil
+}
+
+// isOptionName reports whether s could be one of our option names: lowercase
+// letters, digits, and hyphens, starting with a letter.
+func isOptionName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case unicode.IsLower(r):
+		case i > 0 && (unicode.IsDigit(r) || r == '-'):
+		default:
+			return false
+		}
+	}
+	return true
 }

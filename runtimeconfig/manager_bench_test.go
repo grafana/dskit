@@ -39,9 +39,11 @@ func BenchmarkManagerLoadConfig(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		// Reset the per-file hash cache so every iteration performs a full
+		// Reset last-load contribution so every iteration performs a full
 		// reload instead of short-circuiting on unchanged hashes.
-		m.fileHashes = nil
+		for i := range m.configSources {
+			m.configSources[i].contributedOnLastLoad = false
+		}
 		require.NoError(b, m.loadConfig(ctx, false))
 	}
 }

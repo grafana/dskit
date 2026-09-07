@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseSource(t *testing.T) {
+func TestParseConfigSource(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		entry          string
@@ -105,15 +105,15 @@ func TestParseSource(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			src, err := parseSource(tc.entry)
+			cs, err := parseConfigSource(tc.entry)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantPath, src.path)
-			assert.Equal(t, tc.wantParameters, src.parameters)
+			assert.Equal(t, tc.wantPath, cs.path)
+			assert.Equal(t, tc.wantParameters, cs.parameters)
 		})
 	}
 }

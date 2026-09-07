@@ -23,12 +23,6 @@ var knownParameters = []sourceParameter{
 // they were written. An empty list is the default: a failed read aborts the load.
 type sourceParameters []sourceParameter
 
-// source is one entry of Config.LoadPath: where to read from, and how that source behaves.
-type source struct {
-	path       string
-	parameters sourceParameters
-}
-
 // toleratesFailure reports whether a failed read can be ignored for this parameter.
 // initial is true for the load that the Manager performs while it starts.
 func (p sourceParameter) toleratesFailure(initial bool) bool {
@@ -62,8 +56,8 @@ func (ps sourceParameters) keepsLastValue() bool {
 	return slices.ContainsFunc(ps, sourceParameter.keepsLastValue)
 }
 
-// parseSource splits one Config.LoadPath entry into a path and source parameters.
-// An entry can end with semicolon-separated parameters, for example:
+// parseConfigSource splits one Config.LoadPath entry into a configSource's path
+// and parameters. An entry can end with semicolon-separated parameters, for example:
 //
 //	/etc/overrides.yaml
 //	http://config-server/overrides;optional-on-startup
@@ -74,7 +68,7 @@ func (ps sourceParameters) keepsLastValue() bool {
 // a ";" belongs to the path, so a URL parameter such as ;jsessionid=ABC or ;v2
 // is left alone. The two parameters above contradict each other, so naming both
 // is an error.
-func parseSource(entry string) (source, error) {
+func parseConfigSource(entry string) (configSource, error) {
 	path := entry
 	var parameters sourceParameters
 	for {
@@ -83,7 +77,7 @@ func parseSource(entry string) (source, error) {
 			break
 		}
 		if rest == "" {
-			return source{}, fmt.Errorf("runtime config source %q has no path", entry)
+			return configSource{}, fmt.Errorf("runtime config source %q has no path", entry)
 		}
 		parameters = append(parameters, parameter)
 		path = rest
@@ -91,9 +85,9 @@ func parseSource(entry string) (source, error) {
 	// Collected from the right, so restore the order they were written.
 	slices.Reverse(parameters)
 	if err := checkParameters(entry, parameters); err != nil {
-		return source{}, err
+		return configSource{}, err
 	}
-	return source{path: path, parameters: parameters}, nil
+	return configSource{path: path, parameters: parameters}, nil
 }
 
 // checkParameters reports parameters that cannot be combined on one source.

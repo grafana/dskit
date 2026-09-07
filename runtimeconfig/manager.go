@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -81,6 +80,39 @@ func (mc *Config) RegisterFlags(f *flag.FlagSet) {
 	mc.RegisterFlagsWithPrefix("runtime-config.", f)
 }
 
+// configSource is one LoadPath entry: where to read from, how that source
+// behaves, and the state loadConfig keeps for it.
+//
+// path and parameters are set by parseConfigSource. provider is set in New.
+// loadConfig updates lastGood, lastDigest, and contributedOnLastLoad; they
+// need no synchronization because only loadConfig touches them, and only in
+// the Starting and Running states.
+type configSource struct {
+	path       string
+	provider   provider
+	parameters sourceParameters
+
+	// Bytes last applied from this source. Stays nil unless the source keeps a
+	// last value, to not waste memory.
+	lastGood []byte
+
+	// Digest of the bytes this source last contributed to the applied merge.
+	lastDigest [sha256.Size]byte
+
+	// Whether this source contributed to the last applied merge. The zero
+	// value means it has not, including before the first successful load.
+	contributedOnLastLoad bool
+}
+
+// unchangedSinceLastLoad reports whether this source's participation in the
+// merge matches the last applied load.
+func (cs configSource) unchangedSinceLastLoad(contributes bool, digest [sha256.Size]byte) bool {
+	if cs.contributedOnLastLoad != contributes {
+		return false
+	}
+	return !contributes || cs.lastDigest == digest
+}
+
 // Manager periodically reloads the configuration from specified files, and keeps this
 // configuration available for clients.
 type Manager struct {
@@ -98,19 +130,7 @@ type Manager struct {
 	sourceLoadSuccess *prometheus.GaugeVec
 	configHash        *prometheus.GaugeVec
 
-	// Hashes of the providers that contributed to the merged config, in LoadPath order.
-	// Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
-	fileHashes []providerHash
-
-	// Bytes last applied from each optional-use-last-value provider, in LoadPath order.
-	// Entries stay nil for providers that do not keep a last value, to not waste memory.
-	// Like fileHashes, only loadConfig touches it, so it needs no synchronization.
-	lastGoodData [][]byte
-
-	providers []provider
-
-	// Parameters of each provider, in LoadPath order. A provider can have several.
-	parameters []sourceParameters
+	configSources []configSource
 }
 
 // New creates an instance of Manager. Manager is a services.Service, and must be explicitly started to perform any work.
@@ -120,13 +140,13 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 	}
 
 	// Parse every entry before registering any metric.
-	sources := make([]source, 0, len(cfg.LoadPath))
+	configSources := make([]configSource, 0, len(cfg.LoadPath))
 	for _, entry := range cfg.LoadPath {
-		src, err := parseSource(entry)
+		cs, err := parseConfigSource(entry)
 		if err != nil {
 			return nil, err
 		}
-		sources = append(sources, src)
+		configSources = append(configSources, cs)
 	}
 
 	// The cluster-validation counter shares its name with similarly-named counters from other
@@ -158,9 +178,9 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 
 	var httpClient *http.Client
 	var httpDuration *prometheus.HistogramVec
-	for _, src := range sources {
-		var p provider
-		if isURL(src.path) {
+	for i := range configSources {
+		cs := &configSources[i]
+		if isURL(cs.path) {
 			if httpClient == nil {
 				timeout := cfg.HTTPClientTimeout
 				if timeout == 0 {
@@ -169,17 +189,15 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 				httpClient = &http.Client{Timeout: timeout, Transport: httpTransport(cfg, configName, clusterValidationRegisterer, logger)}
 				httpDuration = newHTTPRequestDuration(registerer)
 			}
-			p = newHTTPProvider(src.path, httpClient, httpDuration)
+			cs.provider = newHTTPProvider(cs.path, httpClient, httpDuration)
 		} else {
-			p = newFileProvider(src.path)
+			cs.provider = newFileProvider(cs.path)
 		}
 
-		mgr.providers = append(mgr.providers, p)
-		mgr.parameters = append(mgr.parameters, src.parameters)
 		// Create the series up front, at 0: nothing has been read yet.
-		mgr.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
+		mgr.sourceLoadSuccess.WithLabelValues(cs.provider.Name()).Set(0)
 	}
-	mgr.lastGoodData = make([][]byte, len(mgr.providers))
+	mgr.configSources = configSources
 
 	mgr.Service = services.NewBasicService(mgr.starting, mgr.loop, mgr.stopping)
 	return &mgr, nil
@@ -253,85 +271,93 @@ func (om *Manager) loop(ctx context.Context) error {
 // initial must be true for the load performed while the Manager starts: some sources tolerate a
 // failure only then.
 func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
-	rawData := make([][]byte, len(om.providers))
+	n := len(om.configSources)
+	rawData := make([][]byte, n)
 	// contributes says whether rawData[i] takes part in the merge. A tolerated failure
 	// contributes nothing until the source has been read once.
-	contributes := make([]bool, len(om.providers))
+	contributes := make([]bool, n)
 	// readOK is true for sources read fresh this attempt, as opposed to replaying their last
 	// value. Only used to decide what to retain.
-	readOK := make([]bool, len(om.providers))
-	// Only contributing providers are hashed, so a source joining or leaving triggers a rebuild.
-	hashes := make([]providerHash, 0, len(om.providers))
+	readOK := make([]bool, n)
+	digests := make([][sha256.Size]byte, n)
+	// Only contributing config sources are hashed, so a source joining or leaving triggers a rebuild.
+	hashes := make([]providerHash, 0, n)
 
-	for i, p := range om.providers {
-		parameters := om.parameters[i]
+	for i := range om.configSources {
+		cs := &om.configSources[i]
+		name := cs.provider.Name()
 
-		buf, err := p.Read(ctx)
+		buf, err := cs.provider.Read(ctx)
 		if err == nil && om.cfg.Preprocessor != nil {
 			buf, err = om.cfg.Preprocessor(buf)
 			if err != nil {
-				err = errors.Wrapf(err, "preprocess %q", p.Name())
+				err = errors.Wrapf(err, "preprocess %q", name)
 			}
 		} else if err != nil {
-			err = errors.Wrapf(err, "read %q", p.Name())
+			err = errors.Wrapf(err, "read %q", name)
 		}
 
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(name).Set(0)
 
-			if !parameters.toleratesFailure(initial) {
+			if !cs.parameters.toleratesFailure(initial) {
 				om.configLoadSuccess.Set(0)
 				return err
 			}
 
-			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", p.Name(), "err", err)
+			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", name, "err", err)
 
-			if parameters.keepsLastValue() && om.lastGoodData[i] != nil {
-				rawData[i] = om.lastGoodData[i]
+			if cs.parameters.keepsLastValue() && cs.lastGood != nil {
+				rawData[i] = cs.lastGood
 				contributes[i] = true
+				digests[i] = sha256.Sum256(rawData[i])
 				hashes = append(hashes, providerHash{
-					name:   p.Name(),
-					digest: sha256.Sum256(rawData[i]),
+					name:   name,
+					digest: digests[i],
 				})
 			}
 			continue
 		}
 
-		om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(1)
+		om.sourceLoadSuccess.WithLabelValues(name).Set(1)
 		readOK[i] = true
 		rawData[i] = buf
 		contributes[i] = true
+		digests[i] = sha256.Sum256(buf)
 		hashes = append(hashes, providerHash{
-			name:   p.Name(),
-			digest: sha256.Sum256(buf),
+			name:   name,
+			digest: digests[i],
 		})
 	}
 
-	// Skip the rebuild when nothing changed, but never on the initial load: nil fileHashes
-	// equals an empty hash list, and GetConfig must be the Loader's result rather than nil.
-	if !initial && slices.Equal(om.fileHashes, hashes) {
+	// Skip the rebuild when nothing changed, but never on the initial load:
+	// contributedOnLastLoad is false for every source then, which would look
+	// equal to a load where nothing contributes, and GetConfig must be the
+	// Loader's result rather than nil.
+	if !initial && om.configSourcesUnchanged(contributes, digests) {
 		om.configLoadSuccess.Set(1)
 		return nil
 	}
 
 	mergedConfig := map[string]interface{}{}
-	for i, p := range om.providers {
+	for i := range om.configSources {
 		if !contributes[i] {
 			continue
 		}
 
+		name := om.configSources[i].provider.Name()
 		data := rawData[i]
-		yamlFile, err := om.unmarshalMaybeGzipped(p.Name(), data)
+		yamlFile, err := om.unmarshalMaybeGzipped(name, data)
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(name).Set(0)
 			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "unmarshal %q", p.Name())
+			return errors.Wrapf(err, "unmarshal %q", name)
 		}
 		mergedConfig, err = mergeConfigMaps(mergedConfig, yamlFile, "")
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(name).Set(0)
 			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "can't merge %q on top of the previous providers", p.Name())
+			return errors.Wrapf(err, "can't merge %q on top of the previous providers", name)
 		}
 	}
 
@@ -370,16 +396,30 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	om.configHash.Reset()
 	om.configHash.WithLabelValues(fmt.Sprintf("%x", hash)).Set(1)
 
-	// Preserve hashes and last-good bytes for the next loop. Only sources that can replay
-	// their last value keep bytes, and only bytes this load applied, so a body that failed
-	// to unmarshal cannot poison the replay.
-	om.fileHashes = hashes
-	for i := range om.providers {
-		if readOK[i] && om.parameters[i].keepsLastValue() {
-			om.lastGoodData[i] = bytes.Clone(rawData[i])
+	// Preserve per-source merge state for the next loop. Only sources that can
+	// replay their last value keep bytes, and only bytes this load applied, so a
+	// body that failed to unmarshal cannot poison the replay.
+	for i := range om.configSources {
+		om.configSources[i].contributedOnLastLoad = contributes[i]
+		if contributes[i] {
+			om.configSources[i].lastDigest = digests[i]
+		}
+		if readOK[i] && om.configSources[i].parameters.keepsLastValue() {
+			om.configSources[i].lastGood = bytes.Clone(rawData[i])
 		}
 	}
 	return nil
+}
+
+// configSourcesUnchanged reports whether each config source contributes the same
+// bytes as it did in the last applied merge.
+func (om *Manager) configSourcesUnchanged(contributes []bool, digests [][sha256.Size]byte) bool {
+	for i, cs := range om.configSources {
+		if !cs.unchangedSinceLastLoad(contributes[i], digests[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func combinedFilesHash(hashes []providerHash) [sha256.Size]byte {

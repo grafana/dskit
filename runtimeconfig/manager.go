@@ -309,8 +309,10 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		})
 	}
 
-	if slices.Equal(om.fileHashes, hashes) {
-		// No need to rebuild runtime config.
+	// Skip the rebuild when nothing changed, but not on the initial load: fileHashes starts
+	// as nil, which compares equal to an empty hash list, and we still need to apply the
+	// empty merge ("{}") so GetConfig is the Loader's result rather than nil.
+	if !initial && slices.Equal(om.fileHashes, hashes) {
 		om.configLoadSuccess.Set(1)
 		return nil
 	}

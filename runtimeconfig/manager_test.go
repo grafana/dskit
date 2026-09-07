@@ -1391,6 +1391,29 @@ func TestManager_UnknownSourceOption(t *testing.T) {
 	assert.Contains(t, err.Error(), `unknown option "nonsense"`)
 }
 
+func TestManager_OptionalSourceAloneDownAtStartup(t *testing.T) {
+	srv := newFlakyServer(t, "from_server: 42\n")
+	srv.setBroken(true)
+
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{srv.url() + ";optional-use-last-value"},
+		Loader:       twoKeysLoader,
+	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+
+	// No source contributed, so the merge is empty. The Loader still runs on "{}" and
+	// GetConfig is that result, not nil.
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+	require.Equal(t, twoKeys{}, manager.GetConfig())
+
+	srv.setBroken(false)
+	test.Poll(t, 5*time.Second, twoKeys{FromServer: 42}, func() interface{} {
+		return manager.GetConfig()
+	})
+}
+
 func TestManager_OptionalOnStartup(t *testing.T) {
 	file := newTestConfigFile(t, "from_file: 1\n")
 	srv := newFlakyServer(t, "from_server: 42\n")

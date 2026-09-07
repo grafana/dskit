@@ -1192,3 +1192,20 @@ func TestPartitionRingDesc_PartitionOwnersCountUpdatedBefore(t *testing.T) {
 	assert.Equal(t, 1, desc.PartitionOwnersCountUpdatedBefore(1, now.Add(-1*time.Second)))
 	assert.Equal(t, 0, desc.PartitionOwnersCountUpdatedBefore(1, now.Add(-2*time.Second)))
 }
+
+func TestPartitionRingDesc_MergeContent(t *testing.T) {
+	now := time.Now()
+
+	t.Run("empty ring", func(t *testing.T) {
+		require.Empty(t, NewPartitionRingDesc().MergeContent())
+	})
+
+	t.Run("returns exactly the partition and owner IDs", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(1, PartitionActive, now)
+		desc.AddPartition(2, PartitionActive, now)
+		desc.AddOrUpdateOwner("ingester-zone-a-0", OwnerActive, 1, now)
+
+		require.ElementsMatch(t, []string{"1", "2", "ingester-zone-a-0"}, desc.MergeContent())
+	})
+}

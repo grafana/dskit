@@ -253,13 +253,17 @@ func (om *Manager) loop(ctx context.Context) error {
 type sourceToLoad struct {
 	name    string
 	rawData []byte
-	// contributes says whether rawData takes part in the merge. A tolerated
-	// failure contributes nothing until the source has been read once.
-	contributes bool
 	// readOK is true for sources read fresh this attempt, as opposed to
 	// replaying their last value. Only used to decide what to retain.
 	readOK bool
 	digest [sha256.Size]byte
+}
+
+// contributesToMerge reports whether rawData takes part in the merge. A digest of
+// real bytes is never zero, so the zero value marks a tolerated failure by a source
+// that has not been read successfully even once.
+func (s sourceToLoad) contributesToMerge() bool {
+	return s.digest != [sha256.Size]byte{}
 }
 
 // loadConfig loads all configuration files using the loader function then merges the yaml configuration files into one yaml document.
@@ -297,7 +301,6 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 
 			if cs.parameters.keepsLastValueOnFailure() && cs.lastValue != nil {
 				s.rawData = cs.lastValue
-				s.contributes = true
 				s.digest = sha256.Sum256(s.rawData)
 			}
 			continue
@@ -306,7 +309,6 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		om.sourceLoadSuccess.WithLabelValues(s.name).Set(1)
 		s.readOK = true
 		s.rawData = buf
-		s.contributes = true
 		s.digest = sha256.Sum256(buf)
 	}
 
@@ -331,7 +333,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	mergedConfig := map[string]interface{}{}
 	for i := range om.configSources {
 		s := sourcesToLoad[i]
-		if !s.contributes {
+		if !s.contributesToMerge() {
 			continue
 		}
 
@@ -401,7 +403,7 @@ func combinedFilesHash(sourcesToLoad []sourceToLoad) [sha256.Size]byte {
 	h := sha256.New()
 	var nameLength [8]byte
 	for _, s := range sourcesToLoad {
-		if !s.contributes {
+		if !s.contributesToMerge() {
 			continue
 		}
 		binary.BigEndian.PutUint64(nameLength[:], uint64(len(s.name)))

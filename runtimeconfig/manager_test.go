@@ -424,7 +424,7 @@ func TestCombinedFilesHash(t *testing.T) {
 		return sha256.Sum256([]byte(contents))
 	}
 	load := func(name, contents string) sourceToLoad {
-		return sourceToLoad{name: name, contributes: true, digest: digest(contents)}
+		return sourceToLoad{name: name, digest: digest(contents)}
 	}
 	base := []sourceToLoad{
 		load("file-a", "contents-a"),
@@ -451,17 +451,17 @@ func TestCombinedFilesHash(t *testing.T) {
 	}
 	require.NotEqual(t, combinedFilesHash(duplicates), combinedFilesHash([]sourceToLoad{duplicates[1], duplicates[0]}))
 
+	// A zero digest is how a source that contributes nothing reaches combinedFilesHash.
 	skipped := slices.Clone(base)
-	skipped[1].contributes = false
+	skipped[1].digest = [sha256.Size]byte{}
 	require.Equal(t, combinedFilesHash([]sourceToLoad{base[0], base[2]}), combinedFilesHash(skipped))
 
 	t.Run("length prefix disambiguates provider sequences", func(t *testing.T) {
 		separateProviders := base[:2]
 		combinedProvider := []sourceToLoad{{
 			// Without the name-length prefix, these sequences produce the same hash input.
-			name:        base[0].name + string(base[0].digest[:]) + base[1].name,
-			contributes: true,
-			digest:      base[1].digest,
+			name:   base[0].name + string(base[0].digest[:]) + base[1].name,
+			digest: base[1].digest,
 		}}
 
 		require.NotEqual(t, combinedFilesHash(separateProviders), combinedFilesHash(combinedProvider))

@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-// failurePolicy says what the Manager does when a source cannot be read.
-type failurePolicy int
+// sourceParameter is a per-source option parsed from a LoadPath entry.
+type sourceParameter int
 
 const (
 	// failureIsFatal aborts the whole load. It is the default.
-	failureIsFatal failurePolicy = iota
+	failureIsFatal sourceParameter = iota
 
 	// failureToleratedOnStartup lets the Manager start without the source, but aborts
 	// every load after that.
@@ -25,15 +25,15 @@ const (
 	optionOptionalUseLastValue = "optional-use-last-value"
 )
 
-// source is one entry of Config.LoadPath: where to read from, and what to do when that fails.
+// source is one entry of Config.LoadPath: where to read from, and how that source behaves.
 type source struct {
-	path   string
-	policy failurePolicy
+	path      string
+	parameter sourceParameter
 }
 
-// tolerates reports whether a failed read can be ignored under this policy.
+// tolerates reports whether a failed read can be ignored for this parameter.
 // initial is true for the load that the Manager performs while it starts.
-func (p failurePolicy) tolerates(initial bool) bool {
+func (p sourceParameter) tolerates(initial bool) bool {
 	switch p {
 	case failureToleratedOnStartup:
 		return initial
@@ -45,11 +45,11 @@ func (p failurePolicy) tolerates(initial bool) bool {
 }
 
 // keepsLastValue reports whether a tolerated failure keeps the bytes the source last supplied.
-func (p failurePolicy) keepsLastValue() bool {
+func (p sourceParameter) keepsLastValue() bool {
 	return p == failureUsesLastValue
 }
 
-// parseSource splits one Config.LoadPath entry into a path and a failure policy.
+// parseSource splits one Config.LoadPath entry into a path and a source parameter.
 // An entry can end with one option, for example:
 //
 //	/etc/overrides.yaml
@@ -59,9 +59,9 @@ func (p failurePolicy) keepsLastValue() bool {
 // Only these exact suffixes are options. Anything else after a ";" belongs to the
 // path, so a URL parameter such as ;jsessionid=ABC or ;v2 is left alone.
 func parseSource(entry string) (source, error) {
-	path, policy, ok := cutOption(entry)
+	path, parameter, ok := cutOption(entry)
 	if !ok {
-		return source{path: entry, policy: failureIsFatal}, nil
+		return source{path: entry, parameter: failureIsFatal}, nil
 	}
 	if path == "" {
 		return source{}, fmt.Errorf("runtime config source %q has no path", entry)
@@ -72,11 +72,11 @@ func parseSource(entry string) (source, error) {
 			entry, optionOptionalOnStartup, optionOptionalUseLastValue,
 		)
 	}
-	return source{path: path, policy: policy}, nil
+	return source{path: path, parameter: parameter}, nil
 }
 
-// cutOption removes a trailing option from entry and reports the policy it names.
-func cutOption(entry string) (path string, policy failurePolicy, ok bool) {
+// cutOption removes a trailing option from entry and reports the parameter it names.
+func cutOption(entry string) (path string, parameter sourceParameter, ok bool) {
 	if path, ok := strings.CutSuffix(entry, ";"+optionOptionalOnStartup); ok {
 		return path, failureToleratedOnStartup, true
 	}

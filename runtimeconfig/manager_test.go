@@ -1557,7 +1557,7 @@ func TestManager_OptionalUseLastValue_InvalidContentDoesNotPoisonLastGood(t *tes
 }
 
 // Only a source that can replay its last value keeps bytes. The retention is not observable
-// through GetConfig, because the other policies never read it back, so assert the field.
+// through GetConfig, because the other parameters never read it back, so assert the field.
 func TestManager_LastGoodDataKeptOnlyForReplayingSources(t *testing.T) {
 	file := newTestConfigFile(t, "from_file: 1\n")
 	replaying := newFlakyServer(t, "from_server: 42\n")

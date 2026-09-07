@@ -103,14 +103,14 @@ type Manager struct {
 	fileHashes []providerHash
 
 	// Bytes last applied from each optional-use-last-value provider, in LoadPath order.
-	// Entries stay nil for every other policy, which never replays.
+	// Entries stay nil for every other parameter, to not waste memory when not needed.
 	// Like fileHashes, only loadConfig touches it, so it needs no synchronization.
 	lastGoodData [][]byte
 
 	providers []provider
 
-	// Failure policy of each provider, in LoadPath order.
-	policies []failurePolicy
+	// Parameter of each provider, in LoadPath order.
+	parameters []sourceParameter
 }
 
 // New creates an instance of Manager. Manager is a services.Service, and must be explicitly started to perform any work.
@@ -119,8 +119,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		return nil, errors.New("LoadPath is empty")
 	}
 
-	// Parse every entry before registering any metric, so that a bad entry leaves the
-	// registerer untouched and New can be called again once the config is corrected.
+	// Parse every entry before registering any metric.
 	sources := make([]source, 0, len(cfg.LoadPath))
 	for _, entry := range cfg.LoadPath {
 		src, err := parseSource(entry)
@@ -144,9 +143,8 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 			Name: "runtime_config_last_reload_successful",
 			Help: "Whether the last runtime-config reload attempt was successful.",
 		}),
-		// The "source" label is the provider name, i.e. the LoadPath entry verbatim, so that
-		// entries differing only in query string stay separate series. Do not put secrets in
-		// a runtime config URL.
+		// The "source" label is the provider name, i.e. the LoadPath entry verbatim.
+		// Do not put secrets in a runtime config URL.
 		sourceLoadSuccess: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "runtime_config_source_last_reload_successful",
 			Help: "Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.",
@@ -177,7 +175,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		}
 
 		mgr.providers = append(mgr.providers, p)
-		mgr.policies = append(mgr.policies, src.policy)
+		mgr.parameters = append(mgr.parameters, src.parameter)
 		// Create the series up front, at 0: nothing has been read yet.
 		mgr.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
 	}
@@ -266,7 +264,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	hashes := make([]providerHash, 0, len(om.providers))
 
 	for i, p := range om.providers {
-		policy := om.policies[i]
+		parameter := om.parameters[i]
 
 		buf, err := p.Read(ctx)
 		if err == nil && om.cfg.Preprocessor != nil {
@@ -281,14 +279,14 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		if err != nil {
 			om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
 
-			if !policy.tolerates(initial) {
+			if !parameter.tolerates(initial) {
 				om.configLoadSuccess.Set(0)
 				return err
 			}
 
 			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", p.Name(), "err", err)
 
-			if policy.keepsLastValue() && om.lastGoodData[i] != nil {
+			if parameter.keepsLastValue() && om.lastGoodData[i] != nil {
 				rawData[i] = om.lastGoodData[i]
 				contributes[i] = true
 				hashes = append(hashes, providerHash{
@@ -377,7 +375,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// to unmarshal cannot poison the replay.
 	om.fileHashes = hashes
 	for i := range om.providers {
-		if readOK[i] && om.policies[i].keepsLastValue() {
+		if readOK[i] && om.parameters[i].keepsLastValue() {
 			om.lastGoodData[i] = bytes.Clone(rawData[i])
 		}
 	}

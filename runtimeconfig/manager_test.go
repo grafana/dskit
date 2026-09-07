@@ -1555,3 +1555,30 @@ func TestManager_OptionalUseLastValue_InvalidContentDoesNotPoisonLastGood(t *tes
 		return manager.GetConfig()
 	})
 }
+
+// Only a source that can replay its last value keeps bytes. The retention is not observable
+// through GetConfig, because the other policies never read it back, so assert the field.
+func TestManager_LastGoodDataKeptOnlyForReplayingSources(t *testing.T) {
+	file := newTestConfigFile(t, "from_file: 1\n")
+	replaying := newFlakyServer(t, "from_server: 42\n")
+
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath: []string{
+			file,
+			file + ";optional-on-startup",
+			replaying.url() + ";optional-use-last-value",
+		},
+		Loader: twoKeysLoader,
+	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+	require.Equal(t, twoKeys{FromFile: 1, FromServer: 42}, manager.GetConfig())
+
+	require.Len(t, manager.lastGoodData, 3)
+	assert.Nil(t, manager.lastGoodData[0], "a required source never replays")
+	assert.Nil(t, manager.lastGoodData[1], "optional-on-startup never replays")
+	assert.Equal(t, "from_server: 42\n", string(manager.lastGoodData[2]))
+}

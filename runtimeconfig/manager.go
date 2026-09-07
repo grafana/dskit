@@ -102,7 +102,8 @@ type Manager struct {
 	// Only used by loadConfig in Starting and Running states, so it doesn't need synchronization.
 	fileHashes []providerHash
 
-	// Bytes each provider last contributed to an applied config, in LoadPath order.
+	// Bytes last applied from each optional-use-last-value provider, in LoadPath order.
+	// Entries stay nil for every other policy, which never replays.
 	// Like fileHashes, only loadConfig touches it, so it needs no synchronization.
 	lastGoodData [][]byte
 
@@ -371,11 +372,12 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	om.configHash.Reset()
 	om.configHash.WithLabelValues(fmt.Sprintf("%x", hash)).Set(1)
 
-	// Preserve hashes and last-good bytes for the next loop. Keeping only applied bytes stops
-	// a body that failed to unmarshal from poisoning optional-use-last-value.
+	// Preserve hashes and last-good bytes for the next loop. Only sources that can replay
+	// their last value keep bytes, and only bytes this load applied, so a body that failed
+	// to unmarshal cannot poison the replay.
 	om.fileHashes = hashes
 	for i := range om.providers {
-		if contributes[i] {
+		if readOK[i] && om.policies[i].keepsLastValue() {
 			om.lastGoodData[i] = bytes.Clone(rawData[i])
 		}
 	}

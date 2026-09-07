@@ -16,13 +16,13 @@ import (
 
 func TestMockKv_Get(t *testing.T) {
 	t.Run("exact match", func(t *testing.T) {
-		pair := mvccpb.KeyValue{
+		pair := &mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
 
 		kv := newMockKV()
-		kv.values = map[string]mvccpb.KeyValue{string(pair.Key): pair}
+		kv.values = map[string]*mvccpb.KeyValue{string(pair.Key): pair}
 		res, err := kv.Get(context.Background(), "/foo")
 
 		require.NoError(t, err)
@@ -31,13 +31,13 @@ func TestMockKv_Get(t *testing.T) {
 	})
 
 	t.Run("not exact match", func(t *testing.T) {
-		pair := mvccpb.KeyValue{
+		pair := &mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
 
 		kv := newMockKV()
-		kv.values = map[string]mvccpb.KeyValue{string(pair.Key): pair}
+		kv.values = map[string]*mvccpb.KeyValue{string(pair.Key): pair}
 		res, err := kv.Get(context.Background(), "/bar")
 
 		require.NoError(t, err)
@@ -45,21 +45,21 @@ func TestMockKv_Get(t *testing.T) {
 	})
 
 	t.Run("prefix match", func(t *testing.T) {
-		fooPair := mvccpb.KeyValue{
+		fooPair := &mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
-		bazPair := mvccpb.KeyValue{
+		bazPair := &mvccpb.KeyValue{
 			Key:   []byte("/baz"),
 			Value: []byte("2"),
 		}
-		firstPair := mvccpb.KeyValue{
+		firstPair := &mvccpb.KeyValue{
 			Key:   []byte("/first"),
 			Value: []byte("3"),
 		}
 
 		kv := newMockKV()
-		kv.values = map[string]mvccpb.KeyValue{
+		kv.values = map[string]*mvccpb.KeyValue{
 			string(fooPair.Key):   fooPair,
 			string(bazPair.Key):   bazPair,
 			string(firstPair.Key): firstPair,
@@ -67,25 +67,25 @@ func TestMockKv_Get(t *testing.T) {
 		res, err := kv.Get(context.Background(), "/f", clientv3.WithPrefix())
 
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []*mvccpb.KeyValue{&fooPair, &firstPair}, res.Kvs)
+		assert.ElementsMatch(t, []*mvccpb.KeyValue{fooPair, firstPair}, res.Kvs)
 	})
 
 	t.Run("empty prefix", func(t *testing.T) {
-		fooPair := mvccpb.KeyValue{
+		fooPair := &mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
-		bazPair := mvccpb.KeyValue{
+		bazPair := &mvccpb.KeyValue{
 			Key:   []byte("/baz"),
 			Value: []byte("2"),
 		}
-		firstPair := mvccpb.KeyValue{
+		firstPair := &mvccpb.KeyValue{
 			Key:   []byte("/first"),
 			Value: []byte("3"),
 		}
 
 		kv := newMockKV()
-		kv.values = map[string]mvccpb.KeyValue{
+		kv.values = map[string]*mvccpb.KeyValue{
 			string(fooPair.Key):   fooPair,
 			string(bazPair.Key):   bazPair,
 			string(firstPair.Key): firstPair,
@@ -93,7 +93,7 @@ func TestMockKv_Get(t *testing.T) {
 		res, err := kv.Get(context.Background(), "", clientv3.WithPrefix())
 
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []*mvccpb.KeyValue{&fooPair, &bazPair, &firstPair}, res.Kvs)
+		assert.ElementsMatch(t, []*mvccpb.KeyValue{fooPair, bazPair, firstPair}, res.Kvs)
 	})
 }
 
@@ -109,7 +109,7 @@ func TestMockKV_Put(t *testing.T) {
 
 	t.Run("existing key", func(t *testing.T) {
 		kv := newMockKV()
-		kv.values["/foo"] = mvccpb.KeyValue{
+		kv.values["/foo"] = &mvccpb.KeyValue{
 			Key:            []byte("/foo"),
 			CreateRevision: 1,
 			ModRevision:    2,
@@ -128,7 +128,7 @@ func TestMockKV_Put(t *testing.T) {
 func TestMockKV_Delete(t *testing.T) {
 	t.Run("exact match", func(t *testing.T) {
 		kv := newMockKV()
-		kv.values["/foo"] = mvccpb.KeyValue{
+		kv.values["/foo"] = &mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
@@ -142,15 +142,15 @@ func TestMockKV_Delete(t *testing.T) {
 
 	t.Run("prefix match", func(t *testing.T) {
 		kv := newMockKV()
-		kv.values["/foo"] = mvccpb.KeyValue{
+		kv.values["/foo"] = &mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
-		kv.values["/baz"] = mvccpb.KeyValue{
+		kv.values["/baz"] = &mvccpb.KeyValue{
 			Key:   []byte("/baz"),
 			Value: []byte("2"),
 		}
-		kv.values["/first"] = mvccpb.KeyValue{
+		kv.values["/first"] = &mvccpb.KeyValue{
 			Key:   []byte("/first"),
 			Value: []byte("3"),
 		}
@@ -165,15 +165,15 @@ func TestMockKV_Delete(t *testing.T) {
 
 	t.Run("empty prefix", func(t *testing.T) {
 		kv := newMockKV()
-		kv.values["/foo"] = mvccpb.KeyValue{
+		kv.values["/foo"] = &mvccpb.KeyValue{
 			Key:   []byte("/foo"),
 			Value: []byte("1"),
 		}
-		kv.values["/baz"] = mvccpb.KeyValue{
+		kv.values["/baz"] = &mvccpb.KeyValue{
 			Key:   []byte("/baz"),
 			Value: []byte("2"),
 		}
-		kv.values["/first"] = mvccpb.KeyValue{
+		kv.values["/first"] = &mvccpb.KeyValue{
 			Key:   []byte("/first"),
 			Value: []byte("3"),
 		}
@@ -188,10 +188,59 @@ func TestMockKV_Delete(t *testing.T) {
 	})
 }
 
+func TestMockKV_EvalCmp(t *testing.T) {
+	const key = "/foo"
+
+	kv := newMockKV()
+	kv.values[key] = &mvccpb.KeyValue{
+		Key:            []byte(key),
+		Value:          []byte("m"),
+		CreateRevision: 1,
+		Lease:          2,
+		Version:        3,
+		ModRevision:    4,
+	}
+
+	tests := []struct {
+		name string
+		cmp  clientv3.Cmp
+		want bool
+	}{
+		{name: "value equal", cmp: clientv3.Compare(clientv3.Value(key), "=", "m"), want: true},
+		{name: "value not equal", cmp: clientv3.Compare(clientv3.Value(key), "=", "n"), want: false},
+		{name: "create revision equal", cmp: clientv3.Compare(clientv3.CreateRevision(key), "=", 1), want: true},
+		{name: "create revision not equal", cmp: clientv3.Compare(clientv3.CreateRevision(key), "=", 2), want: false},
+		{name: "lease equal", cmp: clientv3.Compare(clientv3.LeaseValue(key), "=", 2), want: true},
+		{name: "lease not equal", cmp: clientv3.Compare(clientv3.LeaseValue(key), "=", 3), want: false},
+		{name: "version equal", cmp: clientv3.Compare(clientv3.Version(key), "=", 3), want: true},
+		{name: "version not equal", cmp: clientv3.Compare(clientv3.Version(key), "=", 4), want: false},
+		{name: "mod revision equal", cmp: clientv3.Compare(clientv3.ModRevision(key), "=", 4), want: true},
+		{name: "mod revision not equal", cmp: clientv3.Compare(clientv3.ModRevision(key), "=", 5), want: false},
+		{name: "value unequal true", cmp: clientv3.Compare(clientv3.Value(key), "!=", "a"), want: true},
+		{name: "value unequal false", cmp: clientv3.Compare(clientv3.Value(key), "!=", "m"), want: false},
+		{name: "value greater true", cmp: clientv3.Compare(clientv3.Value(key), ">", "a"), want: true},
+		{name: "value greater false", cmp: clientv3.Compare(clientv3.Value(key), ">", "z"), want: false},
+		{name: "value less true", cmp: clientv3.Compare(clientv3.Value(key), "<", "z"), want: true},
+		{name: "value less false", cmp: clientv3.Compare(clientv3.Value(key), "<", "a"), want: false},
+		{name: "version unequal true", cmp: clientv3.Compare(clientv3.Version(key), "!=", 2), want: true},
+		{name: "version unequal false", cmp: clientv3.Compare(clientv3.Version(key), "!=", 3), want: false},
+		{name: "version greater true", cmp: clientv3.Compare(clientv3.Version(key), ">", 2), want: true},
+		{name: "version greater false", cmp: clientv3.Compare(clientv3.Version(key), ">", 4), want: false},
+		{name: "version less true", cmp: clientv3.Compare(clientv3.Version(key), "<", 4), want: true},
+		{name: "version less false", cmp: clientv3.Compare(clientv3.Version(key), "<", 2), want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, kv.evalCmp(test.cmp))
+		})
+	}
+}
+
 func TestMockKV_Txn(t *testing.T) {
 	t.Run("success compare value", func(t *testing.T) {
 		kv := newMockKV()
-		kv.values["/foo"] = mvccpb.KeyValue{
+		kv.values["/foo"] = &mvccpb.KeyValue{
 			Key:            []byte("/foo"),
 			CreateRevision: 1,
 			ModRevision:    3,
@@ -211,7 +260,7 @@ func TestMockKV_Txn(t *testing.T) {
 
 	t.Run("failure compare value", func(t *testing.T) {
 		kv := newMockKV()
-		kv.values["/foo"] = mvccpb.KeyValue{
+		kv.values["/foo"] = &mvccpb.KeyValue{
 			Key:            []byte("/foo"),
 			CreateRevision: 1,
 			ModRevision:    3,
@@ -232,7 +281,7 @@ func TestMockKV_Txn(t *testing.T) {
 
 	t.Run("success compare version exists", func(t *testing.T) {
 		kv := newMockKV()
-		kv.values["/foo"] = mvccpb.KeyValue{
+		kv.values["/foo"] = &mvccpb.KeyValue{
 			Key:            []byte("/foo"),
 			CreateRevision: 1,
 			ModRevision:    3,
@@ -252,7 +301,7 @@ func TestMockKV_Txn(t *testing.T) {
 
 	t.Run("failure compare version exists", func(t *testing.T) {
 		kv := newMockKV()
-		kv.values["/foo"] = mvccpb.KeyValue{
+		kv.values["/foo"] = &mvccpb.KeyValue{
 			Key:            []byte("/foo"),
 			CreateRevision: 1,
 			ModRevision:    3,

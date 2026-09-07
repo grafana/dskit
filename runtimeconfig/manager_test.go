@@ -1369,7 +1369,7 @@ func sourceMetrics(file, serverURL string, fileValue, serverValue int) string {
 	`, file, fileValue, serverURL, serverValue)
 }
 
-// A source with no option keeps today's behaviour: the Manager refuses to start when it cannot be
+// A source with no parameter keeps today's behaviour: the Manager refuses to start when it cannot be
 // read.
 func TestManager_RequiredSourceFailsStartup(t *testing.T) {
 	srv := newFlakyServer(t, "from_server: 42\n")
@@ -1385,9 +1385,9 @@ func TestManager_RequiredSourceFailsStartup(t *testing.T) {
 	require.Error(t, services.StartAndAwaitRunning(context.Background(), manager))
 }
 
-// The two options contradict each other, and naming both is reported when the Manager is
+// The two parameters contradict each other, and naming both is reported when the Manager is
 // built rather than when the source is first read.
-func TestManager_MultipleSourceOptions(t *testing.T) {
+func TestManager_MultipleSourceParameters(t *testing.T) {
 	_, err := New(Config{
 		ReloadPeriod: 100 * time.Millisecond,
 		LoadPath:     []string{"/etc/overrides.yaml;optional-on-startup;optional-use-last-value"},
@@ -1395,7 +1395,7 @@ func TestManager_MultipleSourceOptions(t *testing.T) {
 	}, "overrides", prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "more than one option")
+	assert.Contains(t, err.Error(), "more than one parameter")
 }
 
 func TestManager_OptionalSourceAloneDownAtStartup(t *testing.T) {

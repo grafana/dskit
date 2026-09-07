@@ -29,13 +29,13 @@ func TestParseSource(t *testing.T) {
 			name:           "optional on startup",
 			entry:          "http://config-server/overrides;optional-on-startup",
 			wantPath:       "http://config-server/overrides",
-			wantParameters: sourceParameters{failureToleratedOnStartup},
+			wantParameters: sourceParameters{parameterOptionalOnStartup},
 		},
 		{
 			name:           "optional use last value",
 			entry:          "/etc/overrides.yaml;optional-use-last-value",
 			wantPath:       "/etc/overrides.yaml",
-			wantParameters: sourceParameters{failureUsesLastValue},
+			wantParameters: sourceParameters{parameterOptionalUseLastValue},
 		},
 		{
 			name:     "IPv6 URL keeps its brackets",
@@ -43,28 +43,28 @@ func TestParseSource(t *testing.T) {
 			wantPath: "http://[::1]:8080/overrides",
 		},
 		{
-			name:           "IPv6 URL with an option",
+			name:           "IPv6 URL with a parameter",
 			entry:          "http://[::1]:8080/overrides;optional-on-startup",
 			wantPath:       "http://[::1]:8080/overrides",
-			wantParameters: sourceParameters{failureToleratedOnStartup},
+			wantParameters: sourceParameters{parameterOptionalOnStartup},
 		},
 		{
-			// A semicolon in the path that is not a known option stays part of the URL,
+			// A semicolon in the path that is not a known parameter stays part of the URL,
 			// matching JDBC-style path parameters.
-			name:     "URL path parameter is not an option",
+			name:     "URL path parameter is not a source parameter",
 			entry:    "http://config-server/overrides.yaml;jsessionid=ABC",
 			wantPath: "http://config-server/overrides.yaml;jsessionid=ABC",
 		},
 		{
-			name:           "URL path parameter then a known option",
+			name:           "URL path parameter then a known parameter",
 			entry:          "http://config-server/overrides.yaml;jsessionid=ABC;optional-use-last-value",
 			wantPath:       "http://config-server/overrides.yaml;jsessionid=ABC",
-			wantParameters: sourceParameters{failureUsesLastValue},
+			wantParameters: sourceParameters{parameterOptionalUseLastValue},
 		},
 		{
-			// Only the exact option suffixes are options, so a misspelling is a path and
+			// Only the exact parameter suffixes are parameters, so a misspelling is a path and
 			// fails later when the source is read.
-			name:     "misspelled option stays part of the path",
+			name:     "misspelled parameter stays part of the path",
 			entry:    "/etc/overrides.yaml;optional",
 			wantPath: "/etc/overrides.yaml;optional",
 		},
@@ -84,22 +84,22 @@ func TestParseSource(t *testing.T) {
 			wantPath: "/etc/overrides.yaml;",
 		},
 		{
-			name:    "conflicting options",
+			name:    "conflicting parameters",
 			entry:   "/etc/overrides.yaml;optional-on-startup;optional-use-last-value",
-			wantErr: `more than one option`,
+			wantErr: `more than one parameter`,
 		},
 		{
-			name:    "conflicting options in reverse order",
+			name:    "conflicting parameters in reverse order",
 			entry:   "/etc/overrides.yaml;optional-use-last-value;optional-on-startup",
-			wantErr: `more than one option`,
+			wantErr: `more than one parameter`,
 		},
 		{
-			name:    "option without a path",
+			name:    "parameter without a path",
 			entry:   ";optional-on-startup",
 			wantErr: `has no path`,
 		},
 		{
-			name:    "two options without a path",
+			name:    "two parameters without a path",
 			entry:   ";optional-on-startup;optional-use-last-value",
 			wantErr: `has no path`,
 		},
@@ -125,13 +125,13 @@ func TestSourceTolerates(t *testing.T) {
 		afterStartup   bool
 		keepsLastValue bool
 	}{
-		{parameter: failureIsFatal, onStartup: false, afterStartup: false, keepsLastValue: false},
-		{parameter: failureToleratedOnStartup, onStartup: true, afterStartup: false, keepsLastValue: false},
-		{parameter: failureUsesLastValue, onStartup: true, afterStartup: true, keepsLastValue: true},
+		{parameter: "", onStartup: false, afterStartup: false, keepsLastValue: false},
+		{parameter: parameterOptionalOnStartup, onStartup: true, afterStartup: false, keepsLastValue: false},
+		{parameter: parameterOptionalUseLastValue, onStartup: true, afterStartup: true, keepsLastValue: true},
 	} {
-		assert.Equal(t, tc.onStartup, tc.parameter.toleratesFailure(true), "parameter %d on startup", tc.parameter)
-		assert.Equal(t, tc.afterStartup, tc.parameter.toleratesFailure(false), "parameter %d after startup", tc.parameter)
-		assert.Equal(t, tc.keepsLastValue, tc.parameter.keepsLastValue(), "parameter %d keeps last value", tc.parameter)
+		assert.Equal(t, tc.onStartup, tc.parameter.toleratesFailure(true), "parameter %q on startup", tc.parameter)
+		assert.Equal(t, tc.afterStartup, tc.parameter.toleratesFailure(false), "parameter %q after startup", tc.parameter)
+		assert.Equal(t, tc.keepsLastValue, tc.parameter.keepsLastValue(), "parameter %q keeps last value", tc.parameter)
 
 		ps := sourceParameters{tc.parameter}
 		assert.Equal(t, tc.onStartup, ps.toleratesFailure(true), "parameters %v on startup", ps)

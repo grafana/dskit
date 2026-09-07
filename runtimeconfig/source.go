@@ -6,28 +6,20 @@ import (
 	"strings"
 )
 
-// sourceParameter is a per-source option parsed from a LoadPath entry.
-type sourceParameter int
+// sourceParameter is a per-source parameter parsed from a LoadPath entry.
+type sourceParameter string
 
 const (
-	// failureIsFatal aborts the whole load. It is the default when a source has
-	// no parameters.
-	failureIsFatal sourceParameter = iota
-
-	// failureToleratedOnStartup lets the Manager start without the source, but aborts
-	// every load after that.
-	failureToleratedOnStartup
-
-	// failureUsesLastValue keeps the bytes the source last supplied, at startup and after it.
-	failureUsesLastValue
+	parameterOptionalOnStartup    sourceParameter = "optional-on-startup"
+	parameterOptionalUseLastValue sourceParameter = "optional-use-last-value"
 )
 
-const (
-	optionOptionalOnStartup    = "optional-on-startup"
-	optionOptionalUseLastValue = "optional-use-last-value"
-)
+var knownParameters = []sourceParameter{
+	parameterOptionalOnStartup,
+	parameterOptionalUseLastValue,
+}
 
-// sourceParameters are the options parsed from one LoadPath entry, in the order
+// sourceParameters are the parameters parsed from one LoadPath entry, in the order
 // they were written. An empty list is the default: a failed read aborts the load.
 type sourceParameters []sourceParameter
 
@@ -41,9 +33,9 @@ type source struct {
 // initial is true for the load that the Manager performs while it starts.
 func (p sourceParameter) toleratesFailure(initial bool) bool {
 	switch p {
-	case failureToleratedOnStartup:
+	case parameterOptionalOnStartup:
 		return initial
-	case failureUsesLastValue:
+	case parameterOptionalUseLastValue:
 		return true
 	default:
 		return false
@@ -52,7 +44,7 @@ func (p sourceParameter) toleratesFailure(initial bool) bool {
 
 // keepsLastValue reports whether a tolerated failure keeps the bytes the source last supplied.
 func (p sourceParameter) keepsLastValue() bool {
-	return p == failureUsesLastValue
+	return p == parameterOptionalUseLastValue
 }
 
 // toleratesFailure reports whether a failed read can be ignored given these parameters.
@@ -71,22 +63,22 @@ func (ps sourceParameters) keepsLastValue() bool {
 }
 
 // parseSource splits one Config.LoadPath entry into a path and source parameters.
-// An entry can end with semicolon-separated options, for example:
+// An entry can end with semicolon-separated parameters, for example:
 //
 //	/etc/overrides.yaml
 //	http://config-server/overrides;optional-on-startup
 //	http://config-server/overrides;optional-use-last-value
 //
-// Known options are peeled from the right, so several can be appended as
-// ;option1;option2. Only these exact suffixes are options. Anything else after
+// Known parameters are peeled from the right, so several can be appended as
+// ;parameter1;parameter2. Only these exact suffixes are parameters. Anything else after
 // a ";" belongs to the path, so a URL parameter such as ;jsessionid=ABC or ;v2
-// is left alone. The two options above contradict each other, so naming both
+// is left alone. The two parameters above contradict each other, so naming both
 // is an error.
 func parseSource(entry string) (source, error) {
 	path := entry
 	var parameters sourceParameters
 	for {
-		rest, parameter, ok := cutOption(path)
+		rest, parameter, ok := cutParameter(path)
 		if !ok {
 			break
 		}
@@ -104,31 +96,24 @@ func parseSource(entry string) (source, error) {
 	return source{path: path, parameters: parameters}, nil
 }
 
-// checkParameters reports options that cannot be combined on one source.
+// checkParameters reports parameters that cannot be combined on one source.
 func checkParameters(entry string, parameters sourceParameters) error {
-	var failureOptions int
-	for _, p := range parameters {
-		switch p {
-		case failureToleratedOnStartup, failureUsesLastValue:
-			failureOptions++
-		}
-	}
-	if failureOptions > 1 {
+	if len(parameters) > 1 {
 		return fmt.Errorf(
-			"runtime config source %q has more than one option, specify only one of %q and %q",
-			entry, optionOptionalOnStartup, optionOptionalUseLastValue,
+			"runtime config source %q has more than one parameter, specify only one of %q and %q",
+			entry, parameterOptionalOnStartup, parameterOptionalUseLastValue,
 		)
 	}
 	return nil
 }
 
-// cutOption removes a trailing option from entry and reports the parameter it names.
-func cutOption(entry string) (path string, parameter sourceParameter, ok bool) {
-	if path, ok := strings.CutSuffix(entry, ";"+optionOptionalOnStartup); ok {
-		return path, failureToleratedOnStartup, true
+// cutParameter removes a trailing parameter from entry and reports which it names.
+func cutParameter(entry string) (path string, parameter sourceParameter, ok bool) {
+	for _, p := range knownParameters {
+		s := ";" + string(p)
+		if strings.HasSuffix(entry, s) {
+			return entry[:len(entry)-len(s)], p, true
+		}
 	}
-	if path, ok := strings.CutSuffix(entry, ";"+optionOptionalUseLastValue); ok {
-		return path, failureUsesLastValue, true
-	}
-	return entry, failureIsFatal, false
+	return entry, "", false
 }

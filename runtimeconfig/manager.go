@@ -79,9 +79,9 @@ func (mc *Config) RegisterFlags(f *flag.FlagSet) {
 // behaves, and the state loadConfig keeps for it.
 //
 // path and parameters are set by parseConfigSource. provider is set in New.
-// loadConfig updates lastGood, lastDigest, and contributedOnLastLoad; they
-// need no synchronization because only loadConfig touches them, and only in
-// the Starting and Running states.
+// loadConfig updates lastGood and lastDigest; they need no synchronization
+// because only loadConfig touches them, and only in the Starting and Running
+// states.
 type configSource struct {
 	path       string
 	provider   provider
@@ -91,21 +91,10 @@ type configSource struct {
 	// last value, to not waste memory.
 	lastGood []byte
 
-	// Digest of the bytes this source last contributed to the applied merge.
+	// Digest of the bytes this source contributed to the last applied merge,
+	// zero when it contributed nothing. A digest of real bytes is never zero,
+	// so the zero value also covers a source that has never contributed.
 	lastDigest [sha256.Size]byte
-
-	// Whether this source contributed to the last applied merge. The zero
-	// value means it has not, including before the first successful load.
-	contributedOnLastLoad bool
-}
-
-// unchangedSinceLastLoad reports whether this source's participation in the
-// merge matches the last applied load.
-func (cs configSource) unchangedSinceLastLoad(contributes bool, digest [sha256.Size]byte) bool {
-	if cs.contributedOnLastLoad != contributes {
-		return false
-	}
-	return !contributes || cs.lastDigest == digest
 }
 
 // Manager periodically reloads the configuration from specified files, and keeps this
@@ -322,13 +311,13 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	}
 
 	// Skip the rebuild when nothing changed, but never on the initial load:
-	// contributedOnLastLoad is false for every source then, which would look
-	// equal to a load where nothing contributes, and GetConfig must be the
-	// Loader's result rather than nil.
+	// lastDigest is zero for every source then, which would look equal to a
+	// load where nothing contributes, and GetConfig must be the Loader's
+	// result rather than nil.
 	if !initial {
 		unchanged := true
 		for i, cs := range om.configSources {
-			if !cs.unchangedSinceLastLoad(sourcesToLoad[i].contributes, sourcesToLoad[i].digest) {
+			if cs.lastDigest != sourcesToLoad[i].digest {
 				unchanged = false
 				break
 			}
@@ -400,10 +389,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// body that failed to unmarshal cannot poison the replay.
 	for i := range om.configSources {
 		s := sourcesToLoad[i]
-		om.configSources[i].contributedOnLastLoad = s.contributes
-		if s.contributes {
-			om.configSources[i].lastDigest = s.digest
-		}
+		om.configSources[i].lastDigest = s.digest
 		if s.readOK && om.configSources[i].parameters.keepsLastValue() {
 			om.configSources[i].lastGood = bytes.Clone(s.rawData)
 		}

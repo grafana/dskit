@@ -2,6 +2,7 @@ package runtimeconfig
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,10 +40,10 @@ func BenchmarkManagerLoadConfig(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		// Reset last-load contribution so every iteration performs a full
+		// Reset the last applied digests so every iteration performs a full
 		// reload instead of short-circuiting on unchanged hashes.
 		for i := range m.configSources {
-			m.configSources[i].contributedOnLastLoad = false
+			m.configSources[i].lastDigest = [sha256.Size]byte{}
 		}
 		require.NoError(b, m.loadConfig(ctx, false))
 	}

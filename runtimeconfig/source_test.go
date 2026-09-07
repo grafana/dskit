@@ -9,96 +9,98 @@ import (
 
 func TestParseSource(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		entry         string
-		wantPath      string
-		wantParameter sourceParameter
-		wantErr       string
+		name           string
+		entry          string
+		wantPath       string
+		wantParameters sourceParameters
+		wantErr        string
 	}{
 		{
-			name:          "plain file",
-			entry:         "/etc/overrides.yaml",
-			wantPath:      "/etc/overrides.yaml",
-			wantParameter: failureIsFatal,
+			name:     "plain file",
+			entry:    "/etc/overrides.yaml",
+			wantPath: "/etc/overrides.yaml",
 		},
 		{
-			name:          "plain URL",
-			entry:         "http://config-server/overrides",
-			wantPath:      "http://config-server/overrides",
-			wantParameter: failureIsFatal,
+			name:     "plain URL",
+			entry:    "http://config-server/overrides",
+			wantPath: "http://config-server/overrides",
 		},
 		{
-			name:          "optional on startup",
-			entry:         "http://config-server/overrides;optional-on-startup",
-			wantPath:      "http://config-server/overrides",
-			wantParameter: failureToleratedOnStartup,
+			name:           "optional on startup",
+			entry:          "http://config-server/overrides;optional-on-startup",
+			wantPath:       "http://config-server/overrides",
+			wantParameters: sourceParameters{failureToleratedOnStartup},
 		},
 		{
-			name:          "optional use last value",
-			entry:         "/etc/overrides.yaml;optional-use-last-value",
-			wantPath:      "/etc/overrides.yaml",
-			wantParameter: failureUsesLastValue,
+			name:           "optional use last value",
+			entry:          "/etc/overrides.yaml;optional-use-last-value",
+			wantPath:       "/etc/overrides.yaml",
+			wantParameters: sourceParameters{failureUsesLastValue},
 		},
 		{
-			name:          "IPv6 URL keeps its brackets",
-			entry:         "http://[::1]:8080/overrides",
-			wantPath:      "http://[::1]:8080/overrides",
-			wantParameter: failureIsFatal,
+			name:     "IPv6 URL keeps its brackets",
+			entry:    "http://[::1]:8080/overrides",
+			wantPath: "http://[::1]:8080/overrides",
 		},
 		{
-			name:          "IPv6 URL with an option",
-			entry:         "http://[::1]:8080/overrides;optional-on-startup",
-			wantPath:      "http://[::1]:8080/overrides",
-			wantParameter: failureToleratedOnStartup,
+			name:           "IPv6 URL with an option",
+			entry:          "http://[::1]:8080/overrides;optional-on-startup",
+			wantPath:       "http://[::1]:8080/overrides",
+			wantParameters: sourceParameters{failureToleratedOnStartup},
 		},
 		{
 			// A semicolon in the path that is not a known option stays part of the URL,
 			// matching JDBC-style path parameters.
-			name:          "URL path parameter is not an option",
-			entry:         "http://config-server/overrides.yaml;jsessionid=ABC",
-			wantPath:      "http://config-server/overrides.yaml;jsessionid=ABC",
-			wantParameter: failureIsFatal,
+			name:     "URL path parameter is not an option",
+			entry:    "http://config-server/overrides.yaml;jsessionid=ABC",
+			wantPath: "http://config-server/overrides.yaml;jsessionid=ABC",
 		},
 		{
-			name:          "URL path parameter then a known option",
-			entry:         "http://config-server/overrides.yaml;jsessionid=ABC;optional-use-last-value",
-			wantPath:      "http://config-server/overrides.yaml;jsessionid=ABC",
-			wantParameter: failureUsesLastValue,
+			name:           "URL path parameter then a known option",
+			entry:          "http://config-server/overrides.yaml;jsessionid=ABC;optional-use-last-value",
+			wantPath:       "http://config-server/overrides.yaml;jsessionid=ABC",
+			wantParameters: sourceParameters{failureUsesLastValue},
 		},
 		{
 			// Only the exact option suffixes are options, so a misspelling is a path and
 			// fails later when the source is read.
-			name:          "misspelled option stays part of the path",
-			entry:         "/etc/overrides.yaml;optional",
-			wantPath:      "/etc/overrides.yaml;optional",
-			wantParameter: failureIsFatal,
+			name:     "misspelled option stays part of the path",
+			entry:    "/etc/overrides.yaml;optional",
+			wantPath: "/etc/overrides.yaml;optional",
 		},
 		{
-			name:          "short path parameter stays part of the path",
-			entry:         "http://config-server/overrides;v2",
-			wantPath:      "http://config-server/overrides;v2",
-			wantParameter: failureIsFatal,
+			name:     "short path parameter stays part of the path",
+			entry:    "http://config-server/overrides;v2",
+			wantPath: "http://config-server/overrides;v2",
 		},
 		{
-			name:          "non-ASCII path parameter stays part of the path",
-			entry:         "/etc/overrides.yaml;café",
-			wantPath:      "/etc/overrides.yaml;café",
-			wantParameter: failureIsFatal,
+			name:     "non-ASCII path parameter stays part of the path",
+			entry:    "/etc/overrides.yaml;café",
+			wantPath: "/etc/overrides.yaml;café",
 		},
 		{
-			name:          "trailing semicolon stays part of the path",
-			entry:         "/etc/overrides.yaml;",
-			wantPath:      "/etc/overrides.yaml;",
-			wantParameter: failureIsFatal,
+			name:     "trailing semicolon stays part of the path",
+			entry:    "/etc/overrides.yaml;",
+			wantPath: "/etc/overrides.yaml;",
 		},
 		{
-			name:    "two options",
+			name:    "conflicting options",
 			entry:   "/etc/overrides.yaml;optional-on-startup;optional-use-last-value",
+			wantErr: `more than one option`,
+		},
+		{
+			name:    "conflicting options in reverse order",
+			entry:   "/etc/overrides.yaml;optional-use-last-value;optional-on-startup",
 			wantErr: `more than one option`,
 		},
 		{
 			name:    "option without a path",
 			entry:   ";optional-on-startup",
+			wantErr: `has no path`,
+		},
+		{
+			name:    "two options without a path",
+			entry:   ";optional-on-startup;optional-use-last-value",
 			wantErr: `has no path`,
 		},
 	} {
@@ -111,7 +113,7 @@ func TestParseSource(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantPath, src.path)
-			assert.Equal(t, tc.wantParameter, src.parameter)
+			assert.Equal(t, tc.wantParameters, src.parameters)
 		})
 	}
 }
@@ -127,8 +129,20 @@ func TestSourceTolerates(t *testing.T) {
 		{parameter: failureToleratedOnStartup, onStartup: true, afterStartup: false, keepsLastValue: false},
 		{parameter: failureUsesLastValue, onStartup: true, afterStartup: true, keepsLastValue: true},
 	} {
-		assert.Equal(t, tc.onStartup, tc.parameter.tolerates(true), "parameter %d on startup", tc.parameter)
-		assert.Equal(t, tc.afterStartup, tc.parameter.tolerates(false), "parameter %d after startup", tc.parameter)
+		assert.Equal(t, tc.onStartup, tc.parameter.toleratesFailure(true), "parameter %d on startup", tc.parameter)
+		assert.Equal(t, tc.afterStartup, tc.parameter.toleratesFailure(false), "parameter %d after startup", tc.parameter)
 		assert.Equal(t, tc.keepsLastValue, tc.parameter.keepsLastValue(), "parameter %d keeps last value", tc.parameter)
+
+		ps := sourceParameters{tc.parameter}
+		assert.Equal(t, tc.onStartup, ps.toleratesFailure(true), "parameters %v on startup", ps)
+		assert.Equal(t, tc.afterStartup, ps.toleratesFailure(false), "parameters %v after startup", ps)
+		assert.Equal(t, tc.keepsLastValue, ps.keepsLastValue(), "parameters %v keeps last value", ps)
 	}
+}
+
+func TestSourceParametersEmpty(t *testing.T) {
+	var none sourceParameters
+	assert.False(t, none.toleratesFailure(true))
+	assert.False(t, none.toleratesFailure(false))
+	assert.False(t, none.keepsLastValue())
 }

@@ -69,7 +69,7 @@ type Config struct {
 // RegisterFlagsWithPrefix registers flags under the specified prefix, which could be empty.
 // If a non-empty prefix is provided, it's expected to end with a dot.
 func (mc *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.Var(&mc.LoadPath, prefix+"file", "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with a semicolon and an option that says what happens when it cannot be read: \";optional-on-startup\" lets the process start without it, but a later failure still fails the reload; \";optional-use-last-value\" also lets the process start without it, and a later failure keeps the value the source supplied last. Without an option, a source that cannot be read fails the load. Quote the value in a shell, because \";\" starts a new command.")
+	f.Var(&mc.LoadPath, prefix+"file", "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with semicolon-separated options that say what happens when it cannot be read: \";optional-on-startup\" lets the process start without it, but a later failure still fails the reload; \";optional-use-last-value\" also lets the process start without it, and a later failure keeps the value the source supplied last. Without an option, a source that cannot be read fails the load. Quote the value in a shell, because \";\" starts a new command.")
 	f.DurationVar(&mc.ReloadPeriod, prefix+"reload-period", 10*time.Second, "How often to check runtime config files.")
 	f.DurationVar(&mc.HTTPClientTimeout, prefix+"http-client-timeout", 30*time.Second, "HTTP client timeout when fetching runtime config from URLs.")
 	f.BoolVar(&mc.HTTPClientDisableKeepAlives, prefix+"http-client-disable-keep-alives", true, "Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service.")
@@ -103,14 +103,14 @@ type Manager struct {
 	fileHashes []providerHash
 
 	// Bytes last applied from each optional-use-last-value provider, in LoadPath order.
-	// Entries stay nil for every other parameter, to not waste memory when not needed.
+	// Entries stay nil for providers that do not keep a last value, to not waste memory.
 	// Like fileHashes, only loadConfig touches it, so it needs no synchronization.
 	lastGoodData [][]byte
 
 	providers []provider
 
-	// Parameter of each provider, in LoadPath order.
-	parameters []sourceParameter
+	// Parameters of each provider, in LoadPath order. A provider can have several.
+	parameters []sourceParameters
 }
 
 // New creates an instance of Manager. Manager is a services.Service, and must be explicitly started to perform any work.
@@ -175,7 +175,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		}
 
 		mgr.providers = append(mgr.providers, p)
-		mgr.parameters = append(mgr.parameters, src.parameter)
+		mgr.parameters = append(mgr.parameters, src.parameters)
 		// Create the series up front, at 0: nothing has been read yet.
 		mgr.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
 	}
@@ -264,7 +264,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	hashes := make([]providerHash, 0, len(om.providers))
 
 	for i, p := range om.providers {
-		parameter := om.parameters[i]
+		parameters := om.parameters[i]
 
 		buf, err := p.Read(ctx)
 		if err == nil && om.cfg.Preprocessor != nil {
@@ -279,14 +279,14 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		if err != nil {
 			om.sourceLoadSuccess.WithLabelValues(p.Name()).Set(0)
 
-			if !parameter.tolerates(initial) {
+			if !parameters.toleratesFailure(initial) {
 				om.configLoadSuccess.Set(0)
 				return err
 			}
 
 			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", p.Name(), "err", err)
 
-			if parameter.keepsLastValue() && om.lastGoodData[i] != nil {
+			if parameters.keepsLastValue() && om.lastGoodData[i] != nil {
 				rawData[i] = om.lastGoodData[i]
 				contributes[i] = true
 				hashes = append(hashes, providerHash{

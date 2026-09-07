@@ -423,15 +423,18 @@ func TestCombinedFilesHash(t *testing.T) {
 	digest := func(contents string) [sha256.Size]byte {
 		return sha256.Sum256([]byte(contents))
 	}
-	base := []providerHash{
-		{name: "file-a", digest: digest("contents-a")},
-		{name: "file-b", digest: digest("contents-b")},
-		{name: "file-c", digest: digest("contents-c")},
+	load := func(name, contents string) sourceToLoad {
+		return sourceToLoad{name: name, contributes: true, digest: digest(contents)}
+	}
+	base := []sourceToLoad{
+		load("file-a", "contents-a"),
+		load("file-b", "contents-b"),
+		load("file-c", "contents-c"),
 	}
 
 	require.Equal(t, combinedFilesHash(base), combinedFilesHash(slices.Clone(base)))
 
-	reversed := []providerHash{base[2], base[1], base[0]}
+	reversed := []sourceToLoad{base[2], base[1], base[0]}
 	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(reversed))
 
 	changedContent := slices.Clone(base)
@@ -442,18 +445,23 @@ func TestCombinedFilesHash(t *testing.T) {
 	changedName[2].name = "file-d"
 	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedName))
 
-	duplicates := []providerHash{
-		{name: "file-a", digest: digest("contents-a")},
-		{name: "file-a", digest: digest("contents-b")},
+	duplicates := []sourceToLoad{
+		load("file-a", "contents-a"),
+		load("file-a", "contents-b"),
 	}
-	require.NotEqual(t, combinedFilesHash(duplicates), combinedFilesHash([]providerHash{duplicates[1], duplicates[0]}))
+	require.NotEqual(t, combinedFilesHash(duplicates), combinedFilesHash([]sourceToLoad{duplicates[1], duplicates[0]}))
+
+	skipped := slices.Clone(base)
+	skipped[1].contributes = false
+	require.Equal(t, combinedFilesHash([]sourceToLoad{base[0], base[2]}), combinedFilesHash(skipped))
 
 	t.Run("length prefix disambiguates provider sequences", func(t *testing.T) {
 		separateProviders := base[:2]
-		combinedProvider := []providerHash{{
+		combinedProvider := []sourceToLoad{{
 			// Without the name-length prefix, these sequences produce the same hash input.
-			name:   base[0].name + string(base[0].digest[:]) + base[1].name,
-			digest: base[1].digest,
+			name:        base[0].name + string(base[0].digest[:]) + base[1].name,
+			contributes: true,
+			digest:      base[1].digest,
 		}}
 
 		require.NotEqual(t, combinedFilesHash(separateProviders), combinedFilesHash(combinedProvider))

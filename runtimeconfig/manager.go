@@ -39,11 +39,6 @@ type Loader func(r io.Reader) (interface{}, error)
 // See [github.com/grafana/dskit/runtimeconfig/mapstructure.Decode] for a proposed implementation.
 type MapLoader func(m map[string]interface{}) (interface{}, error)
 
-type providerHash struct {
-	name   string
-	digest [sha256.Size]byte
-}
-
 // Config holds the config for an Manager instance.
 // It holds config related to loading per-tenant config.
 type Config struct {
@@ -265,72 +260,65 @@ func (om *Manager) loop(ctx context.Context) error {
 	}
 }
 
+// sourceToLoad is the result of reading one config source during a load attempt.
+type sourceToLoad struct {
+	name    string
+	rawData []byte
+	// contributes says whether rawData takes part in the merge. A tolerated
+	// failure contributes nothing until the source has been read once.
+	contributes bool
+	// readOK is true for sources read fresh this attempt, as opposed to
+	// replaying their last value. Only used to decide what to retain.
+	readOK bool
+	digest [sha256.Size]byte
+}
+
 // loadConfig loads all configuration files using the loader function then merges the yaml configuration files into one yaml document.
 // and notifies listeners if successful.
 //
 // initial must be true for the load performed while the Manager starts: some sources tolerate a
 // failure only then.
 func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
-	n := len(om.configSources)
-	bySource := make([]struct {
-		rawData []byte
-		// contributes says whether rawData takes part in the merge. A tolerated
-		// failure contributes nothing until the source has been read once.
-		contributes bool
-		// readOK is true for sources read fresh this attempt, as opposed to
-		// replaying their last value. Only used to decide what to retain.
-		readOK bool
-		digest [sha256.Size]byte
-	}, n)
-	// Only contributing config sources are hashed, so a source joining or leaving triggers a rebuild.
-	hashes := make([]providerHash, 0, n)
+	sourcesToLoad := make([]sourceToLoad, len(om.configSources))
 
 	for i := range om.configSources {
 		cs := &om.configSources[i]
-		s := &bySource[i]
-		name := cs.provider.Name()
+		s := &sourcesToLoad[i]
+		s.name = cs.provider.Name()
 
 		buf, err := cs.provider.Read(ctx)
 		if err == nil && om.cfg.Preprocessor != nil {
 			buf, err = om.cfg.Preprocessor(buf)
 			if err != nil {
-				err = errors.Wrapf(err, "preprocess %q", name)
+				err = errors.Wrapf(err, "preprocess %q", s.name)
 			}
 		} else if err != nil {
-			err = errors.Wrapf(err, "read %q", name)
+			err = errors.Wrapf(err, "read %q", s.name)
 		}
 
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(name).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(s.name).Set(0)
 
 			if !cs.parameters.toleratesFailure(initial) {
 				om.configLoadSuccess.Set(0)
 				return err
 			}
 
-			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", name, "err", err)
+			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", s.name, "err", err)
 
 			if cs.parameters.keepsLastValue() && cs.lastGood != nil {
 				s.rawData = cs.lastGood
 				s.contributes = true
 				s.digest = sha256.Sum256(s.rawData)
-				hashes = append(hashes, providerHash{
-					name:   name,
-					digest: s.digest,
-				})
 			}
 			continue
 		}
 
-		om.sourceLoadSuccess.WithLabelValues(name).Set(1)
+		om.sourceLoadSuccess.WithLabelValues(s.name).Set(1)
 		s.readOK = true
 		s.rawData = buf
 		s.contributes = true
 		s.digest = sha256.Sum256(buf)
-		hashes = append(hashes, providerHash{
-			name:   name,
-			digest: s.digest,
-		})
 	}
 
 	// Skip the rebuild when nothing changed, but never on the initial load:
@@ -340,7 +328,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	if !initial {
 		unchanged := true
 		for i, cs := range om.configSources {
-			if !cs.unchangedSinceLastLoad(bySource[i].contributes, bySource[i].digest) {
+			if !cs.unchangedSinceLastLoad(sourcesToLoad[i].contributes, sourcesToLoad[i].digest) {
 				unchanged = false
 				break
 			}
@@ -353,23 +341,22 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 
 	mergedConfig := map[string]interface{}{}
 	for i := range om.configSources {
-		s := bySource[i]
+		s := sourcesToLoad[i]
 		if !s.contributes {
 			continue
 		}
 
-		name := om.configSources[i].provider.Name()
-		yamlFile, err := om.unmarshalMaybeGzipped(name, s.rawData)
+		yamlFile, err := om.unmarshalMaybeGzipped(s.name, s.rawData)
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(name).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(s.name).Set(0)
 			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "unmarshal %q", name)
+			return errors.Wrapf(err, "unmarshal %q", s.name)
 		}
 		mergedConfig, err = mergeConfigMaps(mergedConfig, yamlFile, "")
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(name).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(s.name).Set(0)
 			om.configLoadSuccess.Set(0)
-			return errors.Wrapf(err, "can't merge %q on top of the previous providers", name)
+			return errors.Wrapf(err, "can't merge %q on top of the previous providers", s.name)
 		}
 	}
 
@@ -379,7 +366,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		err  error
 	)
 	if om.cfg.MapLoader != nil {
-		hash = combinedFilesHash(hashes)
+		hash = combinedFilesHash(sourcesToLoad)
 		cfg, err = om.cfg.MapLoader(mergedConfig)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
@@ -412,7 +399,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	// replay their last value keep bytes, and only bytes this load applied, so a
 	// body that failed to unmarshal cannot poison the replay.
 	for i := range om.configSources {
-		s := bySource[i]
+		s := sourcesToLoad[i]
 		om.configSources[i].contributedOnLastLoad = s.contributes
 		if s.contributes {
 			om.configSources[i].lastDigest = s.digest
@@ -424,14 +411,17 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	return nil
 }
 
-func combinedFilesHash(hashes []providerHash) [sha256.Size]byte {
+func combinedFilesHash(sourcesToLoad []sourceToLoad) [sha256.Size]byte {
 	h := sha256.New()
 	var nameLength [8]byte
-	for _, providerHash := range hashes {
-		binary.BigEndian.PutUint64(nameLength[:], uint64(len(providerHash.name)))
+	for _, s := range sourcesToLoad {
+		if !s.contributes {
+			continue
+		}
+		binary.BigEndian.PutUint64(nameLength[:], uint64(len(s.name)))
 		_, _ = h.Write(nameLength[:])
-		_, _ = io.WriteString(h, providerHash.name)
-		_, _ = h.Write(providerHash.digest[:])
+		_, _ = io.WriteString(h, s.name)
+		_, _ = h.Write(s.digest[:])
 	}
 	var out [sha256.Size]byte
 	copy(out[:], h.Sum(nil))

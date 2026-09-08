@@ -1240,7 +1240,7 @@ func TestHTTPClient_DisableKeepAlives(t *testing.T) {
 
 			cfg := Config{HTTPClientDisableKeepAlives: tc.disableKeepAlives}
 			client := &http.Client{Transport: httpTransport(cfg, "test", prometheus.NewRegistry(), log.NewNopLogger())}
-			p := newHTTPProvider(srv.URL+"/config.yaml", client, newHTTPRequestDuration(prometheus.NewRegistry()))
+			p := newHTTPProvider(srv.URL+"/config.yaml", srv.URL+"/config.yaml", client, newHTTPRequestDuration(prometheus.NewRegistry()))
 
 			const fetches = 5
 			for i := 0; i < fetches; i++ {
@@ -1541,8 +1541,9 @@ func TestManager_LastValueKeptOnlyForReplayingSources(t *testing.T) {
 	assert.Equal(t, "from_server: 42\n", string(manager.configSources[2].lastValue))
 }
 
-// The "source" label is the LoadPath entry verbatim, so two URLs that differ only in their
-// query string stay separate series and a healthy source cannot mask a failing one.
+// The query string never reaches the "source" label, so two URLs that differ only there
+// share a name. They must still be separate series, or a healthy source masks a failing
+// one, so the index of the LoadPath entry tells them apart.
 func TestManager_SourceMetricIsPerSource(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("tenant") == "b" {
@@ -1572,7 +1573,61 @@ func TestManager_SourceMetricIsPerSource(t *testing.T) {
 		# TYPE runtime_config_source_last_reload_successful gauge
 		runtime_config_source_last_reload_successful{config="overrides",source="%s"} 1
 		runtime_config_source_last_reload_successful{config="overrides",source="%s"} 0
-	`, healthy, broken)), "runtime_config_source_last_reload_successful"))
+	`, srv.URL+"/config#0", srv.URL+"/config#1")), "runtime_config_source_last_reload_successful"))
+}
+
+// Credentials in a URL must not reach /metrics, on either the per-source gauge or the
+// request-duration histogram, and both must report the source the same way so that one
+// can be read against the other.
+func TestManager_SourceMetricOmitsURLCredentials(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("from_server: 42\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	withCredentials := strings.Replace(srv.URL, "http://", "http://user:s3cret@", 1) + "/config?token=s3cret#s3cret"
+
+	reg := prometheus.NewPedanticRegistry()
+	manager, err := New(Config{
+		ReloadPeriod: 100 * time.Millisecond,
+		LoadPath:     []string{withCredentials},
+		Loader:       twoKeysLoader,
+	}, "overrides", reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP runtime_config_source_last_reload_successful Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.
+		# TYPE runtime_config_source_last_reload_successful gauge
+		runtime_config_source_last_reload_successful{config="overrides",source="%s"} 1
+	`, srv.URL+"/config")), "runtime_config_source_last_reload_successful"))
+
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+	for _, mf := range metricFamilies {
+		for _, m := range mf.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				assert.NotContains(t, lp.GetValue(), "s3cret", "metric %s label %s", mf.GetName(), lp.GetName())
+			}
+		}
+	}
+
+	var found bool
+	for _, mf := range metricFamilies {
+		if mf.GetName() != "runtime_config_http_request_duration_seconds" {
+			continue
+		}
+		require.NotEmpty(t, mf.GetMetric())
+		for _, lp := range mf.GetMetric()[0].GetLabel() {
+			if lp.GetName() == "url" {
+				found = true
+				assert.Equal(t, srv.URL+"/config", lp.GetValue())
+			}
+		}
+	}
+	assert.True(t, found, "expected a url label on runtime_config_http_request_duration_seconds")
 }
 
 // Each source records its own outcome as soon as its read completes. A later source failing
@@ -1613,27 +1668,38 @@ func TestManager_SourceMetricIsNotStaleWhenALaterSourceFails(t *testing.T) {
 // and call New again on the same registry without a duplicate-registration panic.
 func TestManager_InvalidSourceRegistersNothing(t *testing.T) {
 	file := newTestConfigFile(t, "from_file: 1\n")
-	reg := prometheus.NewPedanticRegistry()
 
-	_, err := New(Config{
-		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{file, file + ";optional-on-startup;optional-keep-last-value-on-failure"},
-		Loader:       twoKeysLoader,
-	}, "overrides", reg, log.NewNopLogger())
-	require.Error(t, err)
+	for _, tc := range []struct {
+		name  string
+		entry string
+	}{
+		{name: "conflicting parameters", entry: file + ";optional-on-startup;optional-keep-last-value-on-failure"},
+		{name: "URL that cannot be parsed", entry: "http://config-server:not-a-port/overrides"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
 
-	families, err := reg.Gather()
-	require.NoError(t, err)
-	assert.Empty(t, families, "a failed New must not leave metrics behind")
+			_, err := New(Config{
+				ReloadPeriod: 100 * time.Millisecond,
+				LoadPath:     []string{file, tc.entry},
+				Loader:       twoKeysLoader,
+			}, "overrides", reg, log.NewNopLogger())
+			require.Error(t, err)
 
-	manager, err := New(Config{
-		ReloadPeriod: 100 * time.Millisecond,
-		LoadPath:     []string{file},
-		Loader:       twoKeysLoader,
-	}, "overrides", reg, log.NewNopLogger())
-	require.NoError(t, err)
+			families, err := reg.Gather()
+			require.NoError(t, err)
+			assert.Empty(t, families, "a failed New must not leave metrics behind")
 
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
-	require.Equal(t, twoKeys{FromFile: 1}, manager.GetConfig())
+			manager, err := New(Config{
+				ReloadPeriod: 100 * time.Millisecond,
+				LoadPath:     []string{file},
+				Loader:       twoKeysLoader,
+			}, "overrides", reg, log.NewNopLogger())
+			require.NoError(t, err)
+
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+			require.Equal(t, twoKeys{FromFile: 1}, manager.GetConfig())
+		})
+	}
 }

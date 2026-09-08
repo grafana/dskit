@@ -90,6 +90,53 @@ func parseConfigSource(entry string) (configSource, error) {
 	return configSource{path: path, parameters: parameters}, nil
 }
 
+// assignSourceIDs sets how every source identifies itself in metrics. A file is
+// identified by its path, and a URL by the same without the userinfo, query, and
+// fragment that can carry credentials.
+//
+// Two entries can come out of that identical, whether because they are the same file
+// twice or because only a dropped part of a URL told them apart, and sources sharing a
+// series overwrite each other's status. So an ID that repeats gets the index of its
+// LoadPath entry appended, which is why this needs every source rather than one.
+func assignSourceIDs(sources []configSource) error {
+	occurrences := make(map[string]int, len(sources))
+	for i := range sources {
+		id := sources[i].path
+		if isURL(id) {
+			sanitized, err := sanitizeURLForMetrics(id)
+			if err != nil {
+				return err
+			}
+			id = sanitized
+		}
+		sources[i].sourceID = id
+		occurrences[id]++
+	}
+
+	// A sanitized URL cannot contain "#", because String escapes it in a path and the
+	// fragment is gone, so an appended suffix always tells two URLs apart. A file path
+	// can contain one, so in theory it can already hold the suffix another entry is
+	// about to be given. It takes a config as unlikely as
+	// "/etc/o.yaml,/etc/o.yaml,/etc/o.yaml#0", where the first two are given
+	// "/etc/o.yaml#0" and "/etc/o.yaml#1" while the third repeats nothing and so keeps
+	// its path, which is what the first was just given. Refuse it rather than let the
+	// two share a series, which is what the suffix is here to prevent.
+	taken := make(map[string]int, len(sources))
+	for i := range sources {
+		if occurrences[sources[i].sourceID] > 1 {
+			sources[i].sourceID = fmt.Sprintf("%s#%d", sources[i].sourceID, i)
+		}
+		if j, duplicate := taken[sources[i].sourceID]; duplicate {
+			return fmt.Errorf(
+				"runtime config sources %q and %q both report as %q in metrics, rename one of them",
+				sources[j].path, sources[i].path, sources[i].sourceID,
+			)
+		}
+		taken[sources[i].sourceID] = i
+	}
+	return nil
+}
+
 // checkParameters reports parameters that cannot be combined on one source.
 func checkParameters(entry string, parameters sourceParameters) error {
 	if len(parameters) > 1 {

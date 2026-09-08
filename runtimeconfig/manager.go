@@ -78,14 +78,18 @@ func (mc *Config) RegisterFlags(f *flag.FlagSet) {
 // configSource is one LoadPath entry: where to read from, how that source
 // behaves, and the state loadConfig keeps for it.
 //
-// path and parameters are set by parseConfigSource. provider is set in New.
-// loadConfig updates lastValue and lastDigest; they need no synchronization
-// because only loadConfig touches them, and only in the Starting and Running
-// states.
+// path and parameters are set by parseConfigSource, sourceID by assignSourceIDs, and
+// provider in New. loadConfig updates lastValue and lastDigest; they need no
+// synchronization because only loadConfig touches them, and only in the Starting and
+// Running states.
 type configSource struct {
 	path       string
 	provider   provider
 	parameters sourceParameters
+
+	// How this source identifies itself in metrics, as the value of the "source"
+	// label and of the histogram's "url" label.
+	sourceID string
 
 	// Bytes last applied from this source. Stays nil unless the source keeps its
 	// last value on failure, to not waste memory.
@@ -132,6 +136,9 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		}
 		configSources = append(configSources, cs)
 	}
+	if err := assignSourceIDs(configSources); err != nil {
+		return nil, err
+	}
 
 	// The cluster-validation counter shares its name with similarly-named counters from other
 	// client-side cluster-validation reporters in the calling application (e.g. gRPC clients), so
@@ -147,8 +154,8 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 			Name: "runtime_config_last_reload_successful",
 			Help: "Whether the last runtime-config reload attempt was successful.",
 		}),
-		// The "source" label is the provider name, i.e. the LoadPath entry verbatim.
-		// Do not put secrets in a runtime config URL.
+		// The "source" label comes from assignSourceIDs, which drops the userinfo, query,
+		// and fragment of a URL. A secret in the path still reaches /metrics.
 		sourceLoadSuccess: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "runtime_config_source_last_reload_successful",
 			Help: "Whether the last read of each individual runtime-config source was successful. A source whose failure is tolerated can be 0 while runtime_config_last_reload_successful is 1.",
@@ -173,13 +180,13 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 				httpClient = &http.Client{Timeout: timeout, Transport: httpTransport(cfg, configName, clusterValidationRegisterer, logger)}
 				httpDuration = newHTTPRequestDuration(registerer)
 			}
-			cs.provider = newHTTPProvider(cs.path, httpClient, httpDuration)
+			cs.provider = newHTTPProvider(cs.path, cs.sourceID, httpClient, httpDuration)
 		} else {
 			cs.provider = newFileProvider(cs.path)
 		}
 
 		// Create the series up front, at 0: nothing has been read yet.
-		mgr.sourceLoadSuccess.WithLabelValues(cs.provider.Name()).Set(0)
+		mgr.sourceLoadSuccess.WithLabelValues(cs.sourceID).Set(0)
 	}
 	mgr.configSources = configSources
 
@@ -286,7 +293,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		}
 
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(s.name).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(cs.sourceID).Set(0)
 
 			if !cs.parameters.toleratesFailure(initial) {
 				om.configLoadSuccess.Set(0)
@@ -304,7 +311,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 			continue
 		}
 
-		om.sourceLoadSuccess.WithLabelValues(s.name).Set(1)
+		om.sourceLoadSuccess.WithLabelValues(cs.sourceID).Set(1)
 		s.readOK = true
 		s.rawData = buf
 		s.digest = sha256.Sum256(buf)
@@ -330,6 +337,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 
 	mergedConfig := map[string]interface{}{}
 	for i := range om.configSources {
+		cs := &om.configSources[i]
 		s := sourcesToLoad[i]
 		if s.skipInMerge {
 			continue
@@ -337,13 +345,13 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 
 		yamlFile, err := om.unmarshalMaybeGzipped(s.name, s.rawData)
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(s.name).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(cs.sourceID).Set(0)
 			om.configLoadSuccess.Set(0)
 			return errors.Wrapf(err, "unmarshal %q", s.name)
 		}
 		mergedConfig, err = mergeConfigMaps(mergedConfig, yamlFile, "")
 		if err != nil {
-			om.sourceLoadSuccess.WithLabelValues(s.name).Set(0)
+			om.sourceLoadSuccess.WithLabelValues(cs.sourceID).Set(0)
 			om.configLoadSuccess.Set(0)
 			return errors.Wrapf(err, "can't merge %q on top of the previous providers", s.name)
 		}

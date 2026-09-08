@@ -118,6 +118,97 @@ func TestParseConfigSource(t *testing.T) {
 	}
 }
 
+func TestAssignSourceIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		paths   []string
+		wantIDs []string
+		wantErr string
+	}{
+		{
+			name:    "file path is used as it is",
+			paths:   []string{"/etc/overrides.yaml"},
+			wantIDs: []string{"/etc/overrides.yaml"},
+		},
+		{
+			name:    "URL without credentials is used as it is",
+			paths:   []string{"http://config-server:8080/overrides.yaml"},
+			wantIDs: []string{"http://config-server:8080/overrides.yaml"},
+		},
+		{
+			name:    "userinfo is dropped, including the username",
+			paths:   []string{"https://apikey:@config-server/overrides"},
+			wantIDs: []string{"https://config-server/overrides"},
+		},
+		{
+			name:    "query and fragment are dropped",
+			paths:   []string{"http://config-server/overrides?token=secret#secret"},
+			wantIDs: []string{"http://config-server/overrides"},
+		},
+		{
+			name:    "an empty query leaves no trailing question mark",
+			paths:   []string{"http://config-server/overrides?"},
+			wantIDs: []string{"http://config-server/overrides"},
+		},
+		{
+			name:  "sources that differ only in what is dropped are told apart by their index",
+			paths: []string{"http://config-server/overrides?tenant=a", "http://config-server/overrides?tenant=b"},
+			wantIDs: []string{
+				"http://config-server/overrides#0",
+				"http://config-server/overrides#1",
+			},
+		},
+		{
+			// Only the entries that collide are indexed, so the common case stays readable.
+			name:  "an unambiguous source keeps its path",
+			paths: []string{"http://config-server/a?x=1", "http://config-server/a?x=2", "/etc/overrides.yaml"},
+			wantIDs: []string{
+				"http://config-server/a#0",
+				"http://config-server/a#1",
+				"/etc/overrides.yaml",
+			},
+		},
+		{
+			name:    "the same source twice is told apart by its index",
+			paths:   []string{"/etc/overrides.yaml", "/etc/overrides.yaml"},
+			wantIDs: []string{"/etc/overrides.yaml#0", "/etc/overrides.yaml#1"},
+		},
+		{
+			name:    "a URL that cannot be parsed is rejected",
+			paths:   []string{"http://config-server:not-a-port/overrides"},
+			wantErr: "parse runtime config URL",
+		},
+		{
+			// A file path can hold the "#" that the index suffix uses, so the suffix alone
+			// cannot always disambiguate.
+			name:    "paths that collide even once indexed are rejected",
+			paths:   []string{"/etc/o.yaml", "/etc/o.yaml", "/etc/o.yaml#0"},
+			wantErr: `both report as "/etc/o.yaml#0"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sources := make([]configSource, len(tc.paths))
+			for i, p := range tc.paths {
+				sources[i].path = p
+			}
+
+			err := assignSourceIDs(sources)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+
+			ids := make([]string, len(sources))
+			for i := range sources {
+				ids[i] = sources[i].sourceID
+			}
+			assert.Equal(t, tc.wantIDs, ids)
+		})
+	}
+}
+
 func TestSourceTolerates(t *testing.T) {
 	for _, tc := range []struct {
 		parameter               sourceParameter

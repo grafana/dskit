@@ -81,8 +81,20 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 .tools/bin/faillint: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/fatih/faillint@v1.15.0
 
+GOLANGCI_LINT_VERSION := 2.13.2
 .tools/bin/golangci-lint: .tools
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b .tools/bin v2.0.2
+	@set -e; \
+	mkdir -p .tools/bin; \
+	OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+	ARCH=$$(go env GOARCH); \
+	SLUG=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$OS-$$ARCH; \
+	BASE=https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION); \
+	curl -sSfL "$$BASE/$$SLUG.tar.gz" -o ".tools/$$SLUG.tar.gz"; \
+	curl -sSfL "$$BASE/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt" -o ".tools/golangci-lint-checksums.txt"; \
+	grep -E "[[:space:]]+$$SLUG\.tar\.gz$$" ".tools/golangci-lint-checksums.txt" > ".tools/$$SLUG.sha256"; \
+	(cd .tools && sha256sum --check --strict "$$SLUG.sha256"); \
+	tar -xzf ".tools/$$SLUG.tar.gz" -C .tools/bin --strip-components=1 "$$SLUG/golangci-lint"; \
+	rm ".tools/$$SLUG.tar.gz" ".tools/golangci-lint-checksums.txt" ".tools/$$SLUG.sha256"
 
 .tools/bin/protoc: .tools
 ifeq ("$(wildcard .tools/protoc/bin/protoc)","")

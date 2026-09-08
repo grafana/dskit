@@ -36,6 +36,9 @@ const (
 const zeroZeroZeroZero = "0.0.0.0"
 const colonColon = "::"
 
+// getPrivateIP is a variable so that tests can simulate hosts without a private IP address.
+var getPrivateIP = sockaddr.GetPrivateIP
+
 // TCPTransportConfig is a configuration structure for creating new TCPTransport.
 type TCPTransportConfig struct {
 	// BindAddrs is a list of IP addresses to bind to.
@@ -413,12 +416,18 @@ func (t *TCPTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, err
 			// Otherwise, if we're not bound to a specific IP, let's
 			// use a suitable private IP address.
 			var err error
-			ip, err = sockaddr.GetPrivateIP()
+			ip, err = getPrivateIP()
 			if err != nil {
-				return nil, 0, fmt.Errorf("failed to get interface addresses: %v", err)
+				return nil, 0, fmt.Errorf("failed to get interface addresses: %w", err)
 			}
 			if ip == "" {
-				return nil, 0, fmt.Errorf("no private IP address found, and explicit IP not provided")
+				// No RFC 1918 address on this host (e.g. pods on a non-private
+				// cluster CIDR): fall back to the first non-loopback address,
+				// as the IPv6 case already does.
+				ip, err = netutil.GetFirstAddressOf(nil, t.logger, false)
+				if err != nil {
+					return nil, 0, fmt.Errorf("no private IP address found, and explicit IP not provided: %w", err)
+				}
 			}
 
 			advertiseAddr = net.ParseIP(ip)

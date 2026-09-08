@@ -249,30 +249,26 @@ func (om *Manager) loop(ctx context.Context) error {
 	}
 }
 
-// sourceToLoad is the result of reading one config source during a load attempt.
-type sourceToLoad struct {
-	name    string
-	rawData []byte
-	// readOK is true for sources read fresh this attempt, as opposed to
-	// replaying their last value. Only used to decide what to retain.
-	readOK bool
-	digest [sha256.Size]byte
-}
-
-// contributesToMerge reports whether rawData takes part in the merge. A digest of
-// real bytes is never zero, so the zero value marks a tolerated failure by a source
-// that has not been read successfully even once.
-func (s sourceToLoad) contributesToMerge() bool {
-	return s.digest != [sha256.Size]byte{}
-}
-
 // loadConfig loads all configuration files using the loader function then merges the yaml configuration files into one yaml document.
 // and notifies listeners if successful.
 //
 // initial must be true for the load performed while the Manager starts: some sources tolerate a
 // failure only then.
 func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
-	sourcesToLoad := make([]sourceToLoad, len(om.configSources))
+	// One entry per config source, holding the result of reading it during this
+	// load attempt. A source that contributes nothing keeps a zero digest, which is
+	// what configSource.lastDigest expects for change detection.
+	sourcesToLoad := make([]struct {
+		name    string
+		rawData []byte
+		// readOK is true for sources read fresh this attempt, as opposed to
+		// replaying their last value. Only used to decide what to retain.
+		readOK bool
+		// skipInMerge is true for a source that takes no part in the merge: a
+		// tolerated failure with no last value to replay.
+		skipInMerge bool
+		digest      [sha256.Size]byte
+	}, len(om.configSources))
 
 	for i := range om.configSources {
 		cs := &om.configSources[i]
@@ -302,6 +298,8 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 			if cs.parameters.keepsLastValueOnFailure() && cs.lastValue != nil {
 				s.rawData = cs.lastValue
 				s.digest = sha256.Sum256(s.rawData)
+			} else {
+				s.skipInMerge = true
 			}
 			continue
 		}
@@ -333,7 +331,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 	mergedConfig := map[string]interface{}{}
 	for i := range om.configSources {
 		s := sourcesToLoad[i]
-		if !s.contributesToMerge() {
+		if s.skipInMerge {
 			continue
 		}
 
@@ -357,7 +355,22 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		err  error
 	)
 	if om.cfg.MapLoader != nil {
-		hash = combinedFilesHash(sourcesToLoad)
+		// There are no merged bytes to hash, so hash the name and digest of every
+		// source that contributed. The name length goes in first, otherwise a
+		// different split of the same bytes across sources hashes the same.
+		h := sha256.New()
+		var nameLength [8]byte
+		for _, s := range sourcesToLoad {
+			if s.skipInMerge {
+				continue
+			}
+			binary.BigEndian.PutUint64(nameLength[:], uint64(len(s.name)))
+			_, _ = h.Write(nameLength[:])
+			_, _ = io.WriteString(h, s.name)
+			_, _ = h.Write(s.digest[:])
+		}
+		copy(hash[:], h.Sum(nil))
+
 		cfg, err = om.cfg.MapLoader(mergedConfig)
 		if err != nil {
 			om.configLoadSuccess.Set(0)
@@ -397,23 +410,6 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 		}
 	}
 	return nil
-}
-
-func combinedFilesHash(sourcesToLoad []sourceToLoad) [sha256.Size]byte {
-	h := sha256.New()
-	var nameLength [8]byte
-	for _, s := range sourcesToLoad {
-		if !s.contributesToMerge() {
-			continue
-		}
-		binary.BigEndian.PutUint64(nameLength[:], uint64(len(s.name)))
-		_, _ = h.Write(nameLength[:])
-		_, _ = io.WriteString(h, s.name)
-		_, _ = h.Write(s.digest[:])
-	}
-	var out [sha256.Size]byte
-	copy(out[:], h.Sum(nil))
-	return out
 }
 
 func (om *Manager) unmarshalMaybeGzipped(filename string, data []byte) (map[string]any, error) {

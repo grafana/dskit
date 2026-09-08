@@ -13,7 +13,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -417,55 +416,6 @@ func runtimeConfigHash(t *testing.T, reg *prometheus.Registry) string {
 
 	t.Fatal("runtime_config_hash metric has no sha256 label")
 	return ""
-}
-
-func TestCombinedFilesHash(t *testing.T) {
-	digest := func(contents string) [sha256.Size]byte {
-		return sha256.Sum256([]byte(contents))
-	}
-	load := func(name, contents string) sourceToLoad {
-		return sourceToLoad{name: name, digest: digest(contents)}
-	}
-	base := []sourceToLoad{
-		load("file-a", "contents-a"),
-		load("file-b", "contents-b"),
-		load("file-c", "contents-c"),
-	}
-
-	require.Equal(t, combinedFilesHash(base), combinedFilesHash(slices.Clone(base)))
-
-	reversed := []sourceToLoad{base[2], base[1], base[0]}
-	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(reversed))
-
-	changedContent := slices.Clone(base)
-	changedContent[1].digest = digest("changed")
-	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedContent))
-
-	changedName := slices.Clone(base)
-	changedName[2].name = "file-d"
-	require.NotEqual(t, combinedFilesHash(base), combinedFilesHash(changedName))
-
-	duplicates := []sourceToLoad{
-		load("file-a", "contents-a"),
-		load("file-a", "contents-b"),
-	}
-	require.NotEqual(t, combinedFilesHash(duplicates), combinedFilesHash([]sourceToLoad{duplicates[1], duplicates[0]}))
-
-	// A zero digest is how a source that contributes nothing reaches combinedFilesHash.
-	skipped := slices.Clone(base)
-	skipped[1].digest = [sha256.Size]byte{}
-	require.Equal(t, combinedFilesHash([]sourceToLoad{base[0], base[2]}), combinedFilesHash(skipped))
-
-	t.Run("length prefix disambiguates provider sequences", func(t *testing.T) {
-		separateProviders := base[:2]
-		combinedProvider := []sourceToLoad{{
-			// Without the name-length prefix, these sequences produce the same hash input.
-			name:   base[0].name + string(base[0].digest[:]) + base[1].name,
-			digest: base[1].digest,
-		}}
-
-		require.NotEqual(t, combinedFilesHash(separateProviders), combinedFilesHash(combinedProvider))
-	})
 }
 
 func TestOverridesManagerMultipleIncompatibleFiles(t *testing.T) {

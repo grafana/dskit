@@ -300,7 +300,7 @@ func (om *Manager) loadConfig(ctx context.Context, initial bool) error {
 				return err
 			}
 
-			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing without it", "source", s.name, "err", err)
+			level.Warn(om.logger).Log("msg", "failed to load runtime config source, continuing anyway", "source", s.name, "parameters", cs.parameters.String(), "err", err)
 
 			if cs.parameters.keepsLastValueOnFailure() && cs.lastValue != nil {
 				s.rawData = cs.lastValue

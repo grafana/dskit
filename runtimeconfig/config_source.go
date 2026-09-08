@@ -56,6 +56,15 @@ func (ps sourceParameters) keepsLastValueOnFailure() bool {
 	return slices.ContainsFunc(ps, sourceParameter.keepsLastValueOnFailure)
 }
 
+// String returns the parameters in the ";"-separated form a LoadPath entry writes them in.
+func (ps sourceParameters) String() string {
+	parts := make([]string, len(ps))
+	for i, p := range ps {
+		parts[i] = string(p)
+	}
+	return strings.Join(parts, ";")
+}
+
 // parseConfigSource splits one Config.LoadPath entry into a configSource's path
 // and parameters. An entry can end with semicolon-separated parameters, for example:
 //

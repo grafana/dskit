@@ -70,7 +70,11 @@ func NewPartitionRingDesc() *PartitionRingDesc {
 
 // tokens returns a sort list of tokens registered by all partitions.
 func (m *PartitionRingDesc) tokens() Tokens {
-	allTokens := make(Tokens, 0, len(m.Partitions)*optimalTokensPerInstance)
+	count := 0
+	for _, partition := range m.Partitions {
+		count += len(partition.Tokens)
+	}
+	allTokens := make(Tokens, 0, count)
 
 	for _, partition := range m.Partitions {
 		allTokens = append(allTokens, partition.Tokens...)
@@ -83,7 +87,11 @@ func (m *PartitionRingDesc) tokens() Tokens {
 // partitionByToken returns a map where they key is a registered token and the value is ID of the partition
 // that registered that token.
 func (m *PartitionRingDesc) partitionByToken() map[Token]int32 {
-	out := make(map[Token]int32, len(m.Partitions)*optimalTokensPerInstance)
+	count := 0
+	for _, partition := range m.Partitions {
+		count += len(partition.Tokens)
+	}
+	out := make(map[Token]int32, count)
 
 	for partitionID, partition := range m.Partitions {
 		for _, token := range partition.Tokens {

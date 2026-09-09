@@ -36,7 +36,7 @@ func TestIsURL(t *testing.T) {
 func newTestHTTPProvider(t *testing.T, url string, client *http.Client) (*httpProvider, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
 	dur := newHTTPRequestDuration(reg)
-	return newHTTPProvider(url, client, dur), reg
+	return newHTTPProvider(url, url, client, dur), reg
 }
 
 func TestHTTPProvider_Success(t *testing.T) {

@@ -1098,3 +1098,89 @@ func httpTarget(srv *Server, path string) string {
 func httpsTarget(srv *Server, path string) string {
 	return fmt.Sprintf("https://%s%s", srv.HTTPListenAddr().String(), path)
 }
+
+func TestHTTPConnectionTTL(t *testing.T) {
+	// The Connection header is hop-by-hop, so the HTTP client consumes it and surfaces it as
+	// Response.Close rather than exposing it in Response.Header.
+	newTestServer := func(t *testing.T, apply func(*Config)) (*Server, chan string) {
+		prometheus.DefaultRegisterer = prometheus.NewRegistry()
+
+		var cfg Config
+		cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+		apply(&cfg)
+		setAutoAssignedPorts(DefaultNetwork, &cfg)
+
+		server, err := New(cfg)
+		require.NoError(t, err)
+		t.Cleanup(server.Shutdown)
+
+		remoteAddrs := make(chan string, 8)
+		server.HTTP.HandleFunc("/test", func(_ http.ResponseWriter, r *http.Request) {
+			remoteAddrs <- r.RemoteAddr
+		})
+
+		go func() {
+			require.NoError(t, server.Run())
+		}()
+
+		return server, remoteAddrs
+	}
+
+	get := func(t *testing.T, client *http.Client, server *Server) *http.Response {
+		res, err := client.Get(httpTarget(server, "/test"))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		_, err = io.Copy(io.Discard, res.Body)
+		require.NoError(t, err)
+		require.NoError(t, res.Body.Close())
+		return res
+	}
+
+	t.Run("disabled by default, the connection is reused", func(t *testing.T) {
+		server, remoteAddrs := newTestServer(t, func(*Config) {})
+		client := &http.Client{}
+
+		require.False(t, get(t, client, server).Close)
+		first := <-remoteAddrs
+
+		require.False(t, get(t, client, server).Close)
+		require.Equal(t, first, <-remoteAddrs, "the connection should have been reused")
+	})
+
+	t.Run("once the max connection age elapses, the server asks the client to close the connection", func(t *testing.T) {
+		// The TTL has millisecond granularity, so it must survive truncation while still
+		// being short enough to elapse between two requests.
+		server, remoteAddrs := newTestServer(t, func(cfg *Config) {
+			cfg.HTTPServerMinConnectionAge = time.Millisecond
+			cfg.HTTPServerMaxConnectionAge = time.Millisecond
+		})
+		client := &http.Client{}
+
+		// The first request registers the connection.
+		require.False(t, get(t, client, server).Close)
+		first := <-remoteAddrs
+
+		time.Sleep(10 * time.Millisecond)
+
+		// The second is served on the same connection, but the server now asks for it to be closed.
+		require.True(t, get(t, client, server).Close)
+		require.Equal(t, first, <-remoteAddrs)
+
+		// So the third has to establish a new one.
+		require.False(t, get(t, client, server).Close)
+		require.NotEqual(t, first, <-remoteAddrs, "a new connection should have been established")
+	})
+
+	t.Run("rejects a minimum connection age greater than the maximum", func(t *testing.T) {
+		prometheus.DefaultRegisterer = prometheus.NewRegistry()
+
+		var cfg Config
+		cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+		cfg.HTTPServerMinConnectionAge = time.Minute
+		cfg.HTTPServerMaxConnectionAge = time.Second
+		setAutoAssignedPorts(DefaultNetwork, &cfg)
+
+		_, err := New(cfg)
+		require.Error(t, err)
+	})
+}

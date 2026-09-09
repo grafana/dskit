@@ -119,6 +119,10 @@ type Config struct {
 	HTTPServerWriteTimeout        time.Duration `yaml:"http_server_write_timeout"`
 	HTTPServerIdleTimeout         time.Duration `yaml:"http_server_idle_timeout"`
 
+	HTTPServerMinConnectionAge             time.Duration `yaml:"http_server_min_connection_age" category:"advanced"`
+	HTTPServerMaxConnectionAge             time.Duration `yaml:"http_server_max_connection_age" category:"advanced"`
+	HTTPServerIdleConnectionCheckFrequency time.Duration `yaml:"http_server_idle_connection_check_frequency" category:"advanced"`
+
 	HTTPLogClosedConnectionsWithoutResponse bool `yaml:"http_log_closed_connections_without_response_enabled"`
 
 	GRPCOptions                   []grpc.ServerOption            `yaml:"-"`
@@ -218,6 +222,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.HTTPServerReadHeaderTimeout, "server.http-read-header-timeout", 0, "Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.")
 	f.DurationVar(&cfg.HTTPServerWriteTimeout, "server.http-write-timeout", 30*time.Second, "Write timeout for HTTP server")
 	f.DurationVar(&cfg.HTTPServerIdleTimeout, "server.http-idle-timeout", 120*time.Second, "Idle timeout for HTTP server")
+	f.DurationVar(&cfg.HTTPServerMinConnectionAge, "server.http.keepalive.min-connection-age", 0, "The minimum duration for the maximum amount of time an HTTP keepalive connection may exist before the server asks the client to close it. The actual duration is picked randomly per connection between the minimum and maximum, to spread reconnections over time. 0 to disable.")
+	f.DurationVar(&cfg.HTTPServerMaxConnectionAge, "server.http.keepalive.max-connection-age", 0, "The maximum duration for the maximum amount of time an HTTP keepalive connection may exist before the server asks the client to close it. 0 to disable.")
+	f.DurationVar(&cfg.HTTPServerIdleConnectionCheckFrequency, "server.http.keepalive.idle-connection-check-frequency", time.Minute, "How frequently to check for tracked HTTP keepalive connections which have gone idle and can be forgotten. Only applies when -server.http.keepalive.max-connection-age is set.")
 	f.BoolVar(&cfg.HTTPLogClosedConnectionsWithoutResponse, "server.http-log-closed-connections-without-response-enabled", false, "Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.")
 	f.IntVar(&cfg.GRPCServerMaxRecvMsgSize, "server.grpc-max-recv-msg-size-bytes", 4*1024*1024, "Limit on the size of a gRPC message this server can receive (bytes).")
 	f.IntVar(&cfg.GRPCServerMaxSendMsgSize, "server.grpc-max-send-msg-size-bytes", 4*1024*1024, "Limit on the size of a gRPC message this server can send (bytes).")
@@ -271,10 +278,11 @@ func (cfg *Config) registererOrDefault() prometheus.Registerer {
 //
 // Servers will be automatically instrumented for Prometheus metrics.
 type Server struct {
-	cfg          Config
-	handler      SignalHandler
-	grpcListener net.Listener
-	httpListener net.Listener
+	cfg                     Config
+	handler                 SignalHandler
+	grpcListener            net.Listener
+	httpListener            net.Listener
+	connectionTTLMiddleware middleware.HTTPConnectionTTLMiddleware
 
 	HTTP       *mux.Router
 	HTTPServer *http.Server
@@ -544,6 +552,15 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		return nil, fmt.Errorf("error building http middleware: %w", err)
 	}
 
+	// The connection TTL middleware owns a background goroutine, so it is built here rather than in
+	// BuildHTTPMiddleware, allowing Shutdown() to stop it. It is the outermost middleware so that the
+	// Connection header is set on every response, including ones short-circuited further in.
+	connectionTTLMiddleware, err := middleware.NewHTTPConnectionTTLMiddleware(cfg.HTTPServerMinConnectionAge, cfg.HTTPServerMaxConnectionAge, cfg.HTTPServerIdleConnectionCheckFrequency, reg)
+	if err != nil {
+		return nil, fmt.Errorf("error setting up HTTP connection TTL middleware: %w", err)
+	}
+	httpMiddleware = append([]middleware.Interface{connectionTTLMiddleware}, httpMiddleware...)
+
 	httpServer := &http.Server{
 		ReadTimeout:       cfg.HTTPServerReadTimeout,
 		ReadHeaderTimeout: cfg.HTTPServerReadHeaderTimeout,
@@ -561,10 +578,11 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	}
 
 	return &Server{
-		cfg:          cfg,
-		httpListener: httpListener,
-		grpcListener: grpcListener,
-		handler:      handler,
+		cfg:                     cfg,
+		httpListener:            httpListener,
+		grpcListener:            grpcListener,
+		handler:                 handler,
+		connectionTTLMiddleware: connectionTTLMiddleware,
 
 		HTTP:       router,
 		HTTPServer: httpServer,
@@ -728,6 +746,7 @@ func (s *Server) Shutdown() {
 
 	_ = s.HTTPServer.Shutdown(ctx)
 	s.GRPC.GracefulStop()
+	s.connectionTTLMiddleware.Stop()
 }
 
 func newProxyProtocolListener(httpListener net.Listener, readHeaderTimeout time.Duration) net.Listener {

@@ -98,6 +98,7 @@ type Config struct {
 	GRPCListenPort              int    `yaml:"grpc_listen_port"`
 	GRPCConnLimit               int    `yaml:"grpc_listen_conn_limit"`
 	GRPCCollectMaxStreamsByConn bool   `yaml:"grpc_collect_max_streams_by_conn"`
+	GRPCDisabled                bool   `yaml:"grpc_disabled"`
 	ProxyProtocolEnabled        bool   `yaml:"proxy_protocol_enabled"`
 
 	CipherSuites  string    `yaml:"tls_cipher_suites"`
@@ -211,6 +212,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.GRPCListenPort, "server.grpc-listen-port", 9095, "gRPC server listen port.")
 	f.IntVar(&cfg.GRPCConnLimit, "server.grpc-conn-limit", 0, "Maximum number of simultaneous grpc connections, <=0 to disable")
 	f.BoolVar(&cfg.GRPCCollectMaxStreamsByConn, "server.grpc-collect-max-streams-by-conn", true, "If true, the max streams by connection gauge will be collected.")
+	f.BoolVar(&cfg.GRPCDisabled, "server.grpc-disabled", false, "Disable the GRPC server listener.")
 	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the intrumentation handlers (/metrics etc).")
 	f.BoolVar(&cfg.ReportGRPCCodesInInstrumentationLabel, "server.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Timeout for graceful shutdowns")
@@ -329,24 +331,29 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		httpListener = netutil.LimitListener(httpListener, cfg.HTTPConnLimit)
 	}
 
-	network = cfg.GRPCListenNetwork
-	if network == "" {
-		network = DefaultNetwork
-	}
-	grpcListener, err := net.Listen(network, net.JoinHostPort(cfg.GRPCListenAddress, strconv.Itoa(cfg.GRPCListenPort)))
-	if err != nil {
-		return nil, err
-	}
-	grpcListener = middleware.CountingListener(grpcListener, metrics.TCPConnections.WithLabelValues("grpc"))
+	var grpcListener net.Listener
+	if !cfg.GRPCDisabled {
+		network = cfg.GRPCListenNetwork
+		if network == "" {
+			network = DefaultNetwork
+		}
+		grpcListener, err = net.Listen(network, net.JoinHostPort(cfg.GRPCListenAddress, strconv.Itoa(cfg.GRPCListenPort)))
+		if err != nil {
+			return nil, err
+		}
+		grpcListener = middleware.CountingListener(grpcListener, metrics.TCPConnections.WithLabelValues("grpc"))
 
-	metrics.TCPConnectionsLimit.WithLabelValues("grpc").Set(float64(cfg.GRPCConnLimit))
-	if cfg.GRPCConnLimit > 0 {
-		grpcListener = netutil.LimitListener(grpcListener, cfg.GRPCConnLimit)
+		metrics.TCPConnectionsLimit.WithLabelValues("grpc").Set(float64(cfg.GRPCConnLimit))
+		if cfg.GRPCConnLimit > 0 {
+			grpcListener = netutil.LimitListener(grpcListener, cfg.GRPCConnLimit)
+		}
 	}
 
 	if cfg.ProxyProtocolEnabled {
 		httpListener = newProxyProtocolListener(httpListener, cfg.HTTPServerReadHeaderTimeout)
-		grpcListener = newProxyProtocolListener(grpcListener, cfg.HTTPServerReadHeaderTimeout)
+		if grpcListener != nil {
+			grpcListener = newProxyProtocolListener(grpcListener, cfg.HTTPServerReadHeaderTimeout)
+		}
 	}
 
 	cipherSuites, err := stringToCipherSuites(cfg.CipherSuites)
@@ -398,7 +405,11 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		}
 	}
 
-	level.Info(logger).Log("msg", "server listening on addresses", "http", httpListener.Addr(), "grpc", grpcListener.Addr())
+	if grpcListener != nil {
+		level.Info(logger).Log("msg", "server listening on addresses", "http", httpListener.Addr(), "grpc", grpcListener.Addr())
+	} else {
+		level.Info(logger).Log("msg", "server listening on address", "http", httpListener.Addr())
+	}
 
 	// Setup HTTP server
 	var router *mux.Router
@@ -677,17 +688,19 @@ func (s *Server) Run() error {
 		}
 	}()
 
-	serverOptions := make([]httpgrpc_server.Option, 0, 1)
-	if s.cfg.ReportHTTP4XXCodesInInstrumentationLabel {
-		serverOptions = append(serverOptions, httpgrpc_server.WithReturn4XXErrors)
-	}
-	// Setup gRPC server for HTTP over gRPC, ensure we don't double-count the middleware
-	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP, serverOptions...))
+	if !s.cfg.GRPCDisabled {
+		serverOptions := make([]httpgrpc_server.Option, 0, 1)
+		if s.cfg.ReportHTTP4XXCodesInInstrumentationLabel {
+			serverOptions = append(serverOptions, httpgrpc_server.WithReturn4XXErrors)
+		}
+		// Setup gRPC server for HTTP over gRPC, ensure we don't double-count the middleware
+		httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP, serverOptions...))
 
-	go func() {
-		err := s.GRPC.Serve(s.grpcListener)
-		handleGRPCError(err, errChan)
-	}()
+		go func() {
+			err := s.GRPC.Serve(s.grpcListener)
+			handleGRPCError(err, errChan)
+		}()
+	}
 
 	return <-errChan
 }
@@ -713,6 +726,9 @@ func (s *Server) HTTPListenAddr() net.Addr {
 
 // GRPCListenAddr exposes `net.Addr` that `Server` is listening to for GRPC connections.
 func (s *Server) GRPCListenAddr() net.Addr {
+	if s.grpcListener == nil {
+		return nil
+	}
 	return s.grpcListener.Addr()
 }
 

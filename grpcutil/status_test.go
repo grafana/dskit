@@ -181,3 +181,23 @@ func TestIsCanceled(t *testing.T) {
 		})
 	}
 }
+
+func TestIsErrorCode(t *testing.T) {
+	err := status.Error(codes.Internal, msgErr)
+
+	t.Run("error matches", func(t *testing.T) {
+		require.True(t, IsErrorCode(err, codes.Internal))
+		require.True(t, IsErrorCode(err, codes.Canceled, codes.Internal, codes.Unavailable))
+	})
+
+	t.Run("error does not match", func(t *testing.T) {
+		// Error doesn't match any of the provided codes
+		require.False(t, IsErrorCode(err, codes.Canceled))
+		require.False(t, IsErrorCode(err, codes.Canceled, codes.Unavailable))
+	})
+
+	t.Run("error is not a gRPC error", func(t *testing.T) {
+		nonGRPCErr := errors.New(msgErr)
+		require.False(t, IsErrorCode(nonGRPCErr, codes.Internal))
+	})
+}

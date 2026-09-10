@@ -37,6 +37,7 @@ var (
 	ErrNoMemcachedAddresses                    = errors.New("no memcached addresses provided")
 	ErrMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 	ErrMemcachedAddressLookupPeriodNotPositive = errors.New("address lookup period must be greater than 0")
+	ErrInvalidConcurrencyStrategy              = errors.New("invalid concurrency strategy")
 
 	_ Cache = (*MemcachedClient)(nil)
 )
@@ -106,6 +107,14 @@ type MemcachedClientConfig struct {
 	// MaxAsyncBufferSize specifies the queue buffer size for SetAsync operations.
 	MaxAsyncBufferSize int `yaml:"max_async_buffer_size" category:"advanced"`
 
+	// GetMultiConcurrencyStrategy specifies what should happen when MaxGetMultiConcurrency is
+	// hit, options are "block" to wait forever or "timeout" to wait with a timeout.
+	GetMultiConcurrencyStrategy concurrencyStrategy `yaml:"get_multi_concurrency_strategy" category:"experimental"`
+
+	// GetMultiConcurrencyTimeout specifies how long to wait for a concurrency slot when the
+	// "timeout" strategy is in use.
+	GetMultiConcurrencyTimeout time.Duration `yaml:"get_multi_concurrency_timeout" category:"experimental"`
+
 	// MaxGetMultiConcurrency specifies the maximum number of concurrent GetMulti() operations.
 	// If set to 0, concurrency is unlimited.
 	MaxGetMultiConcurrency int `yaml:"max_get_multi_concurrency" category:"advanced"`
@@ -137,6 +146,9 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxIdleConnections, prefix+"max-idle-connections", 100, "The maximum number of idle connections that will be maintained per address.")
 	f.IntVar(&c.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
 	f.IntVar(&c.MaxAsyncBufferSize, prefix+"max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")
+	_ = c.GetMultiConcurrencyStrategy.Set("block")
+	f.Var(&c.GetMultiConcurrencyStrategy, prefix+"get-multi-concurrency-strategy", "How to handle when the maximum number of concurrent connections running get operations is reached. Options are to block indefinitely ('block') or to block up to a max time ('timeout').")
+	f.DurationVar(&c.GetMultiConcurrencyTimeout, prefix+"get-multi-concurrency-timeout", 200*time.Millisecond, "Timeout when waiting to execute a concurrent get operation when at max concurrency.")
 	f.IntVar(&c.MaxGetMultiConcurrency, prefix+"max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
 	f.IntVar(&c.MaxGetMultiBatchSize, prefix+"max-get-multi-batch-size", 100, "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.")
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
@@ -263,6 +275,14 @@ func newMemcachedClient(
 	addressProvider := dns.NewProvider(dns.MiekgdnsResolverType, config.AddressesLookupPoolSize, logger, reg)
 	metrics := newClientMetrics(reg)
 
+	var g gate.Gate
+	switch config.GetMultiConcurrencyStrategy {
+	case concurrencyStrategyTimeout:
+		g = gate.NewTimeoutGate(config.GetMultiConcurrencyTimeout, gate.NewBlocking(config.MaxGetMultiConcurrency))
+	default:
+		g = gate.NewBlocking(config.MaxGetMultiConcurrency)
+	}
+
 	c := &MemcachedClient{
 		metrics:         metrics,
 		queue:           newAsyncQueue(config.MaxAsyncBufferSize, config.MaxAsyncConcurrency),
@@ -273,9 +293,10 @@ func newMemcachedClient(
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
 		name:            name,
-		getMultiGate: gate.New(
+		getMultiGate: gate.NewInstrumented(
 			prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
 			config.MaxGetMultiConcurrency,
+			g,
 		),
 	}
 
@@ -411,7 +432,7 @@ func toSeconds(d time.Duration) (int32, bool) {
 	}
 
 	secs := int32(d.Seconds())
-	if d != 0 && secs <= 0 {
+	if d != time.Duration(0) && secs <= 0 {
 		return 0, false
 	}
 
@@ -873,4 +894,25 @@ func (c *MemcachedClient) resolveAddrs() error {
 	}
 
 	return c.selector.SetServers(servers...)
+}
+
+const (
+	concurrencyStrategyBlock   = concurrencyStrategy("block")
+	concurrencyStrategyTimeout = concurrencyStrategy("timeout")
+)
+
+type concurrencyStrategy string
+
+func (c concurrencyStrategy) String() string {
+	return string(c)
+}
+
+func (c *concurrencyStrategy) Set(s string) error {
+	switch concurrencyStrategy(s) {
+	case concurrencyStrategyBlock, concurrencyStrategyTimeout:
+		*c = concurrencyStrategy(s)
+		return nil
+	default:
+		return fmt.Errorf("%w: must be one of 'block' or 'timeout'", ErrInvalidConcurrencyStrategy)
+	}
 }

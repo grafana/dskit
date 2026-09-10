@@ -208,9 +208,11 @@ func (l *PartitionInstanceLifecycler) stopping(_ error) error {
 	level.Info(l.logger).Log("msg", "partition ring lifecycler is shutting down", "ring", l.ringName)
 
 	// Remove the instance from partition owners, if configured to do so.
+	// Use DeleteOwner (OwnerDeleted tombstone) instead of RemoveOwner so deletion
+	// still propagates when the local CAS view is missing the owner entry.
 	if l.RemoveOwnerOnShutdown() {
 		err := l.updateRing(context.Background(), func(ring *PartitionRingDesc) (bool, error) {
-			return ring.RemoveOwner(l.partitionOwnerID()), nil
+			return ring.DeleteOwner(l.partitionOwnerID(), l.cfg.PartitionID, time.Now()), nil
 		})
 
 		if err != nil {

@@ -254,7 +254,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "samples_processed", "Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
 	cfg.ClusterValidation.RegisterFlagsWithPrefix("server.cluster-validation.", f)
 	f.BoolVar(&cfg.CreateNewTraces, "server.create-new-traces", false, "Creates new traces for each call rather than continuing the existing trace. A span link is used to allow navigation to the parent trace. Only works when using Open-Telemetry tracing.")
-	f.BoolVar(&cfg.EnableOpenMetricsTextCreatedSamples, "server.enable-open-metrics-text-created-samples", false, "Specifies if this handler should add, extra, synthetic created timestamps for counters, histograms and summaries, which for the current version of OpenMetrics are defined as extra series with the same name and \"_created\" suffix. Only applies if -server.register_instrumentation is set to true.")
+	f.BoolVar(&cfg.EnableOpenMetricsTextCreatedSamples, "server.enable-open-metrics-text-created-samples", false, "Specifies if this handler should emit start timestamps for counters, histograms and summaries over OpenMetrics 1.0, which are defined as extra series with the same name and \"_created\" suffix. Only applies if -server.register_instrumentation is set to true.")
 }
 
 func (cfg *Config) Validate() error {

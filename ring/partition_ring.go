@@ -23,6 +23,8 @@ var ErrNoActivePartitionFound = fmt.Errorf("no active partition found")
 //     a new instance of PartitionRing should be created. The  partitions ring is expected to change infrequently
 //     (e.g. there's no heartbeat), so creating a new PartitionRing each time the partitions ring changes is
 //     not expected to have a significant overhead.
+//   - Complete: if the ring has a PartitionTokenGenerator, every partition in its desc holds tokens.
+//     The tokens come from the KV store, or the generator derives them from the partition ID.
 type PartitionRing struct {
 	// desc is a snapshot of the partition ring. This data is immutable and MUST NOT be modified.
 	desc PartitionRingDesc
@@ -56,6 +58,10 @@ type PartitionRing struct {
 
 	// opts is used to propagate the options to sub rings when shuffle sharding.
 	opts PartitionRingOptions
+
+	// partitionTokens derives the tokens of every partition from its ID. If it is nil, the ring uses
+	// the tokens as received.
+	partitionTokens *PartitionTokenGenerator
 }
 
 // PartitionRingOptions holds optional configuration parameters for creating a PartitionRing.
@@ -80,9 +86,20 @@ func NewPartitionRing(desc PartitionRingDesc) (*PartitionRing, error) {
 
 // NewPartitionRingWithOptions creates a new PartitionRing with custom options.
 func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptions) (*PartitionRing, error) {
+	return newPartitionRing(desc, opts, nil)
+}
+
+// newPartitionRing creates a new PartitionRing. If partitionTokens is not nil, the ring derives the
+// tokens of every partition.
+func newPartitionRing(desc PartitionRingDesc, opts PartitionRingOptions, partitionTokens *PartitionTokenGenerator) (*PartitionRing, error) {
 	shuffleShardCache, err := newPartitionRingShuffleShardCache(opts.ShuffleShardCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
+	}
+
+	desc, err = materializeDerivedTokens(desc, partitionTokens)
+	if err != nil {
+		return nil, err
 	}
 
 	ringTokens := desc.tokens()
@@ -103,6 +120,7 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 		maxPartitionID:        desc.maxPartitionID(),
 		shuffleShardCache:     shuffleShardCache,
 		opts:                  opts,
+		partitionTokens:       partitionTokens,
 	}, nil
 }
 
@@ -321,7 +339,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 		}
 	}
 
-	return NewPartitionRingWithOptions(r.desc.WithPartitions(result), r.opts)
+	return newPartitionRing(r.desc.WithPartitions(result), r.opts, r.partitionTokens)
 }
 
 // PartitionsCount returns the number of partitions in the ring.

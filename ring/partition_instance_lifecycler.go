@@ -55,6 +55,14 @@ type PartitionInstanceLifecyclerConfig struct {
 	// PollingInterval is the internal polling interval. This setting is useful to let
 	// upstream projects to lower it in unit tests.
 	PollingInterval time.Duration
+
+	// OmitTokens creates the partition with no tokens. A reader must derive the tokens from the
+	// partition ID with a PartitionTokenGenerator.
+	//
+	// It applies only to the partitions that this lifecycler creates. A partition that is already in
+	// the ring keeps its tokens, because a merge never replaces the tokens of a known partition. To
+	// remove the tokens from an existing ring, recreate the ring state.
+	OmitTokens bool
 }
 
 // PartitionInstanceLifecycler is responsible to manage the lifecycle of a single
@@ -290,7 +298,11 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 		if !exists {
 			// The partition doesn't exist, so we create a new one. A new partition should always be created
 			// in PENDING state.
-			ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
+			if l.cfg.OmitTokens {
+				ring.AddPartitionWithoutTokens(l.cfg.PartitionID, PartitionPending, now)
+			} else {
+				ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
+			}
 			changed = true
 		}
 

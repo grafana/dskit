@@ -214,6 +214,17 @@ func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now tim
 	}
 }
 
+// AddPartitionWithoutTokens adds a new partition to the ring with no tokens. A reader derives the
+// tokens from the partition ID with a PartitionTokenGenerator. See partition_ring_derived_tokens.go.
+// A reader without a generator finds a partition that owns no part of the ring.
+func (m *PartitionRingDesc) AddPartitionWithoutTokens(id int32, state PartitionState, now time.Time) {
+	m.Partitions[id] = PartitionDesc{
+		Id:             id,
+		State:          state,
+		StateTimestamp: now.Unix(),
+	}
+}
+
 // UpdatePartitionState changes the state of a partition. Returns true if the state was changed,
 // or false if the update was a no-op.
 func (m *PartitionRingDesc) UpdatePartitionState(id int32, state PartitionState, now time.Time) (bool, error) {

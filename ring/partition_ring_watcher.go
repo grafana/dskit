@@ -31,6 +31,10 @@ type PartitionRingWatcher struct {
 
 	// opts is used to propagate the options each time the ring is updated.
 	opts PartitionRingOptions
+
+	// partitionTokens derives the tokens each time the ring changes. It is nil unless
+	// WithPartitionTokenGenerator sets it.
+	partitionTokens *PartitionTokenGenerator
 }
 
 type PartitionRingWatcherDelegate interface {
@@ -72,6 +76,15 @@ func (w *PartitionRingWatcher) WithDelegate(delegate PartitionRingWatcherDelegat
 	return w
 }
 
+// WithPartitionTokenGenerator sets the generator that derives the tokens of the partitions with no
+// tokens. Without a generator, the watcher uses the tokens as received.
+//
+// Not concurrency safe.
+func (w *PartitionRingWatcher) WithPartitionTokenGenerator(generator *PartitionTokenGenerator) *PartitionRingWatcher {
+	w.partitionTokens = generator
+	return w
+}
+
 func (w *PartitionRingWatcher) starting(ctx context.Context) error {
 	// Get the initial ring state so that, as soon as the service will be running, the in-memory
 	// ring would be already populated and there's no race condition between when the service is
@@ -107,7 +120,7 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 }
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) error {
-	newRing, err := NewPartitionRingWithOptions(*desc, w.opts)
+	newRing, err := newPartitionRing(*desc, w.opts, w.partitionTokens)
 	if err != nil {
 		return errors.Wrap(err, "failed to create partition ring from descriptor")
 	}
@@ -117,7 +130,8 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) erro
 	w.ringMx.Unlock()
 
 	if w.delegate != nil {
-		w.delegate.OnPartitionRingChanged(&oldRing.desc, desc)
+		// Both descs come from a ring, so both hold derived tokens.
+		w.delegate.OnPartitionRingChanged(&oldRing.desc, &newRing.desc)
 	}
 
 	// Update metrics.

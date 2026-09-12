@@ -3169,3 +3169,259 @@ func TestNetworkPartition_RecoveryViaRejoin(t *testing.T) {
 		require.EventuallyWithT(t, expectDataMembers(clientMemberB, []string{"member-A", "member-B"}), 3*time.Second, 100*time.Millisecond)
 	})
 }
+
+// newTestKVForLocalStateCache returns a started KV with the delegate marked ready, so that
+// LocalState/MergeRemoteState can be driven directly without a second node.
+func newTestKVForLocalStateCache(tb testing.TB, opts ...func(*KVConfig)) (*KV, *prometheus.Registry) {
+	tb.Helper()
+
+	c := dataCodec{}
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{BindAddrs: getLocalhostAddrs()}
+	cfg.Codecs = []codec.Codec{c}
+	// Config must be finalised before the service starts; mutating it afterwards races
+	// with the running loop.
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	reg := prometheus.NewPedanticRegistry()
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, reg)
+	require.NoError(tb, services.StartAndAwaitRunning(tb.Context(), mkv))
+	tb.Cleanup(func() {
+		require.NoError(tb, services.StopAndAwaitTerminated(context.Background(), mkv))
+	})
+	mkv.delegateReady.Store(true)
+
+	return mkv, reg
+}
+
+// parseLocalState decodes the payload produced by LocalState into key -> value members,
+// so tests can assert on what a peer would actually observe.
+func parseLocalState(t *testing.T, payload []byte) map[string][]string {
+	t.Helper()
+
+	out := map[string][]string{}
+	for len(payload) > 0 {
+		require.GreaterOrEqual(t, len(payload), lengthPrefixSize, "truncated length prefix")
+		l := binary.BigEndian.Uint32(payload)
+		payload = payload[lengthPrefixSize:]
+		require.GreaterOrEqual(t, uint32(len(payload)), l, "truncated KV pair")
+
+		pair := KeyValuePair{}
+		require.NoError(t, pair.Unmarshal(payload[:l]))
+		payload = payload[l:]
+
+		decoded, err := dataCodec{}.Decode(pair.Value)
+		require.NoError(t, err)
+		out[pair.Key] = decoded.(*data).getAllMembers()
+	}
+	return out
+}
+
+func localStateCacheCounts(t *testing.T, reg *prometheus.Registry) (hits, misses float64) {
+	t.Helper()
+
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, f := range families {
+		switch f.GetName() {
+		case "memberlist_client_local_state_cache_hits_total":
+			hits = f.GetMetric()[0].GetCounter().GetValue()
+		case "memberlist_client_local_state_cache_misses_total":
+			misses = f.GetMetric()[0].GetCounter().GetValue()
+		}
+	}
+	return hits, misses
+}
+
+func TestLocalStateCacheServesUnchangedEntriesFromCache(t *testing.T) {
+	mkv, reg := newTestKVForLocalStateCache(t)
+
+	client, err := NewClient(mkv, dataCodec{})
+	require.NoError(t, err)
+
+	require.NoError(t, client.CAS(t.Context(), "ring-a", func(interface{}) (interface{}, bool, error) {
+		return &data{Members: map[string]member{"a": {Timestamp: 1, State: JOINING}}}, true, nil
+	}))
+	require.NoError(t, client.CAS(t.Context(), "ring-b", func(interface{}) (interface{}, bool, error) {
+		return &data{Members: map[string]member{"b": {Timestamp: 1, State: JOINING}}}, true, nil
+	}))
+
+	// First pull has to serialize both keys.
+	first := mkv.LocalState(false)
+	hits, misses := localStateCacheCounts(t, reg)
+	require.Equal(t, float64(0), hits)
+	require.Equal(t, float64(2), misses)
+
+	// Second pull changes nothing, so both keys must come from the cache and the payload
+	// must be byte-for-byte what the uncached path produced.
+	second := mkv.LocalState(false)
+	hits, misses = localStateCacheCounts(t, reg)
+	require.Equal(t, float64(2), hits)
+	require.Equal(t, float64(2), misses, "unchanged entries must not be re-serialized")
+	require.Equal(t, parseLocalState(t, first), parseLocalState(t, second))
+}
+
+// TestLocalStateCacheInvalidatedOnInPlaceMerge covers the subtle case: mergeValueForKey
+// mutates the stored value in place rather than replacing it, so the cache cannot rely on
+// the value pointer changing. It must key off the version, which is bumped in the same
+// critical section as the mutation.
+func TestLocalStateCacheInvalidatedOnInPlaceMerge(t *testing.T) {
+	mkv, _ := newTestKVForLocalStateCache(t)
+
+	client, err := NewClient(mkv, dataCodec{})
+	require.NoError(t, err)
+
+	require.NoError(t, client.CAS(t.Context(), key, func(interface{}) (interface{}, bool, error) {
+		return &data{Members: map[string]member{"a": {Timestamp: 1, State: ACTIVE}}}, true, nil
+	}))
+
+	// Prime the cache.
+	require.Equal(t, map[string][]string{key: {"a"}}, parseLocalState(t, mkv.LocalState(false)))
+
+	// Merge an update the way an incoming push/pull sync would. This goes through
+	// mergeValueForKey, which mutates the stored value in place.
+	peer, _ := newTestKVForLocalStateCache(t)
+	peerClient, err := NewClient(peer, dataCodec{})
+	require.NoError(t, err)
+	require.NoError(t, peerClient.CAS(t.Context(), key, func(interface{}) (interface{}, bool, error) {
+		return &data{Members: map[string]member{"c": {Timestamp: 5, State: ACTIVE}}}, true, nil
+	}))
+
+	mkv.MergeRemoteState(peer.LocalState(false), false)
+
+	require.Equal(t, map[string][]string{key: {"a", "c"}}, parseLocalState(t, mkv.LocalState(false)),
+		"in-place merge must invalidate the cache")
+}
+
+func TestLocalStateCacheEvictedWithObsoleteEntries(t *testing.T) {
+	mkv, _ := newTestKVForLocalStateCache(t)
+
+	client, err := NewClient(mkv, dataCodec{})
+	require.NoError(t, err)
+
+	require.NoError(t, client.CAS(t.Context(), key, func(interface{}) (interface{}, bool, error) {
+		return &data{Members: map[string]member{"a": {Timestamp: 1, State: ACTIVE}}}, true, nil
+	}))
+
+	// Prime the cache.
+	require.Len(t, parseLocalState(t, mkv.LocalState(false)), 1)
+
+	mkv.storeMu.RLock()
+	_, cached := mkv.localStateCache[key]
+	mkv.storeMu.RUnlock()
+	require.True(t, cached, "precondition: key should be cached once it has been sent")
+
+	require.NoError(t, mkv.Delete(key))
+
+	// Age the tombstone past the obsolete entries timeout and run the cleanup directly,
+	// so the test doesn't depend on the timing of the background cleanup loop.
+	mkv.storeMu.Lock()
+	aged := mkv.store[key]
+	aged.UpdateTime = time.Now().Add(-2 * mkv.cfg.ObsoleteEntriesTimeout)
+	mkv.store[key] = aged
+	mkv.storeMu.Unlock()
+
+	mkv.cleanupObsoleteEntries()
+
+	mkv.storeMu.RLock()
+	_, cached = mkv.localStateCache[key]
+	cacheLen := len(mkv.localStateCache)
+	mkv.storeMu.RUnlock()
+
+	require.False(t, cached, "cache entry must be evicted with the store entry")
+	require.Equal(t, 0, cacheLen, "cache must not retain entries for removed keys")
+	require.Empty(t, parseLocalState(t, mkv.LocalState(false)))
+}
+
+// BenchmarkLocalState measures sending the full store, which is what a push/pull sync does.
+// "cached" is the steady state in a real cluster: the store is large but little of it changes
+// between pulls, so nearly every entry is served from the cache. "cold" is the worst case,
+// where nothing can be reused.
+func BenchmarkLocalState(b *testing.B) {
+	const (
+		keys              = 30
+		instancesPerKey   = 500
+		tokensPerInstance = 64
+	)
+
+	mkv, _ := newTestKVForLocalStateCache(b)
+	client, err := NewClient(mkv, dataCodec{})
+	require.NoError(b, err)
+
+	for i := 0; i < keys; i++ {
+		require.NoError(b, client.CAS(b.Context(), fmt.Sprintf("ring-%d", i), func(interface{}) (interface{}, bool, error) {
+			members := make(map[string]member, instancesPerKey)
+			for j := 0; j < instancesPerKey; j++ {
+				tokens := make([]uint32, tokensPerInstance)
+				for k := range tokens {
+					tokens[k] = uint32(j*tokensPerInstance + k)
+				}
+				members[fmt.Sprintf("instance-%d", j)] = member{Timestamp: int64(j), State: ACTIVE, Tokens: tokens}
+			}
+			return &data{Members: members}, true, nil
+		}))
+	}
+
+	// Also primes the cache for the "cached" case below.
+	b.Logf("full state: %d keys, %d bytes", keys, len(mkv.LocalState(false)))
+
+	b.Run("cached", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			mkv.LocalState(false)
+		}
+	})
+
+	b.Run("cold", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			// Dropping the cache is equivalent to every entry having changed, and costs
+			// far less than the pull it precedes.
+			mkv.storeMu.Lock()
+			mkv.localStateCache = map[string]localStateCacheEntry{}
+			mkv.storeMu.Unlock()
+
+			mkv.LocalState(false)
+		}
+	})
+}
+
+// TestLocalStateCacheMessageHistory covers the branch that only runs when the troubleshooting
+// history buffer is enabled: the KeyValuePair is not cached, so it gets rebuilt from the
+// entry's wire form and must still round-trip.
+func TestLocalStateCacheMessageHistory(t *testing.T) {
+	mkv, _ := newTestKVForLocalStateCache(t, func(cfg *KVConfig) {
+		cfg.MessageHistoryBufferBytes = 1024 * 1024
+	})
+
+	client, err := NewClient(mkv, dataCodec{})
+	require.NoError(t, err)
+	require.NoError(t, client.CAS(t.Context(), key, func(interface{}) (interface{}, bool, error) {
+		return &data{Members: map[string]member{"a": {Timestamp: 1, State: ACTIVE}}}, true, nil
+	}))
+
+	// Broadcasting the CAS already recorded a message, so measure the delta rather than the
+	// absolute count.
+	before, _ := mkv.getSentAndReceivedMessages()
+
+	// Two pulls: the first builds the entry, the second serves it from the cache. Both must
+	// record an equivalent message, since the pair is reconstructed either way.
+	payload := mkv.LocalState(false)
+	mkv.LocalState(false)
+
+	sent, _ := mkv.getSentAndReceivedMessages()
+	require.Len(t, sent, len(before)+2)
+
+	for i, msg := range sent[len(before):] {
+		require.Equal(t, key, msg.Pair.Key, "message %d", i)
+		require.Equal(t, dataCodec{}.CodecID(), msg.Pair.Codec, "message %d", i)
+		require.Equal(t, len(payload)-lengthPrefixSize, msg.Size, "message %d", i)
+		require.Equal(t, uint(1), msg.Version, "message %d", i)
+
+		decoded, err := dataCodec{}.Decode(msg.Pair.Value)
+		require.NoError(t, err, "message %d", i)
+		require.Equal(t, []string{"a"}, decoded.(*data).getAllMembers(), "message %d", i)
+	}
+}

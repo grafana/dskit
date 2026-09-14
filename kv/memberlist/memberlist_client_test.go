@@ -3181,6 +3181,8 @@ func newTestKVForLocalStateCache(tb testing.TB, opts ...func(*KVConfig)) (*KV, *
 	flagext.DefaultValues(&cfg)
 	cfg.TCPTransport = TCPTransportConfig{BindAddrs: getLocalhostAddrs()}
 	cfg.Codecs = []codec.Codec{c}
+	// These tests are about the cache, so default it on; individual cases override as needed.
+	cfg.LocalStateCacheEnabled = true
 	// Config must be finalised before the service starts; mutating it afterwards races
 	// with the running loop.
 	for _, opt := range opts {
@@ -3337,10 +3339,8 @@ func TestLocalStateCacheEvictedWithObsoleteEntries(t *testing.T) {
 	require.Empty(t, parseLocalState(t, mkv.LocalState(false)))
 }
 
-// BenchmarkLocalState measures sending the full store, which is what a push/pull sync does.
-// "cached" is the steady state in a real cluster: the store is large but little of it changes
-// between pulls, so nearly every entry is served from the cache. "cold" is the worst case,
-// where nothing can be reused.
+// BenchmarkLocalState measures sending the full store, which is what a push/pull sync does,
+// with the cache disabled (the default, and the behaviour before it existed) and enabled.
 func BenchmarkLocalState(b *testing.B) {
 	const (
 		keys              = 30
@@ -3348,44 +3348,48 @@ func BenchmarkLocalState(b *testing.B) {
 		tokensPerInstance = 64
 	)
 
-	mkv, _ := newTestKVForLocalStateCache(b)
-	client, err := NewClient(mkv, dataCodec{})
-	require.NoError(b, err)
+	populated := func(b *testing.B, cacheEnabled bool) *KV {
+		mkv, _ := newTestKVForLocalStateCache(b, func(cfg *KVConfig) {
+			cfg.LocalStateCacheEnabled = cacheEnabled
+		})
 
-	for i := 0; i < keys; i++ {
-		require.NoError(b, client.CAS(b.Context(), fmt.Sprintf("ring-%d", i), func(interface{}) (interface{}, bool, error) {
-			members := make(map[string]member, instancesPerKey)
-			for j := 0; j < instancesPerKey; j++ {
-				tokens := make([]uint32, tokensPerInstance)
-				for k := range tokens {
-					tokens[k] = uint32(j*tokensPerInstance + k)
+		client, err := NewClient(mkv, dataCodec{})
+		require.NoError(b, err)
+
+		for i := 0; i < keys; i++ {
+			require.NoError(b, client.CAS(b.Context(), fmt.Sprintf("ring-%d", i), func(interface{}) (interface{}, bool, error) {
+				members := make(map[string]member, instancesPerKey)
+				for j := 0; j < instancesPerKey; j++ {
+					tokens := make([]uint32, tokensPerInstance)
+					for k := range tokens {
+						tokens[k] = uint32(j*tokensPerInstance + k)
+					}
+					members[fmt.Sprintf("instance-%d", j)] = member{Timestamp: int64(j), State: ACTIVE, Tokens: tokens}
 				}
-				members[fmt.Sprintf("instance-%d", j)] = member{Timestamp: int64(j), State: ACTIVE, Tokens: tokens}
-			}
-			return &data{Members: members}, true, nil
-		}))
+				return &data{Members: members}, true, nil
+			}))
+		}
+
+		return mkv
 	}
 
-	// Also primes the cache for the "cached" case below.
-	b.Logf("full state: %d keys, %d bytes", keys, len(mkv.LocalState(false)))
-
-	b.Run("cached", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			mkv.LocalState(false)
+	for _, enabled := range []bool{false, true} {
+		name := "cache_disabled"
+		if enabled {
+			name = "cache_enabled"
 		}
-	})
 
-	b.Run("cold", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			// Dropping the cache is equivalent to every entry having changed, and costs
-			// far less than the pull it precedes.
-			mkv.storeMu.Lock()
-			mkv.localStateCache = map[string]localStateCacheEntry{}
-			mkv.storeMu.Unlock()
+		b.Run(name, func(b *testing.B) {
+			mkv := populated(b, enabled)
+			// Also primes the cache, when there is one.
+			b.Logf("full state: %d keys, %d bytes", keys, len(mkv.LocalState(false)))
 
-			mkv.LocalState(false)
-		}
-	})
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				mkv.LocalState(false)
+			}
+		})
+	}
 }
 
 // TestLocalStateCacheMessageHistory covers the branch that only runs when the troubleshooting

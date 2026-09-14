@@ -199,6 +199,10 @@ type KVConfig struct {
 	CasRetryMinBackoff time.Duration `yaml:"cas_retry_min_backoff" category:"experimental"`
 	CasRetryMaxBackoff time.Duration `yaml:"cas_retry_max_backoff" category:"experimental"`
 
+	// LocalStateCacheEnabled memoizes the serialized form of each store entry, so that
+	// push/pull sync doesn't re-encode unchanged entries on every pull.
+	LocalStateCacheEnabled bool `yaml:"local_state_cache_enabled" category:"experimental"`
+
 	TCPTransport TCPTransportConfig `yaml:",inline"`
 
 	// Zone-aware routing configuration.
@@ -250,6 +254,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.GossipToTheDeadTime, prefix+"memberlist.gossip-to-dead-nodes-time", mlDefaults.GossipToTheDeadTime, "How long to keep gossiping to dead nodes, to give them chance to refute their death.")
 	f.DurationVar(&cfg.DeadNodeReclaimTime, prefix+"memberlist.dead-node-reclaim-time", mlDefaults.DeadNodeReclaimTime, "How soon can dead node's name be reclaimed with new address. 0 to disable.")
 	f.IntVar(&cfg.MessageHistoryBufferBytes, prefix+"memberlist.message-history-buffer-bytes", 0, "How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.")
+	f.BoolVar(&cfg.LocalStateCacheEnabled, prefix+"memberlist.local-state-cache-enabled", false, "Cache the serialized form of each key, so that push/pull sync doesn't re-encode entries that haven't changed since the last sync. Reduces CPU and lock contention in large clusters, at the cost of memory proportional to the size of the KV store.")
 	f.BoolVar(&cfg.EnableCompression, prefix+"memberlist.compression-enabled", mlDefaults.EnableCompression, "Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization.")
 	f.StringVar(&cfg.CompressionAlgorithm, prefix+"memberlist.compression-algorithm", string(memberlist.CompressionAlgorithmLZW), fmt.Sprintf("Compression algorithm used for outgoing messages when -memberlist.compression-enabled is true. Supported values: %s. Ignored when -memberlist.compression-enabled is false.", strings.Join(supportedCompressionAlgorithms, ", ")))
 	f.DurationVar(&cfg.NotifyInterval, prefix+"memberlist.notify-interval", 0, "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.")
@@ -1723,16 +1728,10 @@ func (m *KV) LocalState(_ bool) []byte {
 			continue
 		}
 
-		entry, ok := m.localStateCache[key]
-		if ok && entry.version == val.Version {
-			m.localStateCacheHits.Inc()
-		} else {
-			entry, ok = m.buildLocalStateCacheEntry(key, val)
-			if !ok {
-				// Reason already logged. Skip the key, but keep sending the rest of the store.
-				continue
-			}
-			m.localStateCache[key] = entry
+		entry, ok := m.localStateEntry(key, val)
+		if !ok {
+			// Reason already logged. Skip the key, but keep sending the rest of the store.
+			continue
 		}
 
 		buf.Write(entry.data)
@@ -1749,13 +1748,40 @@ func (m *KV) LocalState(_ bool) []byte {
 	return buf.Bytes()
 }
 
+// localStateEntry returns the wire form of a store entry, reusing the memoized one when the
+// cache is enabled and the entry hasn't changed since it was built. It returns false if the
+// entry cannot be serialized, having logged the reason.
+//
+// When the cache is disabled this is just buildLocalStateCacheEntry, so nothing is stored and
+// the cache metrics stay at zero, which distinguishes "disabled" from "enabled but thrashing".
+//
+// Callers must hold storeMu.
+func (m *KV) localStateEntry(key string, val ValueDesc) (localStateCacheEntry, bool) {
+	if !m.cfg.LocalStateCacheEnabled {
+		return m.buildLocalStateCacheEntry(key, val)
+	}
+
+	if entry, ok := m.localStateCache[key]; ok && entry.version == val.Version {
+		m.localStateCacheHits.Inc()
+		return entry, true
+	}
+
+	entry, ok := m.buildLocalStateCacheEntry(key, val)
+	if !ok {
+		return localStateCacheEntry{}, false
+	}
+
+	m.localStateCacheMisses.Inc()
+	m.localStateCache[key] = entry
+
+	return entry, true
+}
+
 // buildLocalStateCacheEntry serializes a single store entry. It returns false if the
 // entry cannot be serialized, having logged the reason.
 //
 // Callers must hold storeMu.
 func (m *KV) buildLocalStateCacheEntry(key string, val ValueDesc) (localStateCacheEntry, bool) {
-	m.localStateCacheMisses.Inc()
-
 	codec := m.GetCodec(val.CodecID)
 	if codec == nil {
 		level.Error(m.logger).Log("msg", "failed to encode remote state: unknown codec for key", "codec", val.CodecID, "key", key)
@@ -1977,10 +2003,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 		change = result
 	}
 
-	newVersion = curr.Version
-	if casVersion > 0 {
-		newVersion = curr.Version + 1
-	}
+	newVersion = curr.Version + 1
 	m.store[key] = ValueDesc{
 		value:      result,
 		Version:    newVersion,

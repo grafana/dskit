@@ -403,3 +403,15 @@ func TestIsHandledByHttpgrpcServer(t *testing.T) {
 		require.Equal(t, []*httpgrpc.Header{{Key: http.CanonicalHeaderKey(testHeader), Values: []string{"true"}}}, resp.Headers)
 	})
 }
+
+func TestErrAbortHandlerIsHandled(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		panic(http.ErrAbortHandler)
+	})
+
+	s := NewServer(handler)
+	resp, err := s.Handle(context.Background(), &httpgrpc.HTTPRequest{Method: "GET", Url: "/test"})
+	require.Nil(t, resp)
+	require.Error(t, err)
+}

@@ -27,7 +27,7 @@ is finished it should:
 
 * Have a pull request title that follows [Conventional Commits](https://www.conventionalcommits.org/) format (e.g., `feat: Add new feature`, `fix: Resolve bug`, `docs: Update README`). This title will become the commit message when your PR is squashed and merged.
 
-## Testing und Linting the Code
+## Testing and Linting the Code
 
 To lint the code:
 
@@ -83,11 +83,11 @@ between imports in the groups. We try to avoid extra newlines like that.
 
 * Install git-filter-repo package
 
-    ```
+    ```bash
     # Ubuntu/Debian
     apt-get install git-filter-repo
 
-    # MacOSX
+    # macOS
     brew install git-filter-repo
     ```
 
@@ -96,7 +96,7 @@ between imports in the groups. We try to avoid extra newlines like that.
 In this case we would like add two particular files from Cortex, while
 preserving their commit history.
 
-```
+```bash
 # create new checkout of cortex
 CHECKOUT_PATH=$(mktemp -d $TEMPLATE)
 git clone git@github.com:cortexproject/cortex.git "${CHECKOUT_PATH}"

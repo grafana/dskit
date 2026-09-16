@@ -13,11 +13,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -25,6 +29,7 @@ import (
 	gokit_log "github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
@@ -1062,6 +1067,127 @@ func setAutoAssignedPorts(network string, cfg *Config) {
 	cfg.GRPCListenNetwork = network
 	cfg.GRPCListenAddress = "localhost"
 	cfg.GRPCListenPort = 0
+}
+
+func TestServer_OpenMetricsTextCreatedSamples(t *testing.T) {
+	t.Run("exposition", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			args        []string
+			mediaType   string
+			version     string
+			wantCreated bool
+		}{
+			{
+				name:      "default OpenMetrics",
+				mediaType: "application/openmetrics-text",
+				version:   "1.0.0",
+			},
+			{
+				name:        "enabled OpenMetrics",
+				args:        []string{"-server.enable-open-metrics-text-created-samples=true"},
+				mediaType:   "application/openmetrics-text",
+				version:     "1.0.0",
+				wantCreated: true,
+			},
+			{
+				name:      "default Prometheus",
+				mediaType: "text/plain",
+				version:   "0.0.4",
+			},
+			{
+				name:      "enabled Prometheus",
+				args:      []string{"-server.enable-open-metrics-text-created-samples=true"},
+				mediaType: "text/plain",
+				version:   "0.0.4",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var cfg Config
+				flags := flag.NewFlagSet(t.Name(), flag.ContinueOnError)
+				cfg.RegisterFlags(flags)
+				require.NoError(t, flags.Parse(tc.args))
+				require.NoError(t, cfg.Validate())
+				setAutoAssignedPorts(DefaultNetwork, &cfg)
+				cfg.SignalHandler = dummyHandler{quit: make(chan struct{})}
+
+				reg := prometheus.NewPedanticRegistry()
+				cfg.Registerer, cfg.Gatherer = reg, reg
+				counter := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+					Name: "test_requests_total",
+					Help: "Requests used to test metrics exposition.",
+				})
+				counter.Add(7)
+
+				srv, err := New(cfg)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					// Shutdown does not close listeners that were never served.
+					assert.NoError(t, srv.httpListener.Close())
+					assert.NoError(t, srv.grpcListener.Close())
+					srv.Shutdown()
+				})
+
+				req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+				req.Header.Set("Accept", tc.mediaType+"; version="+tc.version)
+				resp := httptest.NewRecorder()
+				srv.HTTP.ServeHTTP(resp, req)
+				require.Equal(t, http.StatusOK, resp.Code)
+
+				mediaType, params, err := mime.ParseMediaType(resp.Header().Get("Content-Type"))
+				require.NoError(t, err)
+				assert.Equal(t, tc.mediaType, mediaType)
+				assert.Equal(t, tc.version, params["version"])
+
+				samples := make(map[string]float64)
+				for _, line := range strings.Split(resp.Body.String(), "\n") {
+					fields := strings.Fields(line)
+					if len(fields) == 0 || (fields[0] != "test_requests_total" && fields[0] != "test_requests_created") {
+						continue
+					}
+					require.Len(t, fields, 2)
+					value, err := strconv.ParseFloat(fields[1], 64)
+					require.NoError(t, err)
+					require.NotContains(t, samples, fields[0], "duplicate sample")
+					samples[fields[0]] = value
+				}
+				require.Contains(t, samples, "test_requests_total")
+				assert.Equal(t, 7.0, samples["test_requests_total"])
+				created, hasCreated := samples["test_requests_created"]
+				require.Equal(t, tc.wantCreated, hasCreated, "unexpected presence of test_requests_created")
+				if tc.wantCreated {
+					assert.Greater(t, created, 0.0)
+				}
+			})
+		}
+	})
+
+	t.Run("validation", func(t *testing.T) {
+		for _, tc := range []struct {
+			name                    string
+			registerInstrumentation bool
+			enableCreatedSamples    bool
+			wantErr                 bool
+		}{
+			{name: "both disabled"},
+			{name: "instrumentation only", registerInstrumentation: true},
+			{name: "both enabled", registerInstrumentation: true, enableCreatedSamples: true},
+			{name: "created samples without instrumentation", enableCreatedSamples: true, wantErr: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				cfg := Config{
+					RegisterInstrumentation:             tc.registerInstrumentation,
+					EnableOpenMetricsTextCreatedSamples: tc.enableCreatedSamples,
+				}
+				err := cfg.Validate()
+				if tc.wantErr {
+					require.EqualError(t, err, "server.enable-open-metrics-text-created-samples can only be used if server.register-instrumentation is set to true")
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	})
 }
 
 func TestPprofCmdlineDisabled(t *testing.T) {

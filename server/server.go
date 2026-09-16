@@ -585,7 +585,8 @@ func RegisterInstrumentation(router *mux.Router) {
 	RegisterInstrumentationWithGatherer(router, prometheus.DefaultGatherer)
 }
 
-// RegisterInstrumentationWithGatherer on the given router and set EnableOpenMetricsTextCreatedSamples.
+// RegisterInstrumentationWithGathererAndCreatedSamples registers metrics and pprof handlers.
+// If enableOpenMetricsTextCreatedSamples is true, OpenMetrics 1.0 responses include _created samples.
 func RegisterInstrumentationWithGathererAndCreatedSamples(router *mux.Router, gatherer prometheus.Gatherer, enableOpenMetricsTextCreatedSamples bool) {
 	router.Handle("/metrics", promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics:                   true,

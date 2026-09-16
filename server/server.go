@@ -596,7 +596,7 @@ func RegisterInstrumentationWithGathererAndCreatedSamples(router *mux.Router, ga
 	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
 }
 
-// RegisterInstrumentationWithGatherer on the given router.
+// RegisterInstrumentationWithGatherer registers metrics and pprof handlers.
 func RegisterInstrumentationWithGatherer(router *mux.Router, gatherer prometheus.Gatherer) {
 	RegisterInstrumentationWithGathererAndCreatedSamples(router, gatherer, false)
 }

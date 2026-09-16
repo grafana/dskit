@@ -78,7 +78,7 @@ The easiest possible way to create a service is using the `NewService` function 
 The returned service is in the `New` state.
 When it transitions to the `Starting` state (by calling `StartAsync`), `StartingFn` is called.
 When `StartingFn` finishes with no error, the service transitions to the `Running` state and `RunningFn` is called.
-When `RunningFn` finishes, services transition to the `Stopping` state, and `StoppingFn` is called.
+When `RunningFn` finishes, the service transitions to the `Stopping` state, and `StoppingFn` is called.
 After `StoppingFn` is done, the service ends in `Terminated` state (if none of the functions returned an error), or the `Failed` state, if there were errors.
 
 Any of the functions can be `nil`, in which case the service simply moves to the next state.

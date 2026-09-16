@@ -32,7 +32,7 @@ func main() {
     // Use the wrapped tracer in your application
     opentracing.SetGlobalTracer(wrappedTracer)
 
-    // Or, as an oneliner:
+    // Or, as a one-liner:
     // opentracing.SetGlobalTracer(spanprofiler.NewTracer(opentracing.GlobalTracer()))
 
     // Your application logic here
@@ -81,7 +81,7 @@ will show you profile for the code that is not covered with traces:
 ```
 
 Additionally, trace spans are identified by the `pyroscope.profile.id` attribute, indicating the associated profile.
-This allows to find such spans in the trace view (in the screenshot) and fetch profiles for specific spans.
+This makes it possible to find such spans in the trace view (in the screenshot) and fetch profiles for specific spans.
 
 It's important to note that the presence of this attribute does not guarantee profile availability; stack trace samples
 might not be collected if the CPU time utilized falls below the sample interval (10ms).
@@ -100,5 +100,5 @@ The typical performance impact is generally imperceptible and primarily arises f
 intensive use of pprof labels may have negative impact on the profiled application.
 
 In the case of the tracer provided by this package, the `StartSpan` method wrapper introduces an approximate 20% increase
-in CPU time compared to the original call. In vase majority of cases, the overhead constitutes less than 0.01% of the total
+in CPU time compared to the original call. In the vast majority of cases, the overhead constitutes less than 0.01% of the total
 CPU time and is considered safe for deployment in production systems.

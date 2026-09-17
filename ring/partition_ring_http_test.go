@@ -69,6 +69,8 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 		assert.Equal(t, http.StatusOK, recorder.Code)
 		assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
 
+		assert.Equal(t, []string{"99.9%", "0.0931%", "0%"}, regexp.MustCompile(`[0-9.]+%`).FindAllString(recorder.Body.String(), -1))
+
 		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
 			"<td>", "1", "</td>",
 			"<td>", "Active", "</td>",

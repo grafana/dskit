@@ -68,60 +68,6 @@ func NewPartitionRingDesc() *PartitionRingDesc {
 	}
 }
 
-// tokens returns a sort list of tokens registered by all partitions.
-func (m *PartitionRingDesc) tokens() Tokens {
-	allTokens := make(Tokens, 0, len(m.Partitions)*optimalTokensPerInstance)
-
-	for _, partition := range m.Partitions {
-		allTokens = append(allTokens, partition.Tokens...)
-	}
-
-	slices.Sort(allTokens)
-	return allTokens
-}
-
-// partitionByToken returns a map where the key is a registered token and the value is ID of the partition
-// that registered that token.
-func (m *PartitionRingDesc) partitionByToken() map[Token]int32 {
-	out := make(map[Token]int32, len(m.Partitions)*optimalTokensPerInstance)
-
-	for partitionID, partition := range m.Partitions {
-		for _, token := range partition.Tokens {
-			out[Token(token)] = partitionID
-		}
-	}
-
-	return out
-}
-
-// CountTokens returns the summed token distance of all tokens in each partition.
-func (m *PartitionRingDesc) countTokens() map[int32]int64 {
-	owned := make(map[int32]int64, len(m.Partitions))
-	sortedTokens := m.tokens()
-	tokensToPartitions := m.partitionByToken()
-
-	for i, token := range sortedTokens {
-		partition := tokensToPartitions[Token(token)]
-
-		var prevToken uint32
-		if i == 0 {
-			prevToken = sortedTokens[len(sortedTokens)-1]
-		} else {
-			prevToken = sortedTokens[i-1]
-		}
-		diff := tokenDistance(prevToken, token)
-		owned[partition] = owned[partition] + diff
-	}
-
-	// Partitions with 0 tokens should still exist in the result.
-	for id := range m.Partitions {
-		if _, ok := owned[id]; !ok {
-			owned[id] = 0
-		}
-	}
-	return owned
-}
-
 // ownersByPartition returns a map where the key is the partition ID and the value is a list of owner IDs.
 func (m *PartitionRingDesc) ownersByPartition() map[int32][]string {
 	out := make(map[int32][]string, len(m.Partitions))

@@ -1590,3 +1590,93 @@ func BenchmarkActivePartitionBatchRing_GetKeysByPartition(b *testing.B) {
 		})
 	}
 }
+
+func TestPartitionRing_tokens(t *testing.T) {
+	desc := &PartitionRingDesc{
+		Partitions: map[int32]PartitionDesc{
+			1: {Tokens: []uint32{1, 5, 8}, State: PartitionActive, StateTimestamp: 10},
+			2: {Tokens: []uint32{3, 4, 9}, State: PartitionActive, StateTimestamp: 20},
+		},
+		Owners: map[string]OwnerDesc{
+			"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
+			"ingester-zone-b-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 15},
+		},
+	}
+
+	ring, err := NewPartitionRing(*desc)
+	require.NoError(t, err)
+
+	assert.Equal(t, Tokens{1, 3, 4, 5, 8, 9}, ring.ringTokens)
+}
+
+func TestPartitionRing_partitionByToken(t *testing.T) {
+	desc := &PartitionRingDesc{
+		Partitions: map[int32]PartitionDesc{
+			1: {Tokens: []uint32{1, 5, 8}, State: PartitionActive, StateTimestamp: 10},
+			2: {Tokens: []uint32{3, 4, 9}, State: PartitionActive, StateTimestamp: 20},
+		},
+		Owners: map[string]OwnerDesc{
+			"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
+			"ingester-zone-b-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 15},
+		},
+	}
+
+	ring, err := NewPartitionRing(*desc)
+	require.NoError(t, err)
+
+	assert.Equal(t, map[Token]int32{1: 1, 5: 1, 8: 1, 3: 2, 4: 2, 9: 2}, ring.partitionByToken)
+}
+
+func TestPartitionRing_countTokens(t *testing.T) {
+	t.Run("empty ring should return an empty result", func(t *testing.T) {
+		desc := &PartitionRingDesc{}
+
+		ring, err := NewPartitionRing(*desc)
+		require.NoError(t, err)
+
+		result := ring.countTokens()
+
+		assert.Empty(t, result)
+	})
+
+	t.Run("ring with some partitions should return correct distances", func(t *testing.T) {
+		desc := &PartitionRingDesc{
+			Partitions: map[int32]PartitionDesc{
+				1: {Tokens: []uint32{1000000, 3000000, 6000000}},
+				2: {Tokens: []uint32{2000000, 4000000, 8000000}},
+				3: {Tokens: []uint32{5000000, 9000000}},
+			},
+		}
+
+		ring, err := NewPartitionRing(*desc)
+		require.NoError(t, err)
+
+		result := ring.countTokens()
+
+		expected := map[int32]int64{
+			1: 3000000 + (int64(math.MaxUint32) + 1 - 9000000),
+			2: 4000000,
+			3: 2000000,
+		}
+		assert.Equal(t, expected, result)
+	})
+
+	t.Run("partitions with no tokens should be present in the result, with 0 distance", func(t *testing.T) {
+		desc := &PartitionRingDesc{
+			Partitions: map[int32]PartitionDesc{
+				1: {Tokens: []uint32{1000000, 3000000, 6000000}},
+				2: {Tokens: []uint32{2000000, 4000000, 8000000}},
+				3: {Tokens: []uint32{5000000, 9000000}},
+				4: {Tokens: []uint32{}},
+			},
+		}
+
+		ring, err := NewPartitionRing(*desc)
+		require.NoError(t, err)
+
+		result := ring.countTokens()
+
+		assert.Contains(t, result, int32(4))
+		assert.Equal(t, int64(0), result[4])
+	})
+}

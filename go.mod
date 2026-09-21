@@ -23,10 +23,10 @@ require (
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.12
 	github.com/hashicorp/consul/api v1.34.5
 	github.com/hashicorp/go-cleanhttp v0.5.2
-	github.com/hashicorp/go-metrics v0.6.1
+	github.com/hashicorp/go-metrics v0.7.0
 	github.com/hashicorp/go-sockaddr v1.0.7
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/hashicorp/memberlist v0.6.0
+	github.com/hashicorp/memberlist v0.7.0
 	github.com/miekg/dns v1.1.73
 	github.com/opentracing-contrib/go-grpc v0.1.4
 	github.com/opentracing-contrib/go-stdlib v1.1.1
@@ -35,7 +35,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/prometheus/client_golang v1.24.1
-	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.71.0
 	github.com/prometheus/exporter-toolkit v0.19.0
 	github.com/sercand/kuberesolver/v6 v6.0.1
@@ -68,7 +68,6 @@ require (
 
 require (
 	github.com/HdrHistogram/hdrhistogram-go v1.3.0 // indirect
-	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
@@ -138,4 +137,4 @@ require (
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet.
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260515134459-1798cf41aca7
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af

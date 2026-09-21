@@ -3,6 +3,7 @@ package ring
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"sync"
@@ -443,4 +444,73 @@ func createTestMultipartitionOwnershipPartitionInstanceLifecyclerConfig(partitio
 		DeleteInactivePartitionAfterDuration: 0,
 		PollingInterval:                      10 * time.Millisecond,
 	}
+}
+
+func TestPartitionInstanceLifecycler_CreatePartitionWithStoredTokens(t *testing.T) {
+	desc, err := createPartitionAndRegisterOwnerForTest(t, nil, derivedTokensLifecyclerConfig(1, false))
+	require.NoError(t, err)
+	assertCreatedPartition(t, desc, 1, PartitionTokensStored, optimalTokensPerInstance)
+}
+
+func TestPartitionInstanceLifecycler_CreatePartitionWithDerivedTokens(t *testing.T) {
+	desc, err := createPartitionAndRegisterOwnerForTest(t, nil, derivedTokensLifecyclerConfig(7, true))
+	require.NoError(t, err)
+	assertCreatedPartition(t, desc, 7, PartitionTokensSmt512, 0)
+}
+
+// The option only affects partitions that the lifecycler creates.
+func TestPartitionInstanceLifecycler_KeepExistingPartition(t *testing.T) {
+	for name, existing := range map[string]PartitionDesc{
+		"stored tokens":  {Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: []uint32{1, 2}},
+		"derived tokens": {Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512},
+	} {
+		for _, derived := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/derived=%t", name, derived), func(t *testing.T) {
+				desc, err := createPartitionAndRegisterOwnerForTest(t, &existing, derivedTokensLifecyclerConfig(1, derived))
+				require.NoError(t, err)
+				assert.Equal(t, existing, desc.Partitions[1])
+				assert.Equal(t, int32(1), desc.Owners["instance-1"].OwnedPartition)
+			})
+		}
+	}
+}
+
+func derivedTokensLifecyclerConfig(partitionID int32, derived bool) PartitionInstanceLifecyclerConfig {
+	cfg := createTestPartitionInstanceLifecyclerConfig(partitionID, "instance-1")
+	cfg.CreatePartitionsWithDerivedTokens = derived
+	return cfg
+}
+
+// createPartitionAndRegisterOwnerForTest runs the lifecycler against a ring that contains existing, if set,
+// and returns the resulting ring, or nil if nothing was written.
+func createPartitionAndRegisterOwnerForTest(t *testing.T, existing *PartitionDesc, cfg PartitionInstanceLifecyclerConfig) (*PartitionRingDesc, error) {
+	t.Helper()
+	ctx := context.Background()
+	store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	if existing != nil {
+		require.NoError(t, store.CAS(ctx, ringKey, func(interface{}) (interface{}, bool, error) {
+			desc := NewPartitionRingDesc()
+			desc.Partitions[existing.Id] = *existing
+			return desc, true, nil
+		}))
+	}
+	lifecycler := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, log.NewNopLogger(), nil)
+	createErr := lifecycler.createPartitionAndRegisterOwner(ctx)
+
+	value, err := store.Get(ctx, ringKey)
+	require.NoError(t, err)
+	desc, _ := value.(*PartitionRingDesc)
+	return desc, createErr
+}
+
+// assertCreatedPartition checks that the lifecycler created a pending partition and registered itself as its owner.
+func assertCreatedPartition(t *testing.T, desc *PartitionRingDesc, partitionID int32, scheme PartitionTokenScheme, tokens int) {
+	t.Helper()
+	require.NotNil(t, desc)
+	partition := desc.Partitions[partitionID]
+	assert.Equal(t, PartitionPending, partition.State)
+	assert.Equal(t, scheme, partition.TokenScheme)
+	assert.Len(t, partition.Tokens, tokens)
+	assert.Equal(t, partitionID, desc.Owners["instance-1"].OwnedPartition)
 }

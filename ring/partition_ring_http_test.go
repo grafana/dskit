@@ -24,7 +24,27 @@ import (
 func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 	partRing, err := NewPartitionRing(partitionRingPageTestDesc())
 	require.NoError(t, err)
-	testPartitionRingPageView(t, partRing)
+	testPartitionRingPageView(t, partRing, "Stored")
+}
+
+func TestPartitionRingPageHandler_ViewPageWithDerivedTokens(t *testing.T) {
+	desc := partitionRingPageTestDesc()
+	tokensByPartition := map[int32]Tokens{}
+	for id, partition := range desc.Partitions {
+		tokensByPartition[id] = partition.Tokens
+		partition.Tokens = nil
+		partition.TokenScheme = PartitionTokensSmt512
+		desc.Partitions[id] = partition
+	}
+	opts := DefaultPartitionRingOptions()
+	opts.TokenGenerator = partitionTokenGeneratorFunc(func(id int32) (Tokens, error) {
+		tokens, ok := tokensByPartition[id]
+		require.True(t, ok, "must not resolve a dangling owner's tokens")
+		return tokens, nil
+	})
+	partRing, err := NewPartitionRingWithOptions(desc, opts)
+	require.NoError(t, err)
+	testPartitionRingPageView(t, partRing, "Smt512")
 }
 
 // partitionRingPageTestDesc returns two partitions and a dangling owner of a missing partition.
@@ -64,7 +84,7 @@ func partitionRingPageTestDesc() PartitionRingDesc {
 	}
 }
 
-func testPartitionRingPageView(t *testing.T, partRing *PartitionRing) {
+func testPartitionRingPageView(t *testing.T, partRing *PartitionRing, expectedScheme string) {
 	handler := NewPartitionRingPageHandler(
 		newStaticPartitionRingReader(partRing),
 		nil,
@@ -82,6 +102,7 @@ func testPartitionRingPageView(t *testing.T, partRing *PartitionRing) {
 			"<td>", "Active", "</td>",
 			"<td>", "[^<]+", "</td>",
 			"<td>", "ingester-zone-a-0", "<br />", "ingester-zone-b-0", "<br />", "</td>",
+			"<td>", expectedScheme, "</td>",
 			"<td>", "3", "</td>",
 			"<td>", "99.9%", "</td>",
 		}, `\s*`))), recorder.Body.String())
@@ -91,6 +112,7 @@ func testPartitionRingPageView(t *testing.T, partRing *PartitionRing) {
 			"<td>", "Inactive", "</td>",
 			"<td>", "[^<]+", "</td>",
 			"<td>", "ingester-zone-a-1", "<br />", "ingester-zone-b-1", "<br />", "</td>",
+			"<td>", expectedScheme, "</td>",
 			"<td>", "4", "</td>",
 			"<td>", "0.0931%", "</td>",
 		}, `\s*`))), recorder.Body.String())
@@ -100,6 +122,7 @@ func testPartitionRingPageView(t *testing.T, partRing *PartitionRing) {
 			"<td>", "Corrupt", "</td>",
 			"<td>", "N/A", "</td>",
 			"<td>", "ingester-zone-b-2", "<br />", "</td>",
+			"<td>", "</td>",
 			"<td>", "0", "</td>",
 			"<td>", "0%", "</td>",
 		}, `\s*`))), recorder.Body.String())

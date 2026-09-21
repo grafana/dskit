@@ -407,6 +407,32 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 				Owners: map[string]OwnerDesc{},
 			},
 		},
+		"token scheme and tokens are not merged": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, State: PartitionInactive, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionInactive, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionInactive, StateTimestamp: 20},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+		},
 	}
 
 	for testName, testData := range tests {

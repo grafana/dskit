@@ -60,6 +60,9 @@ type PartitionRing struct {
 
 // PartitionRingOptions holds optional configuration parameters for creating a PartitionRing.
 type PartitionRingOptions struct {
+	// TokenGenerator is required for partitions using PartitionTokensSmt512.
+	TokenGenerator PartitionTokenGenerator
+
 	// ShuffleShardCacheSize is the size of the cache used for shuffle sharding.
 	// If zero or negative, an unbounded map-based cache is used.
 	// If positive, an LRU cache with the specified size is used.
@@ -85,7 +88,11 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
 	}
 
-	ringTokens, partitionByToken := resolveRingTokens(desc)
+	ringTokens, partitionByToken, err := resolveRingTokens(desc, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	ringPartitionIDs, ringPartitionActive, err := buildRingTokenPartitionLookups(ringTokens, partitionByToken, desc.Partitions)
 	if err != nil {
 		return nil, err
@@ -106,8 +113,8 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 }
 
 // partitionTokens returns the immutable tokens of a partition.
-func (r *PartitionRing) partitionTokens(id int32) Tokens {
-	return resolvePartitionTokens(r.desc, id)
+func (r *PartitionRing) partitionTokens(id int32) (Tokens, error) {
+	return resolvePartitionTokens(r.desc, id, r.opts)
 }
 
 // countTokens returns the summed token distance of all tokens in each partition.
@@ -509,7 +516,10 @@ func (r *PartitionRing) GetTokenRangesForPartition(partitionID int32) (TokenRang
 		return nil, ErrPartitionDoesNotExist
 	}
 
-	tokens := r.partitionTokens(partitionID)
+	tokens, err := r.partitionTokens(partitionID)
+	if err != nil {
+		return nil, err
+	}
 
 	// 1 range (2 values) per token + one additional if we need to split the rollover range.
 	ranges := make(TokenRanges, 0, 2*(len(tokens)+1))

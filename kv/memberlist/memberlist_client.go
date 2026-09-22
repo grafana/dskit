@@ -1678,10 +1678,14 @@ func (m *KV) GetBroadcasts(overhead, limit int) [][]byte {
 // Entries are immutable once built: data is reused by every later pull that finds the entry
 // still current, so it must not be modified after the entry is stored.
 type localStateCacheEntry struct {
-	// version is the ValueDesc.Version this entry was built from. Every mutation of a
-	// store entry bumps that version (see mergeValueForKey, the only writer of m.store),
-	// and the version covers everything serialized below: the value, codec, deleted flag
-	// and update time. So a matching version means this serialized form is still current.
+	// version is the ValueDesc.Version this entry was built from. Almost every mutation of a
+	// store entry bumps that version (see mergeValueForKey, the only writer of m.store), and
+	// the version covers everything serialized below: the value, codec, deleted flag and
+	// update time. So a matching version means this serialized form is still current.
+	//
+	// The one mutation that does not bump the version is expired tombstone removal, which
+	// mergeValueForKey can do in place before returning early; it evicts the cache entry
+	// itself for that case.
 	//
 	// The version is local to this node and never crosses the wire, so versions assigned
 	// by different nodes are unrelated and are never compared against each other.
@@ -1983,6 +1987,13 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, incomingValue
 		total, removed := result.RemoveTombstones(limit)
 		m.storeTombstones.WithLabelValues(key).Set(float64(total))
 		m.storeRemovedTombstones.WithLabelValues(key).Add(float64(removed))
+
+		// RemoveTombstones changed the stored value in place, but the paths below can return
+		// without bumping the version, which is what would otherwise invalidate the cache. So
+		// drop the entry here, to stop a later pull from sending the removed tombstones.
+		if removed > 0 {
+			delete(m.localStateCache, key)
+		}
 
 		// Remove tombstones from change too. If change turns out to be empty after this,
 		// we don't need to gossip the change. However, the local value will be always be updated.

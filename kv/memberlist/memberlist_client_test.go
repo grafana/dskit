@@ -3299,6 +3299,38 @@ func TestLocalStateCacheInvalidatedOnInPlaceMerge(t *testing.T) {
 		"in-place merge must invalidate the cache")
 }
 
+// TestLocalStateCacheInvalidatedOnTombstoneRemoval covers the one mutation that doesn't bump
+// the version: mergeValueForKey removes expired tombstones from the stored value in place, and
+// returns early when the change consists only of those tombstones.
+func TestLocalStateCacheInvalidatedOnTombstoneRemoval(t *testing.T) {
+	mkv, _ := newTestKVForLocalStateCache(t, func(cfg *KVConfig) {
+		cfg.LeftIngestersTimeout = time.Minute
+	})
+
+	// Seeded directly, because a CAS would remove the expired tombstone on the way in, and
+	// the merge below has to be what removes it.
+	expired := time.Now().Add(-time.Hour).Unix()
+	mkv.storeMu.Lock()
+	mkv.store[key] = ValueDesc{
+		value:      &data{Members: map[string]member{"a": {Timestamp: expired, State: ACTIVE}, "left": {Timestamp: expired, State: LEFT}}},
+		Version:    1,
+		CodecID:    dataCodec{}.CodecID(),
+		UpdateTime: time.Now(),
+	}
+	mkv.storeMu.Unlock()
+
+	// Prime the cache with a payload that still contains the tombstone.
+	require.Equal(t, map[string][]string{key: {"a", "left"}}, parseLocalState(t, mkv.LocalState(false)))
+
+	incoming := &data{Members: map[string]member{"left": {Timestamp: expired + 1, State: LEFT}}}
+	_, version, _, _, err := mkv.mergeValueForKey(key, incoming, false, 0, dataCodec{}.CodecID(), false, time.Time{})
+	require.NoError(t, err)
+	require.Zero(t, version, "precondition: this path must not bump the version")
+
+	require.Equal(t, map[string][]string{key: {"a"}}, parseLocalState(t, mkv.LocalState(false)),
+		"tombstones removed in place must not be served from the cache")
+}
+
 func TestLocalStateCacheEvictedWithObsoleteEntries(t *testing.T) {
 	mkv, _ := newTestKVForLocalStateCache(t)
 

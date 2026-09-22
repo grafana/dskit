@@ -889,9 +889,10 @@ func (r *Ring) updateRingMetrics() {
 		}
 	}
 
+	now := time.Now()
 	for _, instance := range r.ringDesc.Ingesters {
 		s := instance.State.String()
-		if !r.IsHealthy(&instance, Reporting, time.Now()) {
+		if !r.IsHealthy(&instance, Reporting, now) {
 			s = unhealthy
 		}
 		numByState[s]++

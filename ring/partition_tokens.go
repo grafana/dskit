@@ -3,6 +3,12 @@ package ring
 import (
 	"fmt"
 	"slices"
+	"time"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // PartitionTokenGenerator derives sorted tokens from a partition ID.
@@ -10,6 +16,59 @@ import (
 // Implementations must be safe for concurrent use.
 type PartitionTokenGenerator interface {
 	TokensFor(id int32) (Tokens, error)
+}
+
+var _ PartitionTokenGenerator = (*PartitionTokenTable)(nil)
+
+// PartitionTokenTable provides read-only access to derived tokens generated in NewPartitionTokenTable.
+// Share one table across the process's partition rings. Returned slices must not be modified.
+type PartitionTokenTable struct {
+	tokens []Tokens
+}
+
+// NewPartitionTokenTable generates tokens for partition IDs 0 to partitions-1 before it returns,
+// so its cost grows with partitions. Zero creates an empty table.
+func NewPartitionTokenTable(partitions int32, logger log.Logger, reg prometheus.Registerer) (*PartitionTokenTable, error) {
+	return newPartitionTokenTable(partitions, logger, reg, generatePartitionTokens)
+}
+
+func newPartitionTokenTable(partitions int32, logger log.Logger, reg prometheus.Registerer, generate func(int32) ([]Tokens, error)) (*PartitionTokenTable, error) {
+	if partitions < 0 {
+		return nil, fmt.Errorf("derived token partition count must be non-negative, got %d", partitions)
+	}
+	if partitions == 0 {
+		registerPartitionTokenTableMetrics(partitions, reg)
+		return &PartitionTokenTable{}, nil
+	}
+	start := time.Now()
+	maxID := partitions - 1
+	tokens, err := generate(maxID)
+	if err != nil {
+		return nil, fmt.Errorf("generate partition tokens through ID %d: %w", maxID, err)
+	}
+	for id, partitionTokens := range tokens {
+		// Every ring shares these slices. Trim capacity to length, so append on a returned slice
+		// always copies it instead of writing into the shared array.
+		tokens[id] = partitionTokens[:len(partitionTokens):len(partitionTokens)]
+	}
+	level.Info(logger).Log("msg", "generated partition tokens", "partitions", partitions, "duration", time.Since(start))
+	registerPartitionTokenTableMetrics(partitions, reg)
+	return &PartitionTokenTable{tokens: tokens}, nil
+}
+
+func registerPartitionTokenTableMetrics(partitions int32, reg prometheus.Registerer) {
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "partition_ring_max_derived_token_partitions",
+		Help: "Number of partition IDs, from 0, that can use derived tokens.",
+	}).Set(float64(partitions))
+}
+
+// TokensFor returns immutable tokens for id, which must be in [0, the configured partition count).
+func (t *PartitionTokenTable) TokensFor(id int32) (Tokens, error) {
+	if id < 0 || int(id) >= len(t.tokens) {
+		return nil, fmt.Errorf("partition ID %d must be between 0 and %d (exclusive)", id, len(t.tokens))
+	}
+	return t.tokens[id], nil
 }
 
 // resolveRingTokens returns the sorted tokens of all partitions and the partition owning each token.
@@ -53,7 +112,6 @@ func resolvePartitionTokens(desc PartitionRingDesc, id int32, opts PartitionRing
 }
 
 // generatePartitionTokens returns sorted, deterministic tokens for every ID from 0 through maxPartitionID.
-// TODO: use it to fill the partition token table in the next commit.
 func generatePartitionTokens(maxPartitionID int32) ([]Tokens, error) {
 	if maxPartitionID < 0 {
 		return nil, fmt.Errorf("partition ID must be non-negative, got %d", maxPartitionID)

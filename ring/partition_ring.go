@@ -60,7 +60,8 @@ type PartitionRing struct {
 
 // PartitionRingOptions holds optional configuration parameters for creating a PartitionRing.
 type PartitionRingOptions struct {
-	// TokenGenerator is required for partitions using PartitionTokensSmt512.
+	// TokenGenerator derives tokens for partitions using PartitionTokensSmt512.
+	// It may be nil if all partitions use stored tokens.
 	TokenGenerator PartitionTokenGenerator
 
 	// ShuffleShardCacheSize is the size of the cache used for shuffle sharding.

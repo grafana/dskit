@@ -475,9 +475,43 @@ func TestPartitionInstanceLifecycler_KeepExistingPartition(t *testing.T) {
 	}
 }
 
+func TestPartitionInstanceLifecycler_RejectDerivedPartitionAtOrAboveMax(t *testing.T) {
+	for _, tc := range []struct {
+		partitionID   int32
+		maxPartitions int32
+	}{
+		{partitionID: 8, maxPartitions: 8},
+		{partitionID: 0, maxPartitions: 0},
+		{partitionID: 0, maxPartitions: -1},
+	} {
+		t.Run(fmt.Sprintf("partition=%d/max=%d", tc.partitionID, tc.maxPartitions), func(t *testing.T) {
+			cfg := derivedTokensLifecyclerConfig(tc.partitionID, true)
+			cfg.MaxDerivedTokenPartitions = tc.maxPartitions
+			desc, err := createPartitionAndRegisterOwnerForTest(t, nil, cfg)
+			require.Error(t, err)
+			assert.Nil(t, desc, "a rejected partition must not be written")
+		})
+	}
+
+	t.Run("stored tokens ignore the maximum", func(t *testing.T) {
+		desc, err := createPartitionAndRegisterOwnerForTest(t, nil, derivedTokensLifecyclerConfig(8, false))
+		require.NoError(t, err)
+		assertCreatedPartition(t, desc, 8, PartitionTokensStored, optimalTokensPerInstance)
+	})
+
+	t.Run("existing partition at the maximum is kept", func(t *testing.T) {
+		existing := PartitionDesc{Id: 8, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512}
+		desc, err := createPartitionAndRegisterOwnerForTest(t, &existing, derivedTokensLifecyclerConfig(8, true))
+		require.NoError(t, err)
+		assert.Equal(t, existing, desc.Partitions[8])
+	})
+}
+
 func derivedTokensLifecyclerConfig(partitionID int32, derived bool) PartitionInstanceLifecyclerConfig {
 	cfg := createTestPartitionInstanceLifecyclerConfig(partitionID, "instance-1")
 	cfg.CreatePartitionsWithDerivedTokens = derived
+	// Partitions 0-7 can be created with derived tokens.
+	cfg.MaxDerivedTokenPartitions = 8
 	return cfg
 }
 

@@ -36,13 +36,6 @@ func (r *ringWatcherDelegateStub) PartitionState(partition int32) PartitionState
 	return r.newRing.Partitions[partition].State
 }
 
-// staticPartitionTokens is comparable with require.Equal, unlike a function-based generator.
-type staticPartitionTokens []Tokens
-
-func (s staticPartitionTokens) TokensFor(id int32) (Tokens, error) {
-	return s[id], nil
-}
-
 func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	const ringKey = "ring"
 
@@ -54,10 +47,10 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	delegate := &ringWatcherDelegateStub{}
-	tokens, err := generatePartitionTokens(3)
+	tokens, err := NewPartitionTokenTable(4, logger, nil)
 	require.NoError(t, err)
 	opts := DefaultPartitionRingOptions()
-	opts.TokenGenerator = staticPartitionTokens(tokens)
+	opts.TokenGenerator = tokens
 	// Set a size so we can assert the options are preserved on update.
 	opts.ShuffleShardCacheSize = 1
 	watcher := NewPartitionRingWatcherWithOptions("test", ringKey, store, opts, logger, reg).WithDelegate(delegate)

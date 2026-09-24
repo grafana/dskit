@@ -9,6 +9,15 @@ services, including:
  - RPC [middlewares](https://github.com/grafana/dskit/tree/main/middleware), for metrics, logging, etc.
  - A [services model](https://github.com/grafana/dskit/tree/main/services), to manage start-up and shut-down.
 
+## Packages
+
+Some of the most commonly used packages are:
+ - [ring](https://github.com/grafana/dskit/tree/main/ring): consistent hashing rings shared between instances via a key-value store, with lifecyclers to join and heartbeat them.
+ - [kv](https://github.com/grafana/dskit/tree/main/kv): a key-value client API with CAS and Watch operations, implemented for Consul, Etcd and Memberlist.
+ - [services](https://github.com/grafana/dskit/tree/main/services): a service lifecycle model (New, Starting, Running, Stopping, Terminated, Failed) inspired by Google Guava.
+ - [server](https://github.com/grafana/dskit/tree/main/server): an instrumented HTTP and gRPC server with common initialization, including TLS support.
+ - [grpcclient](https://github.com/grafana/dskit/tree/main/grpcclient): gRPC client configuration with retries, backoff, rate limiting, compression and TLS.
+
 ## Current state
 
 This library is used at scale in production at Grafana Labs.

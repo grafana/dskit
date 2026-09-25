@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -60,13 +61,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	})
 
 	assert.Equal(t, 0, watcher.PartitionRing().PartitionsCount())
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
-		# TYPE partition_ring_partitions gauge
-		partition_ring_partitions{name="test",state="Pending"} 0
-		partition_ring_partitions{name="test",state="Active"} 0
-		partition_ring_partitions{name="test",state="Inactive"} 0
-	`)))
+	assertPartitionRingWatcherMetrics(t, reg, 0, 0, 0)
 
 	// Add an ACTIVE partition to the ring.
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -82,13 +77,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 	// Assert that the options are preserved on update.
 	require.Equal(t, opts, watcher.PartitionRing().opts)
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
-		# TYPE partition_ring_partitions gauge
-		partition_ring_partitions{name="test",state="Pending"} 0
-		partition_ring_partitions{name="test",state="Active"} 1
-		partition_ring_partitions{name="test",state="Inactive"} 0
-	`)))
+	assertPartitionRingWatcherMetrics(t, reg, 0, 1, 0)
 
 	// Add an INACTIVE partition to the ring.
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -102,13 +91,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 			delegate.PartitionState(2) == PartitionInactive // Ensure delegate is updated
 	}, time.Second, 10*time.Millisecond)
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
-		# TYPE partition_ring_partitions gauge
-		partition_ring_partitions{name="test",state="Pending"} 0
-		partition_ring_partitions{name="test",state="Active"} 1
-		partition_ring_partitions{name="test",state="Inactive"} 1
-	`)))
+	assertPartitionRingWatcherMetrics(t, reg, 0, 1, 1)
 
 	// Add a PENDING partition to the ring.
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -122,13 +105,7 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 			delegate.PartitionState(3) == PartitionPending // Ensure delegate is updated
 	}, time.Second, 10*time.Millisecond)
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
-		# TYPE partition_ring_partitions gauge
-		partition_ring_partitions{name="test",state="Pending"} 1
-		partition_ring_partitions{name="test",state="Active"} 1
-		partition_ring_partitions{name="test",state="Inactive"} 1
-	`)))
+	assertPartitionRingWatcherMetrics(t, reg, 1, 1, 1)
 
 	// Change state of partition to Inactive
 	require.NoError(t, store.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -141,4 +118,15 @@ func TestPartitionRingWatcher_ShouldWatchUpdates(t *testing.T) {
 		return watcher.PartitionRing().Partitions()[1].State == PartitionInactive &&
 			delegate.PartitionState(1) == PartitionInactive // Ensure delegate is updated
 	}, time.Second, 10*time.Millisecond)
+}
+
+func assertPartitionRingWatcherMetrics(t *testing.T, reg prometheus.Gatherer, pending, active, inactive int) {
+	t.Helper()
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP partition_ring_partitions Number of partitions by state in the partitions ring.
+		# TYPE partition_ring_partitions gauge
+		partition_ring_partitions{name="test",state="Pending"} %d
+		partition_ring_partitions{name="test",state="Active"} %d
+		partition_ring_partitions{name="test",state="Inactive"} %d
+	`, pending, active, inactive))))
 }

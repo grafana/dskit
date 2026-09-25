@@ -22,7 +22,14 @@ import (
 )
 
 func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
-	partRing, err := NewPartitionRing(PartitionRingDesc{
+	partRing, err := NewPartitionRing(partitionRingPageTestDesc())
+	require.NoError(t, err)
+	testPartitionRingPageView(t, partRing)
+}
+
+// partitionRingPageTestDesc returns two partitions and a dangling owner of a missing partition.
+func partitionRingPageTestDesc() PartitionRingDesc {
+	return PartitionRingDesc{
 		Partitions: map[int32]PartitionDesc{
 			1: {
 				State:          PartitionActive,
@@ -54,9 +61,10 @@ func TestPartitionRingPageHandler_ViewPage(t *testing.T) {
 				OwnedPartition: 3,
 			},
 		},
-	})
-	require.NoError(t, err)
+	}
+}
 
+func testPartitionRingPageView(t *testing.T, partRing *PartitionRing) {
 	handler := NewPartitionRingPageHandler(
 		newStaticPartitionRingReader(partRing),
 		nil,

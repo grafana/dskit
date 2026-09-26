@@ -69,6 +69,11 @@ func (l *RateLimiter) Limit(now time.Time, tenantID string) float64 {
 	return float64(l.getTenantLimiter(now, tenantID).Limit())
 }
 
+// TokensAt returns the number of tokens available at time t for the given tenant.
+func (l *RateLimiter) TokensAt(now time.Time, tenantID string) float64 {
+	return l.getTenantLimiter(now, tenantID).TokensAt(now)
+}
+
 // Burst returns the currently configured maximum burst size.
 func (l *RateLimiter) Burst(now time.Time, tenantID string) int {
 	return l.getTenantLimiter(now, tenantID).Burst()

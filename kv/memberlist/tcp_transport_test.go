@@ -1,6 +1,7 @@
 package memberlist
 
 import (
+	"crypto/md5"
 	"fmt"
 	"io"
 	"net"
@@ -299,5 +300,79 @@ func TestTCPTransport_SentAndReceivedBytesMetrics(t *testing.T) {
 		// Ensure metrics are tracked.
 		assert.GreaterOrEqual(t, testutil.ToFloat64(senderTransport.sentBytes), float64(len(testData)), "sender should have sent at least the test data size")
 		assert.GreaterOrEqual(t, testutil.ToFloat64(receiverTransport.receivedBytes), float64(len(testData)), "receiver should have received at least the test data size")
+	})
+}
+
+func TestTCPTransport_ShouldDropPacketWithMismatchingDigest(t *testing.T) {
+	setup := func(t *testing.T) (*TCPTransport, string) {
+		cfg := TCPTransportConfig{}
+		flagext.DefaultValues(&cfg)
+		cfg.BindAddrs = getLocalhostAddrs()
+		cfg.BindPort = 0
+
+		transport, err := NewTCPTransport(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, transport.Shutdown())
+		})
+
+		ip, port, err := transport.FinalAdvertiseAddr("", transport.GetAutoBindPort())
+		require.NoError(t, err)
+
+		return transport, net.JoinHostPort(ip.String(), fmt.Sprintf("%d", port))
+	}
+
+	const from = "127.0.0.1:1"
+	sendPacket := func(t *testing.T, addr string, payload, digest []byte) {
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = conn.Close()
+		})
+
+		frame := []byte{byte(packet), byte(len(from))}
+		frame = append(frame, from...)
+		frame = append(frame, payload...)
+		frame = append(frame, digest...)
+
+		_, err = conn.Write(frame)
+		require.NoError(t, err)
+		require.NoError(t, conn.(*net.TCPConn).CloseWrite())
+	}
+
+	payload := []byte("a payload memberlist would go on to decode")
+	matching := md5.Sum(payload)
+	mismatching := md5.Sum([]byte("the digest of an entirely different payload"))
+
+	t.Run("a packet whose digest matches is delivered", func(t *testing.T) {
+		transport, addr := setup(t)
+
+		sendPacket(t, addr, payload, matching[:])
+
+		select {
+		case pkt := <-transport.PacketCh():
+			require.Equal(t, payload, pkt.Buf)
+			require.Equal(t, from, pkt.From.String())
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout waiting for packet")
+		}
+	})
+
+	t.Run("a packet whose digest does not match is dropped and counted", func(t *testing.T) {
+		transport, addr := setup(t)
+
+		sendPacket(t, addr, payload, mismatching[:])
+
+		select {
+		case pkt := <-transport.PacketCh():
+			t.Fatalf("a packet with a mismatching digest was delivered (%d bytes)", len(pkt.Buf))
+		case <-time.After(time.Second):
+		}
+
+		require.Eventually(t, func() bool {
+			return testutil.ToFloat64(transport.receivedPacketsErrors) == 1
+		}, 5*time.Second, 10*time.Millisecond, "the dropped packet should be counted as a received-packet error")
+
+		assert.Equal(t, float64(1), testutil.ToFloat64(transport.receivedPackets))
 	})
 }

@@ -1,6 +1,7 @@
 package memberlist
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/netutil"
 )
 
 func TestTCPTransport_WriteTo_ShouldNotLogAsWarningExpectedFailures(t *testing.T) {
@@ -188,6 +190,61 @@ func TestFinalAdvertiseAddr(t *testing.T) {
 
 		})
 	}
+}
+
+func TestFinalAdvertiseAddr_BoundToZeroZeroZeroZero(t *testing.T) {
+	newTransport := func(t *testing.T) *TCPTransport {
+		cfg := TCPTransportConfig{}
+		flagext.DefaultValues(&cfg)
+		cfg.BindAddrs = []string{zeroZeroZeroZero}
+		cfg.BindPort = 0
+
+		transport, err := NewTCPTransport(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, transport.Shutdown()) })
+		return transport
+	}
+
+	overrideGetPrivateIP := func(t *testing.T, fn func() (string, error)) {
+		orig := getPrivateIP
+		getPrivateIP = fn
+		t.Cleanup(func() { getPrivateIP = orig })
+	}
+
+	t.Run("should use the private IP when one is found", func(t *testing.T) {
+		overrideGetPrivateIP(t, func() (string, error) { return "10.1.2.3", nil })
+		transport := newTransport(t)
+
+		ip, port, err := transport.FinalAdvertiseAddr("", 0)
+		require.NoError(t, err)
+		require.Equal(t, "10.1.2.3", ip.String())
+		require.Equal(t, transport.GetAutoBindPort(), port)
+	})
+
+	t.Run("should fall back to the first non-loopback address when no private IP is found", func(t *testing.T) {
+		overrideGetPrivateIP(t, func() (string, error) { return "", nil })
+		transport := newTransport(t)
+
+		expected, err := netutil.GetFirstAddressOf(nil, log.NewNopLogger(), false)
+		require.NoError(t, err)
+
+		ip, port, err := transport.FinalAdvertiseAddr("", 0)
+		require.NoError(t, err)
+		require.NotNil(t, ip)
+		require.False(t, ip.IsLoopback())
+		require.False(t, ip.IsUnspecified())
+		require.Equal(t, expected, ip.String())
+		require.Equal(t, transport.GetAutoBindPort(), port)
+	})
+
+	t.Run("should return the error when looking up the private IP fails", func(t *testing.T) {
+		lookupErr := errors.New("lookup failed")
+		overrideGetPrivateIP(t, func() (string, error) { return "", lookupErr })
+		transport := newTransport(t)
+
+		_, _, err := transport.FinalAdvertiseAddr("", 0)
+		require.ErrorIs(t, err, lookupErr)
+	})
 }
 
 func TestNonIPsAreRejected(t *testing.T) {

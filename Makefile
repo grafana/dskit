@@ -88,7 +88,7 @@ check-protos: clean-protos protos ## Re-generates protos and git diffs them
 .tools/bin/misspell: .tools
 	GOPATH=$(CURDIR)/.tools go install github.com/client9/misspell/cmd/misspell@v0.3.4
 
-GOLANGCI_LINT_VERSION := 2.13.2
+GOLANGCI_LINT_VERSION := 2.14.0
 .tools/bin/golangci-lint: .tools
 	@set -e; \
 	mkdir -p .tools/bin; \

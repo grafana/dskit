@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"maps"
@@ -39,6 +40,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 
 	"github.com/grafana/dskit/clusterutil"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
@@ -75,6 +77,8 @@ type TLSConfig struct {
 	TLSKeyPath    string        `yaml:"key_file"`
 	ClientAuth    string        `yaml:"client_auth_type"`
 	ClientCAs     string        `yaml:"client_ca_file"`
+
+	ClientAllowedSans flagext.StringSliceCSVMulti `yaml:"client_allowed_sans"`
 }
 
 // Config for a Server
@@ -201,10 +205,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.HTTPTLSConfig.TLSKeyPath, "server.http-tls-key-path", "", "HTTP server key path.")
 	f.StringVar(&cfg.HTTPTLSConfig.ClientAuth, "server.http-tls-client-auth", "", "HTTP TLS Client Auth type.")
 	f.StringVar(&cfg.HTTPTLSConfig.ClientCAs, "server.http-tls-ca-path", "", "HTTP TLS Client CA path.")
+	f.Var(&cfg.HTTPTLSConfig.ClientAllowedSans, "server.http-tls-client-allowed-sans", "HTTP TLS Client allowed SANs. If set, a client certificate is accepted only if one of its DNS, email, IP or URI SANs is in this list. Requires client auth type RequireAndVerifyClientCert.")
 	f.StringVar(&cfg.GRPCTLSConfig.TLSCertPath, "server.grpc-tls-cert-path", "", "GRPC TLS server cert path.")
 	f.StringVar(&cfg.GRPCTLSConfig.TLSKeyPath, "server.grpc-tls-key-path", "", "GRPC TLS server key path.")
 	f.StringVar(&cfg.GRPCTLSConfig.ClientAuth, "server.grpc-tls-client-auth", "", "GRPC TLS Client Auth type.")
 	f.StringVar(&cfg.GRPCTLSConfig.ClientCAs, "server.grpc-tls-ca-path", "", "GRPC TLS Client CA path.")
+	f.Var(&cfg.GRPCTLSConfig.ClientAllowedSans, "server.grpc-tls-client-allowed-sans", "GRPC TLS Client allowed SANs. If set, a client certificate is accepted only if one of its DNS, email, IP or URI SANs is in this list. Requires client auth type RequireAndVerifyClientCert.")
 	f.IntVar(&cfg.HTTPListenPort, "server.http-listen-port", 80, "HTTP server listen port.")
 	f.IntVar(&cfg.HTTPConnLimit, "server.http-conn-limit", 0, "Maximum number of simultaneous http connections, <=0 to disable")
 	f.StringVar(&cfg.GRPCListenNetwork, "server.grpc-listen-network", DefaultNetwork, "gRPC server listen network")
@@ -367,17 +373,22 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	var httpTLSConfig *tls.Config
 	if (len(cfg.HTTPTLSConfig.TLSCertPath) > 0 || len(cfg.HTTPTLSConfig.TLSCert) > 0) &&
 		(len(cfg.HTTPTLSConfig.TLSKeyPath) > 0 || len(cfg.HTTPTLSConfig.TLSKey) > 0) {
+		// exporter-toolkit checks the SANs in VerifyPeerCertificate, which assumes a client certificate is present.
+		if cfg.HTTPTLSConfig.ClientAllowedSans != nil && cfg.HTTPTLSConfig.ClientAuth != "RequireAndVerifyClientCert" {
+			return nil, errors.New("http tls client allowed SANs require client auth type RequireAndVerifyClientCert")
+		}
 		// Note: ConfigToTLSConfig from prometheus/exporter-toolkit is awaiting security review.
 		httpTLSConfig, err = web.ConfigToTLSConfig(&web.TLSConfig{
-			TLSCert:       cfg.HTTPTLSConfig.TLSCert,
-			TLSKey:        config.Secret(cfg.HTTPTLSConfig.TLSKey),
-			ClientCAsText: cfg.HTTPTLSConfig.ClientCAsText,
-			TLSCertPath:   cfg.HTTPTLSConfig.TLSCertPath,
-			TLSKeyPath:    cfg.HTTPTLSConfig.TLSKeyPath,
-			ClientAuth:    cfg.HTTPTLSConfig.ClientAuth,
-			ClientCAs:     cfg.HTTPTLSConfig.ClientCAs,
-			CipherSuites:  cipherSuites,
-			MinVersion:    minVersion,
+			TLSCert:           cfg.HTTPTLSConfig.TLSCert,
+			TLSKey:            config.Secret(cfg.HTTPTLSConfig.TLSKey),
+			ClientCAsText:     cfg.HTTPTLSConfig.ClientCAsText,
+			TLSCertPath:       cfg.HTTPTLSConfig.TLSCertPath,
+			TLSKeyPath:        cfg.HTTPTLSConfig.TLSKeyPath,
+			ClientAuth:        cfg.HTTPTLSConfig.ClientAuth,
+			ClientCAs:         cfg.HTTPTLSConfig.ClientCAs,
+			ClientAllowedSans: cfg.HTTPTLSConfig.ClientAllowedSans,
+			CipherSuites:      cipherSuites,
+			MinVersion:        minVersion,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error generating http tls config: %v", err)
@@ -386,17 +397,22 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	var grpcTLSConfig *tls.Config
 	if (len(cfg.GRPCTLSConfig.TLSCertPath) > 0 || len(cfg.GRPCTLSConfig.TLSCert) > 0) &&
 		(len(cfg.GRPCTLSConfig.TLSKeyPath) > 0 || len(cfg.GRPCTLSConfig.TLSKey) > 0) {
+		// exporter-toolkit checks the SANs in VerifyPeerCertificate, which assumes a client certificate is present.
+		if cfg.GRPCTLSConfig.ClientAllowedSans != nil && cfg.GRPCTLSConfig.ClientAuth != "RequireAndVerifyClientCert" {
+			return nil, errors.New("grpc tls client allowed SANs require client auth type RequireAndVerifyClientCert")
+		}
 		// Note: ConfigToTLSConfig from prometheus/exporter-toolkit is awaiting security review.
 		grpcTLSConfig, err = web.ConfigToTLSConfig(&web.TLSConfig{
-			TLSCert:       cfg.GRPCTLSConfig.TLSCert,
-			TLSKey:        config.Secret(cfg.GRPCTLSConfig.TLSKey),
-			ClientCAsText: cfg.GRPCTLSConfig.ClientCAsText,
-			TLSCertPath:   cfg.GRPCTLSConfig.TLSCertPath,
-			TLSKeyPath:    cfg.GRPCTLSConfig.TLSKeyPath,
-			ClientAuth:    cfg.GRPCTLSConfig.ClientAuth,
-			ClientCAs:     cfg.GRPCTLSConfig.ClientCAs,
-			CipherSuites:  cipherSuites,
-			MinVersion:    minVersion,
+			TLSCert:           cfg.GRPCTLSConfig.TLSCert,
+			TLSKey:            config.Secret(cfg.GRPCTLSConfig.TLSKey),
+			ClientCAsText:     cfg.GRPCTLSConfig.ClientCAsText,
+			TLSCertPath:       cfg.GRPCTLSConfig.TLSCertPath,
+			TLSKeyPath:        cfg.GRPCTLSConfig.TLSKeyPath,
+			ClientAuth:        cfg.GRPCTLSConfig.ClientAuth,
+			ClientCAs:         cfg.GRPCTLSConfig.ClientCAs,
+			ClientAllowedSans: cfg.GRPCTLSConfig.ClientAllowedSans,
+			CipherSuites:      cipherSuites,
+			MinVersion:        minVersion,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error generating grpc tls config: %v", err)

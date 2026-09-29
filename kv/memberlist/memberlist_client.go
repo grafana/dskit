@@ -395,8 +395,8 @@ type KV struct {
 	numberOfInvalidReceivedMessages     prometheus.Counter
 	numberOfDroppedMessages             prometheus.Counter
 	numberOfPulls                       prometheus.Counter
-	localStateCacheHits                 prometheus.Counter
-	localStateCacheMisses               prometheus.Counter
+	localStateCacheHits                 *prometheus.CounterVec
+	localStateCacheMisses               *prometheus.CounterVec
 	numberOfPushes                      prometheus.Counter
 	totalSizeOfPulls                    prometheus.Counter
 	totalSizeOfPushes                   prometheus.Counter
@@ -1766,7 +1766,7 @@ func (m *KV) localStateEntry(key string, val ValueDesc) (localStateCacheEntry, b
 	}
 
 	if entry, ok := m.localStateCache[key]; ok && entry.version == val.Version {
-		m.localStateCacheHits.Inc()
+		m.localStateCacheHits.WithLabelValues(key).Inc()
 		return entry, true
 	}
 
@@ -1775,7 +1775,7 @@ func (m *KV) localStateEntry(key string, val ValueDesc) (localStateCacheEntry, b
 		return localStateCacheEntry{}, false
 	}
 
-	m.localStateCacheMisses.Inc()
+	m.localStateCacheMisses.WithLabelValues(key).Inc()
 	m.localStateCache[key] = entry
 
 	return entry, true
@@ -2114,6 +2114,8 @@ func (m *KV) cleanupObsoleteEntries() {
 		if v.Deleted && time.Since(v.UpdateTime) > m.cfg.ObsoleteEntriesTimeout {
 			delete(m.store, k)
 			delete(m.localStateCache, k)
+			m.localStateCacheHits.DeleteLabelValues(k)
+			m.localStateCacheMisses.DeleteLabelValues(k)
 			removedKeys = append(removedKeys, k)
 		}
 	}

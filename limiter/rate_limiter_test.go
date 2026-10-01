@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -64,6 +65,43 @@ func TestRateLimiter_AllowN(t *testing.T) {
 	assert.Equal(t, true, limiter.AllowN(now.Add(time.Second), "tenant-2", 18))
 	assert.Equal(t, false, limiter.AllowN(now.Add(time.Second), "tenant-2", 3))
 	assert.Equal(t, true, limiter.AllowN(now.Add(time.Second), "tenant-2", 2))
+}
+
+func TestRateLimiter_TokensAt(t *testing.T) {
+	strategy := &staticLimitStrategy{tenants: map[string]struct {
+		limit float64
+		burst int
+	}{
+		"tenant-1":  {limit: 10, burst: 20},
+		"unlimited": {limit: float64(rate.Inf), burst: 0},
+	}}
+
+	limiter := NewRateLimiter(strategy, 10*time.Second)
+	now := time.Now()
+
+	// A brand new tenant limiter starts fully bursted.
+	assert.Equal(t, float64(20), limiter.TokensAt(now, "tenant-1"))
+
+	// TokensAt does not consume tokens: calling it repeatedly returns the
+	// same value and does not affect subsequent AllowN calls.
+	assert.Equal(t, float64(20), limiter.TokensAt(now, "tenant-1"))
+	assert.True(t, limiter.AllowN(now, "tenant-1", 20))
+
+	// All tokens have been consumed.
+	assert.Equal(t, float64(0), limiter.TokensAt(now, "tenant-1"))
+	assert.False(t, limiter.AllowN(now, "tenant-1", 1))
+
+	// Tokens are replenished over time (limit is 10/s).
+	assert.Equal(t, float64(5), limiter.TokensAt(now.Add(500*time.Millisecond), "tenant-1"))
+
+	// ReserveN can push the token count negative; TokensAt reflects that.
+	r := limiter.ReserveN(now, "tenant-1", 15)
+	assert.True(t, r.OK())
+	assert.Equal(t, float64(-15), limiter.TokensAt(now, "tenant-1"))
+
+	// An unlimited limiter can allow requests even with a zero burst.
+	assert.True(t, limiter.AllowN(now, "unlimited", 1))
+	assert.True(t, math.IsInf(limiter.TokensAt(now, "unlimited"), 1))
 }
 
 func TestRateLimiter_ReserveN(t *testing.T) {

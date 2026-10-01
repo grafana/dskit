@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 
@@ -70,8 +71,13 @@ func (l *RateLimiter) Limit(now time.Time, tenantID string) float64 {
 }
 
 // TokensAt returns the number of tokens available at time t for the given tenant.
+// It returns positive infinity if the tenant's rate limit is unlimited.
 func (l *RateLimiter) TokensAt(now time.Time, tenantID string) float64 {
-	return l.getTenantLimiter(now, tenantID).TokensAt(now)
+	limiter := l.getTenantLimiter(now, tenantID)
+	if limiter.Limit() == rate.Inf {
+		return math.Inf(1)
+	}
+	return limiter.TokensAt(now)
 }
 
 // Burst returns the currently configured maximum burst size.

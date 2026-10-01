@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -71,7 +72,8 @@ func TestRateLimiter_TokensAt(t *testing.T) {
 		limit float64
 		burst int
 	}{
-		"tenant-1": {limit: 10, burst: 20},
+		"tenant-1":  {limit: 10, burst: 20},
+		"unlimited": {limit: float64(rate.Inf), burst: 0},
 	}}
 
 	limiter := NewRateLimiter(strategy, 10*time.Second)
@@ -96,6 +98,10 @@ func TestRateLimiter_TokensAt(t *testing.T) {
 	r := limiter.ReserveN(now, "tenant-1", 15)
 	assert.True(t, r.OK())
 	assert.Equal(t, float64(-15), limiter.TokensAt(now, "tenant-1"))
+
+	// An unlimited limiter can allow requests even with a zero burst.
+	assert.True(t, limiter.AllowN(now, "unlimited", 1))
+	assert.True(t, math.IsInf(limiter.TokensAt(now, "unlimited"), 1))
 }
 
 func TestRateLimiter_ReserveN(t *testing.T) {

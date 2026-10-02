@@ -60,11 +60,12 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 		ring     = h.reader.PartitionRing()
 		ringDesc = ring.desc
 	)
-	ownedTokens := ringDesc.countTokens()
+	ownedTokens := ring.countTokens()
 
 	// Prepare the data to render partitions in the page.
 	partitionsByID := make(map[int32]partitionPageData, len(ringDesc.Partitions))
 	for id, partition := range ringDesc.Partitions {
+		tokens := ring.partitionTokens(id)
 		owners := ring.PartitionOwnerIDsCopy(id)
 		slices.Sort(owners)
 
@@ -75,8 +76,8 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 			StateTimestamp:    partition.GetStateTime(),
 			StateChangeLocked: partition.StateChangeLocked,
 			OwnerIDs:          owners,
-			Tokens:            partition.Tokens,
-			NumTokens:         len(partition.Tokens),
+			Tokens:            tokens,
+			NumTokens:         len(tokens),
 			Ownership:         distancePercentage(ownedTokens[id]),
 		}
 	}
@@ -93,8 +94,6 @@ func (h *PartitionRingPageHandler) handleGetRequest(w http.ResponseWriter, req *
 				State:          PartitionUnknown,
 				StateTimestamp: time.Time{},
 				OwnerIDs:       []string{ownerID},
-				Tokens:         partition.Tokens,
-				NumTokens:      len(partition.Tokens),
 				Ownership:      distancePercentage(ownedTokens[owner.OwnedPartition]),
 			}
 

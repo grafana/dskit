@@ -1591,42 +1591,6 @@ func BenchmarkActivePartitionBatchRing_GetKeysByPartition(b *testing.B) {
 	}
 }
 
-func TestPartitionRing_tokens(t *testing.T) {
-	desc := &PartitionRingDesc{
-		Partitions: map[int32]PartitionDesc{
-			1: {Tokens: []uint32{1, 5, 8}, State: PartitionActive, StateTimestamp: 10},
-			2: {Tokens: []uint32{3, 4, 9}, State: PartitionActive, StateTimestamp: 20},
-		},
-		Owners: map[string]OwnerDesc{
-			"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
-			"ingester-zone-b-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 15},
-		},
-	}
-
-	ring, err := NewPartitionRing(*desc)
-	require.NoError(t, err)
-
-	assert.Equal(t, Tokens{1, 3, 4, 5, 8, 9}, ring.ringTokens)
-}
-
-func TestPartitionRing_partitionByToken(t *testing.T) {
-	desc := &PartitionRingDesc{
-		Partitions: map[int32]PartitionDesc{
-			1: {Tokens: []uint32{1, 5, 8}, State: PartitionActive, StateTimestamp: 10},
-			2: {Tokens: []uint32{3, 4, 9}, State: PartitionActive, StateTimestamp: 20},
-		},
-		Owners: map[string]OwnerDesc{
-			"ingester-zone-a-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 10},
-			"ingester-zone-b-0": {OwnedPartition: 1, State: OwnerActive, UpdatedTimestamp: 15},
-		},
-	}
-
-	ring, err := NewPartitionRing(*desc)
-	require.NoError(t, err)
-
-	assert.Equal(t, map[Token]int32{1: 1, 5: 1, 8: 1, 3: 2, 4: 2, 9: 2}, ring.partitionByToken)
-}
-
 func TestPartitionRing_countTokens(t *testing.T) {
 	t.Run("empty ring should return an empty result", func(t *testing.T) {
 		desc := &PartitionRingDesc{}

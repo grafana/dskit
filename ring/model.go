@@ -65,6 +65,16 @@ func futureTimestampLimit(now time.Time) int64 {
 	return now.Add(maxFutureTimestampSkew).Unix()
 }
 
+// localMergeTimestamp returns the timestamp Merge compares incoming timestamps against for a local
+// entry. A local timestamp beyond limit was written by a node with a clock too far ahead, so it loses
+// against any valid incoming timestamp, including zero.
+func localMergeTimestamp(ts, limit int64) int64 {
+	if ts > limit {
+		return -1
+	}
+	return ts
+}
+
 // AddIngester adds the given ingester to the ring. Ingester will only use supplied tokens,
 // any other tokens are removed.
 func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state InstanceState, registeredAt time.Time, readOnly bool, readOnlyUpdated time.Time, versions InstanceVersions) InstanceDesc {
@@ -269,12 +279,7 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 
 		ting := thisIngesterMap[name]
 		// thisTimestamp will be 0, if there was no such ingester in our version
-		thisTimestamp := ting.Timestamp
-		if thisTimestamp > timestampLimit {
-			// Our entry was written by a node with a clock too far ahead, let any valid entry replace it.
-			thisTimestamp = 0
-		}
-
+		thisTimestamp := localMergeTimestamp(ting.Timestamp, timestampLimit)
 		if oing.Timestamp > thisTimestamp {
 			if !tokensEqual(ting.Tokens, oing.Tokens) {
 				tokensChanged = true

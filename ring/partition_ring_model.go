@@ -362,8 +362,9 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 
 		thisPart, exists := m.Partitions[id]
 		if !exists {
-			if otherPart.StateTimestamp > timestampLimit || otherPart.StateChangeLockedTimestamp > timestampLimit {
+			if otherPart.StateTimestamp > timestampLimit {
 				// Written by a node with a clock too far ahead. Accepting it would block all later updates.
+				// A state change lock timestamp too far ahead is kept, because any valid one replaces it.
 				continue
 			}
 
@@ -379,14 +380,8 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 
 			// Timestamps from a node with a clock too far ahead are ignored when incoming,
 			// and replaceable by any valid incoming timestamp when local.
-			thisStateTimestamp := thisPart.StateTimestamp
-			if thisStateTimestamp > timestampLimit {
-				thisStateTimestamp = 0
-			}
-			thisStateChangeLockedTimestamp := thisPart.StateChangeLockedTimestamp
-			if thisStateChangeLockedTimestamp > timestampLimit {
-				thisStateChangeLockedTimestamp = 0
-			}
+			thisStateTimestamp := localMergeTimestamp(thisPart.StateTimestamp, timestampLimit)
+			thisStateChangeLockedTimestamp := localMergeTimestamp(thisPart.StateChangeLockedTimestamp, timestampLimit)
 
 			// In case the timestamp is equal we give priority to the deleted state.
 			// Reason is that timestamp has second precision, so we cover the case an
@@ -434,11 +429,7 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 		}
 
 		thisOwner := m.Owners[id]
-		thisUpdatedTimestamp := thisOwner.UpdatedTimestamp
-		if thisUpdatedTimestamp > timestampLimit {
-			// Our entry was written by a node with a clock too far ahead, let any valid entry replace it.
-			thisUpdatedTimestamp = 0
-		}
+		thisUpdatedTimestamp := localMergeTimestamp(thisOwner.UpdatedTimestamp, timestampLimit)
 
 		// In case the timestamp is equal we give priority to the deleted state.
 		// Reason is that timestamp has second precision, so we cover the case an

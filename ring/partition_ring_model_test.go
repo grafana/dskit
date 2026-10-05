@@ -1159,3 +1159,50 @@ func TestPartitionRingDesc_MergeContent(t *testing.T) {
 		require.ElementsMatch(t, []string{"1", "2", "ingester-zone-a-0"}, desc.MergeContent())
 	})
 }
+
+func TestPartitionRingDesc_TokenSchemeSurvivesEncodeAndClone(t *testing.T) {
+	for _, scheme := range []PartitionTokenScheme{PartitionTokensStored, PartitionTokensSmt512, 99} {
+		t.Run(fmt.Sprint(scheme), func(t *testing.T) {
+			desc := NewPartitionRingDesc()
+			desc.Partitions[1] = PartitionDesc{Id: 1, Tokens: []uint32{10}, TokenScheme: scheme, State: PartitionActive, StateTimestamp: 1}
+			encoded, err := GetPartitionRingCodec().Encode(desc)
+			require.NoError(t, err)
+			decoded, err := GetPartitionRingCodec().Decode(encoded)
+			require.NoError(t, err)
+			assert.Equal(t, desc, decoded)
+			assert.Equal(t, desc, desc.Clone())
+		})
+	}
+}
+
+func BenchmarkPartitionRing_TokenSchemeEncodedSize(b *testing.B) {
+	tokens, err := generatePartitionTokens(4524)
+	require.NoError(b, err)
+	for _, count := range []int{100, 512, 2048, 4525} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			stored, derived := partitionRingTokenSchemeDescriptors(tokens[:count])
+			codec := GetPartitionRingCodec()
+			var storedBytes, derivedBytes []byte
+			for b.Loop() {
+				var err error
+				storedBytes, err = codec.Encode(stored)
+				require.NoError(b, err)
+				derivedBytes, err = codec.Encode(derived)
+				require.NoError(b, err)
+			}
+			b.ReportMetric(float64(len(storedBytes)), "stored-bytes/ring")
+			b.ReportMetric(float64(len(storedBytes))/float64(count), "stored-bytes/partition")
+			b.ReportMetric(float64(len(derivedBytes)), "derived-bytes/ring")
+			b.ReportMetric(float64(len(derivedBytes))/float64(count), "derived-bytes/partition")
+		})
+	}
+}
+
+func partitionRingTokenSchemeDescriptors(tokens []Tokens) (*PartitionRingDesc, *PartitionRingDesc) {
+	stored, derived := NewPartitionRingDesc(), NewPartitionRingDesc()
+	for id, partitionTokens := range tokens {
+		stored.Partitions[int32(id)] = PartitionDesc{Id: int32(id), Tokens: partitionTokens, State: PartitionActive, StateTimestamp: 1700000000}
+		derived.AddPartitionWithDerivedTokens(int32(id), PartitionActive, time.Unix(1700000000, 0))
+	}
+	return stored, derived
+}

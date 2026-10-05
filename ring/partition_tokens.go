@@ -91,7 +91,10 @@ func resolveRingTokens(desc PartitionRingDesc, opts PartitionRingOptions) (Token
 
 // resolvePartitionTokens returns the immutable tokens of a partition.
 func resolvePartitionTokens(desc PartitionRingDesc, id int32, opts PartitionRingOptions) (Tokens, error) {
-	partition := desc.Partitions[id]
+	partition, exists := desc.Partitions[id]
+	if !exists {
+		return nil, ErrPartitionDoesNotExist
+	}
 	switch partition.TokenScheme {
 	case PartitionTokensStored:
 		// Use the stored tokens, even when empty.

@@ -512,11 +512,6 @@ func (r *PartitionRing) String() string {
 // method does NOT take partition state into account, so if only active partitions should be
 // considered, then PartitionRing with only active partitions must be created first (e.g. using ShuffleShard method).
 func (r *PartitionRing) GetTokenRangesForPartition(partitionID int32) (TokenRanges, error) {
-	_, ok := r.desc.Partitions[partitionID]
-	if !ok {
-		return nil, ErrPartitionDoesNotExist
-	}
-
 	tokens, err := r.partitionTokens(partitionID)
 	if err != nil {
 		return nil, err

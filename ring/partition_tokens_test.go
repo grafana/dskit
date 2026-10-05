@@ -30,6 +30,13 @@ func TestResolveRingTokens(t *testing.T) {
 	assert.Equal(t, map[Token]int32{1: 1, 5: 1, 8: 1, 3: 2, 4: 2, 9: 2}, partitionByToken)
 }
 
+func TestResolvePartitionTokens_PartitionDoesNotExist(t *testing.T) {
+	desc := PartitionRingDesc{Partitions: map[int32]PartitionDesc{1: {Tokens: []uint32{1}}}}
+
+	_, err := resolvePartitionTokens(desc, 2, DefaultPartitionRingOptions())
+	require.ErrorIs(t, err, ErrPartitionDoesNotExist)
+}
+
 func TestPartitionTokenTable_GeneratesConfiguredIDsOnce(t *testing.T) {
 	t.Run("negative", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()

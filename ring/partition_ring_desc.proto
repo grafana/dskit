@@ -29,9 +29,6 @@ message PartitionDesc {
   // The state of the partition.
   PartitionState state = 2;
 
-  // Immutable token scheme, set at creation. Unset means stored tokens.
-  PartitionTokenScheme tokenScheme = 7;
-
   // Unix timestamp (with seconds precision) of when has the state changed last time for this partition.
   int64 stateTimestamp = 3;
 
@@ -41,6 +38,9 @@ message PartitionDesc {
 
   // Unix timestamp (with seconds precision) of when has the state change lock been mutated last time for this partition.
   int64 stateChangeLockedTimestamp = 6;
+
+  // Immutable token scheme, set at creation. Unset means stored tokens.
+  PartitionTokenScheme tokenScheme = 7;
 }
 
 enum PartitionTokenScheme {

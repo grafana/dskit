@@ -155,6 +155,7 @@ func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now tim
 
 	m.Partitions[id] = PartitionDesc{
 		Id:             id,
+		TokenScheme:    PartitionTokensStored,
 		Tokens:         spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil),
 		State:          state,
 		StateTimestamp: now.Unix(),
@@ -166,6 +167,7 @@ func (m *PartitionRingDesc) AddPartitionWithDerivedTokens(id int32, state Partit
 	m.Partitions[id] = PartitionDesc{
 		Id:             id,
 		TokenScheme:    PartitionTokensSmt512,
+		Tokens:         nil, // Tokens will be derived by readers
 		State:          state,
 		StateTimestamp: now.Unix(),
 	}

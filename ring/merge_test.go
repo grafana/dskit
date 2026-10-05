@@ -1,10 +1,19 @@
 package ring
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/services"
 )
 
 func TestNormalizationAndConflictResolution(t *testing.T) {
@@ -492,4 +501,188 @@ func mergeLocalCAS(ring1, ring2 *Desc, nowUnixTime int64) (*Desc, *Desc) {
 
 	changeRing := change.(*Desc)
 	return ring1, changeRing
+}
+
+func TestMergeFutureTimestamps(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	valid := now.Unix()
+	withinSkew := now.Add(maxFutureTimestampSkew).Unix()
+	skewed := now.Add(90 * 24 * time.Hour).Unix()
+
+	tests := map[string]struct {
+		local          *Desc
+		incoming       *Desc
+		localCAS       bool
+		expectedLocal  *Desc
+		expectedChange *Desc
+	}{
+		"incoming entry too far in the future is ignored": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: LEAVING, Tokens: []uint32{30, 40, 50}},
+			}},
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+		},
+		"incoming new entry too far in the future is not added": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 2": {Addr: "addr2", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{5, 10, 20}},
+			}},
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+		},
+		"incoming LEFT entry too far in the future is ignored": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: LEFT},
+			}},
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+		},
+		"incoming entry in the future within the allowed skew is accepted": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: withinSkew, State: LEAVING, Tokens: []uint32{30, 40, 50}},
+			}},
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: withinSkew, State: LEAVING, Tokens: []uint32{30, 40, 50}},
+			}},
+			expectedChange: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: withinSkew, State: LEAVING, Tokens: []uint32{30, 40, 50}},
+			}},
+		},
+		"local entry too far in the future is replaced by an older incoming entry": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			expectedChange: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+		},
+		"local entry too far in the future is replaced by an older incoming LEFT entry": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: LEFT},
+			}},
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: LEFT},
+			}},
+			expectedChange: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: LEFT},
+			}},
+		},
+		"local entry too far in the future is not replaced by itself": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+		},
+		"local CAS removing an entry too far in the future marks it as LEFT now": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+				"Ing 2": {Addr: "addr2", Timestamp: valid, State: ACTIVE, Tokens: []uint32{5, 10, 20}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 2": {Addr: "addr2", Timestamp: valid, State: ACTIVE, Tokens: []uint32{5, 10, 20}},
+			}},
+			localCAS: true,
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: LEFT},
+				"Ing 2": {Addr: "addr2", Timestamp: valid, State: ACTIVE, Tokens: []uint32{5, 10, 20}},
+			}},
+			expectedChange: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: LEFT},
+			}},
+		},
+		"local CAS ignores an incoming entry too far in the future": {
+			local: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			incoming: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+			localCAS: true,
+			expectedLocal: &Desc{Ingesters: map[string]InstanceDesc{
+				"Ing 1": {Addr: "addr1", Timestamp: valid, State: ACTIVE, Tokens: []uint32{30, 40, 50}},
+			}},
+		},
+	}
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			change, err := testData.local.mergeWithTime(testData.incoming, testData.localCAS, now)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedLocal, testData.local)
+
+			if testData.expectedChange == nil {
+				assert.Nil(t, change)
+			} else {
+				assert.Equal(t, testData.expectedChange, change)
+			}
+		})
+	}
+}
+
+func TestMergeFutureTimestamps_MemberlistCAS(t *testing.T) {
+	const key = "ring"
+	ctx := context.Background()
+
+	c := GetCodec()
+	var cfg memberlist.KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = memberlist.TCPTransportConfig{BindAddrs: []string{"127.0.0.1"}}
+	cfg.Codecs = []codec.Codec{c}
+	store := memberlist.NewKV(cfg, log.NewNopLogger(), nil, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, store)) })
+	client, err := memberlist.NewClient(store, c)
+	require.NoError(t, err)
+
+	// Seed the ring with a heartbeat written by a node with a clock far ahead.
+	skewed := time.Now().Add(90 * 24 * time.Hour).Unix()
+	require.NoError(t, client.CAS(ctx, key, func(interface{}) (interface{}, bool, error) {
+		return &Desc{Ingesters: map[string]InstanceDesc{
+			"ing-1": {Addr: "addr1", Timestamp: skewed, State: ACTIVE, Tokens: []uint32{1, 2, 3}},
+		}}, false, nil
+	}))
+
+	// A heartbeat from a node with a correct clock replaces the skewed one, instead of
+	// the CAS failing because the merge detects no change.
+	heartbeat := time.Now().Unix()
+	require.NoError(t, client.CAS(ctx, key, func(in interface{}) (interface{}, bool, error) {
+		desc := in.(*Desc)
+		ing := desc.Ingesters["ing-1"]
+		ing.Timestamp = heartbeat
+		desc.Ingesters["ing-1"] = ing
+		return desc, true, nil
+	}))
+
+	val, err := client.Get(ctx, key)
+	require.NoError(t, err)
+	assert.Equal(t, heartbeat, val.(*Desc).Ingesters["ing-1"].Timestamp)
 }

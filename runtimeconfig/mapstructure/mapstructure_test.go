@@ -4677,3 +4677,47 @@ func TestUnmarshaler_StructToMap(t *testing.T) {
 		t.Errorf("expected Age 30, got %v", result["Age"])
 	}
 }
+
+func TestErrorNil(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		target      any
+		expectError bool
+	}{
+		"int":     {target: struct{ Field int }{}, expectError: true},
+		"uint":    {target: struct{ Field uint }{}, expectError: true},
+		"float":   {target: struct{ Field float64 }{}, expectError: true},
+		"bool":    {target: struct{ Field bool }{}, expectError: true},
+		"string":  {target: struct{ Field string }{}, expectError: true},
+		"array":   {target: struct{ Field [2]int }{}, expectError: true},
+		"struct":  {target: struct{ Field struct{ A int } }{}, expectError: true},
+		"slice":   {target: struct{ Field []int }{[]int{1, 2, 3}}, expectError: false},
+		"func":    {target: struct{ Field func() }{func() {}}, expectError: false},
+		"pointer": {target: struct{ Field *int }{new(int)}, expectError: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			decoder, err := NewDecoder(&DecoderConfig{Result: &tc.target, ZeroFields: true, ErrorNil: true})
+			if err != nil {
+				t.Fatalf("unexpected error: %s", err)
+			}
+
+			err = decoder.Decode(map[string]any{"Field": nil})
+			if tc.expectError && (err == nil || !strings.Contains(err.Error(), "cannot decode nil into")) {
+				t.Fatalf("expected a nil decoding error, got: %v", err)
+			}
+			if !tc.expectError {
+				if err != nil {
+					t.Fatalf("unexpected error: %s", err)
+				}
+				if !reflect.ValueOf(tc.target).FieldByName("Field").IsNil() {
+					t.Fatal("expected field to be zeroed to nil")
+				}
+			}
+		})
+	}
+}

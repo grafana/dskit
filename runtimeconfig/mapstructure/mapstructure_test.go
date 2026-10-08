@@ -4823,8 +4823,9 @@ func TestErrorNil_DecodeNilHookReturningNil(t *testing.T) {
 		expectError bool
 		expected    int
 	}{
-		"hook returns nil":   {hookResult: nil, expectError: true, expected: 5},
-		"hook returns value": {hookResult: 7, expected: 7},
+		"hook returns nil":       {hookResult: nil, expectError: true, expected: 5},
+		"hook returns typed nil": {hookResult: (map[any]any)(nil), expectError: true, expected: 5},
+		"hook returns value":     {hookResult: 7, expected: 7},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -4832,6 +4833,9 @@ func TestErrorNil_DecodeNilHookReturningNil(t *testing.T) {
 			result := struct{ Value int }{Value: 5}
 			hook := DecodeHookFuncValue(func(from, to reflect.Value) (any, error) {
 				if to.Kind() == reflect.Int {
+					if from.IsValid() {
+						t.Errorf("expected the hook to be given nil, got %v", from)
+					}
 					return tc.hookResult, nil
 				}
 				return from.Interface(), nil

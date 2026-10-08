@@ -598,15 +598,15 @@ func (d *Decoder) decode(name string, input any, outVal reflect.Value) error {
 		input = nil
 	}
 	if input == nil {
-		if !decodeNil {
-			if err := d.errorOnNil(name, outVal); err != nil {
+		if err := d.errorOnNil(name, outVal); err != nil {
+			if !decodeNil {
 				return err
 			}
+		} else {
+			// If the data is nil, then we don't set anything, unless ZeroFields is set
+			// to true.
+			d.maybeSetToZero(name, outVal)
 		}
-
-		// If the data is nil, then we don't set anything, unless ZeroFields is set
-		// to true.
-		d.maybeSetToZero(name, outVal)
 		if !decodeNil {
 			return nil
 		}

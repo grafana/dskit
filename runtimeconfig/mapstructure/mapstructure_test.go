@@ -4814,3 +4814,44 @@ func TestErrorNil_NilFromDecodeHook(t *testing.T) {
 		t.Fatalf("expected the value to be untouched, got %d", result.Value)
 	}
 }
+
+func TestErrorNil_DecodeNilHookReturningNil(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		hookResult  any
+		expectError bool
+		expected    int
+	}{
+		"hook returns nil":   {hookResult: nil, expectError: true, expected: 5},
+		"hook returns value": {hookResult: 7, expected: 7},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			result := struct{ Value int }{Value: 5}
+			hook := DecodeHookFuncValue(func(from, to reflect.Value) (any, error) {
+				if to.Kind() == reflect.Int {
+					return tc.hookResult, nil
+				}
+				return from.Interface(), nil
+			})
+
+			decoder, err := NewDecoder(&DecoderConfig{Result: &result, ZeroFields: true, ErrorNil: true, DecodeNil: true, DecodeHook: hook})
+			if err != nil {
+				t.Fatalf("unexpected error: %s", err)
+			}
+
+			err = decoder.Decode(map[string]any{"Value": nil})
+			if tc.expectError && (err == nil || !strings.Contains(err.Error(), "cannot decode nil into")) {
+				t.Fatalf("expected a nil decoding error, got: %v", err)
+			}
+			if !tc.expectError && err != nil {
+				t.Fatalf("unexpected error: %s", err)
+			}
+			if result.Value != tc.expected {
+				t.Fatalf("expected %d, got %d", tc.expected, result.Value)
+			}
+		})
+	}
+}

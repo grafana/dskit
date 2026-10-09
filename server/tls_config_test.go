@@ -38,6 +38,40 @@ func Test_stringToCipherSuites(t *testing.T) {
 	}
 }
 
+func Test_stringToCurvePreferences(t *testing.T) {
+	tests := []struct {
+		name    string
+		arg     string
+		want    []web.Curve
+		wantErr bool
+	}{
+		{name: "blank", arg: "", want: nil},
+		{name: "bad", arg: "not-a-curve", wantErr: true},
+		{name: "empty entry", arg: "CurveP256,", wantErr: true},
+		{name: "one", arg: "X25519", want: []web.Curve{web.Curve(tls.X25519)}},
+		{name: "two", arg: "CurveP256,CurveP384",
+			want: []web.Curve{web.Curve(tls.CurveP256), web.Curve(tls.CurveP384)}},
+		{name: "all classical", arg: "CurveP256,CurveP384,CurveP521,X25519",
+			want: []web.Curve{
+				web.Curve(tls.CurveP256),
+				web.Curve(tls.CurveP384),
+				web.Curve(tls.CurveP521),
+				web.Curve(tls.X25519),
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := stringToCurvePreferences(tt.arg)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func Test_stringToTLSVersion(t *testing.T) {
 	tests := []struct {
 		name    string

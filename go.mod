@@ -2,7 +2,7 @@ module github.com/grafana/dskit
 
 go 1.26.7
 
-toolchain go1.27.1
+toolchain go1.27.2
 
 require (
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b

@@ -146,3 +146,18 @@ func TestPush(t *testing.T) {
 		})
 	}
 }
+
+func TestPushDuringIteration(t *testing.T) {
+	// Start with {1, 2} then push {5, 6}, {3}, {4}, interleaved with some Next() calls.
+	lt := loser.New([][]uint64{{1, 2}}, math.MaxUint64)
+
+	require.True(t, lt.Next())
+	require.Equal(t, uint64(1), lt.Winner())
+	lt.Push([]uint64{5, 6})
+	require.True(t, lt.Next())
+	require.Equal(t, uint64(2), lt.Winner())
+
+	lt.Push([]uint64{3})
+	lt.Push([]uint64{4})
+	checkTreeEqual(t, lt, []uint64{3, 4, 5, 6})
+}

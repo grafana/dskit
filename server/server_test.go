@@ -759,6 +759,103 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	require.EqualValues(t, &empty, grpcRes)
 }
 
+func TestTLSServerWithCurvePreferences(t *testing.T) {
+	var level log.Level
+	require.NoError(t, level.Set("info"))
+
+	certsDir := t.TempDir()
+	cmd := exec.Command("bash", filepath.Join("certs", "genCerts.sh"), certsDir, "1")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	t.Run("valid curve preferences are applied to HTTP and gRPC", func(t *testing.T) {
+		cfg := Config{
+			HTTPTLSConfig: TLSConfig{
+				TLSCertPath: filepath.Join(certsDir, "server.crt"),
+				TLSKeyPath:  filepath.Join(certsDir, "server.key"),
+				ClientAuth:  "RequireAndVerifyClientCert",
+				ClientCAs:   filepath.Join(certsDir, "root.crt"),
+			},
+			GRPCTLSConfig: TLSConfig{
+				TLSCertPath: filepath.Join(certsDir, "server.crt"),
+				TLSKeyPath:  filepath.Join(certsDir, "server.key"),
+				ClientAuth:  "VerifyClientCertIfGiven",
+				ClientCAs:   filepath.Join(certsDir, "root.crt"),
+			},
+			CurvePreferences: "CurveP256,X25519",
+			MetricsNamespace: "testing_tls_curves",
+			LogLevel:         level,
+			Registerer:       prometheus.NewPedanticRegistry(),
+		}
+		setAutoAssignedPorts(DefaultNetwork, &cfg)
+
+		server, err := New(cfg)
+		require.NoError(t, err)
+
+		server.HTTP.HandleFunc("/testhttps", func(w http.ResponseWriter, _ *http.Request) {
+			_, err := w.Write([]byte("Hello World!"))
+			require.NoError(t, err)
+		})
+		RegisterFakeServerServer(server.GRPC, FakeServer{})
+
+		go func() {
+			require.NoError(t, server.Run())
+		}()
+		defer server.Shutdown()
+
+		clientCert, err := tls.LoadX509KeyPair(filepath.Join(certsDir, "client.crt"), filepath.Join(certsDir, "client.key"))
+		require.NoError(t, err)
+
+		caCert, err := os.ReadFile(filepath.Join(certsDir, "root.crt"))
+		require.NoError(t, err)
+
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+
+		// Client offering only CurveP256, which the server allows.
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{clientCert},
+			RootCAs:            caCertPool,
+			CurvePreferences:   []tls.CurveID{tls.CurveP256},
+		}
+
+		// HTTP succeeds with an allowed curve.
+		client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}
+		res, err := client.Get(httpsTarget(server, "/testhttps"))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		require.Equal(t, http.StatusOK, res.StatusCode)
+
+		// gRPC succeeds with an allowed curve.
+		conn, err := grpc.NewClient(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		require.NoError(t, err)
+		defer conn.Close()
+
+		grpcClient := NewFakeServerClient(conn)
+		_, err = grpcClient.Succeed(context.Background(), &emptypb.Empty{})
+		require.NoError(t, err)
+	})
+
+	t.Run("invalid curve preferences fail at construction", func(t *testing.T) {
+		cfg := Config{
+			HTTPTLSConfig: TLSConfig{
+				TLSCertPath: filepath.Join(certsDir, "server.crt"),
+				TLSKeyPath:  filepath.Join(certsDir, "server.key"),
+			},
+			CurvePreferences: "not-a-curve",
+			MetricsNamespace: "testing_tls_curves_invalid",
+			LogLevel:         level,
+			Registerer:       prometheus.NewPedanticRegistry(),
+		}
+		setAutoAssignedPorts(DefaultNetwork, &cfg)
+
+		_, err := New(cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "not-a-curve")
+	})
+}
+
 type FakeLogger struct {
 	logger gokit_log.Logger
 	buf    *bytes.Buffer

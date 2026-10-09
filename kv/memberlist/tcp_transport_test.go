@@ -1,9 +1,18 @@
 package memberlist
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	stdtls "crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -300,4 +309,157 @@ func TestTCPTransport_SentAndReceivedBytesMetrics(t *testing.T) {
 		assert.GreaterOrEqual(t, testutil.ToFloat64(senderTransport.sentBytes), float64(len(testData)), "sender should have sent at least the test data size")
 		assert.GreaterOrEqual(t, testutil.ToFloat64(receiverTransport.receivedBytes), float64(len(testData)), "receiver should have received at least the test data size")
 	})
+}
+
+func TestTCPTransport_TLSClientAuth(t *testing.T) {
+	dir := t.TempDir()
+	caCert, caKey := writeTestCert(t, dir, "ca", nil, nil)
+	writeTestCert(t, dir, "node", caCert, caKey)
+	otherCACert, otherCAKey := writeTestCert(t, dir, "other-ca", nil, nil)
+	writeTestCert(t, dir, "other-node", otherCACert, otherCAKey)
+
+	loadCert := func(name string) []stdtls.Certificate {
+		cert, err := stdtls.LoadX509KeyPair(filepath.Join(dir, name+".crt"), filepath.Join(dir, name+".key"))
+		require.NoError(t, err)
+		return []stdtls.Certificate{cert}
+	}
+
+	tests := map[string]struct {
+		clientAuth   string
+		clientCerts  []stdtls.Certificate
+		expectedErr  string
+		expectAccept bool
+	}{
+		"default accepts connections without client certificate": {
+			expectAccept: true,
+		},
+		"RequireAndVerifyClientCert rejects connections without client certificate": {
+			clientAuth:  "RequireAndVerifyClientCert",
+			expectedErr: "certificate required",
+		},
+		"RequireAndVerifyClientCert rejects client certificate from another CA": {
+			clientAuth:  "RequireAndVerifyClientCert",
+			clientCerts: loadCert("other-node"),
+			expectedErr: "unknown certificate authority",
+		},
+		"RequireAndVerifyClientCert accepts client certificate from the configured CA": {
+			clientAuth:   "RequireAndVerifyClientCert",
+			clientCerts:  loadCert("node"),
+			expectAccept: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := TCPTransportConfig{}
+			flagext.DefaultValues(&cfg)
+			cfg.BindAddrs = getLocalhostAddrs()
+			cfg.BindPort = 0
+			cfg.TLSEnabled = true
+			if tc.clientAuth != "" {
+				cfg.TLSClientAuth = tc.clientAuth
+			}
+			cfg.TLS = tls.ClientConfig{
+				CertPath: filepath.Join(dir, "node.crt"),
+				KeyPath:  filepath.Join(dir, "node.key"),
+				CAPath:   filepath.Join(dir, "ca.crt"),
+			}
+
+			transport, err := NewTCPTransport(cfg, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, transport.Shutdown()) })
+
+			conn, err := stdtls.Dial("tcp", transport.tcpListeners[0].Addr().String(), &stdtls.Config{
+				InsecureSkipVerify: true,
+				Certificates:       tc.clientCerts,
+			})
+			require.NoError(t, err)
+			defer conn.Close()
+
+			// With TLS 1.3 the server reports a rejected client certificate after the client handshake completed,
+			// so read until the server either rejects the connection or waits for a memberlist message.
+			require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+			_, err = conn.Read(make([]byte, 1))
+			if tc.expectAccept {
+				require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+			} else {
+				require.ErrorContains(t, err, tc.expectedErr)
+			}
+		})
+	}
+
+	t.Run("RequireAndVerifyClientCert delivers packets between transports", func(t *testing.T) {
+		cfg := TCPTransportConfig{}
+		flagext.DefaultValues(&cfg)
+		cfg.BindAddrs = getLocalhostAddrs()
+		cfg.BindPort = 0
+		cfg.TLSEnabled = true
+		cfg.TLSClientAuth = "RequireAndVerifyClientCert"
+		cfg.TLS = tls.ClientConfig{
+			CertPath: filepath.Join(dir, "node.crt"),
+			KeyPath:  filepath.Join(dir, "node.key"),
+			CAPath:   filepath.Join(dir, "ca.crt"),
+		}
+
+		sender, err := NewTCPTransport(cfg, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, sender.Shutdown()) })
+		receiver, err := NewTCPTransport(cfg, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, receiver.Shutdown()) })
+
+		_, err = sender.WriteTo([]byte("test"), receiver.tcpListeners[0].Addr().String())
+		require.NoError(t, err)
+
+		select {
+		case p := <-receiver.PacketCh():
+			require.Equal(t, []byte("test"), p.Buf)
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "packet not received")
+		}
+	})
+
+	t.Run("invalid client auth type", func(t *testing.T) {
+		cfg := TCPTransportConfig{}
+		flagext.DefaultValues(&cfg)
+		cfg.BindAddrs = getLocalhostAddrs()
+		cfg.BindPort = 0
+		cfg.TLSEnabled = true
+		cfg.TLSClientAuth = "VerifyClientCertIfGiven"
+
+		_, err := NewTCPTransport(cfg, log.NewNopLogger(), nil)
+		require.ErrorContains(t, err, `invalid TLS client auth type "VerifyClientCertIfGiven"`)
+	})
+}
+
+// writeTestCert writes <name>.crt and <name>.key to dir. Without a parent, the certificate is a self-signed CA.
+func writeTestCert(t *testing.T, dir, name string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	if parent == nil {
+		tmpl.IsCA = true
+		tmpl.BasicConstraintsValid = true
+		tmpl.KeyUsage = x509.KeyUsageCertSign
+		parent, parentKey = tmpl, key
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, key.Public(), parentKey)
+	require.NoError(t, err)
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name+".crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name+".key"), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600))
+
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	return cert, key
 }

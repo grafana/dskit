@@ -48,6 +48,39 @@ var tlsVersions = map[string]uint16{
 	"VersionTLS13": tls.VersionTLS13,
 }
 
+// stringToCurvePreferences parses a comma-separated list of TLS curve/group
+// names into a slice of web.Curve values recognized by the exporter-toolkit.
+func stringToCurvePreferences(s string) ([]web.Curve, error) {
+	if s == "" {
+		return nil, nil
+	}
+	var curveSlice []web.Curve
+	possibleCurves := allCurves()
+	for _, name := range strings.Split(s, ",") {
+		curve, ok := possibleCurves[name]
+		if !ok {
+			return nil, fmt.Errorf("curve %q not recognized", name)
+		}
+		curveSlice = append(curveSlice, curve)
+	}
+	return curveSlice, nil
+}
+
+// allCurves returns the set of TLS curve/group names recognized by
+// the exporter-toolkit.
+func allCurves() map[string]web.Curve {
+	return map[string]web.Curve{
+		"CurveP256": (web.Curve)(tls.CurveP256),
+		"CurveP384": (web.Curve)(tls.CurveP384),
+		"CurveP521": (web.Curve)(tls.CurveP521),
+		"X25519":    (web.Curve)(tls.X25519),
+		// TODO: Hybrid post-quantum KEM groups (X25519MLKEM768, SecP256r1MLKEM768,
+		// SecP384r1MLKEM1024) are not yet supported by the current exporter-toolkit version.
+		// Revisit after https://github.com/prometheus/exporter-toolkit/pull/449 is merged
+		// and the dependency is updated.
+	}
+}
+
 func stringToTLSVersion(s string) (web.TLSVersion, error) {
 	if s == "" {
 		return 0, nil

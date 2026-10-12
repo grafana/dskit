@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -1588,5 +1589,219 @@ func BenchmarkActivePartitionBatchRing_GetKeysByPartition(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func TestPartitionRing_countTokens(t *testing.T) {
+	t.Run("empty ring should return an empty result", func(t *testing.T) {
+		desc := &PartitionRingDesc{}
+
+		ring, err := NewPartitionRing(*desc)
+		require.NoError(t, err)
+
+		result := ring.countTokens()
+
+		assert.Empty(t, result)
+	})
+
+	t.Run("ring with some partitions should return correct distances", func(t *testing.T) {
+		desc := &PartitionRingDesc{
+			Partitions: map[int32]PartitionDesc{
+				1: {Tokens: []uint32{1000000, 3000000, 6000000}},
+				2: {Tokens: []uint32{2000000, 4000000, 8000000}},
+				3: {Tokens: []uint32{5000000, 9000000}},
+			},
+		}
+
+		ring, err := NewPartitionRing(*desc)
+		require.NoError(t, err)
+
+		result := ring.countTokens()
+
+		expected := map[int32]int64{
+			1: 3000000 + (int64(math.MaxUint32) + 1 - 9000000),
+			2: 4000000,
+			3: 2000000,
+		}
+		assert.Equal(t, expected, result)
+	})
+
+	t.Run("partitions with no tokens should be present in the result, with 0 distance", func(t *testing.T) {
+		desc := &PartitionRingDesc{
+			Partitions: map[int32]PartitionDesc{
+				1: {Tokens: []uint32{1000000, 3000000, 6000000}},
+				2: {Tokens: []uint32{2000000, 4000000, 8000000}},
+				3: {Tokens: []uint32{5000000, 9000000}},
+				4: {Tokens: []uint32{}},
+			},
+		}
+
+		ring, err := NewPartitionRing(*desc)
+		require.NoError(t, err)
+
+		result := ring.countTokens()
+
+		assert.Contains(t, result, int32(4))
+		assert.Equal(t, int64(0), result[4])
+	})
+}
+
+func TestPartitionRing_DerivedTokensRouteLikeStoredTokens(t *testing.T) {
+	// Partitions 0-5 are active and evenly spread. Partitions 6 (inactive) and 7 own
+	// small ranges after token 0, so shards have an inactive partition to skip.
+	stored := NewPartitionRingDesc()
+	for id := int32(0); id < 6; id++ {
+		stored.Partitions[id] = PartitionDesc{Id: id, State: PartitionActive, StateTimestamp: 1, Tokens: []uint32{uint32(id) << 28, uint32(id+8) << 28}}
+	}
+	stored.Partitions[7] = PartitionDesc{Id: 7, State: PartitionActive, Tokens: []uint32{3, 4}}
+	stored.Partitions[6] = PartitionDesc{Id: 6, State: PartitionInactive, Tokens: []uint32{1, 2}}
+	want, err := NewPartitionRing(*stored)
+	require.NoError(t, err)
+
+	// Each case derives some partitions. The generator returns the reference tokens,
+	// so every ring must route like the reference ring.
+	for _, mode := range []string{"all derived", "mixed", "all stored"} {
+		t.Run(mode, func(t *testing.T) {
+			desc := stored.Clone().(*PartitionRingDesc)
+			for id, partition := range desc.Partitions {
+				if mode == "all derived" || (mode == "mixed" && id%2 == 0) {
+					// Derived partitions must ignore any stale stored tokens.
+					partition.Tokens = []uint32{uint32(id)}
+					partition.TokenScheme = PartitionTokensSmt512
+					desc.Partitions[id] = partition
+				}
+			}
+			before := desc.Clone()
+			var calls []int32
+			opts := DefaultPartitionRingOptions()
+			opts.TokenGenerator = partitionTokenGeneratorFunc(func(id int32) (Tokens, error) {
+				calls = append(calls, id)
+				return stored.Partitions[id].Tokens, nil
+			})
+			got, err := NewPartitionRingWithOptions(*desc, opts)
+			require.NoError(t, err)
+
+			// The generator is called once for each derived partition and never for stored ones.
+			var derivedIDs []int32
+			for id, partition := range desc.Partitions {
+				if partition.TokenScheme == PartitionTokensSmt512 {
+					derivedIDs = append(derivedIDs, id)
+				}
+			}
+			assert.ElementsMatch(t, derivedIDs, calls)
+			assert.Equal(t, before, desc, "resolving must not modify the descriptor")
+
+			assertEquivalentPartitionRouting(t, want, got)
+
+			// Shuffle shards, nested shards and lookback shards resolve derived tokens the same way.
+			for _, tenant := range []string{"tenant-a", "tenant-b", "tenant-c"} {
+				wantShard, err := want.ShuffleShard(tenant, 3)
+				require.NoError(t, err)
+				gotShard, err := got.ShuffleShard(tenant, 3)
+				require.NoError(t, err)
+				assertEquivalentPartitionRouting(t, wantShard, gotShard)
+				assert.NotNil(t, gotShard.opts.TokenGenerator)
+				// Shards keep the partition's scheme, not its resolved tokens.
+				for id := range gotShard.desc.Partitions {
+					assert.Equal(t, desc.Partitions[id], gotShard.desc.Partitions[id])
+				}
+
+				wantNested, err := wantShard.ShuffleShard(tenant, 1)
+				require.NoError(t, err)
+				gotNested, err := gotShard.ShuffleShard(tenant, 1)
+				require.NoError(t, err)
+				assertEquivalentPartitionRouting(t, wantNested, gotNested)
+
+				wantLookback, err := want.ShuffleShardWithLookback(tenant, 3, time.Hour, time.Unix(3600, 0))
+				require.NoError(t, err)
+				gotLookback, err := got.ShuffleShardWithLookback(tenant, 3, time.Hour, time.Unix(3600, 0))
+				require.NoError(t, err)
+				assertEquivalentPartitionRouting(t, wantLookback, gotLookback)
+			}
+			assert.Equal(t, before, desc, "building shards must not modify the descriptor")
+		})
+	}
+}
+
+func TestPartitionRing_WithoutDerivedPartitionsSkipsGenerator(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		desc  PartitionRingDesc
+		owned map[int32]int64
+	}{
+		{name: "empty ring", desc: *NewPartitionRingDesc(), owned: map[int32]int64{}},
+		// A stored partition without tokens keeps zero ownership instead of being derived.
+		{name: "empty stored tokens", desc: PartitionRingDesc{Partitions: map[int32]PartitionDesc{42: {State: PartitionActive}}}, owned: map[int32]int64{42: 0}},
+	} {
+		for _, withGenerator := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/with generator=%t", tc.name, withGenerator), func(t *testing.T) {
+				opts := DefaultPartitionRingOptions()
+				if withGenerator {
+					opts.TokenGenerator = partitionTokenGeneratorFunc(func(int32) (Tokens, error) {
+						t.Error("rings without derived partitions must not call the generator")
+						return nil, nil
+					})
+				}
+				r, err := NewPartitionRingWithOptions(tc.desc, opts)
+				require.NoError(t, err)
+				assert.Equal(t, tc.owned, r.countTokens())
+			})
+		}
+	}
+}
+
+func TestPartitionRing_FailsWhenTokensCannotBeResolved(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		scheme    PartitionTokenScheme
+		generator PartitionTokenGenerator
+	}{
+		{name: "no generator", scheme: PartitionTokensSmt512},
+		{name: "generator error", scheme: PartitionTokensSmt512, generator: partitionTokenGeneratorFunc(func(int32) (Tokens, error) {
+			return nil, errors.New("generator unavailable")
+		})},
+		// A working generator shows that an unknown scheme fails before any generation.
+		{name: "unknown scheme", scheme: 99, generator: partitionTokenGeneratorFunc(func(int32) (Tokens, error) {
+			return Tokens{42}, nil
+		})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			desc := PartitionRingDesc{Partitions: map[int32]PartitionDesc{42: {State: PartitionActive, Tokens: []uint32{42}, TokenScheme: tc.scheme}}}
+			opts := DefaultPartitionRingOptions()
+			opts.TokenGenerator = tc.generator
+			_, err := NewPartitionRingWithOptions(desc, opts)
+			require.Error(t, err)
+		})
+	}
+}
+
+type partitionTokenGeneratorFunc func(int32) (Tokens, error)
+
+func (f partitionTokenGeneratorFunc) TokensFor(id int32) (Tokens, error) {
+	return f(id)
+}
+
+// assertEquivalentPartitionRouting checks that two rings have the same partitions, ownership,
+// routing and token ranges.
+func assertEquivalentPartitionRouting(t *testing.T, want, got *PartitionRing) {
+	t.Helper()
+	assert.Equal(t, want.PartitionIDs(), got.PartitionIDs())
+	assert.Equal(t, want.countTokens(), got.countTokens())
+	keys := []uint32{0, 1, math.MaxUint32}
+	for _, token := range want.ringTokens {
+		keys = append(keys, token-1, token, token+1)
+	}
+	for _, key := range keys {
+		wantID, wantErr := want.ActivePartitionForKey(key)
+		gotID, gotErr := got.ActivePartitionForKey(key)
+		require.Equal(t, wantErr, gotErr)
+		require.Equal(t, wantID, gotID, "key %d", key)
+	}
+	for _, id := range want.PartitionIDs() {
+		wantRanges, err := want.GetTokenRangesForPartition(id)
+		require.NoError(t, err)
+		gotRanges, err := got.GetTokenRangesForPartition(id)
+		require.NoError(t, err)
+		assert.Equal(t, wantRanges, gotRanges)
 	}
 }

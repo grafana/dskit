@@ -3,6 +3,7 @@ package ring
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"sync"
@@ -38,7 +39,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 		// Start instance-zone-a-1 lifecycler.
-		lifecycler1a := NewPartitionInstanceLifecycler(lifecycler1aConfig, "test", ringKey, store, logger, nil)
+		lifecycler1a, err := NewPartitionInstanceLifecycler(lifecycler1aConfig, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler1a))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler1a))
@@ -54,7 +56,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		assert.ElementsMatch(t, []string{"instance-zone-a-1"}, actual.ownersByPartition()[1])
 
 		// Start instance-zone-b-1 lifecycler.
-		lifecycler1b := NewPartitionInstanceLifecycler(lifecycler1bConfig, "test", ringKey, store, logger, nil)
+		lifecycler1b, err := NewPartitionInstanceLifecycler(lifecycler1bConfig, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler1b))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler1b))
@@ -82,7 +85,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 
 		// Start lifecycler.
 		startTime := time.Now()
-		lifecycler := NewPartitionInstanceLifecycler(lifecyclerConfig, "test", ringKey, store, logger, nil)
+		lifecycler, err := NewPartitionInstanceLifecycler(lifecyclerConfig, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
@@ -118,9 +122,12 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 		// Start all lifecyclers.
-		lifecycler1a := NewPartitionInstanceLifecycler(lifecycler1aConfig, "test", ringKey, store, logger, nil)
-		lifecycler1b := NewPartitionInstanceLifecycler(lifecycler1bConfig, "test", ringKey, store, logger, nil)
-		lifecycler2a := NewPartitionInstanceLifecycler(lifecycler2aConfig, "test", ringKey, store, logger, nil)
+		lifecycler1a, err := NewPartitionInstanceLifecycler(lifecycler1aConfig, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
+		lifecycler1b, err := NewPartitionInstanceLifecycler(lifecycler1bConfig, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
+		lifecycler2a, err := NewPartitionInstanceLifecycler(lifecycler2aConfig, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler1a))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler1b))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler2a))
@@ -187,7 +194,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 		// Create the lifecycler.
-		lifecycler := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, logger, nil)
+		lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		lifecycler.SetCreatePartitionOnStartup(false)
 
 		// Start the lifecycler (will block until the partition is created).
@@ -236,7 +244,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 		// Create the lifecycler.
-		lifecycler := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, logger, nil)
+		lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		lifecycler.SetCreatePartitionOnStartup(false)
 
 		// Start the lifecycler (will block until the partition is created).
@@ -287,7 +296,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 		// Start instance-zone-a-1 lifecycler for partition 1.
-		lifecyclerInstance1Partition1 := NewPartitionInstanceLifecycler(lifecyclerInstance1Partition1Config, "test", ringKey, store, logger, nil)
+		lifecyclerInstance1Partition1, err := NewPartitionInstanceLifecycler(lifecyclerInstance1Partition1Config, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		lifecyclerInstance1Partition1.SetRemoveOwnerOnShutdown(true)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecyclerInstance1Partition1))
 
@@ -296,7 +306,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
 
 		// Start instance-zone-a-1 lifecycler for partition 2.
-		lifecyclerInstance1Partition2 := NewPartitionInstanceLifecycler(lifecyclerInstance1Partition2Config, "test", ringKey, store, logger, nil)
+		lifecyclerInstance1Partition2, err := NewPartitionInstanceLifecycler(lifecyclerInstance1Partition2Config, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		lifecyclerInstance1Partition2.SetRemoveOwnerOnShutdown(false)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecyclerInstance1Partition2))
 
@@ -306,7 +317,8 @@ func TestPartitionInstanceLifecycler(t *testing.T) {
 		}, getPartitionRingFromStore(t, store, ringKey).ownersByPartition())
 
 		// Start instance-zone-b-1 lifecycler for partition 1.
-		lifecyclerInstance2Partition1 := NewPartitionInstanceLifecycler(lifecyclerInstance2Partition1Config, "test", ringKey, store, logger, nil)
+		lifecyclerInstance2Partition1, err := NewPartitionInstanceLifecycler(lifecyclerInstance2Partition1Config, "test", ringKey, store, logger, nil)
+		require.NoError(t, err)
 		lifecyclerInstance2Partition1.SetRemoveOwnerOnShutdown(true)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, lifecyclerInstance2Partition1))
 
@@ -362,7 +374,8 @@ func TestPartitionInstanceLifecycler_GetAndChangePartitionState(t *testing.T) {
 
 	// Start lifecycler.
 	cfg := createTestPartitionInstanceLifecyclerConfig(1, "instance-1")
-	lifecycler := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, log.NewNopLogger(), nil)
+	lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, log.NewNopLogger(), nil)
+	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
@@ -443,4 +456,101 @@ func createTestMultipartitionOwnershipPartitionInstanceLifecyclerConfig(partitio
 		DeleteInactivePartitionAfterDuration: 0,
 		PollingInterval:                      10 * time.Millisecond,
 	}
+}
+
+func TestNewPartitionInstanceLifecycler_ValidatesPartitionID(t *testing.T) {
+	for _, tc := range []struct {
+		partitionID   int32
+		maxPartitions int32
+		derived       bool
+		valid         bool
+	}{
+		{partitionID: 0, maxPartitions: 8, derived: true, valid: true},
+		{partitionID: 7, maxPartitions: 8, derived: true, valid: true},
+		{partitionID: 8, maxPartitions: 8, derived: true, valid: false},
+		{partitionID: 0, maxPartitions: 0, derived: true, valid: false},
+		{partitionID: 0, maxPartitions: -1, derived: true, valid: false},
+		{partitionID: 8, maxPartitions: 8, derived: false, valid: true},
+		{partitionID: 0, maxPartitions: 0, derived: false, valid: true},
+		{partitionID: -1, maxPartitions: 8, derived: true, valid: false},
+		{partitionID: -1, maxPartitions: 8, derived: false, valid: false},
+	} {
+		t.Run(fmt.Sprintf("partition=%d/max=%d/derived=%t", tc.partitionID, tc.maxPartitions, tc.derived), func(t *testing.T) {
+			cfg := derivedTokensLifecyclerConfig(tc.partitionID, tc.derived)
+			cfg.MaxDerivedTokenPartitions = tc.maxPartitions
+			lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, nil, log.NewNopLogger(), nil)
+			if tc.valid {
+				require.NoError(t, err)
+				assert.NotNil(t, lifecycler)
+			} else {
+				require.Error(t, err)
+				assert.Nil(t, lifecycler)
+			}
+		})
+	}
+}
+
+func TestPartitionInstanceLifecycler_CreatePartition(t *testing.T) {
+	for _, tc := range []struct {
+		derived        bool
+		expectedScheme PartitionTokenScheme
+		expectedTokens int
+	}{
+		{derived: false, expectedScheme: PartitionTokensStored, expectedTokens: optimalTokensPerInstance},
+		{derived: true, expectedScheme: PartitionTokensSmt512, expectedTokens: 0},
+	} {
+		t.Run(fmt.Sprintf("derived=%t", tc.derived), func(t *testing.T) {
+			desc := createPartitionAndRegisterOwnerForTest(t, nil, derivedTokensLifecyclerConfig(7, tc.derived))
+			partition := desc.Partitions[7]
+			assert.Equal(t, PartitionPending, partition.State)
+			assert.Equal(t, tc.expectedScheme, partition.TokenScheme)
+			assert.Len(t, partition.Tokens, tc.expectedTokens)
+			assert.Equal(t, int32(7), desc.Owners["instance-1"].OwnedPartition)
+		})
+	}
+}
+
+// The option only affects partitions that the lifecycler creates.
+func TestPartitionInstanceLifecycler_KeepExistingPartition(t *testing.T) {
+	for name, existing := range map[string]PartitionDesc{
+		"stored tokens":  {Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: []uint32{1, 2}},
+		"derived tokens": {Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512},
+	} {
+		for _, derived := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/derived=%t", name, derived), func(t *testing.T) {
+				desc := createPartitionAndRegisterOwnerForTest(t, &existing, derivedTokensLifecyclerConfig(1, derived))
+				assert.Equal(t, existing, desc.Partitions[1])
+				assert.Equal(t, int32(1), desc.Owners["instance-1"].OwnedPartition)
+			})
+		}
+	}
+}
+
+func derivedTokensLifecyclerConfig(partitionID int32, derived bool) PartitionInstanceLifecyclerConfig {
+	cfg := createTestPartitionInstanceLifecyclerConfig(partitionID, "instance-1")
+	cfg.CreatePartitionsWithDerivedTokens = derived
+	// Partitions 0-7 can be created with derived tokens.
+	cfg.MaxDerivedTokenPartitions = 8
+	return cfg
+}
+
+// createPartitionAndRegisterOwnerForTest runs the lifecycler against a ring that contains existing, if set,
+// and returns the resulting ring.
+func createPartitionAndRegisterOwnerForTest(t *testing.T, existing *PartitionDesc, cfg PartitionInstanceLifecyclerConfig) *PartitionRingDesc {
+	t.Helper()
+	ctx := context.Background()
+	store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	if existing != nil {
+		require.NoError(t, store.CAS(ctx, ringKey, func(interface{}) (interface{}, bool, error) {
+			desc := NewPartitionRingDesc()
+			desc.Partitions[existing.Id] = *existing
+			return desc, true, nil
+		}))
+	}
+	lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, lifecycler.createPartitionAndRegisterOwner(ctx))
+
+	return getPartitionRingFromStore(t, store, ringKey)
 }

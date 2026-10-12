@@ -30,12 +30,12 @@ var (
 )
 
 type PartitionInstanceLifecyclerConfig struct {
-	// PartitionID is the ID of the partition managed by the lifecycler.
+	// PartitionID is the ID of the partition managed by the lifecycler. It must not be negative.
 	PartitionID int32
 
 	// CreatePartitionsWithDerivedTokens creates new partitions using PartitionTokensSmt512, without stored tokens.
-	// Creating a partition with an ID at or above MaxDerivedTokenPartitions fails.
-	// The option only applies when this lifecycler creates the partition; an existing partition is not changed.
+	// When enabled, PartitionID must be below MaxDerivedTokenPartitions.
+	// An existing partition keeps its token scheme.
 	CreatePartitionsWithDerivedTokens bool
 
 	// MaxDerivedTokenPartitions is the number of partition IDs, from 0, that can be created with derived tokens.
@@ -91,7 +91,15 @@ type PartitionInstanceLifecycler struct {
 	reconcilesFailedTotal *prometheus.CounterVec
 }
 
-func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringName, ringKey string, store kv.Client, logger log.Logger, reg prometheus.Registerer) *PartitionInstanceLifecycler {
+func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringName, ringKey string, store kv.Client, logger log.Logger, reg prometheus.Registerer) (*PartitionInstanceLifecycler, error) {
+	if cfg.PartitionID < 0 {
+		return nil, fmt.Errorf("invalid partition ID %d: must not be negative", cfg.PartitionID)
+	}
+
+	if cfg.CreatePartitionsWithDerivedTokens && cfg.PartitionID >= cfg.MaxDerivedTokenPartitions {
+		return nil, fmt.Errorf("invalid partition ID %d: must be below the maximum derived token partitions (%d) when creating partitions with derived tokens", cfg.PartitionID, cfg.MaxDerivedTokenPartitions)
+	}
+
 	if cfg.PollingInterval == 0 {
 		cfg.PollingInterval = 5 * time.Second
 	}
@@ -119,7 +127,7 @@ func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringN
 
 	l.BasicService = services.NewBasicService(l.starting, l.running, l.stopping)
 
-	return l
+	return l, nil
 }
 
 // CreatePartitionOnStartup returns whether the lifecycle creates the partition on startup
@@ -299,9 +307,6 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 			// The partition doesn't exist, so we create a new one. A new partition should always be created
 			// in PENDING state.
 			if l.cfg.CreatePartitionsWithDerivedTokens {
-				if l.cfg.PartitionID >= l.cfg.MaxDerivedTokenPartitions {
-					return false, fmt.Errorf("cannot create partition %d with derived tokens: the maximum is %d partitions", l.cfg.PartitionID, l.cfg.MaxDerivedTokenPartitions)
-				}
 				ring.AddPartitionWithDerivedTokens(l.cfg.PartitionID, PartitionPending, now)
 			} else {
 				ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)

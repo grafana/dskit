@@ -73,6 +73,18 @@ func TestOTelTracing(t *testing.T) {
 		attribute.String("http.route", expectedHelloPathParamRouteLabel),
 	}
 
+	// direct HTTP requests are traced by otelhttp, which uses the stable HTTP semantic conventions
+	expectedAttrsHelloDirectHTTPSpan := []attribute.KeyValue{
+		attribute.String("url.path", helloRouteURL.Path),
+		attribute.String("http.request.method", httpMethod),
+		attribute.String("http.route", helloRouteName),
+	}
+	expectedAttrsHelloPathParamDirectHTTPSpan := []attribute.KeyValue{
+		attribute.String("url.path", helloPathParamRouteURL.Path),
+		attribute.String("http.request.method", httpMethod),
+		attribute.String("http.route", expectedHelloPathParamRouteLabel),
+	}
+
 	tests := map[string]struct {
 		useHTTPOverGRPC              bool
 		useOtherGRPC                 bool
@@ -106,7 +118,7 @@ func TestOTelTracing(t *testing.T) {
 			routeTmpl:       helloRouteTmpl,
 			reqURL:          helloRouteURLRaw,
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
-				expectedOpNameHelloHTTPSpan: expectedAttrsHelloHTTPSpan,
+				expectedOpNameHelloHTTPSpan: expectedAttrsHelloDirectHTTPSpan,
 			},
 		},
 		"HTTP over gRPC: unnamed route with params in path template": {
@@ -132,7 +144,7 @@ func TestOTelTracing(t *testing.T) {
 				"X-Unexpected-Header": "42",
 			},
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
-				expectedOpNameHelloPathParamHTTPSpan: expectedAttrsHelloPathParamHTTPSpan,
+				expectedOpNameHelloPathParamHTTPSpan: expectedAttrsHelloPathParamDirectHTTPSpan,
 			},
 			unexpectedAttributesByOpName: map[string][]attribute.Key{
 				expectedOpNameHelloPathParamHTTPSpan: {
@@ -153,7 +165,7 @@ func TestOTelTracing(t *testing.T) {
 				"X-Grafana-Id":        "also excluded",
 			},
 			expectedAttributesByOpName: map[string][]attribute.KeyValue{
-				expectedOpNameHelloPathParamHTTPSpan: append(expectedAttrsHelloPathParamHTTPSpan,
+				expectedOpNameHelloPathParamHTTPSpan: append(expectedAttrsHelloPathParamDirectHTTPSpan,
 					attribute.StringSlice("http.header.X-Unexpected-Header", []string{"42"}),
 					attribute.String("http.header.X-Excluded-Header.present", "true"),
 					attribute.String("http.header.Authorization.present", "true"),

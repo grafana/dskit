@@ -1703,3 +1703,28 @@ func TestManager_InvalidSourceRegistersNothing(t *testing.T) {
 		})
 	}
 }
+
+// unmarshalJSONOrYAML must keep producing the same values as encoding/json,
+// since loaders depend on the exact types in the decoded map.
+func TestUnmarshalJSONOrYAMLMatchesEncodingJSON(t *testing.T) {
+	generated, err := json.Marshal(generateOverrides(100))
+	require.NoError(t, err)
+
+	for name, data := range map[string]string{
+		"generated overrides": string(generated),
+		"scalars":             `{"int": 1, "neg": -2, "float": 1.5, "exp": 1e21, "big": 12345678901234567890, "t": true, "f": false, "null": null, "s": "x"}`,
+		"escapes":             `{"s": "a\"b\\c\/d\n\té😀", "kéy": "v"}`,
+		"nested":              `{"a": {"b": [1, "two", {"c": null}, []], "d": {}}}`,
+		"duplicate keys":      `{"a": 1, "a": 2}`,
+		"whitespace":          " \n\t{ \"a\" : [ 1 , 2 ] }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			expected := map[string]any{}
+			require.NoError(t, json.Unmarshal([]byte(data), &expected))
+
+			actual, err := unmarshalJSONOrYAML([]byte(data))
+			require.NoError(t, err)
+			require.Equal(t, expected, actual)
+		})
+	}
+}

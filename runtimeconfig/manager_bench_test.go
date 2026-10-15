@@ -95,3 +95,16 @@ func benchLoader(r io.Reader) (interface{}, error) {
 	}
 	return o, nil
 }
+
+func BenchmarkUnmarshalJSONOrYAML(b *testing.B) {
+	data, err := json.Marshal(generateOverrides(20000))
+	require.NoError(b, err)
+
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := unmarshalJSONOrYAML(data); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

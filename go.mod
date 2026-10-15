@@ -12,6 +12,7 @@ require (
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/felixge/httpsnoop v1.1.0
 	github.com/go-kit/log v0.2.1
+	github.com/goccy/go-json v0.11.2
 	github.com/gogo/googleapis v1.4.1
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1

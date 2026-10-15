@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	json "github.com/goccy/go-json"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -445,7 +445,8 @@ func (om *Manager) unmarshalMaybeGzipped(filename string, data []byte) (map[stri
 
 // unmarshalJSONOrYAML decodes data into a map. If the data appears to be a JSON
 // object (its first non-whitespace byte is '{'), it is decoded with
-// encoding/json, which is faster. YAML is used as a fallback
+// goccy/go-json, which is several times faster than encoding/json and
+// yields the same values. YAML is used as a fallback
 func unmarshalJSONOrYAML(data []byte) (map[string]any, error) {
 	if looksLikeJSONObject(data) {
 		m := map[string]any{}

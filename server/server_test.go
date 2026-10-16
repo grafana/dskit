@@ -759,6 +759,95 @@ func TestTLSServerWithInlineCerts(t *testing.T) {
 	require.EqualValues(t, &empty, grpcRes)
 }
 
+func TestTLSServerWithClientAllowedSans(t *testing.T) {
+	var level log.Level
+	require.NoError(t, level.Set("info"))
+
+	certsDir := t.TempDir()
+	cmd := exec.Command("bash", filepath.Join("certs", "genCerts.sh"), certsDir, "1")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	newTLSConfig := func(clientAuth string, allowedSans []string) TLSConfig {
+		return TLSConfig{
+			TLSCertPath:       filepath.Join(certsDir, "server.crt"),
+			TLSKeyPath:        filepath.Join(certsDir, "server.key"),
+			ClientAuth:        clientAuth,
+			ClientCAs:         filepath.Join(certsDir, "root.crt"),
+			ClientAllowedSans: allowedSans,
+		}
+	}
+
+	clientCert, err := tls.LoadX509KeyPair(filepath.Join(certsDir, "client.crt"), filepath.Join(certsDir, "client.key"))
+	require.NoError(t, err)
+	clientTLSConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{clientCert},
+	}
+
+	for name, tc := range map[string]struct {
+		allowedSans []string
+		expectErr   bool
+	}{
+		"client cert SAN is allowed":     {allowedSans: []string{"other.example.com", "client.example.com"}},
+		"client cert SAN is not allowed": {allowedSans: []string{"other.example.com"}, expectErr: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := Config{
+				HTTPTLSConfig: newTLSConfig("RequireAndVerifyClientCert", tc.allowedSans),
+				GRPCTLSConfig: newTLSConfig("RequireAndVerifyClientCert", tc.allowedSans),
+				LogLevel:      level,
+				Registerer:    prometheus.NewPedanticRegistry(),
+			}
+			setAutoAssignedPorts(DefaultNetwork, &cfg)
+
+			server, err := New(cfg)
+			require.NoError(t, err)
+			server.HTTP.HandleFunc("/testhttps", func(http.ResponseWriter, *http.Request) {})
+			RegisterFakeServerServer(server.GRPC, FakeServer{})
+			go func() {
+				require.NoError(t, server.Run())
+			}()
+			defer server.Shutdown()
+
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLSConfig}}
+			res, err := client.Get(httpsTarget(server, "/testhttps"))
+			if tc.expectErr {
+				require.ErrorContains(t, err, "remote error: tls")
+			} else {
+				require.NoError(t, err)
+				require.NoError(t, res.Body.Close())
+				require.Equal(t, http.StatusOK, res.StatusCode)
+			}
+
+			conn, err := grpc.NewClient(server.GRPCListenAddr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLSConfig)))
+			require.NoError(t, err)
+			defer conn.Close()
+			_, err = NewFakeServerClient(conn).Succeed(context.Background(), &emptypb.Empty{})
+			if tc.expectErr {
+				require.ErrorContains(t, err, "remote error: tls")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+
+	t.Run("requires client auth type RequireAndVerifyClientCert", func(t *testing.T) {
+		for name, cfg := range map[string]Config{
+			"http": {HTTPTLSConfig: newTLSConfig("VerifyClientCertIfGiven", []string{"client.example.com"})},
+			"grpc": {GRPCTLSConfig: newTLSConfig("VerifyClientCertIfGiven", []string{"client.example.com"})},
+		} {
+			t.Run(name, func(t *testing.T) {
+				cfg.LogLevel = level
+				cfg.Registerer = prometheus.NewPedanticRegistry()
+				setAutoAssignedPorts(DefaultNetwork, &cfg)
+				_, err := New(cfg)
+				require.ErrorContains(t, err, "client allowed SANs require client auth type RequireAndVerifyClientCert")
+			})
+		}
+	})
+}
+
 type FakeLogger struct {
 	logger gokit_log.Logger
 	buf    *bytes.Buffer

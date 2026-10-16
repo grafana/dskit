@@ -10,7 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/goleak"
 )
@@ -265,6 +267,64 @@ func TestOTelPropagatorsFromEnv(t *testing.T) {
 
 		propagators := OTelPropagatorsFromEnv()
 		require.Len(t, propagators, 4)
+	})
+
+	t.Run("default propagators preserve tracestate", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
+
+		os.Unsetenv("OTEL_PROPAGATORS")
+
+		traceState, err := trace.ParseTraceState("ot=th:8")
+		require.NoError(t, err)
+		sc := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    trace.TraceID{1},
+			SpanID:     trace.SpanID{1},
+			TraceFlags: trace.FlagsSampled,
+			TraceState: traceState,
+		})
+
+		propagator := propagation.NewCompositeTextMapPropagator(OTelPropagatorsFromEnv()...)
+		carrier := propagation.MapCarrier{}
+		propagator.Inject(trace.ContextWithSpanContext(context.Background(), sc), carrier)
+		// Both headers are injected, so Extract must not let the Jaeger
+		// propagator replace the tracestate carried by traceparent.
+		require.NotEmpty(t, carrier.Get("uber-trace-id"))
+
+		got := trace.SpanContextFromContext(propagator.Extract(context.Background(), carrier))
+		require.Equal(t, sc.WithRemote(true), got)
+	})
+
+	t.Run("default propagators prefer traceparent over uber-trace-id", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
+
+		os.Unsetenv("OTEL_PROPAGATORS")
+
+		propagator := propagation.NewCompositeTextMapPropagator(OTelPropagatorsFromEnv()...)
+		carrier := propagation.MapCarrier{
+			"traceparent":   "00-01000000000000000000000000000000-0100000000000000-01",
+			"tracestate":    "ot=th:8",
+			"uber-trace-id": "02000000000000000000000000000000:0200000000000000:0:1",
+		}
+
+		got := trace.SpanContextFromContext(propagator.Extract(context.Background(), carrier))
+		require.Equal(t, trace.TraceID{1}, got.TraceID())
+		require.Equal(t, "ot=th:8", got.TraceState().String())
+	})
+
+	t.Run("default propagators fall back to uber-trace-id", func(t *testing.T) {
+		defer saveEnvAndRestoreDeferred("OTEL_PROPAGATORS")()
+
+		os.Unsetenv("OTEL_PROPAGATORS")
+
+		propagator := propagation.NewCompositeTextMapPropagator(OTelPropagatorsFromEnv()...)
+		carrier := propagation.MapCarrier{
+			"traceparent":   "invalid",
+			"uber-trace-id": "02000000000000000000000000000000:0200000000000000:0:1",
+		}
+
+		got := trace.SpanContextFromContext(propagator.Extract(context.Background(), carrier))
+		require.Equal(t, trace.TraceID{2}, got.TraceID())
+		require.True(t, got.IsSampled())
 	})
 
 	t.Run("custom propagators from env", func(t *testing.T) {

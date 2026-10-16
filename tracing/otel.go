@@ -333,18 +333,23 @@ func parseRatioOrDefault(s string, defaultVal float64) float64 {
 }
 
 // OTelPropagatorsFromEnv returns a slice of OpenTelemetry TextMapPropagators based on the OTEL_PROPAGATORS environment variable.
-// If the environment variable is not set, it defaults to using TraceContext, Baggage, and Jaeger propagators.
+// If the environment variable is not set, it defaults to using Jaeger, TraceContext, and Baggage propagators.
 // This implementation supports only `tracecontext`, `baggage`, and `jaeger` and `none` propagators.
+// Propagators listed in the environment variable are used in the given order. Later propagators win on
+// Extract, so list `jaeger` before `tracecontext` to preserve the W3C tracestate.
 // See docs in:
 // https://opentelemetry.io/docs/languages/sdk-configuration/general/
 func OTelPropagatorsFromEnv() []propagation.TextMapPropagator {
 	// If OTEL_PROPAGATORS is not set, use the default propagators.
 	if os.Getenv("OTEL_PROPAGATORS") == "" {
+		// Jaeger is extracted before TraceContext because the Jaeger header has
+		// no tracestate: when both headers are present, TraceContext must win
+		// so the tracestate is not discarded.
 		return []propagation.TextMapPropagator{
-			propagation.TraceContext{},
-			propagation.Baggage{},
 			jaegerpropagator.Jaeger{},
 			JaegerDebuggingPropagator{},
+			propagation.TraceContext{},
+			propagation.Baggage{},
 		}
 	}
 

@@ -333,23 +333,18 @@ func parseRatioOrDefault(s string, defaultVal float64) float64 {
 }
 
 // OTelPropagatorsFromEnv returns a slice of OpenTelemetry TextMapPropagators based on the OTEL_PROPAGATORS environment variable.
-// If the environment variable is not set, it defaults to using Jaeger, TraceContext, and Baggage propagators.
+// If the environment variable is not set, it defaults to using TraceContext, Baggage, and Jaeger propagators.
 // This implementation supports only `tracecontext`, `baggage`, and `jaeger` and `none` propagators.
-// Propagators listed in the environment variable are used in the given order. Later propagators win on
-// Extract, so list `jaeger` before `tracecontext` to preserve the W3C tracestate.
 // See docs in:
 // https://opentelemetry.io/docs/languages/sdk-configuration/general/
 func OTelPropagatorsFromEnv() []propagation.TextMapPropagator {
 	// If OTEL_PROPAGATORS is not set, use the default propagators.
 	if os.Getenv("OTEL_PROPAGATORS") == "" {
-		// Jaeger is extracted before TraceContext because the Jaeger header has
-		// no tracestate: when both headers are present, TraceContext must win
-		// so the tracestate is not discarded.
 		return []propagation.TextMapPropagator{
-			jaegerpropagator.Jaeger{},
-			JaegerDebuggingPropagator{},
 			propagation.TraceContext{},
 			propagation.Baggage{},
+			tracestatePreservingJaegerPropagator{},
+			JaegerDebuggingPropagator{},
 		}
 	}
 
@@ -363,7 +358,7 @@ func OTelPropagatorsFromEnv() []propagation.TextMapPropagator {
 		case "baggage":
 			result = append(result, propagation.Baggage{})
 		case "jaeger":
-			result = append(result, jaegerpropagator.Jaeger{}, JaegerDebuggingPropagator{})
+			result = append(result, tracestatePreservingJaegerPropagator{}, JaegerDebuggingPropagator{})
 		case "none":
 			return nil
 		default:
@@ -371,4 +366,23 @@ func OTelPropagatorsFromEnv() []propagation.TextMapPropagator {
 		}
 	}
 	return result
+}
+
+// tracestatePreservingJaegerPropagator wraps the Jaeger propagator so that
+// Extract keeps a previously extracted traceparent for the same span. The
+// uber-trace-id header carries no tracestate or W3C random flag, so without
+// this, extracting Jaeger after TraceContext would discard them.
+type tracestatePreservingJaegerPropagator struct {
+	jaegerpropagator.Jaeger
+}
+
+func (p tracestatePreservingJaegerPropagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+	prev := trace.SpanContextFromContext(ctx)
+	ctx = p.Jaeger.Extract(ctx, carrier)
+	sc := trace.SpanContextFromContext(ctx)
+	if prev.IsRemote() && prev.TraceID() == sc.TraceID() && prev.SpanID() == sc.SpanID() {
+		// Keep ctx, which holds the Jaeger debug flag, but restore the W3C span context.
+		return trace.ContextWithRemoteSpanContext(ctx, prev)
+	}
+	return ctx
 }

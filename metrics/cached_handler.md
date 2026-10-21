@@ -34,9 +34,11 @@ representation that arrive during a refresh share its result, even when the
 refresh outlives the TTL; different representations refresh independently. A
 refresh continues when the request that started it is canceled. Timeout options
 apply only to waiting for a refresh; cache hits are written directly. The cached
-path does not apply `MaxRequestsInFlight`, since at most one refresh runs per
-representation. The TTL starts before gathering, so a slow collection does not
-extend the age of the cached data. Failed refreshes do not serve expired data.
+path shares `MaxRequestsInFlight` and `CoalesceGather` across representations and
+bypassed requests. Cache hits do not occupy an in-flight slot; a refresh retains
+its slot until it finishes, even if its waiters time out. The TTL starts before
+gathering, so a slow collection does not extend the age of the cached data.
+Failed refreshes do not serve expired data.
 
 Choose the duration with scrape intervals, short-window rates and alerting in
 mind: the cache may repeat a metric value for up to the configured duration.

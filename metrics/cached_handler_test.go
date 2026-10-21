@@ -267,6 +267,75 @@ func TestCachedHandlerForBoundedVariants(t *testing.T) {
 	require.Equal(t, metricsResponseCacheSize, h.responses.Len())
 }
 
+func TestCachedHandlerForMaxRequestsInFlight(t *testing.T) {
+	for _, firstPath := range []string{"/metrics", "/metrics?name[]=test_value"} {
+		t.Run(firstPath, func(t *testing.T) {
+			entered := make(chan struct{}, 32)
+			release := make(chan struct{})
+			defer close(release)
+			reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+				entered <- struct{}{}
+				<-release
+				return nil, nil
+			})
+			h := CachedHandlerFor(reg, promhttp.HandlerOpts{MaxRequestsInFlight: 1, Timeout: 10 * time.Millisecond}, time.Minute)
+			first := httptest.NewRecorder()
+			h.ServeHTTP(first, httptest.NewRequest(http.MethodGet, firstPath, nil))
+			require.Equal(t, http.StatusServiceUnavailable, first.Code)
+			<-entered
+			// A timed-out collection must retain its slot across variants and bypasses.
+			for i := 0; i < 16; i++ {
+				for _, path := range []string{"/metrics", "/metrics?name[]=test_value"} {
+					r := httptest.NewRequest(http.MethodGet, path, nil)
+					r.Header.Set("Accept", fmt.Sprintf("text/plain;unused=%d", i))
+					w := httptest.NewRecorder()
+					h.ServeHTTP(w, r)
+					require.Equal(t, http.StatusServiceUnavailable, w.Code)
+					require.Contains(t, w.Body.String(), "Limit of concurrent requests reached (1)")
+				}
+			}
+			require.Empty(t, entered)
+		})
+	}
+}
+
+func TestCachedHandlerForCoalesceGather(t *testing.T) {
+	var gathers atomic.Int64
+	release := make(chan struct{})
+	defer close(release)
+	reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+		gathers.Inc()
+		<-release
+		return nil, nil
+	})
+	h := CachedHandlerFor(reg, promhttp.HandlerOpts{CoalesceGather: true, Timeout: 10 * time.Millisecond}, time.Minute)
+	for i := 0; i < 16; i++ {
+		for _, path := range []string{"/metrics", "/metrics?name[]=test_value"} {
+			r := httptest.NewRequest(http.MethodGet, path, nil)
+			r.Header.Set("Accept", fmt.Sprintf("text/plain;unused=%d", i))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			require.Equal(t, http.StatusServiceUnavailable, w.Code)
+		}
+	}
+	// All refreshes and filtered scrapes still wait on the same collection.
+	require.Equal(t, int64(1), gathers.Load())
+}
+
+func TestCachedHandlerForCoalesceGatherPanic(t *testing.T) {
+	var gathers atomic.Int64
+	reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+		if gathers.Inc() == 1 {
+			panic("gather panicked")
+		}
+		return nil, nil
+	})
+	h := CachedHandlerFor(reg, promhttp.HandlerOpts{CoalesceGather: true}, time.Minute)
+	require.PanicsWithValue(t, "gather panicked", func() { scrapeCachedHandler(h, "") })
+	require.Equal(t, http.StatusOK, scrapeCachedHandler(h, "").Code)
+	require.Equal(t, int64(2), gathers.Load())
+}
+
 func TestCachedHandlerForSlowCollection(t *testing.T) {
 	var mu sync.Mutex
 	now := time.Unix(0, 0)

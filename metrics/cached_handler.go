@@ -14,7 +14,9 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/singleflight"
 )
 
 const metricsResponseCacheSize = 8
@@ -34,17 +36,29 @@ func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheD
 	// Cache hits are written directly and refreshes run detached from requests, so
 	// the timeout only applies to waiting for a refresh.
 	opts.Timeout = 0
+	var inFlight chan struct{}
+	if opts.MaxRequestsInFlight > 0 {
+		inFlight = make(chan struct{}, opts.MaxRequestsInFlight)
+		opts.MaxRequestsInFlight = 0
+	}
+	if opts.CoalesceGather {
+		reg = &metricsCoalescingGatherer{reg: reg}
+		opts.CoalesceGather = false
+	}
 	responses, err := lru.New[metricsResponseCacheKey, *metricsResponse](metricsResponseCacheSize)
 	if err != nil {
 		panic(err)
 	}
-	bypass := promhttp.HandlerFor(reg, opts)
+	// Refreshes need separate error logs, but concurrency controls must span
+	// every representation and the uncached path.
+	bypass := limitMetricsRequests(promhttp.HandlerFor(reg, opts), inFlight)
 	if timeout > 0 {
 		bypass = http.TimeoutHandler(bypass, timeout, metricsTimeoutBody(timeout))
 	}
 	return &cachedMetricsHandler{
 		reg:       reg,
 		opts:      opts,
+		inFlight:  inFlight,
 		bypass:    bypass,
 		duration:  cacheDuration,
 		timeout:   timeout,
@@ -94,6 +108,7 @@ type metricsRefresh struct {
 type cachedMetricsHandler struct {
 	reg      prometheus.Gatherer
 	opts     promhttp.HandlerOpts
+	inFlight chan struct{}
 	bypass   http.Handler
 	duration time.Duration
 	timeout  time.Duration
@@ -170,7 +185,7 @@ func (h *cachedMetricsHandler) refresh(r *http.Request, key metricsResponseCache
 	opts.ErrorLog = errorLog
 	start := h.now()
 	writer := &metricsResponseWriter{header: make(http.Header)}
-	promhttp.HandlerFor(h.reg, opts).ServeHTTP(writer, r)
+	limitMetricsRequests(promhttp.HandlerFor(h.reg, opts), h.inFlight).ServeHTTP(writer, r)
 	if writer.code == 0 {
 		writer.code = http.StatusOK
 	}
@@ -184,6 +199,49 @@ func (h *cachedMetricsHandler) refresh(r *http.Request, key metricsResponseCache
 		refresh.response.body = bytes.Clone(refresh.response.body)
 		cacheable = true
 	}
+}
+
+func limitMetricsRequests(next http.Handler, inFlight chan struct{}) http.Handler {
+	if inFlight == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case inFlight <- struct{}{}:
+			defer func() { <-inFlight }()
+			next.ServeHTTP(w, r)
+		default:
+			http.Error(w, fmt.Sprintf("Limit of concurrent requests reached (%d), try again later.", cap(inFlight)), http.StatusServiceUnavailable)
+		}
+	})
+}
+
+type metricsCoalescingGatherer struct {
+	reg   prometheus.Gatherer
+	group singleflight.Group
+}
+
+type metricsGatherResult struct {
+	families []*dto.MetricFamily
+	err      error
+	panicked any
+}
+
+func (g *metricsCoalescingGatherer) Gather() ([]*dto.MetricFamily, error) {
+	v, _, _ := g.group.Do("", func() (any, error) {
+		result := &metricsGatherResult{}
+		func() {
+			// Keep the original panic value so each handler applies normal recovery.
+			defer func() { result.panicked = recover() }()
+			result.families, result.err = g.reg.Gather()
+		}()
+		return result, nil
+	})
+	result := v.(*metricsGatherResult)
+	if result.panicked != nil {
+		panic(result.panicked)
+	}
+	return slices.Clone(result.families), result.err
 }
 
 type metricsResponseWriter struct {

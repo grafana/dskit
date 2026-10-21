@@ -27,6 +27,8 @@ const metricsResponseCacheSize = 8
 // for up to eight Accept/Accept-Encoding combinations. Requests with query
 // parameters bypass the cache. Cached metrics can lag behind live values by
 // cacheDuration; choose a duration appropriate for scrape intervals and alerts.
+// With caching enabled, overlapping collections are always coalesced across
+// variants and bypassed requests, regardless of opts.CoalesceGather.
 func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheDuration time.Duration) http.Handler {
 	if cacheDuration <= 0 {
 		return promhttp.HandlerFor(reg, opts)
@@ -41,10 +43,8 @@ func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheD
 		inFlight = make(chan struct{}, opts.MaxRequestsInFlight)
 		opts.MaxRequestsInFlight = 0
 	}
-	if opts.CoalesceGather {
-		reg = &metricsCoalescingGatherer{reg: reg}
-		opts.CoalesceGather = false
-	}
+	reg = &metricsCoalescingGatherer{reg: reg}
+	opts.CoalesceGather = false
 	responses, err := lru.New[metricsResponseCacheKey, *metricsResponse](metricsResponseCacheSize)
 	if err != nil {
 		panic(err)

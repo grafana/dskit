@@ -308,7 +308,7 @@ func TestCachedHandlerForCoalesceGather(t *testing.T) {
 		<-release
 		return nil, nil
 	})
-	h := CachedHandlerFor(reg, promhttp.HandlerOpts{CoalesceGather: true, Timeout: 10 * time.Millisecond}, time.Minute)
+	h := CachedHandlerFor(reg, promhttp.HandlerOpts{Timeout: 10 * time.Millisecond}, time.Minute)
 	for i := 0; i < 16; i++ {
 		for _, path := range []string{"/metrics", "/metrics?name[]=test_value"} {
 			r := httptest.NewRequest(http.MethodGet, path, nil)
@@ -330,7 +330,7 @@ func TestCachedHandlerForCoalesceGatherPanic(t *testing.T) {
 		}
 		return nil, nil
 	})
-	h := CachedHandlerFor(reg, promhttp.HandlerOpts{CoalesceGather: true}, time.Minute)
+	h := CachedHandlerFor(reg, promhttp.HandlerOpts{}, time.Minute)
 	require.PanicsWithValue(t, "gather panicked", func() { scrapeCachedHandler(h, "") })
 	require.Equal(t, http.StatusOK, scrapeCachedHandler(h, "").Code)
 	require.Equal(t, int64(2), gathers.Load())
@@ -376,28 +376,6 @@ func TestCachedHandlerForSlowCollection(t *testing.T) {
 	require.Zero(t, h.responses.Len())
 }
 
-func TestCachedHandlerForIndependentVariants(t *testing.T) {
-	entered := make(chan struct{})
-	release := make(chan struct{})
-	var once sync.Once
-	reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
-		blocked := false
-		once.Do(func() { blocked = true; close(entered) })
-		if blocked {
-			<-release
-		}
-		return nil, nil
-	})
-	h := CachedHandlerFor(reg, promhttp.HandlerOpts{}, time.Minute)
-	slow := make(chan struct{})
-	go func() { defer close(slow); scrapeCachedHandler(h, "text/plain") }()
-	<-entered
-	// A different representation does not wait for an unrelated refresh.
-	require.Equal(t, http.StatusOK, scrapeCachedHandler(h, "application/openmetrics-text").Code)
-	close(release)
-	<-slow
-}
-
 func TestCachedHandlerForErrorsAttributedPerRefresh(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{Name: "test_value", Help: "Value."})
@@ -410,20 +388,28 @@ func TestCachedHandlerForErrorsAttributedPerRefresh(t *testing.T) {
 		if gathers.Inc() == 1 {
 			close(entered)
 			<-release
-			return families, err
 		}
 		return append(families, invalid), err
 	})
-	h := CachedHandlerFor(gatherer, promhttp.HandlerOpts{}, time.Minute)
+	var logs bytes.Buffer
+	h := CachedHandlerFor(gatherer, promhttp.HandlerOpts{ErrorLog: log.New(&logs, "", 0)}, time.Minute)
+	const protobuf = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
 	cached := make(chan struct{})
-	go func() { defer close(cached); scrapeCachedHandler(h, "") }()
+	go func() { defer close(cached); scrapeCachedHandler(h, protobuf) }()
 	<-entered
-	// A bypassed request logging an encoding error must not prevent caching the refresh.
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/metrics?x=y", nil))
+	bypassed := make(chan struct{})
+	go func() {
+		defer close(bypassed)
+		// Text encoding rejects the malformed metric; protobuf encoding accepts it.
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/metrics?x=y", nil))
+	}()
 	close(release)
 	<-cached
-	scrapeCachedHandler(h, "")
-	require.Equal(t, int64(2), gathers.Load())
+	<-bypassed
+	require.Contains(t, logs.String(), "error encoding")
+	before := gathers.Load()
+	scrapeCachedHandler(h, protobuf)
+	require.Equal(t, before, gathers.Load())
 }
 
 func TestCachedHandlerForPanic(t *testing.T) {

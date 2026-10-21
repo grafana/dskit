@@ -69,6 +69,8 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ matrix.go-version }}
+          # Runners may ship an older cached patch release than the go directive in go.mod requires.
+          check-latest: true
       - name: Display Go version
         run: go version
       - name: Test

@@ -57,14 +57,4 @@ refresh per five requests rather than timing cache hits alone.
 go test ./metrics -run '^$' -bench '^BenchmarkCachedHandlerFor$' -benchmem -benchtime=20x -count=5
 ```
 
-Local results on Apple M3 Pro, darwin/arm64, Go 1.27.2, GOMAXPROCS 11.
-Medians of five 20-request samples; uncached → 15-second cache:
-
-- 1,000 tenants, identity: 13.39 → 2.69 ms/request (79.9% less elapsed time); 5.54 → 2.17 MB allocated/request; 68,635 → 13,732 allocations/request.
-- 1,000 tenants, gzip: 17.26 → 3.94 ms/request (77.2% less elapsed time); 6.57 → 1.40 MB allocated/request; 68,652 → 13,736 allocations/request.
-- 8,000 tenants, identity: 163.79 → 33.92 ms/request (79.3% less elapsed time); 46.57 → 17.81 MB allocated/request; 545,726 → 109,151 allocations/request.
-- 8,000 tenants, gzip: 229.41 → 43.29 ms/request (81.1% less elapsed time); 47.49 → 10.10 MB allocated/request; 545,742 → 109,156 allocations/request.
-
-Raw output: [cached_handler_benchmark.txt](cached_handler_benchmark.txt).
-Allocated bytes measure churn, not retained heap. These are synthetic local
-handler measurements, not estimates of whole-service CPU savings.
+Measured cached-versus-uncached results are included in [PR #1128](https://github.com/grafana/dskit/pull/1128).

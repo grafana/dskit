@@ -148,7 +148,14 @@ func TestCachedHandlerForErrors(t *testing.T) {
 					require.Contains(t, w.Header().Get("Content-Type"), "text/plain")
 				} else {
 					require.Equal(t, http.StatusOK, w.Code)
+					require.Contains(t, w.Body.String(), "test_value")
 				}
+			}
+			if handling == promhttp.ContinueOnError {
+				// Partial responses are cached, as every uncached scrape would return them.
+				require.Equal(t, 1, gathers)
+				require.Equal(t, 1, strings.Count(logs.String(), "gather failed"))
+				return
 			}
 			require.Equal(t, 2, gathers)
 			require.Equal(t, 2, strings.Count(logs.String(), "gather failed"))
@@ -221,12 +228,12 @@ func TestCachedHandlerForConcurrency(t *testing.T) {
 func TestCachedHandlerForTimeout(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	finished := make(chan struct{})
-	var once sync.Once
+	var gathers atomic.Int64
 	reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
-		once.Do(func() { close(entered) })
+		if gathers.Inc() == 1 {
+			close(entered)
+		}
 		<-release
-		close(finished)
 		return nil, nil
 	})
 	h := CachedHandlerFor(reg, promhttp.HandlerOpts{Timeout: 20 * time.Millisecond}, time.Minute)
@@ -236,10 +243,20 @@ func TestCachedHandlerForTimeout(t *testing.T) {
 	w := <-result
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "Exceeded configured timeout")
-	// A different representation waits behind the slow refresh, but keeps its timeout.
-	require.Equal(t, http.StatusServiceUnavailable, scrapeCachedHandler(h, "text/plain").Code)
+	// Later requests time out waiting for the same refresh instead of starting another.
+	require.Equal(t, http.StatusServiceUnavailable, scrapeCachedHandler(h, "").Code)
+	require.Equal(t, int64(1), gathers.Load())
 	close(release)
-	<-finished
+	require.Eventually(t, func() bool { return scrapeCachedHandler(h, "").Code == http.StatusOK }, time.Second, time.Millisecond)
+	// The timed-out refresh still populated the cache.
+	require.Equal(t, int64(1), gathers.Load())
+	// Bypassed requests keep promhttp's timeout.
+	release = make(chan struct{})
+	r := httptest.NewRequest(http.MethodHead, "/metrics", nil)
+	bypassed := httptest.NewRecorder()
+	h.ServeHTTP(bypassed, r)
+	require.Equal(t, http.StatusServiceUnavailable, bypassed.Code)
+	close(release)
 }
 
 func TestCachedHandlerForBoundedVariants(t *testing.T) {
@@ -251,16 +268,93 @@ func TestCachedHandlerForBoundedVariants(t *testing.T) {
 }
 
 func TestCachedHandlerForSlowCollection(t *testing.T) {
+	var mu sync.Mutex
 	now := time.Unix(0, 0)
-	gathers := 0
-	reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { gathers++; now = now.Add(time.Minute); return nil, nil })
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var gathers atomic.Int64
+	reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+		gathers.Inc()
+		entered <- struct{}{}
+		<-release
+		mu.Lock()
+		now = now.Add(time.Minute)
+		mu.Unlock()
+		return nil, nil
+	})
 	h := CachedHandlerFor(reg, promhttp.HandlerOpts{}, time.Second).(*cachedMetricsHandler)
-	h.now = func() time.Time { return now }
-	for i := 0; i < 2; i++ {
-		require.Equal(t, http.StatusOK, scrapeCachedHandler(h, "").Code)
+	h.now = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	var wg sync.WaitGroup
+	codes := make(chan int, 10)
+	scrape := func() { defer wg.Done(); codes <- scrapeCachedHandler(h, "").Code }
+	wg.Add(1)
+	go scrape()
+	<-entered
+	for i := 0; i < 9; i++ {
+		wg.Add(1)
+		go scrape()
 	}
-	require.Equal(t, 2, gathers)
+	// Give the waiters time to join the in-flight refresh.
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	close(codes)
+	for code := range codes {
+		require.Equal(t, http.StatusOK, code)
+	}
+	// Requests arriving during a refresh share it even if it outlives the TTL.
+	require.Equal(t, int64(1), gathers.Load())
 	require.Zero(t, h.responses.Len())
+}
+
+func TestCachedHandlerForIndependentVariants(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	reg := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+		blocked := false
+		once.Do(func() { blocked = true; close(entered) })
+		if blocked {
+			<-release
+		}
+		return nil, nil
+	})
+	h := CachedHandlerFor(reg, promhttp.HandlerOpts{}, time.Minute)
+	slow := make(chan struct{})
+	go func() { defer close(slow); scrapeCachedHandler(h, "text/plain") }()
+	<-entered
+	// A different representation does not wait for an unrelated refresh.
+	require.Equal(t, http.StatusOK, scrapeCachedHandler(h, "application/openmetrics-text").Code)
+	close(release)
+	<-slow
+}
+
+func TestCachedHandlerForErrorsAttributedPerRefresh(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{Name: "test_value", Help: "Value."})
+	invalid := &dto.MetricFamily{Name: strptr("z_invalid"), Help: strptr("Invalid metric."), Type: dto.MetricType_COUNTER.Enum(), Metric: []*dto.Metric{{}}}
+	var gathers atomic.Int64
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	gatherer := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+		families, err := reg.Gather()
+		if gathers.Inc() == 1 {
+			close(entered)
+			<-release
+			return families, err
+		}
+		return append(families, invalid), err
+	})
+	h := CachedHandlerFor(gatherer, promhttp.HandlerOpts{}, time.Minute)
+	cached := make(chan struct{})
+	go func() { defer close(cached); scrapeCachedHandler(h, "") }()
+	<-entered
+	// A bypassed request logging an encoding error must not prevent caching the refresh.
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/metrics?x=y", nil))
+	close(release)
+	<-cached
+	scrapeCachedHandler(h, "")
+	require.Equal(t, int64(2), gathers.Load())
 }
 
 func TestCachedHandlerForPanic(t *testing.T) {

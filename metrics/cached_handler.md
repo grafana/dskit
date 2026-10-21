@@ -25,12 +25,18 @@ Successful GET responses are cached separately for up to eight distinct
 compression, escaping, created samples, error handling and process start headers
 remain delegated to `promhttp`. Requests with query parameters (including
 `name[]` filtering) and methods other than GET bypass the cache. Collection and
-encoding errors are not cached, including partial responses with status 200.
+encoding errors are not cached, including partial responses with status 200,
+except with `ContinueOnError`: its partial responses are what every uncached
+scrape would return, so they are cached too.
 
-Refreshes are coalesced and run on demand, without a background timer. Timeout
-options also cover waiting for a refresh. Cache hits do not wait for an unrelated
-refresh. The TTL starts before gathering, so a slow collection does not extend
-the age of the cached data. Failed refreshes do not serve expired data.
+Refreshes run on demand, without a background timer. Requests for the same
+representation that arrive during a refresh share its result, even when the
+refresh outlives the TTL; different representations refresh independently. A
+refresh continues when the request that started it is canceled. Timeout options
+apply only to waiting for a refresh; cache hits are written directly. The cached
+path does not apply `MaxRequestsInFlight`, since at most one refresh runs per
+representation. The TTL starts before gathering, so a slow collection does not
+extend the age of the cached data. Failed refreshes do not serve expired data.
 
 Choose the duration with scrape intervals, short-window rates and alerting in
 mind: the cache may repeat a metric value for up to the configured duration.

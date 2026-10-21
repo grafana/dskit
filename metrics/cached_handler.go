@@ -2,10 +2,13 @@ package metrics
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -27,29 +30,33 @@ func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheD
 		return promhttp.HandlerFor(reg, opts)
 	}
 
-	// promhttp can return a partial body with status 200 on collection or encoding
-	// errors. Track its error reporting so those responses are never cached.
-	errorLog := &metricsHandlerErrorLog{next: opts.ErrorLog}
-	opts.ErrorLog = errorLog
 	timeout := opts.Timeout
+	// Cache hits are written directly and refreshes run detached from requests, so
+	// the timeout only applies to waiting for a refresh.
 	opts.Timeout = 0
 	responses, err := lru.New[metricsResponseCacheKey, *metricsResponse](metricsResponseCacheSize)
 	if err != nil {
 		panic(err)
 	}
-	h := &cachedMetricsHandler{
-		next:       promhttp.HandlerFor(reg, opts),
-		duration:   cacheDuration,
-		now:        time.Now,
-		responses:  responses,
-		refreshing: make(chan struct{}, 1),
-		errorLog:   errorLog,
-	}
+	bypass := promhttp.HandlerFor(reg, opts)
 	if timeout > 0 {
-		// The timeout must also cover waiting for an in-flight refresh.
-		return http.TimeoutHandler(h, timeout, fmt.Sprintf("Exceeded configured timeout of %v.\n", timeout))
+		bypass = http.TimeoutHandler(bypass, timeout, metricsTimeoutBody(timeout))
 	}
-	return h
+	return &cachedMetricsHandler{
+		reg:       reg,
+		opts:      opts,
+		bypass:    bypass,
+		duration:  cacheDuration,
+		timeout:   timeout,
+		now:       time.Now,
+		responses: responses,
+		refreshes: map[metricsResponseCacheKey]*metricsRefresh{},
+	}
+}
+
+// metricsTimeoutBody matches the body promhttp writes when its own timeout expires.
+func metricsTimeoutBody(timeout time.Duration) string {
+	return fmt.Sprintf("Exceeded configured timeout of %v.\n", timeout)
 }
 
 type metricsResponseCacheKey struct{ accept, encoding string }
@@ -75,69 +82,108 @@ func (r *metricsResponse) writeTo(w http.ResponseWriter, code int) {
 	_, _ = w.Write(r.body)
 }
 
+// metricsRefresh is a collection shared by every request for the same key that
+// arrives while it runs.
+type metricsRefresh struct {
+	done     chan struct{}
+	response *metricsResponse
+	code     int
+	panicked any
+}
+
 type cachedMetricsHandler struct {
-	next       http.Handler
-	duration   time.Duration
-	now        func() time.Time
-	responses  *lru.Cache[metricsResponseCacheKey, *metricsResponse]
-	refreshing chan struct{}
-	errorLog   *metricsHandlerErrorLog
+	reg      prometheus.Gatherer
+	opts     promhttp.HandlerOpts
+	bypass   http.Handler
+	duration time.Duration
+	timeout  time.Duration
+	now      func() time.Time
+
+	mu        sync.Mutex
+	responses *lru.Cache[metricsResponseCacheKey, *metricsResponse]
+	refreshes map[metricsResponseCacheKey]*metricsRefresh
 }
 
 func (h *cachedMetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Filtered scrapes must not populate the full-registry snapshot, and arbitrary
 	// query strings must not create an unbounded number of cache entries.
 	if r.Method != http.MethodGet || (r.URL != nil && r.URL.RawQuery != "") {
-		h.next.ServeHTTP(w, r)
+		h.bypass.ServeHTTP(w, r)
 		return
 	}
 	key := metricsResponseCacheKey{accept: r.Header.Get("Accept"), encoding: strings.Join(r.Header.Values("Accept-Encoding"), "\x00")}
-	if response, ok := h.cached(key); ok {
+	h.mu.Lock()
+	if response, ok := h.responses.Get(key); ok && h.now().Before(response.expires) {
+		h.mu.Unlock()
 		response.writeTo(w, http.StatusOK)
 		return
 	}
-	response, code := h.refresh(r, key)
-	if response == nil {
+	refresh, ok := h.refreshes[key]
+	if !ok {
+		refresh = &metricsRefresh{done: make(chan struct{})}
+		h.refreshes[key] = refresh
+		// The refresh outlives a canceled or timed-out first request so that the
+		// other waiters still get its result.
+		go h.refresh(r.Clone(context.WithoutCancel(r.Context())), key, refresh)
+	}
+	h.mu.Unlock()
+
+	var timedOut <-chan time.Time
+	if h.timeout > 0 {
+		timer := time.NewTimer(h.timeout)
+		defer timer.Stop()
+		timedOut = timer.C
+	}
+	select {
+	case <-refresh.done:
+	case <-r.Context().Done():
+		return
+	case <-timedOut:
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, metricsTimeoutBody(h.timeout))
 		return
 	}
-	response.writeTo(w, code)
+	if refresh.panicked != nil {
+		panic(refresh.panicked)
+	}
+	refresh.response.writeTo(w, refresh.code)
 }
 
-func (h *cachedMetricsHandler) cached(key metricsResponseCacheKey) (*metricsResponse, bool) {
-	response, ok := h.responses.Get(key)
-	return response, ok && h.now().Before(response.expires)
-}
+func (h *cachedMetricsHandler) refresh(r *http.Request, key metricsResponseCacheKey, refresh *metricsRefresh) {
+	cacheable := false
+	defer func() {
+		// Re-raised in waiters so PanicOnError behaves as it does without the cache.
+		refresh.panicked = recover()
+		h.mu.Lock()
+		if cacheable {
+			h.responses.Add(key, refresh.response)
+		}
+		delete(h.refreshes, key)
+		h.mu.Unlock()
+		close(refresh.done)
+	}()
 
-func (h *cachedMetricsHandler) refresh(r *http.Request, key metricsResponseCacheKey) (*metricsResponse, int) {
-	// Serialize refreshes without holding a lock during writes to slow clients.
-	// Waiters can abandon a refresh when their scrape is canceled or times out.
-	select {
-	case h.refreshing <- struct{}{}:
-		defer func() { <-h.refreshing }()
-	case <-r.Context().Done():
-		return nil, 0
-	}
-	if r.Context().Err() != nil {
-		return nil, 0
-	}
-	if response, ok := h.cached(key); ok {
-		return response, http.StatusOK
-	}
-
+	// promhttp can return a partial body with status 200 on collection or encoding
+	// errors. A per-refresh error log attributes those errors to this response only.
+	errorLog := &metricsHandlerErrorLog{next: h.opts.ErrorLog}
+	opts := h.opts
+	opts.ErrorLog = errorLog
 	start := h.now()
-	errorsBefore := h.errorLog.errors.Load()
 	writer := &metricsResponseWriter{header: make(http.Header)}
-	h.next.ServeHTTP(writer, r)
+	promhttp.HandlerFor(h.reg, opts).ServeHTTP(writer, r)
 	if writer.code == 0 {
 		writer.code = http.StatusOK
 	}
-	response := &metricsResponse{header: writer.header, body: writer.body.Bytes(), expires: start.Add(h.duration)}
-	if writer.code == http.StatusOK && h.errorLog.errors.Load() == errorsBefore && r.Context().Err() == nil && h.now().Before(response.expires) {
+	refresh.code = writer.code
+	refresh.response = &metricsResponse{header: writer.header, body: writer.body.Bytes(), expires: start.Add(h.duration)}
+	// With ContinueOnError, a partial response is what every uncached scrape would
+	// get, so caching it avoids repeating a failing collection on each scrape.
+	errorsAccepted := opts.ErrorHandling == promhttp.ContinueOnError || errorLog.errors.Load() == 0
+	if writer.code == http.StatusOK && errorsAccepted && h.now().Before(refresh.response.expires) {
 		// Buffer growth can leave nearly twice the payload size retained per variant.
-		response.body = bytes.Clone(response.body)
-		h.responses.Add(key, response)
+		refresh.response.body = bytes.Clone(refresh.response.body)
+		cacheable = true
 	}
-	return response, writer.code
 }
 
 type metricsResponseWriter struct {

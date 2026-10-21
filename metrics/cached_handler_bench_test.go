@@ -3,6 +3,7 @@ package metrics
 import (
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -44,6 +45,15 @@ func BenchmarkCachedHandlerFor(b *testing.B) {
 			for _, cached := range []bool{false, true} {
 				b.Run(fmt.Sprintf("tenants=%d/%s/cached=%v", tenants, encoding, cached), func(b *testing.B) {
 					opts := promhttp.HandlerOpts{EnableOpenMetrics: true}
+					// Replay the same arrivals for both cases without timing RNG work.
+					rng := rand.New(rand.NewPCG(1, 2))
+					arrivals := make([]time.Time, b.N)
+					arrival := time.Unix(0, 0)
+					const interval = 3 * time.Second
+					for i := range arrivals {
+						arrival = arrival.Add(time.Duration(rng.Int64N(int64(2 * interval))))
+						arrivals[i] = arrival
+					}
 					h := promhttp.HandlerFor(reg, opts)
 					now := time.Unix(0, 0)
 					if cached {
@@ -59,8 +69,8 @@ func BenchmarkCachedHandlerFor(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
-						// Four hits and one refresh model evenly spaced scrapes at 20/minute.
-						now = now.Add(3 * time.Second)
+						// Full-width jitter prevents alignment with the cache TTL.
+						now = arrivals[i]
 						h.ServeHTTP(w, r)
 					}
 				})

@@ -50,8 +50,13 @@ The synthetic benchmark populates 1,000 or 8,000 tenants with one histogram and
 15 counter vectors. The 8,000-tenant fixture exposes 144,000 text samples. It
 measures gathering, encoding, compression and response handling; writes go to a
 discard writer, so network transfer and scraper parsing are excluded. Setup and
-cache warmup are excluded from the measurements. A simulated clock includes one
-refresh per five requests rather than timing cache hits alone.
+cache warmup are excluded from the measurements. A simulated clock uses a 3-second
+interval with uniform ±3-second jitter (0–6-second gaps), averaging 20 scrapes per
+minute. Cached and uncached cases replay the same fixed-seed request schedule,
+generated before timing starts. Cache refreshes are included, and their frequency
+depends on the jittered arrivals rather than a fixed number of requests. With
+`-benchtime=20x`, the fixed schedule spans approximately 57 seconds and includes
+three measured refreshes after untimed warmup.
 
 ```sh
 go test ./metrics -run '^$' -bench '^BenchmarkCachedHandlerFor$' -benchmem -benchtime=20x -count=6

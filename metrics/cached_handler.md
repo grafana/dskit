@@ -54,7 +54,7 @@ cache warmup are excluded from the measurements. A simulated clock includes one
 refresh per five requests rather than timing cache hits alone.
 
 ```sh
-go test ./metrics -run '^$' -bench '^BenchmarkCachedHandlerFor$' -benchmem -benchtime=20x -count=5
+go test ./metrics -run '^$' -bench '^BenchmarkCachedHandlerFor$' -benchmem -benchtime=20x -count=6
 ```
 
 Measured cached-versus-uncached results are included in [PR #1128](https://github.com/grafana/dskit/pull/1128).

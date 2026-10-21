@@ -1,0 +1,46 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/grafana/dskit/metrics
+cpu: Apple M3 Pro
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=false-11         	      20	  13596321 ns/op	 5542906 B/op	   68638 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=false-11         	      20	  13393458 ns/op	 5538304 B/op	   68636 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=false-11         	      20	  13967817 ns/op	 5542127 B/op	   68635 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=false-11         	      20	  13301715 ns/op	 5541747 B/op	   68635 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=false-11         	      20	  13292598 ns/op	 5541565 B/op	   68635 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=true-11          	      20	   2703190 ns/op	 2167865 B/op	   13733 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=true-11          	      20	   2598131 ns/op	 2168011 B/op	   13732 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=true-11          	      20	   2632775 ns/op	 2167411 B/op	   13732 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=true-11          	      20	   2692558 ns/op	 2168097 B/op	   13733 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/identity/cached=true-11          	      20	   2779600 ns/op	 2167849 B/op	   13732 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=false-11             	      20	  18233315 ns/op	 6565322 B/op	   68652 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=false-11             	      20	  16084971 ns/op	 6563227 B/op	   68652 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=false-11             	      20	  16658671 ns/op	 6511044 B/op	   68651 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=false-11             	      20	  17259042 ns/op	 6565242 B/op	   68652 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=false-11             	      20	  17879319 ns/op	 6619179 B/op	   68653 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=true-11              	      20	   3551354 ns/op	 1395933 B/op	   13736 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=true-11              	      20	   6225429 ns/op	 1342085 B/op	   13736 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=true-11              	      20	   6929565 ns/op	 1396376 B/op	   13737 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=true-11              	      20	   3938404 ns/op	 1288070 B/op	   13735 allocs/op
+BenchmarkCachedHandlerFor/tenants=1000/gzip/cached=true-11              	      20	   3751960 ns/op	 1396382 B/op	   13737 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=false-11         	      20	 168140844 ns/op	46569132 B/op	  545725 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=false-11         	      20	 163792512 ns/op	46567624 B/op	  545726 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=false-11         	      20	 162229519 ns/op	46567782 B/op	  545726 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=false-11         	      20	 167438290 ns/op	46568041 B/op	  545725 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=false-11         	      20	 162810490 ns/op	46567934 B/op	  545726 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=true-11          	      20	  33919162 ns/op	17810028 B/op	  109151 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=true-11          	      20	  30849352 ns/op	17810313 B/op	  109151 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=true-11          	      20	  38350190 ns/op	17810261 B/op	  109151 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=true-11          	      20	  33537115 ns/op	17810111 B/op	  109151 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/identity/cached=true-11          	      20	  37707067 ns/op	17810123 B/op	  109151 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=false-11             	      20	 221227344 ns/op	47539526 B/op	  545742 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=false-11             	      20	 230768827 ns/op	47485942 B/op	  545742 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=false-11             	      20	 229405056 ns/op	47589778 B/op	  545742 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=false-11             	      20	 224285427 ns/op	47377313 B/op	  545739 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=false-11             	      20	 247344192 ns/op	47485185 B/op	  545741 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=true-11              	      20	  43147777 ns/op	10098352 B/op	  109156 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=true-11              	      20	  42791958 ns/op	10098352 B/op	  109156 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=true-11              	      20	  45136302 ns/op	10096266 B/op	  109155 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=true-11              	      20	  46362206 ns/op	10044552 B/op	  109155 allocs/op
+BenchmarkCachedHandlerFor/tenants=8000/gzip/cached=true-11              	      20	  43291042 ns/op	10098347 B/op	  109156 allocs/op
+PASS
+ok  	github.com/grafana/dskit/metrics	62.663s

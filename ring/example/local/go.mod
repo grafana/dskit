@@ -2,7 +2,7 @@ module github.com/grafana/dskit/ring/example/local
 
 go 1.26.9
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/go-kit/log v0.2.1

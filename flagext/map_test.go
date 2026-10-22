@@ -311,6 +311,10 @@ func TestLimitsMap_Equal(t *testing.T) {
 				map1: LimitsMap[float64]{data: map[string]float64{}},
 				map2: LimitsMap[float64]{data: map[string]float64{}},
 			},
+			"Equal maps with zero values": {
+				map1: LimitsMap[float64]{data: map[string]float64{"key1": 0}},
+				map2: LimitsMap[float64]{data: map[string]float64{"key1": 0}},
+			},
 		}
 
 		for name, tt := range tc {
@@ -335,12 +339,25 @@ func TestLimitsMap_Equal(t *testing.T) {
 				map1: LimitsMap[float64]{data: map[string]float64{"key1": 1.1}},
 				map2: LimitsMap[float64]{data: map[string]float64{"key1": 1.2}},
 			},
+			"Different maps with zero values": {
+				map1: LimitsMap[float64]{data: map[string]float64{"key1": 0}},
+				map2: LimitsMap[float64]{data: map[string]float64{"key2": 0}},
+			},
+			"Different maps with overlapping keys and zero values": {
+				map1: LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 0}},
+				map2: LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key3": 0}},
+			},
+			"Different maps with zero and nonzero values": {
+				map1: LimitsMap[float64]{data: map[string]float64{"key1": 0}},
+				map2: LimitsMap[float64]{data: map[string]float64{"key2": 1.1}},
+			},
 		}
 
 		for name, tt := range tc {
 			t.Run(name, func(t *testing.T) {
 				require.NotEqual(t, tt.map1, tt.map2)
 				require.False(t, tt.map1.Equal(tt.map2))
+				require.False(t, tt.map2.Equal(tt.map1))
 				require.False(t, cmp.Equal(tt.map1, tt.map2))
 			})
 		}
@@ -358,6 +375,10 @@ func TestLimitsMap_Equal(t *testing.T) {
 			"Equal empty maps": {
 				map1: LimitsMap[string]{data: map[string]string{}},
 				map2: LimitsMap[string]{data: map[string]string{}},
+			},
+			"Equal maps with empty string values": {
+				map1: LimitsMap[string]{data: map[string]string{"key1": ""}},
+				map2: LimitsMap[string]{data: map[string]string{"key1": ""}},
 			},
 		}
 
@@ -383,12 +404,61 @@ func TestLimitsMap_Equal(t *testing.T) {
 				map1: LimitsMap[string]{data: map[string]string{"key1": "abc"}},
 				map2: LimitsMap[string]{data: map[string]string{"key1": "def"}},
 			},
+			"Different maps with empty string values": {
+				map1: LimitsMap[string]{data: map[string]string{"key1": ""}},
+				map2: LimitsMap[string]{data: map[string]string{"key2": ""}},
+			},
+			"Different maps with overlapping keys and empty string values": {
+				map1: LimitsMap[string]{data: map[string]string{"key1": "abc", "key2": ""}},
+				map2: LimitsMap[string]{data: map[string]string{"key1": "abc", "key3": ""}},
+			},
+			"Different maps with empty and nonempty string values": {
+				map1: LimitsMap[string]{data: map[string]string{"key1": ""}},
+				map2: LimitsMap[string]{data: map[string]string{"key2": "abc"}},
+			},
 		}
 
 		for name, tt := range tc {
 			t.Run(name, func(t *testing.T) {
 				require.NotEqual(t, tt.map1, tt.map2)
 				require.False(t, tt.map1.Equal(tt.map2))
+				require.False(t, tt.map2.Equal(tt.map1))
+				require.False(t, cmp.Equal(tt.map1, tt.map2))
+			})
+		}
+	})
+
+	t.Run("int, equal", func(t *testing.T) {
+		map1 := LimitsMap[int]{data: map[string]int{"key1": 0}}
+		map2 := LimitsMap[int]{data: map[string]int{"key1": 0}}
+		require.True(t, map1.Equal(map2))
+		require.True(t, cmp.Equal(map1, map2))
+	})
+
+	t.Run("int, not equal", func(t *testing.T) {
+		tc := map[string]struct {
+			map1 LimitsMap[int]
+			map2 LimitsMap[int]
+		}{
+			"Different maps with zero values": {
+				map1: LimitsMap[int]{data: map[string]int{"key1": 0}},
+				map2: LimitsMap[int]{data: map[string]int{"key2": 0}},
+			},
+			"Different maps with overlapping keys and zero values": {
+				map1: LimitsMap[int]{data: map[string]int{"key1": 1, "key2": 0}},
+				map2: LimitsMap[int]{data: map[string]int{"key1": 1, "key3": 0}},
+			},
+			"Different maps with zero and nonzero values": {
+				map1: LimitsMap[int]{data: map[string]int{"key1": 0}},
+				map2: LimitsMap[int]{data: map[string]int{"key2": 1}},
+			},
+		}
+
+		for name, tt := range tc {
+			t.Run(name, func(t *testing.T) {
+				require.NotEqual(t, tt.map1, tt.map2)
+				require.False(t, tt.map1.Equal(tt.map2))
+				require.False(t, tt.map2.Equal(tt.map1))
 				require.False(t, cmp.Equal(tt.map1, tt.map2))
 			})
 		}

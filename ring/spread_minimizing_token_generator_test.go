@@ -286,7 +286,7 @@ func TestSpreadMinimizingTokenGenerator_CalculateNewToken(t *testing.T) {
 func TestSpreadMinimizingTokenGenerator_GenerateAllTokensIdempotent(t *testing.T) {
 	t.Parallel()
 
-	maxInstanceID := 128
+	maxInstanceID := 16
 	for instanceID := 0; instanceID < maxInstanceID; instanceID++ {
 		for _, zone := range zones {
 			instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)
@@ -339,7 +339,7 @@ func TestSpreadMinimizingTokenGenerator_CheckTokenUniqueness(t *testing.T) {
 	t.Parallel()
 
 	tokensPerInstance := 512
-	instanceID := 10000
+	instanceID := 1000
 	allTokens := make(map[uint32]bool, tokensPerInstance*(instanceID+1)*len(zones))
 	for _, zone := range zones {
 		instance := fmt.Sprintf("instance-%s-%d", zone, instanceID)

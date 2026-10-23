@@ -283,7 +283,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 	// Normalize for callers bypassing the cache too. We still need to filter partitions below.
 	size = r.normalizeShuffleShardSize(size)
 
-	// Without lookback, including every active partition does not depend on the tenant's seed.
+	// If no lookback is required and the shard size is at least the number of active partitions, return all active partitions.
 	if lookbackPeriod <= 0 && size >= r.activePartitionsCount && len(r.ringTokens) == len(r.partitionByToken) {
 		partitions := make(map[int32]struct{}, r.activePartitionsCount)
 		for id, partition := range r.desc.Partitions {

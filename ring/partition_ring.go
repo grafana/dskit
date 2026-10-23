@@ -284,7 +284,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 	size = r.normalizeShuffleShardSize(size)
 
 	// If no lookback is required and the shard size is at least the number of active partitions, return all active partitions.
-	if lookbackPeriod <= 0 && size >= r.activePartitionsCount && len(r.ringTokens) == len(r.partitionByToken) {
+	if lookbackPeriod <= 0 && size >= r.activePartitionsCount {
 		partitions := make(map[int32]struct{}, r.activePartitionsCount)
 		for id, partition := range r.desc.Partitions {
 			if !partition.IsActive() {
@@ -391,8 +391,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 // withPartitions builds a subring from this immutable snapshot.
 func (r *PartitionRing) withPartitions(partitions map[int32]struct{}) (*PartitionRing, error) {
 	// Small shards are cheaper to build from their own tokens than by scanning the parent ring.
-	// Duplicate tokens must resolve ownership from only the selected descriptors.
-	if len(partitions) < len(r.desc.Partitions)/4 || len(r.ringTokens) != len(r.partitionByToken) {
+	if len(partitions) < len(r.desc.Partitions)/4 {
 		return NewPartitionRingWithOptions(r.desc.WithPartitions(partitions), r.opts)
 	}
 

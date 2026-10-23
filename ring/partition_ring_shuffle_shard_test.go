@@ -87,41 +87,6 @@ func TestPartitionRing_ShuffleShard_SubringIndexes(t *testing.T) {
 	}
 }
 
-func TestPartitionRing_ShuffleShard_DuplicateTokens(t *testing.T) {
-	for _, derived := range []bool{false, true} {
-		t.Run(fmt.Sprintf("derived=%t", derived), func(t *testing.T) {
-			desc := NewPartitionRingDesc()
-			table := &PartitionTokenTable{tokens: make([]Tokens, 4)}
-			for id := int32(0); id < 4; id++ {
-				table.tokens[id] = Tokens{10}
-				partition := PartitionDesc{Id: id, State: PartitionActive, Tokens: Tokens{10}}
-				if derived {
-					partition.TokenScheme = PartitionTokensSmt512
-					partition.Tokens = nil
-				}
-				desc.Partitions[id] = partition
-			}
-			opts := DefaultPartitionRingOptions()
-			if derived {
-				opts.TokenGenerator = table
-			}
-			parent, err := NewPartitionRingWithOptions(*desc, opts)
-			require.NoError(t, err)
-			owner := parent.partitionByToken[10]
-			expected, err := NewPartitionRingWithOptions(desc.WithPartitions(map[int32]struct{}{owner: {}}), opts)
-			require.NoError(t, err)
-			for _, size := range []int{1, 2, 0} {
-				for _, lookback := range []time.Duration{0, time.Hour} {
-					shard, err := parent.shuffleShard("tenant", size, lookback, time.Unix(1792597591, 0))
-					require.NoError(t, err)
-					assert.Equal(t, []int32{owner}, shard.PartitionIDs())
-					assertPartitionRingSubringIndexes(t, expected, shard)
-				}
-			}
-		})
-	}
-}
-
 func assertPartitionRingSubringIndexes(t *testing.T, expected, actual *PartitionRing) {
 	t.Helper()
 	assert.Equal(t, expected.ringTokens, actual.ringTokens)

@@ -462,21 +462,22 @@ func TestNewPartitionInstanceLifecycler_ValidatesPartitionID(t *testing.T) {
 	for _, tc := range []struct {
 		partitionID   int32
 		maxPartitions int32
-		derived       bool
+		scheme        PartitionTokenScheme
 		valid         bool
 	}{
-		{partitionID: 0, maxPartitions: 8, derived: true, valid: true},
-		{partitionID: 7, maxPartitions: 8, derived: true, valid: true},
-		{partitionID: 8, maxPartitions: 8, derived: true, valid: false},
-		{partitionID: 0, maxPartitions: 0, derived: true, valid: false},
-		{partitionID: 0, maxPartitions: -1, derived: true, valid: false},
-		{partitionID: 8, maxPartitions: 8, derived: false, valid: true},
-		{partitionID: 0, maxPartitions: 0, derived: false, valid: true},
-		{partitionID: -1, maxPartitions: 8, derived: true, valid: false},
-		{partitionID: -1, maxPartitions: 8, derived: false, valid: false},
+		{partitionID: 0, maxPartitions: 8, scheme: PartitionTokensSmt512, valid: true},
+		{partitionID: 7, maxPartitions: 8, scheme: PartitionTokensSmt512, valid: true},
+		{partitionID: 8, maxPartitions: 8, scheme: PartitionTokensSmt512, valid: false},
+		{partitionID: 0, maxPartitions: 0, scheme: PartitionTokensSmt512, valid: false},
+		{partitionID: 0, maxPartitions: -1, scheme: PartitionTokensSmt512, valid: false},
+		{partitionID: 8, maxPartitions: 8, scheme: PartitionTokensStored, valid: true},
+		{partitionID: 0, maxPartitions: 0, scheme: PartitionTokensStored, valid: true},
+		{partitionID: -1, maxPartitions: 8, scheme: PartitionTokensSmt512, valid: false},
+		{partitionID: -1, maxPartitions: 8, scheme: PartitionTokensStored, valid: false},
+		{partitionID: 0, maxPartitions: 8, scheme: 99, valid: false},
 	} {
-		t.Run(fmt.Sprintf("partition=%d/max=%d/derived=%t", tc.partitionID, tc.maxPartitions, tc.derived), func(t *testing.T) {
-			cfg := derivedTokensLifecyclerConfig(tc.partitionID, tc.derived)
+		t.Run(fmt.Sprintf("partition=%d/max=%d/scheme=%d", tc.partitionID, tc.maxPartitions, tc.scheme), func(t *testing.T) {
+			cfg := tokenSchemeLifecyclerConfig(tc.partitionID, tc.scheme)
 			cfg.MaxDerivedTokenPartitions = tc.maxPartitions
 			lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, nil, log.NewNopLogger(), nil)
 			if tc.valid {
@@ -492,44 +493,60 @@ func TestNewPartitionInstanceLifecycler_ValidatesPartitionID(t *testing.T) {
 
 func TestPartitionInstanceLifecycler_CreatePartition(t *testing.T) {
 	for _, tc := range []struct {
-		derived        bool
-		expectedScheme PartitionTokenScheme
+		scheme         PartitionTokenScheme
 		expectedTokens int
 	}{
-		{derived: false, expectedScheme: PartitionTokensStored, expectedTokens: optimalTokensPerInstance},
-		{derived: true, expectedScheme: PartitionTokensSmt512, expectedTokens: 0},
+		{scheme: PartitionTokensStored, expectedTokens: optimalTokensPerInstance},
+		{scheme: PartitionTokensSmt512, expectedTokens: 0},
 	} {
-		t.Run(fmt.Sprintf("derived=%t", tc.derived), func(t *testing.T) {
-			desc := createPartitionAndRegisterOwnerForTest(t, nil, derivedTokensLifecyclerConfig(7, tc.derived))
+		t.Run(fmt.Sprintf("scheme=%s", tc.scheme.CleanName()), func(t *testing.T) {
+			desc := createPartitionAndRegisterOwnerForTest(t, nil, tokenSchemeLifecyclerConfig(7, tc.scheme))
 			partition := desc.Partitions[7]
 			assert.Equal(t, PartitionPending, partition.State)
-			assert.Equal(t, tc.expectedScheme, partition.TokenScheme)
+			assert.Equal(t, tc.scheme, partition.TokenScheme)
 			assert.Len(t, partition.Tokens, tc.expectedTokens)
 			assert.Equal(t, int32(7), desc.Owners["instance-1"].OwnedPartition)
 		})
 	}
 }
 
-// The option only affects partitions that the lifecycler creates.
-func TestPartitionInstanceLifecycler_KeepExistingPartition(t *testing.T) {
-	for name, existing := range map[string]PartitionDesc{
-		"stored tokens":  {Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: []uint32{1, 2}},
-		"derived tokens": {Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512},
+func TestPartitionInstanceLifecycler_UpdateExistingPartitionTokenScheme(t *testing.T) {
+	stored := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: generateStoredPartitionTokens(1)}
+	derived := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512}
+
+	for _, tc := range []struct {
+		name            string
+		existing        PartitionDesc
+		scheme          PartitionTokenScheme
+		expected        PartitionDesc
+		expectedUpdated bool
+	}{
+		{name: "stored tokens are kept", existing: stored, scheme: PartitionTokensStored, expected: stored},
+		{name: "derived tokens are kept", existing: derived, scheme: PartitionTokensSmt512, expected: derived},
+		{name: "stored tokens are converted to derived tokens", existing: stored, scheme: PartitionTokensSmt512, expected: derived, expectedUpdated: true},
+		{name: "derived tokens are converted to stored tokens", existing: derived, scheme: PartitionTokensStored, expected: stored, expectedUpdated: true},
 	} {
-		for _, derived := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/derived=%t", name, derived), func(t *testing.T) {
-				desc := createPartitionAndRegisterOwnerForTest(t, &existing, derivedTokensLifecyclerConfig(1, derived))
-				assert.Equal(t, existing, desc.Partitions[1])
+		for _, createOnStartup := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/create on startup=%t", tc.name, createOnStartup), func(t *testing.T) {
+				desc := startPartitionLifecyclerForTest(t, &tc.existing, tokenSchemeLifecyclerConfig(1, tc.scheme), createOnStartup)
+				actual := desc.Partitions[1]
+				if tc.expectedUpdated {
+					assert.NotZero(t, actual.TokenSchemeTimestamp)
+				} else {
+					assert.Zero(t, actual.TokenSchemeTimestamp)
+				}
+				actual.TokenSchemeTimestamp = 0
+				assert.Equal(t, tc.expected, actual)
 				assert.Equal(t, int32(1), desc.Owners["instance-1"].OwnedPartition)
 			})
 		}
 	}
 }
 
-func derivedTokensLifecyclerConfig(partitionID int32, derived bool) PartitionInstanceLifecyclerConfig {
+func tokenSchemeLifecyclerConfig(partitionID int32, scheme PartitionTokenScheme) PartitionInstanceLifecyclerConfig {
 	cfg := createTestPartitionInstanceLifecyclerConfig(partitionID, "instance-1")
-	cfg.CreatePartitionsWithDerivedTokens = derived
-	// Partitions 0-7 can be created with derived tokens.
+	cfg.TokenScheme = scheme
+	// Partitions 0-7 can use derived tokens.
 	cfg.MaxDerivedTokenPartitions = 8
 	return cfg
 }
@@ -537,6 +554,12 @@ func derivedTokensLifecyclerConfig(partitionID int32, derived bool) PartitionIns
 // createPartitionAndRegisterOwnerForTest runs the lifecycler against a ring that contains existing, if set,
 // and returns the resulting ring.
 func createPartitionAndRegisterOwnerForTest(t *testing.T, existing *PartitionDesc, cfg PartitionInstanceLifecyclerConfig) *PartitionRingDesc {
+	return startPartitionLifecyclerForTest(t, existing, cfg, true)
+}
+
+// startPartitionLifecyclerForTest runs the lifecycler startup against a ring that contains existing, if set,
+// and returns the resulting ring.
+func startPartitionLifecyclerForTest(t *testing.T, existing *PartitionDesc, cfg PartitionInstanceLifecyclerConfig, createOnStartup bool) *PartitionRingDesc {
 	t.Helper()
 	ctx := context.Background()
 	store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
@@ -550,7 +573,8 @@ func createPartitionAndRegisterOwnerForTest(t *testing.T, existing *PartitionDes
 	}
 	lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, log.NewNopLogger(), nil)
 	require.NoError(t, err)
-	require.NoError(t, lifecycler.createPartitionAndRegisterOwner(ctx))
+	lifecycler.SetCreatePartitionOnStartup(createOnStartup)
+	require.NoError(t, lifecycler.starting(ctx))
 
 	return getPartitionRingFromStore(t, store, ringKey)
 }

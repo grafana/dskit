@@ -316,6 +316,8 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 				ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
 			}
 			changed = true
+		} else if l.updatePartitionTokenScheme(ring, now) {
+			changed = true
 		}
 
 		// Ensure the instance is added as partition owner.
@@ -367,8 +369,26 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 
 	// Ensure the instance is added as partition owner.
 	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-		return ring.AddOrUpdateOwner(l.partitionOwnerID(), OwnerActive, l.cfg.PartitionID, time.Now()), nil
+		now := time.Now()
+		changed := l.updatePartitionTokenScheme(ring, now)
+		if ring.AddOrUpdateOwner(l.partitionOwnerID(), OwnerActive, l.cfg.PartitionID, now) {
+			changed = true
+		}
+		return changed, nil
 	})
+}
+
+// updatePartitionTokenScheme switches the existing partition to the configured token scheme. A failure is logged
+// and doesn't block the startup, because the partition keeps working with its current token scheme.
+func (l *PartitionInstanceLifecycler) updatePartitionTokenScheme(ring *PartitionRingDesc, now time.Time) bool {
+	from := ring.Partitions[l.cfg.PartitionID].TokenScheme
+	changed, err := ring.UpdatePartitionTokenScheme(l.cfg.PartitionID, l.cfg.TokenScheme, now)
+	if err != nil {
+		level.Warn(l.logger).Log("msg", "failed to update partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", from, "to_token_scheme", l.cfg.TokenScheme, "err", err)
+	} else if changed {
+		level.Info(l.logger).Log("msg", "updated partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", from, "to_token_scheme", l.cfg.TokenScheme)
+	}
+	return changed
 }
 
 // reconcileOwnedPartition reconciles the owned partition.

@@ -200,8 +200,29 @@ func (m *PartitionRingDesc) UpdatePartitionState(id int32, state PartitionState,
 
 // UpdatePartitionTokenScheme changes the token scheme of a partition. Returns true if the token scheme was changed,
 // or false if the update was a no-op.
-func (m *PartitionRingDesc) UpdatePartitionTokenScheme(_ int32, _ PartitionTokenScheme, _ time.Time) (bool, error) {
-	return false, nil
+func (m *PartitionRingDesc) UpdatePartitionTokenScheme(id int32, scheme PartitionTokenScheme, now time.Time) (bool, error) {
+	d, ok := m.Partitions[id]
+	if !ok {
+		return false, nil
+	}
+
+	if d.TokenScheme == scheme {
+		return false, nil
+	}
+
+	switch scheme {
+	case PartitionTokensStored:
+		d.Tokens = generateStoredPartitionTokens(id)
+	case PartitionTokensSmt512:
+		d.Tokens = nil // Tokens will be derived by readers
+	default:
+		return false, fmt.Errorf("cannot update token scheme for partition %d: unknown token scheme %d", id, scheme)
+	}
+
+	d.TokenScheme = scheme
+	d.TokenSchemeTimestamp = now.Unix()
+	m.Partitions[id] = d
+	return true, nil
 }
 
 // UpdatePartitionStateChangeLock changes the state change lock of a partition. Returns true if the lock was changed,
@@ -344,6 +365,7 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 			// and replaceable by any valid incoming timestamp when local.
 			thisStateTimestamp := localMergeTimestamp(thisPart.StateTimestamp, timestampLimit)
 			thisStateChangeLockedTimestamp := localMergeTimestamp(thisPart.StateChangeLockedTimestamp, timestampLimit)
+			thisTokenSchemeTimestamp := localMergeTimestamp(thisPart.TokenSchemeTimestamp, timestampLimit)
 
 			// In case the timestamp is equal we give priority to the deleted state.
 			// Reason is that timestamp has second precision, so we cover the case an
@@ -360,6 +382,15 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 
 				thisPart.StateChangeLocked = otherPart.StateChangeLocked
 				thisPart.StateChangeLockedTimestamp = otherPart.StateChangeLockedTimestamp
+			}
+
+			// Token scheme and tokens are merged together. In case the timestamp is equal we keep the local one.
+			if otherPart.TokenSchemeTimestamp <= timestampLimit && otherPart.TokenSchemeTimestamp > thisTokenSchemeTimestamp {
+				changed = true
+
+				thisPart.TokenScheme = otherPart.TokenScheme
+				thisPart.Tokens = otherPart.Tokens
+				thisPart.TokenSchemeTimestamp = otherPart.TokenSchemeTimestamp
 			}
 		}
 

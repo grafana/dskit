@@ -78,3 +78,38 @@ func BenchmarkCachedHandlerFor(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkCachedHandlerForFiltered(b *testing.B) {
+	for _, tenants := range []int{1000, 8000} {
+		reg := cachedHandlerBenchmarkRegistry(tenants)
+		for _, encoding := range []string{"identity", "gzip"} {
+			b.Run(fmt.Sprintf("tenants=%d/%s", tenants, encoding), func(b *testing.B) {
+				h := CachedHandlerFor(reg, promhttp.HandlerOpts{EnableOpenMetrics: true}, 14*time.Second).(*cachedMetricsHandler)
+				now := time.Unix(0, 0)
+				h.now = func() time.Time { return now }
+				paths := []string{"/metrics", "/metrics?name[]=benchmark_events_00_total", "/metrics?name[]=benchmark_events_01_total&name[]=benchmark_request_bytes"}
+				requests := make([]*http.Request, len(paths))
+				for i, path := range paths {
+					requests[i] = httptest.NewRequest(http.MethodGet, path, nil)
+					requests[i].Header.Set("Accept", "text/plain;version=0.0.4")
+					requests[i].Header.Set("Accept-Encoding", encoding)
+				}
+				arrivals := make([]time.Time, b.N)
+				rng := rand.New(rand.NewPCG(1, 2))
+				arrival := now
+				for i := range arrivals {
+					arrival = arrival.Add(time.Duration(rng.Int64N(int64(6 * time.Second))))
+					arrivals[i] = arrival
+				}
+				w := &metricsBenchmarkResponseWriter{header: make(http.Header)}
+				h.ServeHTTP(w, requests[0])
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i, arrival := range arrivals {
+					now = arrival
+					h.ServeHTTP(w, requests[i%len(requests)])
+				}
+			})
+		}
+	}
+}

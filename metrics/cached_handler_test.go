@@ -511,23 +511,47 @@ func TestCachedHandlerForGatherCacheOwnsMetrics(t *testing.T) {
 }
 
 func TestCachedHandlerForFilteredGatherError(t *testing.T) {
-	for _, handling := range []promhttp.HandlerErrorHandling{promhttp.HTTPErrorOnError, promhttp.ContinueOnError, promhttp.PanicOnError} {
-		t.Run(fmt.Sprint(handling), func(t *testing.T) {
-			var gathers atomic.Int64
-			h := CachedHandlerFor(prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { gathers.Inc(); return nil, errors.New("failed") }), promhttp.HandlerOpts{ErrorHandling: handling}, time.Minute)
-			for i := 0; i < 2; i++ {
-				scrape := func() {
-					w := httptest.NewRecorder()
-					h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics?name[]=value", nil))
-					require.Equal(t, http.StatusInternalServerError, w.Code)
-				}
-				if handling == promhttp.PanicOnError {
-					require.PanicsWithError(t, "failed", scrape)
-				} else {
-					scrape()
-				}
+	value := &dto.MetricFamily{Name: strptr("value"), Help: strptr("Value."), Type: dto.MetricType_GAUGE.Enum(), Metric: []*dto.Metric{{Gauge: &dto.Gauge{Value: floatptr(1)}}}}
+	for _, tc := range []struct {
+		name     string
+		families []*dto.MetricFamily
+	}{
+		{name: "empty"},
+		{name: "partial", families: []*dto.MetricFamily{value}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, handling := range []promhttp.HandlerErrorHandling{promhttp.HTTPErrorOnError, promhttp.ContinueOnError, promhttp.PanicOnError} {
+				t.Run(fmt.Sprint(handling), func(t *testing.T) {
+					gather := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return tc.families, errors.New("failed") })
+					opts := promhttp.HandlerOpts{ErrorHandling: handling}
+					plain := promhttp.HandlerFor(gather, opts)
+					var gathers atomic.Int64
+					cached := CachedHandlerFor(prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { gathers.Inc(); return gather.Gather() }), opts, time.Minute)
+					// ContinueOnError needs a nonempty gather result to serve partial metrics.
+					expectedStatus, expectedGathers := http.StatusInternalServerError, int64(2)
+					if handling == promhttp.ContinueOnError && len(tc.families) > 0 {
+						expectedStatus, expectedGathers = http.StatusOK, 1
+					}
+					for i := 0; i < 2; i++ {
+						scrape := func(h http.Handler) *httptest.ResponseRecorder {
+							w := httptest.NewRecorder()
+							h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics?name[]=value", nil))
+							return w
+						}
+						if handling == promhttp.PanicOnError {
+							require.PanicsWithError(t, "failed", func() { scrape(plain) })
+							require.PanicsWithError(t, "failed", func() { scrape(cached) })
+						} else {
+							want, got := scrape(plain), scrape(cached)
+							require.Equal(t, expectedStatus, got.Code)
+							require.Equal(t, want.Code, got.Code)
+							require.Equal(t, want.Header(), got.Header())
+							require.Equal(t, want.Body.String(), got.Body.String())
+						}
+					}
+					require.Equal(t, expectedGathers, gathers.Load())
+				})
 			}
-			require.Equal(t, int64(2), gathers.Load())
 		})
 	}
 }

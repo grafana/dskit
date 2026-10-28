@@ -3,9 +3,11 @@ package metrics
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -24,7 +26,8 @@ const metricsResponseCacheSize = 8
 // CachedHandlerFor is promhttp.HandlerFor with an in-memory response cache.
 // A non-positive cacheDuration disables caching. Successful GET responses are
 // cached for at most cacheDuration from the start of collection, independently
-// for up to eight Accept/Accept-Encoding combinations. Requests with query
+// for up to eight Accept/Accept-Encoding combinations. Full and name[]-filtered
+// scrapes share one collection snapshot and encoded metric families. Other query
 // parameters bypass the cache. Cached metrics can lag behind live values by
 // cacheDuration; choose a duration appropriate for scrape intervals and alerts.
 // With caching enabled, overlapping collections are always coalesced across
@@ -36,7 +39,7 @@ func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheD
 
 	timeout := opts.Timeout
 	// Cache hits are written directly and refreshes run detached from requests, so
-	// the timeout only applies to waiting for a refresh.
+	// the timeout applies to waiting for a refresh and streaming filtered responses.
 	opts.Timeout = 0
 	var inFlight chan struct{}
 	if opts.MaxRequestsInFlight > 0 {
@@ -52,19 +55,36 @@ func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheD
 	// Refreshes need separate error logs, but concurrency controls must span
 	// every representation and the uncached path.
 	bypass := limitMetricsRequests(promhttp.HandlerFor(reg, opts), inFlight)
+	// Reuse promhttp's registered counter for errors while streaming cached families.
+	var encodingErrors prometheus.Counter
+	if opts.Registry != nil {
+		counter := prometheus.NewCounterVec(prometheus.CounterOpts{ //nolint:forbidigo // Must match the collector registered by promhttp.HandlerFor above.
+			Name: "promhttp_metric_handler_errors_total",
+			Help: "Total number of internal errors encountered by the promhttp metric handler.",
+		}, []string{"cause"})
+		if err := opts.Registry.Register(counter); err != nil {
+			var registered prometheus.AlreadyRegisteredError
+			if !errors.As(err, &registered) {
+				panic(err)
+			}
+			counter = registered.ExistingCollector.(*prometheus.CounterVec)
+		}
+		encodingErrors = counter.WithLabelValues("encoding")
+	}
 	if timeout > 0 {
 		bypass = http.TimeoutHandler(bypass, timeout, metricsTimeoutBody(timeout))
 	}
 	return &cachedMetricsHandler{
-		reg:       reg,
-		opts:      opts,
-		inFlight:  inFlight,
-		bypass:    bypass,
-		duration:  cacheDuration,
-		timeout:   timeout,
-		now:       time.Now,
-		responses: responses,
-		refreshes: map[metricsResponseCacheKey]*metricsRefresh{},
+		reg:            reg,
+		encodingErrors: encodingErrors,
+		opts:           opts,
+		inFlight:       inFlight,
+		bypass:         bypass,
+		duration:       cacheDuration,
+		timeout:        timeout,
+		now:            time.Now,
+		responses:      responses,
+		refreshes:      map[metricsResponseCacheKey]*metricsRefresh{},
 	}
 }
 
@@ -76,9 +96,13 @@ func metricsTimeoutBody(timeout time.Duration) string {
 type metricsResponseCacheKey struct{ accept, encoding string }
 
 type metricsResponse struct {
-	header  http.Header
-	body    []byte
-	expires time.Time
+	header       http.Header
+	body         []byte
+	expires      time.Time
+	snapshot     *metricsSnapshot
+	encoded      *metricsFamilyEncoding
+	fallbackOnce sync.Once
+	fallback     metricsRefresh
 }
 
 func (r *metricsResponse) writeTo(w http.ResponseWriter, code int) {
@@ -106,31 +130,41 @@ type metricsRefresh struct {
 }
 
 type cachedMetricsHandler struct {
-	reg      prometheus.Gatherer
-	opts     promhttp.HandlerOpts
-	inFlight chan struct{}
-	bypass   http.Handler
-	duration time.Duration
-	timeout  time.Duration
-	now      func() time.Time
+	reg            prometheus.Gatherer
+	encodingErrors prometheus.Counter
+	opts           promhttp.HandlerOpts
+	inFlight       chan struct{}
+	bypass         http.Handler
+	duration       time.Duration
+	timeout        time.Duration
+	now            func() time.Time
 
 	mu        sync.Mutex
 	responses *lru.Cache[metricsResponseCacheKey, *metricsResponse]
 	refreshes map[metricsResponseCacheKey]*metricsRefresh
+	snapshot  *metricsSnapshot
+	gathers   singleflight.Group
 }
 
 func (h *cachedMetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Filtered scrapes must not populate the full-registry snapshot, and arbitrary
-	// query strings must not create an unbounded number of cache entries.
-	if r.Method != http.MethodGet || (r.URL != nil && r.URL.RawQuery != "") {
+	var names []string
+	if r.Method != http.MethodGet {
 		h.bypass.ServeHTTP(w, r)
 		return
+	}
+	if r.URL != nil && r.URL.RawQuery != "" {
+		params, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(params) != 1 || len(params["name[]"]) == 0 {
+			h.bypass.ServeHTTP(w, r)
+			return
+		}
+		names = params["name[]"]
 	}
 	key := metricsResponseCacheKey{accept: r.Header.Get("Accept"), encoding: strings.Join(r.Header.Values("Accept-Encoding"), "\x00")}
 	h.mu.Lock()
 	if response, ok := h.responses.Get(key); ok && h.now().Before(response.expires) {
 		h.mu.Unlock()
-		response.writeTo(w, http.StatusOK)
+		h.writeResponse(w, r, response, http.StatusOK, names)
 		return
 	}
 	refresh, ok := h.refreshes[key]
@@ -161,7 +195,7 @@ func (h *cachedMetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	if refresh.panicked != nil {
 		panic(refresh.panicked)
 	}
-	refresh.response.writeTo(w, refresh.code)
+	h.writeResponse(w, r, refresh.response, refresh.code, names)
 }
 
 func (h *cachedMetricsHandler) refresh(r *http.Request, key metricsResponseCacheKey, refresh *metricsRefresh) {
@@ -178,27 +212,35 @@ func (h *cachedMetricsHandler) refresh(r *http.Request, key metricsResponseCache
 		close(refresh.done)
 	}()
 
-	// promhttp can return a partial body with status 200 on collection or encoding
-	// errors. A per-refresh error log attributes those errors to this response only.
-	errorLog := &metricsHandlerErrorLog{next: h.opts.ErrorLog}
-	opts := h.opts
-	opts.ErrorLog = errorLog
-	start := h.now()
+	// Every filter set uses the full representation's refresh, without retaining
+	// cache entries or compressed payloads for arbitrary combinations of names.
+	if r.URL != nil {
+		u := *r.URL
+		u.RawQuery = ""
+		r.URL = &u
+	}
 	writer := &metricsResponseWriter{header: make(http.Header)}
-	limitMetricsRequests(promhttp.HandlerFor(h.reg, opts), h.inFlight).ServeHTTP(writer, r)
+	refresh.response = &metricsResponse{}
+	limitMetricsRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.renderSnapshot(writer, r, refresh.response)
+	}), h.inFlight).ServeHTTP(writer, r)
 	if writer.code == 0 {
 		writer.code = http.StatusOK
 	}
 	refresh.code = writer.code
-	refresh.response = &metricsResponse{header: writer.header, body: writer.body.Bytes(), expires: start.Add(h.duration)}
-	// With ContinueOnError, a partial response is what every uncached scrape would
-	// get, so caching it avoids repeating a failing collection on each scrape.
-	errorsAccepted := opts.ErrorHandling == promhttp.ContinueOnError || errorLog.errors.Load() == 0
-	if writer.code == http.StatusOK && errorsAccepted && h.now().Before(refresh.response.expires) {
-		// Buffer growth can leave nearly twice the payload size retained per variant.
-		refresh.response.body = bytes.Clone(refresh.response.body)
-		cacheable = true
+	refresh.response.header = writer.header
+	if refresh.response.encoded != nil && writer.header.Get("Content-Encoding") == "" {
+		// Identity responses can share the immutable family buffer directly.
+		refresh.response.body = refresh.response.encoded.body
+	} else {
+		refresh.response.body = bytes.Clone(writer.body.Bytes())
 	}
+	if snapshot := refresh.response.snapshot; snapshot != nil {
+		refresh.response.expires = snapshot.expires
+	}
+	cacheable = writer.code == http.StatusOK &&
+		(refresh.response.encoded != nil || h.opts.ErrorHandling == promhttp.ContinueOnError && refresh.response.snapshot != nil && len(refresh.response.snapshot.families) > 0) &&
+		h.now().Before(refresh.response.expires)
 }
 
 func limitMetricsRequests(next http.Handler, inFlight chan struct{}) http.Handler {

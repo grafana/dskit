@@ -40,13 +40,13 @@ func TestCachedHandlerFor(t *testing.T) {
 			var gathers atomic.Int64
 			gatherer := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { gathers.Inc(); return reg.Gather() })
 			opts := promhttp.HandlerOpts{EnableOpenMetrics: true, EnableOpenMetricsTextCreatedSamples: created, ProcessStartTime: time.Unix(1234, 0)}
-			h := CachedHandlerFor(gatherer, opts, 15*time.Second).(*cachedMetricsHandler)
-			now := time.Unix(0, 0)
-			h.now = func() time.Time { return now }
 			plain := promhttp.HandlerFor(reg, opts)
 			for _, accept := range []string{"text/plain;version=0.0.4", "application/openmetrics-text;version=1.0.0", "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited", "text/plain;version=0.0.4;escaping=values"} {
 				for _, encoding := range []string{"identity", "gzip"} {
 					t.Run(accept+"/"+encoding, func(t *testing.T) {
+						h := CachedHandlerFor(gatherer, opts, 15*time.Second).(*cachedMetricsHandler)
+						now := time.Unix(0, 0)
+						h.now = func() time.Time { return now }
 						gauge.Set(1)
 						before := gathers.Load()
 						baseline := scrapeCachedHandler(plain, accept, encoding)
@@ -96,7 +96,7 @@ func TestCachedHandlerForBypass(t *testing.T) {
 	gauge.Set(1)
 	first := scrapeCachedHandler(h, "")
 	gauge.Set(2)
-	for _, tc := range []struct{ method, path string }{{"GET", "/metrics?name[]=test_value"}, {"GET", "/metrics?anything=else"}, {"HEAD", "/metrics"}, {"POST", "/metrics"}} {
+	for _, tc := range []struct{ method, path string }{{"GET", "/metrics?anything=else"}, {"GET", "/metrics?name[]=test_value&anything=else"}, {"GET", "/metrics?name[]=test_value&bad=%zz"}, {"HEAD", "/metrics"}, {"POST", "/metrics"}} {
 		t.Run(tc.method+tc.path, func(t *testing.T) {
 			r := httptest.NewRequest(tc.method, tc.path, nil)
 			w := httptest.NewRecorder()

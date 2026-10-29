@@ -22,8 +22,8 @@ message PartitionDesc {
   // The partition ID. This value is the same as the key in the partitions map in PartitionRingDesc.
   int32 id = 4;
 
-  // Immutable stored tokens. Ignored when tokenScheme specifies derived tokens.
-  // Read resolved tokens through PartitionRing. Changes to stored tokens are not propagated via memberlist.
+  // Stored tokens. Ignored when tokenScheme specifies derived tokens.
+  // Read resolved tokens through PartitionRing. Changes are propagated via memberlist together with tokenScheme.
   repeated uint32 tokens = 1;
 
   // The state of the partition.
@@ -39,8 +39,11 @@ message PartitionDesc {
   // Unix timestamp (with seconds precision) of when has the state change lock been mutated last time for this partition.
   int64 stateChangeLockedTimestamp = 6;
 
-  // Immutable token scheme, set at creation. Unset means stored tokens.
+  // Token scheme. Unset means stored tokens.
   PartitionTokenScheme tokenScheme = 7;
+
+  // Unix timestamp (with seconds precision) of when the token scheme and tokens have been changed last time for this partition.
+  int64 tokenSchemeTimestamp = 8;
 }
 
 enum PartitionTokenScheme {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -40,13 +41,13 @@ func TestCachedHandlerFor(t *testing.T) {
 			var gathers atomic.Int64
 			gatherer := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { gathers.Inc(); return reg.Gather() })
 			opts := promhttp.HandlerOpts{EnableOpenMetrics: true, EnableOpenMetricsTextCreatedSamples: created, ProcessStartTime: time.Unix(1234, 0)}
-			h := CachedHandlerFor(gatherer, opts, 15*time.Second).(*cachedMetricsHandler)
-			now := time.Unix(0, 0)
-			h.now = func() time.Time { return now }
 			plain := promhttp.HandlerFor(reg, opts)
 			for _, accept := range []string{"text/plain;version=0.0.4", "application/openmetrics-text;version=1.0.0", "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited", "text/plain;version=0.0.4;escaping=values"} {
 				for _, encoding := range []string{"identity", "gzip"} {
 					t.Run(accept+"/"+encoding, func(t *testing.T) {
+						h := CachedHandlerFor(gatherer, opts, 15*time.Second).(*cachedMetricsHandler)
+						now := time.Unix(0, 0)
+						h.now = func() time.Time { return now }
 						gauge.Set(1)
 						before := gathers.Load()
 						baseline := scrapeCachedHandler(plain, accept, encoding)
@@ -96,7 +97,7 @@ func TestCachedHandlerForBypass(t *testing.T) {
 	gauge.Set(1)
 	first := scrapeCachedHandler(h, "")
 	gauge.Set(2)
-	for _, tc := range []struct{ method, path string }{{"GET", "/metrics?name[]=test_value"}, {"GET", "/metrics?anything=else"}, {"HEAD", "/metrics"}, {"POST", "/metrics"}} {
+	for _, tc := range []struct{ method, path string }{{"GET", "/metrics?anything=else"}, {"HEAD", "/metrics"}, {"POST", "/metrics"}} {
 		t.Run(tc.method+tc.path, func(t *testing.T) {
 			r := httptest.NewRequest(tc.method, tc.path, nil)
 			w := httptest.NewRecorder()
@@ -176,7 +177,8 @@ func TestCachedHandlerForEncodingError(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		require.Equal(t, http.StatusOK, scrapeCachedHandler(h, "text/plain").Code)
 	}
-	require.Equal(t, 2, gathers)
+	require.Equal(t, 1, gathers)
+	require.Zero(t, h.(*cachedMetricsHandler).responses.Len())
 }
 
 func strptr(s string) *string     { return &s }
@@ -444,4 +446,223 @@ func TestCachedHandlerForPreservesMiddlewareHeaders(t *testing.T) {
 		require.Equal(t, want.Header(), got.Header())
 		require.Equal(t, want.Body.Bytes(), got.Body.Bytes())
 	}
+}
+
+func TestCachedHandlerForSharedGatherCache(t *testing.T) {
+	for _, filteredFirst := range []bool{false, true} {
+		t.Run(fmt.Sprint(filteredFirst), func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			first := promauto.With(reg).NewGauge(prometheus.GaugeOpts{Name: "first", Help: "First."})
+			second := promauto.With(reg).NewGauge(prometheus.GaugeOpts{Name: "second", Help: "Second."})
+			var gathers atomic.Int64
+			h := CachedHandlerFor(prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { gathers.Inc(); return reg.Gather() }), promhttp.HandlerOpts{EnableOpenMetrics: true}, time.Minute).(*cachedMetricsHandler)
+			now := time.Unix(0, 0)
+			h.now = func() time.Time { return now }
+			scrape := func(path, accept string) *httptest.ResponseRecorder {
+				r := httptest.NewRequest(http.MethodGet, path, nil)
+				r.Header.Set("Accept", accept)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				return w
+			}
+			path := "/metrics"
+			if filteredFirst {
+				path += "?name[]=first"
+			}
+			first.Set(1)
+			second.Set(2)
+			require.Equal(t, http.StatusOK, scrape(path, "").Code)
+			first.Set(10)
+			second.Set(20)
+			// A late full response must expire with the gathered values, not a new TTL.
+			now = now.Add(59 * time.Second)
+			require.Contains(t, scrape("/metrics", "").Body.String(), "first 1\n")
+			for _, tc := range []struct{ path, accept, want, absent string }{
+				{"/metrics?name[]=first", "", "first 1\n", "second"},
+				{"/metrics?name[]=second&name[]=second", "", "second 2\n", "first"},
+				{"/metrics?name[]=first", "application/openmetrics-text;version=1.0.0", "first 1.0\n", "second"},
+				{"/metrics?name[]=missing", "", "", "first"},
+			} {
+				w := scrape(tc.path, tc.accept)
+				require.Equal(t, http.StatusOK, w.Code)
+				require.Contains(t, w.Body.String(), tc.want)
+				require.NotContains(t, w.Body.String(), tc.absent)
+			}
+			for i := 0; i < 100; i++ {
+				scrape(fmt.Sprintf("/metrics?name[]=missing_%d", i), "")
+			}
+			require.Equal(t, int64(1), gathers.Load())
+			require.Equal(t, 1, h.responses.Len())
+			now = now.Add(time.Second)
+			require.Contains(t, scrape("/metrics", "").Body.String(), "first 10\n")
+			require.Contains(t, scrape("/metrics?name[]=second", "").Body.String(), "second 20\n")
+			require.Equal(t, int64(2), gathers.Load())
+		})
+	}
+}
+
+func TestCachedMetricsHandler_ServeHTTP(t *testing.T) {
+	t.Run("joining an existing collection does not extend cache lifetime", func(t *testing.T) {
+		// In virtual time, collection starts at 0s and another request joins at 50s.
+		// Collection completes at 50s or 65s, but the cache deadline must stay at 60s.
+		for _, joinPath := range []string{"/metrics", "/metrics?name[]=value"} {
+			for _, nextPath := range []string{"/metrics", "/metrics?name[]=value"} {
+				for _, releaseAt := range []time.Duration{50 * time.Second, 65 * time.Second} {
+					t.Run(fmt.Sprintf("join=%s/next=%s/release=%s", joinPath, nextPath, releaseAt), func(t *testing.T) {
+						synctest.Test(t, func(t *testing.T) {
+							reg := prometheus.NewRegistry()
+							value := promauto.With(reg).NewGauge(prometheus.GaugeOpts{Name: "value", Help: "Value."})
+							value.Set(1)
+							entered, release := make(chan struct{}), make(chan struct{})
+							unblock := sync.OnceFunc(func() { close(release) })
+							defer unblock()
+							var gathers atomic.Int64
+							h := CachedHandlerFor(prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+								families, err := reg.Gather()
+								if gathers.Inc() == 1 {
+									close(entered)
+									<-release
+								}
+								return families, err
+							}), promhttp.HandlerOpts{}, time.Minute)
+							scrape := func(path string) *httptest.ResponseRecorder {
+								w := httptest.NewRecorder()
+								h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+								return w
+							}
+							results := make(chan *httptest.ResponseRecorder, 2)
+							// An unrelated query parameter bypasses caching but still shares collection work.
+							go func() { results <- scrape("/metrics?other=value") }()
+							<-entered
+							time.Sleep(50 * time.Second)
+							go func() { results <- scrape(joinPath) }()
+							// Wait until the joining handler is blocked on the original collection.
+							synctest.Wait()
+							time.Sleep(releaseAt - 50*time.Second)
+							unblock()
+							first, second := <-results, <-results
+							for _, w := range []*httptest.ResponseRecorder{first, second} {
+								require.Equal(t, http.StatusOK, w.Code)
+								require.Contains(t, w.Body.String(), "value 1\n")
+							}
+							require.Equal(t, int64(1), gathers.Load())
+							value.Set(2)
+							if releaseAt < time.Minute {
+								time.Sleep(59*time.Second - releaseAt)
+								// A late response must inherit the original collection's deadline.
+								for _, path := range []string{"/metrics", "/metrics?name[]=value"} {
+									w := scrape(path)
+									require.Equal(t, http.StatusOK, w.Code)
+									require.Contains(t, w.Body.String(), "value 1\n")
+								}
+								require.Equal(t, int64(1), gathers.Load())
+								time.Sleep(time.Second)
+							}
+							// At or after the original deadline, either path must collect again.
+							for _, path := range []string{nextPath, "/metrics", "/metrics?name[]=value"} {
+								w := scrape(path)
+								require.Equal(t, http.StatusOK, w.Code)
+								require.Contains(t, w.Body.String(), "value 2\n")
+							}
+							require.Equal(t, int64(2), gathers.Load())
+						})
+					})
+				}
+			}
+		}
+	})
+}
+
+func TestCachedHandlerForGatherCacheOwnsMetrics(t *testing.T) {
+	family := &dto.MetricFamily{Name: strptr("value"), Help: strptr("Value."), Type: dto.MetricType_GAUGE.Enum(), Metric: []*dto.Metric{{Gauge: &dto.Gauge{Value: floatptr(1)}}}}
+	h := CachedHandlerFor(prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return []*dto.MetricFamily{family}, nil }), promhttp.HandlerOpts{}, time.Minute)
+	scrapeCachedHandler(h, "")
+	family.Metric[0].Gauge.Value = floatptr(2)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics?name[]=value", nil))
+	require.Contains(t, w.Body.String(), "value 1\n")
+}
+
+func TestCachedHandlerForFilteredGatherError(t *testing.T) {
+	value := &dto.MetricFamily{Name: strptr("value"), Help: strptr("Value."), Type: dto.MetricType_GAUGE.Enum(), Metric: []*dto.Metric{{Gauge: &dto.Gauge{Value: floatptr(1)}}}}
+	for _, tc := range []struct {
+		name     string
+		families []*dto.MetricFamily
+	}{
+		{name: "empty"},
+		{name: "partial", families: []*dto.MetricFamily{value}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, handling := range []promhttp.HandlerErrorHandling{promhttp.HTTPErrorOnError, promhttp.ContinueOnError, promhttp.PanicOnError} {
+				t.Run(fmt.Sprint(handling), func(t *testing.T) {
+					gather := prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return tc.families, errors.New("failed") })
+					opts := promhttp.HandlerOpts{ErrorHandling: handling}
+					plain := promhttp.HandlerFor(gather, opts)
+					var gathers atomic.Int64
+					cached := CachedHandlerFor(prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { gathers.Inc(); return gather.Gather() }), opts, time.Minute)
+					// ContinueOnError needs a nonempty gather result to serve partial metrics.
+					expectedStatus, expectedGathers := http.StatusInternalServerError, int64(2)
+					if handling == promhttp.ContinueOnError && len(tc.families) > 0 {
+						expectedStatus, expectedGathers = http.StatusOK, 1
+					}
+					for i := 0; i < 2; i++ {
+						scrape := func(h http.Handler) *httptest.ResponseRecorder {
+							w := httptest.NewRecorder()
+							h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics?name[]=value", nil))
+							return w
+						}
+						if handling == promhttp.PanicOnError {
+							require.PanicsWithError(t, "failed", func() { scrape(plain) })
+							require.PanicsWithError(t, "failed", func() { scrape(cached) })
+						} else {
+							want, got := scrape(plain), scrape(cached)
+							require.Equal(t, expectedStatus, got.Code)
+							require.Equal(t, want.Code, got.Code)
+							require.Equal(t, want.Header(), got.Header())
+							require.Equal(t, want.Body.String(), got.Body.String())
+						}
+					}
+					require.Equal(t, expectedGathers, gathers.Load())
+				})
+			}
+		})
+	}
+}
+
+func TestCachedHandlerForConcurrentFullAndFilteredFormats(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{Name: "value", Help: "Value."})
+	var gathers atomic.Int64
+	entered, release := make(chan struct{}), make(chan struct{})
+	h := CachedHandlerFor(prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+		if gathers.Inc() == 1 {
+			close(entered)
+		}
+		<-release
+		return reg.Gather()
+	}), promhttp.HandlerOpts{EnableOpenMetrics: true}, time.Minute)
+	results := make(chan *httptest.ResponseRecorder, 12)
+	var wg sync.WaitGroup
+	for i := 0; i < cap(results); i++ {
+		wg.Go(func() {
+			path := "/metrics"
+			if i%2 == 0 {
+				path += "?name[]=value"
+			}
+			r := httptest.NewRequest(http.MethodGet, path, nil)
+			r.Header.Set("Accept", []string{"text/plain", "application/openmetrics-text;version=1.0.0", "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"}[i%3])
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			results <- w
+		})
+	}
+	<-entered
+	close(release)
+	wg.Wait()
+	close(results)
+	for w := range results {
+		require.Equal(t, http.StatusOK, w.Code)
+		require.NotEmpty(t, w.Body.Bytes())
+	}
+	require.Equal(t, int64(1), gathers.Load())
 }

@@ -46,31 +46,38 @@ func CachedHandlerFor(reg prometheus.Gatherer, opts promhttp.HandlerOpts, cacheD
 		inFlight = make(chan struct{}, opts.MaxRequestsInFlight)
 		opts.MaxRequestsInFlight = 0
 	}
-	reg = &metricsCoalescingGatherer{reg: reg, now: time.Now}
 	opts.CoalesceGather = false
 	responses, err := lru.New[metricsResponseCacheKey, *metricsResponse](metricsResponseCacheSize)
 	if err != nil {
 		panic(err)
 	}
-	// Refreshes need separate error logs, but concurrency controls must span
-	// every representation and the uncached path.
-	bypass := limitMetricsRequests(promhttp.HandlerFor(reg, opts), inFlight)
-	if timeout > 0 {
-		bypass = http.TimeoutHandler(bypass, timeout, metricsTimeoutBody(timeout))
-	}
 	h := &cachedMetricsHandler{
 		opts:      opts,
 		inFlight:  inFlight,
-		bypass:    bypass,
 		timeout:   timeout,
 		now:       time.Now,
 		responses: responses,
 		refreshes: map[metricsResponseCacheKey]*metricsRefresh{},
 	}
+	now := func() time.Time { return h.now() }
+	coalesced := &metricsCoalescingGatherer{
+		collect: func() metricsGatherResult {
+			start := now()
+			families, err := reg.Gather()
+			return metricsGatherResult{families: families, err: err, started: start}
+		},
+		now: now,
+	}
+	// Refreshes need separate error logs, but concurrency controls must span
+	// every representation and the uncached path.
+	h.bypass = limitMetricsRequests(promhttp.HandlerFor(coalesced, opts), inFlight)
+	if timeout > 0 {
+		h.bypass = http.TimeoutHandler(h.bypass, timeout, metricsTimeoutBody(timeout))
+	}
 	h.reg = &metricsCoalescingGatherer{
-		reg:           reg,
+		collect:       func() metricsGatherResult { return *coalesced.gather() },
 		duration:      cacheDuration,
-		now:           func() time.Time { return h.now() },
+		now:           now,
 		acceptPartial: opts.ErrorHandling == promhttp.ContinueOnError,
 	}
 	h.filtered = limitMetricsRequests(promhttp.HandlerFor(h.reg, opts), inFlight)
@@ -241,7 +248,7 @@ func limitMetricsRequests(next http.Handler, inFlight chan struct{}) http.Handle
 }
 
 type metricsCoalescingGatherer struct {
-	reg           prometheus.Gatherer
+	collect       func() metricsGatherResult
 	group         singleflight.Group
 	duration      time.Duration
 	now           func() time.Time
@@ -254,6 +261,7 @@ type metricsGatherResult struct {
 	families []*dto.MetricFamily
 	err      error
 	panicked any
+	started  time.Time
 	expires  time.Time
 }
 
@@ -279,11 +287,14 @@ func (g *metricsCoalescingGatherer) gather() *metricsGatherResult {
 		if cached := g.cachedResult(); cached != nil {
 			return cached, nil
 		}
-		result := &metricsGatherResult{expires: g.now().Add(g.duration)}
+		result := &metricsGatherResult{}
+		cacheable := false
 		func() {
 			// Keep the original panic value so each handler applies normal recovery.
 			defer func() { result.panicked = recover() }()
-			result.families, result.err = g.reg.Gather()
+			*result = g.collect()
+			// Joined collections retain their original deadline across cache layers.
+			result.expires = result.started.Add(g.duration)
 			if g.duration > 0 && (result.err == nil || g.acceptPartial && len(result.families) > 0) {
 				// Own the protobufs because collectors may reuse them on a later Gather.
 				families := make([]*dto.MetricFamily, len(result.families))
@@ -291,11 +302,14 @@ func (g *metricsCoalescingGatherer) gather() *metricsGatherResult {
 					families[i] = proto.Clone(family).(*dto.MetricFamily)
 				}
 				result.families = families
-				g.mu.Lock()
-				g.cached = result
-				g.mu.Unlock()
+				cacheable = true
 			}
 		}()
+		if cacheable && g.now().Before(result.expires) {
+			g.mu.Lock()
+			g.cached = result
+			g.mu.Unlock()
+		}
 		return result, nil
 	})
 	result := v.(*metricsGatherResult)

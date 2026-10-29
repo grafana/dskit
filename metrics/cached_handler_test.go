@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -498,6 +499,78 @@ func TestCachedHandlerForSharedGatherCache(t *testing.T) {
 			require.Equal(t, int64(2), gathers.Load())
 		})
 	}
+}
+
+func TestCachedMetricsHandler_ServeHTTP(t *testing.T) {
+	t.Run("joining an existing collection does not extend cache lifetime", func(t *testing.T) {
+		// In virtual time, collection starts at 0s and another request joins at 50s.
+		// Collection completes at 50s or 65s, but the cache deadline must stay at 60s.
+		for _, joinPath := range []string{"/metrics", "/metrics?name[]=value"} {
+			for _, nextPath := range []string{"/metrics", "/metrics?name[]=value"} {
+				for _, releaseAt := range []time.Duration{50 * time.Second, 65 * time.Second} {
+					t.Run(fmt.Sprintf("join=%s/next=%s/release=%s", joinPath, nextPath, releaseAt), func(t *testing.T) {
+						synctest.Test(t, func(t *testing.T) {
+							reg := prometheus.NewRegistry()
+							value := promauto.With(reg).NewGauge(prometheus.GaugeOpts{Name: "value", Help: "Value."})
+							value.Set(1)
+							entered, release := make(chan struct{}), make(chan struct{})
+							unblock := sync.OnceFunc(func() { close(release) })
+							defer unblock()
+							var gathers atomic.Int64
+							h := CachedHandlerFor(prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+								families, err := reg.Gather()
+								if gathers.Inc() == 1 {
+									close(entered)
+									<-release
+								}
+								return families, err
+							}), promhttp.HandlerOpts{}, time.Minute)
+							scrape := func(path string) *httptest.ResponseRecorder {
+								w := httptest.NewRecorder()
+								h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+								return w
+							}
+							results := make(chan *httptest.ResponseRecorder, 2)
+							// An unrelated query parameter bypasses caching but still shares collection work.
+							go func() { results <- scrape("/metrics?other=value") }()
+							<-entered
+							time.Sleep(50 * time.Second)
+							go func() { results <- scrape(joinPath) }()
+							// Wait until the joining handler is blocked on the original collection.
+							synctest.Wait()
+							time.Sleep(releaseAt - 50*time.Second)
+							unblock()
+							first, second := <-results, <-results
+							for _, w := range []*httptest.ResponseRecorder{first, second} {
+								require.Equal(t, http.StatusOK, w.Code)
+								require.Contains(t, w.Body.String(), "value 1\n")
+							}
+							require.Equal(t, int64(1), gathers.Load())
+							value.Set(2)
+							if releaseAt < time.Minute {
+								time.Sleep(59*time.Second - releaseAt)
+								// A late response must inherit the original collection's deadline.
+								for _, path := range []string{"/metrics", "/metrics?name[]=value"} {
+									w := scrape(path)
+									require.Equal(t, http.StatusOK, w.Code)
+									require.Contains(t, w.Body.String(), "value 1\n")
+								}
+								require.Equal(t, int64(1), gathers.Load())
+								time.Sleep(time.Second)
+							}
+							// At or after the original deadline, either path must collect again.
+							for _, path := range []string{nextPath, "/metrics", "/metrics?name[]=value"} {
+								w := scrape(path)
+								require.Equal(t, http.StatusOK, w.Code)
+								require.Contains(t, w.Body.String(), "value 2\n")
+							}
+							require.Equal(t, int64(2), gathers.Load())
+						})
+					})
+				}
+			}
+		}
+	})
 }
 
 func TestCachedHandlerForGatherCacheOwnsMetrics(t *testing.T) {

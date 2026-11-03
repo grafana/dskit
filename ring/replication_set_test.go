@@ -1792,6 +1792,53 @@ func TestDoMultiUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 		assert.ErrorContains(t, context.Cause(workersCtx), expectedErr)
 	})
 
+	t.Run("should clean up the results of replication sets that already reached quorum if another one fails", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			mx      = sync.Mutex{}
+			cleaned []string
+		)
+		cleanup := func(result string) {
+			mx.Lock()
+			cleaned = append(cleaned, result)
+			mx.Unlock()
+		}
+
+		// instance-3 fails after instance-1 and instance-2 have returned, so the first replication set has
+		// usually reached quorum by then. Either way, both of its results must be cleaned up.
+		othersReturned := sync.WaitGroup{}
+		othersReturned.Add(2)
+
+		f := func(_ context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (string, error) {
+			defer cancelCtx(nil)
+
+			if instance.Addr == "instance-3" {
+				othersReturned.Wait()
+				time.Sleep(10 * time.Millisecond)
+				return "", errors.New("mocked error")
+			}
+
+			defer othersReturned.Done()
+			return instance.Addr, nil
+		}
+
+		results, _, err := doMultiUntilQuorumWithoutSuccessfulContextCancellation[string](context.Background(), sets, cfg, f, cleanup)
+		require.EqualError(t, err, "mocked error")
+		assert.Nil(t, results)
+
+		// Results that arrive after the function returns are cleaned up asynchronously.
+		assert.Eventually(t, func() bool {
+			mx.Lock()
+			defer mx.Unlock()
+			return len(cleaned) == 2
+		}, time.Second, 10*time.Millisecond)
+
+		mx.Lock()
+		defer mx.Unlock()
+		assert.ElementsMatch(t, []string{"instance-1", "instance-2"}, cleaned)
+	})
+
 	t.Run("should interrupt execution if caller context is canceled", func(t *testing.T) {
 		t.Parallel()
 

@@ -373,6 +373,11 @@ func doUntilQuorum[T any](ctx context.Context, sets []ReplicationSet, cfg DoUnti
 				cleanupFunc(result)
 			}
 		}
+
+		// The results of the sets that already reached quorum won't be returned either.
+		for _, result := range results {
+			cleanupFunc(result)
+		}
 	}
 
 	terminate := func(failed *quorumSetState[T], err error, cause string) ([]T, error) {
@@ -482,7 +487,8 @@ func doUntilQuorum[T any](ctx context.Context, sets []ReplicationSet, cfg DoUnti
 //
 //   - This function applies DoUntilQuorumWithoutSuccessfulContextCancellation's rules to each input ReplicationSet,
 //     all at once, and requires each of them to reach quorum. Execution breaks on the first ReplicationSet that
-//     fails, and requests to the other ReplicationSets are cancelled.
+//     fails: requests to the other ReplicationSets are cancelled, and cleanupFunc is called for every successful
+//     result, including the results of ReplicationSets that already reached quorum.
 //
 //   - This function requires that the callback function f always call context.CancelCauseFunc once done. Failing to
 //     cancel the context will leak resources.

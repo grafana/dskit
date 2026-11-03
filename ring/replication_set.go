@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"sync"
 	"time"
 
 	kitlog "github.com/go-kit/log"
@@ -242,7 +241,11 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuor
 //
 // Failing to do this may result in a memory leak.
 func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
-	return doUntilQuorum(ctx, []ReplicationSet{r}, cfg, f, cleanupFunc)
+	wrappedF := func(ctx context.Context, _ int, instance *InstanceDesc, cancel context.CancelCauseFunc) (T, error) {
+		return f(ctx, instance, cancel)
+	}
+
+	return doUntilQuorum(ctx, []ReplicationSet{r}, cfg, wrappedF, cleanupFunc)
 }
 
 // quorumSetState is the state of one replication set in doUntilQuorum.
@@ -284,8 +287,8 @@ func (s *quorumSetState[T]) finish(results []T, cleanupFunc func(T)) []T {
 // once they have all reached quorum, and fails as soon as any set fails.
 //
 // A single goroutine coordinates every set: the result trackers start requests through the start function, and the
-// results are fed back to the tracker of the set they belong to.
-func doUntilQuorum[T any](ctx context.Context, sets []ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
+// results are fed back to the tracker of the set they belong to. f is also passed the index of the instance's set.
+func doUntilQuorum[T any](ctx context.Context, sets []ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, int, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -342,7 +345,7 @@ func doUntilQuorum[T any](ctx context.Context, sets []ReplicationSet, cfg DoUnti
 			resultsRemaining++
 
 			go func() {
-				result, err := f(ctx, instance, ctxCancel)
+				result, err := f(ctx, setIdx, instance, ctxCancel)
 				resultsChan <- instanceResult[T]{
 					result:   result,
 					err:      err,
@@ -477,9 +480,9 @@ func doUntilQuorum[T any](ctx context.Context, sets []ReplicationSet, cfg DoUnti
 // DoMultiUntilQuorumWithoutSuccessfulContextCancellation behaves similar to DoUntilQuorumWithoutSuccessfulContextCancellation
 // with the following exceptions:
 //
-//   - This function calls DoUntilQuorumWithoutSuccessfulContextCancellation for each input ReplicationSet and requires
-//     DoUntilQuorumWithoutSuccessfulContextCancellation to successfully run for each of them. Execution breaks on the
-//     first error returned by DoUntilQuorumWithoutSuccessfulContextCancellation on any ReplicationSet.
+//   - This function applies DoUntilQuorumWithoutSuccessfulContextCancellation's rules to each input ReplicationSet,
+//     all at once, and requires each of them to reach quorum. Execution breaks on the first ReplicationSet that
+//     fails, and requests to the other ReplicationSets are cancelled.
 //
 //   - This function requires that the callback function f always call context.CancelCauseFunc once done. Failing to
 //     cancel the context will leak resources.
@@ -500,13 +503,6 @@ func DoMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.C
 // The returned context.Context is the internal context used by workers and it's used for testing purposes.
 func doMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, sets []ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, context.Context, error) {
 	var (
-		returnResultsMx = sync.Mutex{}
-		returnResults   = make([]T, 0, len(sets)*len(sets[0].Instances)) // Assume all replication sets have the same number of instances.
-
-		returnErrOnce sync.Once
-		returnErr     error // The first error occurred.
-
-		workersGroup                 = sync.WaitGroup{}
 		workersCtx, cancelWorkersCtx = context.WithCancelCause(ctx)
 
 		inflightTracker = newInflightInstanceTracker(sets)
@@ -518,57 +514,27 @@ func doMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.C
 		}
 	}
 
-	// Start a worker for each set. A worker is responsible to call DoUntilQuorumWithoutSuccessfulContextCancellation()
-	// for the given replication set and handle the result.
-	workersGroup.Add(len(sets))
+	wrappedFn := func(ctx context.Context, setIdx int, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (T, error) {
+		// The callback function has been called, so we need to track it.
+		inflightTracker.addInstance(setIdx, instance)
 
-	for idx, set := range sets {
-		go func(idx int, set ReplicationSet) {
-			defer workersGroup.Done()
+		// Inject custom logic in the context.CancelCauseFunc.
+		return f(ctx, instance, func(cause error) {
+			// Call the original one.
+			cancelCtx(cause)
 
-			wrappedFn := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (T, error) {
-				// The callback function has been called, so we need to track it.
-				inflightTracker.addInstance(idx, instance)
-
-				// Inject custom logic in the context.CancelCauseFunc.
-				return f(ctx, instance, func(cause error) {
-					// Call the original one.
-					cancelCtx(cause)
-
-					// The callback has done, so we can remove it from tracker and then check if it's safe
-					// to cancel the workers context.
-					inflightTracker.removeInstance(idx, instance)
-					cancelWorkersCtxIfSafe()
-				})
-			}
-
-			setResults, setErr := DoUntilQuorumWithoutSuccessfulContextCancellation[T](workersCtx, set, cfg, wrappedFn, cleanupFunc)
-
-			if setErr != nil {
-				returnErrOnce.Do(func() {
-					returnErr = setErr
-
-					// Interrupt the execution of all workers.
-					cancelWorkersCtx(fmt.Errorf("request canceled because quorum was not reached in another replication set due to error: %w", setErr))
-				})
-
-				return
-			}
-
-			// Keep track of the results.
-			returnResultsMx.Lock()
-			returnResults = append(returnResults, setResults...)
-			returnResultsMx.Unlock()
-		}(idx, set)
+			// The callback has done, so we can remove it from tracker and then check if it's safe
+			// to cancel the workers context.
+			inflightTracker.removeInstance(setIdx, instance)
+			cancelWorkersCtxIfSafe()
+		})
 	}
 
-	// Wait until all goroutines have terminated.
-	workersGroup.Wait()
-
-	// All workers completed, so it's guaranteed returnResults and returnErr won't be accessed by workers anymore,
-	// and it's safe to read them with no locking.
-	if returnErr != nil {
-		return nil, workersCtx, returnErr
+	results, err := doUntilQuorum[T](workersCtx, sets, cfg, wrappedFn, cleanupFunc)
+	if err != nil {
+		// Interrupt the requests of all replication sets.
+		cancelWorkersCtx(fmt.Errorf("request canceled because quorum was not reached in another replication set due to error: %w", err))
+		return nil, workersCtx, err
 	}
 
 	// No error occurred. It means workers context hasn't been canceled yet, and we don't expect more callbacks
@@ -576,7 +542,7 @@ func doMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.C
 	inflightTracker.allInstancesAdded()
 	cancelWorkersCtxIfSafe()
 
-	return returnResults, workersCtx, nil
+	return results, workersCtx, nil
 }
 
 type instanceResult[T any] struct {

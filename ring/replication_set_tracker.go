@@ -364,28 +364,30 @@ func (t *zoneAwareResultTracker) startZone(zone string) {
 }
 
 type zoneAwareContextTracker struct {
+	ctx         context.Context
 	contexts    map[*InstanceDesc]context.Context
 	cancelFuncs map[*InstanceDesc]context.CancelCauseFunc
 }
 
+// newZoneAwareContextTracker returns a tracker that creates each instance's context the first time
+// contextFor is called for it, so instances whose requests never start don't cost a context.
 func newZoneAwareContextTracker(ctx context.Context, instances []InstanceDesc) *zoneAwareContextTracker {
-	t := &zoneAwareContextTracker{
+	return &zoneAwareContextTracker{
+		ctx:         ctx,
 		contexts:    make(map[*InstanceDesc]context.Context, len(instances)),
 		cancelFuncs: make(map[*InstanceDesc]context.CancelCauseFunc, len(instances)),
 	}
-
-	for i := range instances {
-		instance := &instances[i]
-		ctx, cancel := context.WithCancelCause(ctx)
-		t.contexts[instance] = ctx
-		t.cancelFuncs[instance] = cancel
-	}
-
-	return t
 }
 
 func (t *zoneAwareContextTracker) contextFor(instance *InstanceDesc) (context.Context, context.CancelCauseFunc) {
-	return t.contexts[instance], t.cancelFuncs[instance]
+	if ctx, ok := t.contexts[instance]; ok {
+		return ctx, t.cancelFuncs[instance]
+	}
+
+	ctx, cancel := context.WithCancelCause(t.ctx)
+	t.contexts[instance] = ctx
+	t.cancelFuncs[instance] = cancel
+	return ctx, cancel
 }
 
 func (t *zoneAwareContextTracker) cancelContextFor(instance *InstanceDesc, cause error) {

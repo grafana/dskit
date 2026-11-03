@@ -2,13 +2,11 @@ package ring
 
 import (
 	"context"
-	"errors"
 	"math/rand"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"go.uber.org/atomic"
 )
 
 type replicationSetResultTracker interface {
@@ -30,7 +28,8 @@ type replicationSetResultTracker interface {
 	// calling done any further times.
 	shouldIncludeResultFrom(instance *InstanceDesc) bool
 
-	// Starts an initial set of requests sufficient to meet the quorum requirements of this tracker.
+	// Starts an initial set of requests sufficient to meet the quorum requirements of this tracker,
+	// by calling the tracker's onStart function for each instance whose request should start.
 	// Further requests will be started if necessary when done is called with a non-nil error.
 	// Calling this method multiple times may lead to unpredictable behaviour.
 	// Calling both this method and releaseAllRequests may lead to unpredictable behaviour.
@@ -50,14 +49,11 @@ type replicationSetResultTracker interface {
 	// Calling both this method and releaseMinimumRequests may lead to unpredictable behaviour.
 	// This method must only be called before calling done.
 	startAllRequests()
-
-	// Blocks until the request for this instance should be started.
-	// Returns nil if the request should be started, or a non-nil error if the request is not required
-	// or ctx has been cancelled.
-	// Must only be called after releaseMinimumRequests or releaseAllRequests returns.
-	// Calling this method multiple times for the same instance may lead to unpredictable behaviour.
-	awaitStart(ctx context.Context, instance *InstanceDesc) error
 }
+
+// startFunc is called by a replicationSetResultTracker, synchronously, for each instance whose request
+// should start. Requests that are never needed are never started.
+type startFunc func(instance *InstanceDesc)
 
 type replicationSetContextTracker interface {
 	// Returns a context.Context and context.CancelFunc for instance.
@@ -75,26 +71,25 @@ type replicationSetContextTracker interface {
 	cancelAllContexts(cause error)
 }
 
-var errResultNotNeeded = errors.New("result from this instance is not needed")
-
 type defaultResultTracker struct {
 	minSucceeded     int
 	numSucceeded     int
 	numErrors        int
 	maxErrors        int
 	instances        []InstanceDesc
-	instanceRelease  map[*InstanceDesc]chan struct{}
 	pendingInstances []*InstanceDesc
+	onStart          startFunc
 	logger           log.Logger
 }
 
-func newDefaultResultTracker(instances []InstanceDesc, maxErrors int, logger log.Logger) *defaultResultTracker {
+func newDefaultResultTracker(instances []InstanceDesc, maxErrors int, onStart startFunc, logger log.Logger) *defaultResultTracker {
 	return &defaultResultTracker{
 		minSucceeded: len(instances) - maxErrors,
 		numSucceeded: 0,
 		numErrors:    0,
 		maxErrors:    maxErrors,
 		instances:    instances,
+		onStart:      onStart,
 		logger:       logger,
 	}
 }
@@ -124,11 +119,7 @@ func (t *defaultResultTracker) succeeded() bool {
 }
 
 func (t *defaultResultTracker) onSucceeded() {
-	// We don't need any of the requests that are waiting to be released. Signal that they should abort.
-	for _, i := range t.pendingInstances {
-		close(t.instanceRelease[i])
-	}
-
+	// We don't need any of the requests that haven't started yet.
 	t.pendingInstances = nil
 }
 
@@ -141,13 +132,6 @@ func (t *defaultResultTracker) shouldIncludeResultFrom(_ *InstanceDesc) bool {
 }
 
 func (t *defaultResultTracker) startMinimumRequests() {
-	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
-
-	for i := range t.instances {
-		instance := &t.instances[i]
-		t.instanceRelease[instance] = make(chan struct{}, 1)
-	}
-
 	releaseOrder := rand.Perm(len(t.instances))
 	t.pendingInstances = make([]*InstanceDesc, 0, t.maxErrors)
 
@@ -158,12 +142,12 @@ func (t *defaultResultTracker) startMinimumRequests() {
 			t.pendingInstances = append(t.pendingInstances, instance)
 		} else {
 			level.Debug(t.logger).Log("msg", "starting request to instance", "reason", "initial requests", "instanceAddr", instance.Addr, "instanceID", instance.Id)
-			t.instanceRelease[instance] <- struct{}{}
+			t.onStart(instance)
 		}
 	}
 
 	// If we've already succeeded (which should only happen if the replica set is misconfigured with MaxErrors >= the number of instances),
-	// then make sure we don't block requests forever.
+	// then we don't need any of the pending requests.
 	if t.succeeded() {
 		t.onSucceeded()
 	}
@@ -178,32 +162,16 @@ func (t *defaultResultTracker) startAdditionalRequestsDueTo(reason string) {
 		// There are some outstanding requests we could make before we reach maxErrors. Release the next one.
 		i := t.pendingInstances[0]
 		level.Debug(t.logger).Log("msg", "starting request to instance", "reason", reason, "instanceAddr", i.Addr, "instanceID", i.Id)
-		t.instanceRelease[i] <- struct{}{}
+		t.onStart(i)
 		t.pendingInstances = t.pendingInstances[1:]
 	}
 }
 
 func (t *defaultResultTracker) startAllRequests() {
-	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
-
 	for i := range t.instances {
 		instance := &t.instances[i]
 		level.Debug(t.logger).Log("msg", "starting request to instance", "reason", "initial requests", "instanceAddr", instance.Addr, "instanceID", instance.Id)
-		t.instanceRelease[instance] = make(chan struct{}, 1)
-		t.instanceRelease[instance] <- struct{}{}
-	}
-}
-
-func (t *defaultResultTracker) awaitStart(ctx context.Context, instance *InstanceDesc) error {
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case _, ok := <-t.instanceRelease[instance]:
-		if ok {
-			return nil
-		}
-
-		return errResultNotNeeded
+		t.onStart(instance)
 	}
 }
 
@@ -246,21 +214,23 @@ type zoneAwareResultTracker struct {
 	failuresByZone      map[string]int
 	minSuccessfulZones  int
 	maxUnavailableZones int
-	zoneRelease         map[string]chan struct{}
-	zoneShouldStart     map[string]*atomic.Bool
+	instances           []InstanceDesc
 	pendingZones        []string
 	zoneSorter          ZoneSorter
+	onStart             startFunc
 	logger              log.Logger
 }
 
 type ZoneSorter func(zones []string) []string
 
-func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int, zoneSorter ZoneSorter, logger log.Logger) *zoneAwareResultTracker {
+func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int, zoneSorter ZoneSorter, onStart startFunc, logger log.Logger) *zoneAwareResultTracker {
 	t := &zoneAwareResultTracker{
 		waitingByZone:       make(map[string]int),
 		failuresByZone:      make(map[string]int),
 		maxUnavailableZones: maxUnavailableZones,
+		instances:           instances,
 		zoneSorter:          zoneSorter,
+		onStart:             onStart,
 		logger:              logger,
 	}
 
@@ -329,11 +299,7 @@ func (t *zoneAwareResultTracker) succeeded() bool {
 }
 
 func (t *zoneAwareResultTracker) onSucceeded() {
-	// We don't need any of the requests that are waiting to be released. Signal that they should abort.
-	for _, zone := range t.pendingZones {
-		t.releaseZone(zone, false)
-	}
-
+	// We don't need any of the zones that haven't started yet.
 	t.pendingZones = nil
 }
 
@@ -347,8 +313,6 @@ func (t *zoneAwareResultTracker) shouldIncludeResultFrom(instance *InstanceDesc)
 }
 
 func (t *zoneAwareResultTracker) startMinimumRequests() {
-	t.createReleaseChannels()
-
 	allZones := make([]string, 0, len(t.waitingByZone))
 
 	for zone := range t.waitingByZone {
@@ -359,13 +323,13 @@ func (t *zoneAwareResultTracker) startMinimumRequests() {
 
 	for i := 0; i < t.minSuccessfulZones; i++ {
 		level.Debug(t.logger).Log("msg", "starting requests to zone", "reason", "initial requests", "zone", allZones[i])
-		t.releaseZone(allZones[i], true)
+		t.startZone(allZones[i])
 	}
 
 	t.pendingZones = allZones[t.minSuccessfulZones:]
 
 	// If we've already succeeded (which should only happen if the replica set is misconfigured with MaxUnavailableZones >= the number of zones),
-	// then make sure we don't block requests forever.
+	// then we don't need any of the pending zones.
 	if t.succeeded() {
 		t.onSucceeded()
 	}
@@ -379,45 +343,23 @@ func (t *zoneAwareResultTracker) startAdditionalRequestsDueTo(reason string) {
 	if len(t.pendingZones) > 0 {
 		// If there are more zones we could try before reaching maxUnavailableZones, release another zone's requests and signal they should start.
 		level.Debug(t.logger).Log("msg", "starting requests to zone", "reason", reason, "zone", t.pendingZones[0])
-		t.releaseZone(t.pendingZones[0], true)
+		t.startZone(t.pendingZones[0])
 		t.pendingZones = t.pendingZones[1:]
 	}
 }
 
 func (t *zoneAwareResultTracker) startAllRequests() {
-	t.createReleaseChannels()
-
 	for zone := range t.waitingByZone {
 		level.Debug(t.logger).Log("msg", "starting requests to zone", "reason", "initial requests", "zone", zone)
-		t.releaseZone(zone, true)
+		t.startZone(zone)
 	}
 }
 
-func (t *zoneAwareResultTracker) createReleaseChannels() {
-	t.zoneRelease = make(map[string]chan struct{}, len(t.waitingByZone))
-	t.zoneShouldStart = make(map[string]*atomic.Bool, len(t.waitingByZone))
-
-	for zone := range t.waitingByZone {
-		t.zoneRelease[zone] = make(chan struct{})
-		t.zoneShouldStart[zone] = atomic.NewBool(false)
-	}
-}
-
-func (t *zoneAwareResultTracker) releaseZone(zone string, shouldStart bool) {
-	t.zoneShouldStart[zone].Store(shouldStart)
-	close(t.zoneRelease[zone])
-}
-
-func (t *zoneAwareResultTracker) awaitStart(ctx context.Context, instance *InstanceDesc) error {
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case <-t.zoneRelease[instance.Zone]:
-		if t.zoneShouldStart[instance.Zone].Load() {
-			return nil
+func (t *zoneAwareResultTracker) startZone(zone string) {
+	for i := range t.instances {
+		if t.instances[i].Zone == zone {
+			t.onStart(&t.instances[i])
 		}
-
-		return errResultNotNeeded
 	}
 }
 

@@ -41,9 +41,9 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	// Initialise the result tracker, which is use to keep track of successes and failures.
 	var tracker replicationSetResultTracker
 	if r.MaxUnavailableZones > 0 {
-		tracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, nil, kitlog.NewNopLogger())
+		tracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, nil, nil, kitlog.NewNopLogger())
 	} else {
-		tracker = newDefaultResultTracker(r.Instances, r.MaxErrors, kitlog.NewNopLogger())
+		tracker = newDefaultResultTracker(r.Instances, r.MaxErrors, nil, kitlog.NewNopLogger())
 	}
 
 	var (
@@ -260,7 +260,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	}
 
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
-	resultsRemaining := len(r.Instances)
+	resultsRemaining := 0
 
 	defer func() {
 		go func() {
@@ -277,11 +277,28 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 
 	var resultTracker replicationSetResultTracker
 	var contextTracker replicationSetContextTracker
+
+	// start calls f for instance in its own goroutine. The result tracker calls it for each instance whose
+	// request should start, so instances whose requests are never needed don't cost a goroutine.
+	start := func(instance *InstanceDesc) {
+		ctx, ctxCancel := contextTracker.contextFor(instance)
+		resultsRemaining++
+
+		go func() {
+			result, err := f(ctx, instance, ctxCancel)
+			resultsChan <- instanceResult[T]{
+				result:   result,
+				err:      err,
+				instance: instance,
+			}
+		}()
+	}
+
 	if r.MaxUnavailableZones > 0 || r.ZoneAwarenessEnabled {
-		resultTracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, cfg.ZoneSorter, logger)
+		resultTracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, cfg.ZoneSorter, start, logger)
 		contextTracker = newZoneAwareContextTracker(ctx, r.Instances)
 	} else {
-		resultTracker = newDefaultResultTracker(r.Instances, r.MaxErrors, logger)
+		resultTracker = newDefaultResultTracker(r.Instances, r.MaxErrors, start, logger)
 		contextTracker = newDefaultContextTracker(ctx, r.Instances)
 	}
 
@@ -289,30 +306,6 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		resultTracker.startMinimumRequests()
 	} else {
 		resultTracker.startAllRequests()
-	}
-
-	for i := range r.Instances {
-		instance := &r.Instances[i]
-		ctx, ctxCancel := contextTracker.contextFor(instance)
-
-		go func(desc *InstanceDesc) {
-			if err := resultTracker.awaitStart(ctx, desc); err != nil {
-				// Post to resultsChan so that the deferred cleanup handler above eventually terminates.
-				resultsChan <- instanceResult[T]{
-					err:      err,
-					instance: desc,
-				}
-
-				return
-			}
-
-			result, err := f(ctx, desc, ctxCancel)
-			resultsChan <- instanceResult[T]{
-				result:   result,
-				err:      err,
-				instance: desc,
-			}
-		}(instance)
 	}
 
 	resultsMap := make(map[*InstanceDesc]T, len(r.Instances))

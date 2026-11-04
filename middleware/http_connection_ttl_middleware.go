@@ -55,6 +55,7 @@ type httpConnectionTTLMiddleware struct {
 
 	connectionsMu sync.Mutex
 	connections   map[string]*connectionState
+	stopOnce      sync.Once
 
 	totalOpenConnections   prometheus.Counter
 	totalClosedConnections *prometheus.CounterVec
@@ -187,12 +188,9 @@ func (m *httpConnectionTTLMiddleware) calculateTTL(conn string) time.Duration {
 // It is safe to call Stop even if the middleware was created with TTL disabled.
 func (m *httpConnectionTTLMiddleware) Stop() {
 	if m.done != nil {
-		select {
-		case <-m.done:
-			// Already closed
-		default:
+		m.stopOnce.Do(func() {
 			close(m.done)
-		}
+		})
 	}
 }
 

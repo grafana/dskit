@@ -261,6 +261,8 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	var logger kitlog.Logger = cfg.Logger
 	if cfg.Logger == nil {
 		logger = kitlog.NewNopLogger()
+	} else if r.PartitionID != -1 {
+		logger = kitlog.With(logger, "partition_id", r.PartitionID)
 	}
 
 	if cfg.IncludeReplicaCount {

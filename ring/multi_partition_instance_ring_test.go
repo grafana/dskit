@@ -17,6 +17,7 @@ func TestMultiPartitionInstanceRing_GetReplicationSetForPartitionAndOperation_Hi
 	type comparableReplicationSet struct {
 		instances           []string
 		maxUnavailableZones int
+		partitionID         int32
 	}
 
 	const testPartitionID = 1
@@ -65,7 +66,7 @@ func TestMultiPartitionInstanceRing_GetReplicationSetForPartitionAndOperation_Hi
 				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Unix()},
 				"instance-zone-b-1": {Id: "instance-zone-b-1", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
-			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-a-1", "instance-zone-b-1"}, maxUnavailableZones: 1},
+			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-a-1", "instance-zone-b-1"}, maxUnavailableZones: 1, partitionID: testPartitionID},
 		},
 		"should return error if there are no healthy instances for the partition": {
 			partitionsRing: PartitionRingDesc{
@@ -101,7 +102,7 @@ func TestMultiPartitionInstanceRing_GetReplicationSetForPartitionAndOperation_Hi
 				"instance-zone-a-1": {Id: "instance-zone-a-1", State: ACTIVE, Zone: "a", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy.
 				"instance-zone-b-1": {Id: "instance-zone-b-1", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},                       // Healthy.
 			}},
-			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-b-1"}, maxUnavailableZones: 0},
+			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-b-1"}, maxUnavailableZones: 0, partitionID: testPartitionID},
 		},
 		"should return the highest owner from each zone for the partition": {
 			partitionsRing: PartitionRingDesc{
@@ -122,7 +123,7 @@ func TestMultiPartitionInstanceRing_GetReplicationSetForPartitionAndOperation_Hi
 				"instance-zone-b-1": {Id: "instance-zone-b-1", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
-			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-a-2", "instance-zone-b-1"}, maxUnavailableZones: 1},
+			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-a-2", "instance-zone-b-1"}, maxUnavailableZones: 1, partitionID: testPartitionID},
 		},
 		"should return the highest non read-only owner from each zone for the partition": {
 			partitionsRing: PartitionRingDesc{
@@ -143,7 +144,7 @@ func TestMultiPartitionInstanceRing_GetReplicationSetForPartitionAndOperation_Hi
 				"instance-zone-b-1": {Id: "instance-zone-b-1", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
-			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-a-1", "instance-zone-b-1"}, maxUnavailableZones: 1},
+			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-a-1", "instance-zone-b-1"}, maxUnavailableZones: 1, partitionID: testPartitionID},
 		},
 		"should return the read-only owner if it's the only one": {
 			partitionsRing: PartitionRingDesc{
@@ -163,7 +164,7 @@ func TestMultiPartitionInstanceRing_GetReplicationSetForPartitionAndOperation_Hi
 				"instance-zone-b-1": {Id: "instance-zone-b-1", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
-			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-a-2", "instance-zone-b-1"}, maxUnavailableZones: 1},
+			expectedSet: comparableReplicationSet{instances: []string{"instance-zone-a-2", "instance-zone-b-1"}, maxUnavailableZones: 1, partitionID: testPartitionID},
 		},
 	}
 
@@ -183,7 +184,7 @@ func TestMultiPartitionInstanceRing_GetReplicationSetForPartitionAndOperation_Hi
 			// Build the actual replication sets to compare with the expected ones.
 			instanceIDs := set.GetIDs()
 			slices.Sort(instanceIDs)
-			actual := comparableReplicationSet{instances: instanceIDs, maxUnavailableZones: set.MaxUnavailableZones}
+			actual := comparableReplicationSet{instances: instanceIDs, maxUnavailableZones: set.MaxUnavailableZones, partitionID: set.PartitionID}
 
 			assert.Equal(t, testData.expectedSet, actual)
 		})

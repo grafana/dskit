@@ -390,11 +390,12 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 	}
 
 	for name, testCase := range testCases {
-		testCase := testCase
 		t.Run(name, func(t *testing.T) {
 			for _, minimizeRequests := range []bool{true, false} {
 				t.Run(fmt.Sprintf("minimize requests: %v", minimizeRequests), func(t *testing.T) {
 					defer goleak.VerifyNone(t)
+					const partitionID = int32(123)
+					testCase.replicationSet.PartitionID = partitionID
 
 					logger := &testLogger{}
 					spanLogger, ctx := spanlogger.New(context.Background(), logger, "DoUntilQuorum test", dummyTenantResolver{})
@@ -437,14 +438,16 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation(t *testing.T) {
 					cleanupTracker.assertCorrectCleanup(testCase.expectedResults, expectedCleanup)
 
 					if testCase.expectedError == nil {
-						require.Contains(t, logger.messages, map[interface{}]interface{}{
-							"level": level.DebugValue(),
-							"msg":   "quorum reached",
+						require.Contains(t, logger.messages, map[any]any{
+							"level":        level.DebugValue(),
+							"msg":          "quorum reached",
+							"partition_id": partitionID,
 						})
 					} else {
-						require.Contains(t, logger.messages, map[interface{}]interface{}{
-							"level": level.ErrorValue(),
-							"msg":   "cancelling all outstanding requests because quorum cannot be reached",
+						require.Contains(t, logger.messages, map[any]any{
+							"level":        level.ErrorValue(),
+							"msg":          "cancelling all outstanding requests because quorum cannot be reached",
+							"partition_id": partitionID,
 						})
 					}
 				})
@@ -464,6 +467,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZo
 			{Addr: "zone-c-replica-2", Zone: "zone-c"},
 		},
 		MaxUnavailableZones: 1,
+		PartitionID:         123,
 	}
 
 	for _, minimizeRequests := range []bool{true, false} {
@@ -504,9 +508,10 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_MultipleUnavailableZo
 			cleanupTracker.collectCleanedUpInstancesWithExpectedCount(len(expectedCleanup))
 			cleanupTracker.assertCorrectCleanup([]string{}, expectedCleanup)
 
-			require.Contains(t, logger.messages, map[interface{}]interface{}{
-				"level": level.ErrorValue(),
-				"msg":   "cancelling all outstanding requests because quorum cannot be reached",
+			require.Contains(t, logger.messages, map[any]any{
+				"level":        level.ErrorValue(),
+				"msg":          "cancelling all outstanding requests because quorum cannot be reached",
+				"partition_id": replicationSet.PartitionID,
 			})
 		})
 	}
@@ -1065,6 +1070,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 			{Addr: "instance-2"},
 			{Addr: "instance-3"},
 		},
+		PartitionID: 123,
 	}
 
 	cleanupTracker := newCleanupTracker(t, 3)
@@ -1103,16 +1109,19 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 	cleanupTracker.collectCleanedUpInstances()
 	cleanupTracker.assertCorrectCleanup(nil, []string{"instance-1", "instance-2", "instance-3"})
 
-	expectedLogMessage := map[interface{}]interface{}{
-		"level": level.DebugValue(),
-		"msg":   "parent context done, returning",
-		"err":   context.Canceled,
+	expectedLogMessage := map[any]any{
+		"level":        level.DebugValue(),
+		"msg":          "parent context done, returning",
+		"err":          context.Canceled,
+		"partition_id": int32(123),
 	}
 
 	require.Contains(t, logger.messages, expectedLogMessage)
 }
 
 func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling_WithMinimizeRequests(t *testing.T) {
+	const partitionID = int32(123)
+
 	testCases := map[string]ReplicationSet{
 		"with zone awareness": {
 			Instances: []InstanceDesc{
@@ -1121,6 +1130,7 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 				{Addr: "instance-3", Zone: "zone-c"},
 			},
 			MaxUnavailableZones: 1,
+			PartitionID:         partitionID,
 		},
 		"without zone awareness": {
 			Instances: []InstanceDesc{
@@ -1128,7 +1138,8 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 				{Addr: "instance-2"},
 				{Addr: "instance-3"},
 			},
-			MaxErrors: 1,
+			MaxErrors:   1,
+			PartitionID: partitionID,
 		},
 	}
 
@@ -1181,10 +1192,11 @@ func TestDoUntilQuorumWithoutSuccessfulContextCancellation_ParentContextHandling
 			cleanupTracker.collectCleanedUpInstances()
 			cleanupTracker.assertCorrectCleanup(nil, calledInstances)
 
-			expectedLogMessage := map[interface{}]interface{}{
-				"level": level.DebugValue(),
-				"msg":   "parent context done, returning",
-				"err":   context.Canceled,
+			expectedLogMessage := map[any]any{
+				"level":        level.DebugValue(),
+				"msg":          "parent context done, returning",
+				"err":          context.Canceled,
+				"partition_id": partitionID,
 			}
 
 			require.Equal(t, expectedLogMessage, logger.messages[len(logger.messages)-1])

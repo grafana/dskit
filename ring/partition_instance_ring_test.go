@@ -18,6 +18,7 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 	type comparableReplicationSet struct {
 		instances           []string
 		maxUnavailableZones int
+		partitionID         int32
 	}
 
 	tests := map[string]struct {
@@ -66,8 +67,8 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
-				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
-				{instances: []string{"instance-zone-a-2", "instance-zone-b-2"}, maxUnavailableZones: 1},
+				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0, partitionID: 1},
+				{instances: []string{"instance-zone-a-2", "instance-zone-b-2"}, maxUnavailableZones: 1, partitionID: 2},
 			},
 		},
 		"should return error if there are no healthy instances for a partition": {
@@ -108,8 +109,8 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Add(-2 * time.Minute).Unix()}, // Unhealthy because of the heartbeat.
 			}},
 			expectedSets: []comparableReplicationSet{
-				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
-				{instances: []string{"instance-zone-a-2"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0, partitionID: 1},
+				{instances: []string{"instance-zone-a-2"}, maxUnavailableZones: 0, partitionID: 2},
 			},
 		},
 		"should NOT return error if an instance is missing in the instances ring but there's another healthy instance for the partition": {
@@ -130,8 +131,8 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "b", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
-				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0},
-				{instances: []string{"instance-zone-b-2"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-1"}, maxUnavailableZones: 0, partitionID: 1},
+				{instances: []string{"instance-zone-b-2"}, maxUnavailableZones: 0, partitionID: 2},
 			},
 		},
 		"should return replication sets with MaxUnavailableZones=0 if there are multiple instances per zone but all instances belong to the same zone": {
@@ -154,8 +155,8 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 				"instance-zone-b-2": {Id: "instance-zone-b-2", State: ACTIVE, Zone: "fixed", Timestamp: now.Unix()},
 			}},
 			expectedSets: []comparableReplicationSet{
-				{instances: []string{"instance-zone-a-1", "instance-zone-b-1"}, maxUnavailableZones: 0},
-				{instances: []string{"instance-zone-a-2", "instance-zone-b-2"}, maxUnavailableZones: 0},
+				{instances: []string{"instance-zone-a-1", "instance-zone-b-1"}, maxUnavailableZones: 0, partitionID: 1},
+				{instances: []string{"instance-zone-a-2", "instance-zone-b-2"}, maxUnavailableZones: 0, partitionID: 2},
 			},
 		},
 	}
@@ -175,7 +176,7 @@ func TestPartitionInstanceRing_GetReplicationSetsForOperation(t *testing.T) {
 			for _, set := range sets {
 				instanceIDs := set.GetIDs()
 				slices.Sort(instanceIDs)
-				actual = append(actual, comparableReplicationSet{instances: instanceIDs, maxUnavailableZones: set.MaxUnavailableZones})
+				actual = append(actual, comparableReplicationSet{instances: instanceIDs, maxUnavailableZones: set.MaxUnavailableZones, partitionID: set.PartitionID})
 			}
 
 			assert.ElementsMatch(t, testData.expectedSets, actual)

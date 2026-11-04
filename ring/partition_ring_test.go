@@ -1245,6 +1245,7 @@ func TestActivePartitionBatchRing_Get(t *testing.T) {
 					assert.Equal(t, 0, actual.MaxErrors)
 					assert.Equal(t, 0, actual.MaxUnavailableZones)
 					assert.False(t, actual.ZoneAwarenessEnabled)
+					assert.Equal(t, expected, actual.PartitionID)
 				}
 			})
 		}

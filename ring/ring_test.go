@@ -1127,13 +1127,24 @@ func TestRing_GetReplicationSetForOperation(t *testing.T) {
 			require.Equal(t, testData.expectedErrForRead, err)
 			assert.ElementsMatch(t, testData.expectedSetForRead, set.GetAddresses())
 
+			if testData.expectedErrForRead == nil {
+				require.Equal(t, int32(-1), set.PartitionID)
+			}
+
 			set, err = ring.GetReplicationSetForOperation(Write)
 			require.Equal(t, testData.expectedErrForWrite, err)
 			assert.ElementsMatch(t, testData.expectedSetForWrite, set.GetAddresses())
 
+			if testData.expectedErrForWrite == nil {
+				require.Equal(t, int32(-1), set.PartitionID)
+			}
+
 			set, err = ring.GetReplicationSetForOperation(Reporting)
 			require.Equal(t, testData.expectedErrForReporting, err)
 			assert.ElementsMatch(t, testData.expectedSetForReporting, set.GetAddresses())
+			if testData.expectedErrForReporting == nil {
+				require.Equal(t, int32(-1), set.PartitionID)
+			}
 		})
 	}
 }
@@ -1450,6 +1461,7 @@ func TestRing_GetReplicationSetForOperation_WithZoneAwarenessEnabled(t *testing.
 			assert.Equal(t, testData.expectedMaxErrors, replicationSet.MaxErrors)
 			assert.Equal(t, testData.expectedMaxUnavailableZones, replicationSet.MaxUnavailableZones)
 			assert.True(t, replicationSet.ZoneAwarenessEnabled)
+			assert.Equal(t, int32(-1), replicationSet.PartitionID)
 
 			returnAddresses := []string{}
 			for _, instance := range replicationSet.Instances {

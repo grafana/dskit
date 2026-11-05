@@ -18,8 +18,9 @@ const (
 )
 
 var (
-	ErrNotStored  = errors.New("item not stored")
-	ErrInvalidTTL = errors.New("invalid TTL")
+	ErrNotStored   = errors.New("item not stored")
+	ErrInvalidTTL  = errors.New("invalid TTL")
+	ErrCASConflict = errors.New("compare-and-swap conflict")
 )
 
 // Cache is a high level interface to interact with a cache.

@@ -385,6 +385,39 @@ func TestMemcachedClient_CompareAndSwap(t *testing.T) {
 		err := client.CompareAndSwap(context.Background(), "foo", []byte("baz"), 100*time.Millisecond, casID)
 		require.ErrorIs(t, err, ErrInvalidTTL)
 	})
+
+	t.Run("rejects an item over the max size instead of skipping it", func(t *testing.T) {
+		ctx := context.Background()
+		backend := newMockMemcachedClientBackend()
+		client, err := newMemcachedClient(
+			log.NewNopLogger(),
+			backend,
+			&mockServerSelector{
+				servers: []mockServer{
+					{addr: "127.0.0.1:11211"},
+				},
+			},
+			MemcachedClientConfig{
+				Addresses:           []string{"localhost"},
+				MaxAsyncConcurrency: 1,
+				MaxAsyncBufferSize:  10,
+				MaxItemSize:         3,
+			},
+			prometheus.NewPedanticRegistry(),
+			"test",
+		)
+		require.NoError(t, err)
+		require.NoError(t, client.Set(ctx, "foo", []byte("bar"), 10*time.Second))
+		res, err := client.GetMultiWithCAS(ctx, []string{"foo"})
+		require.NoError(t, err)
+
+		// Set skips an oversized item and reports success; a conditional store must not.
+		err = client.CompareAndSwap(ctx, "foo", []byte("too big"), 20*time.Second, res["foo"].CasID)
+		require.ErrorIs(t, err, ErrItemTooLarge)
+		require.Equal(t, []byte("bar"), backend.values["foo"].Value)
+		err = client.CompareAndSwap(ctx, "missing", []byte("too big"), 20*time.Second, 42)
+		require.ErrorIs(t, err, ErrItemTooLarge)
+	})
 }
 
 func TestMemcachedClient_FlushAll(t *testing.T) {

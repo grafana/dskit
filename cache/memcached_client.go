@@ -575,8 +575,14 @@ func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Durati
 // CompareAndSwap stores value with ttl only while the item is still the version that a
 // GetMultiWithCAS read returned with casID. Memcached assigns a new token on every store, so a
 // conflict means the item was modified since that read. It returns ErrCASConflict then,
-// memcache.ErrCacheMiss if the item no longer exists, and ErrInvalidTTL as Set does.
+// memcache.ErrCacheMiss if the item no longer exists, ErrInvalidTTL as Set does, and
+// ErrItemTooLarge for a value over MaxItemSize, which Set and Add skip silently.
 func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration, casID uint64) error {
+	// A skipped store must not read as a successful conditional store.
+	if !c.itemSizeIsAcceptable(key, value, opCompareAndSwap) {
+		return fmt.Errorf("%w: %d bytes for compare-and-swap operation on %s", ErrItemTooLarge, len(value), key)
+	}
+
 	return c.storeOperation(ctx, key, value, ttl, opCompareAndSwap, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 		select {
 		case <-ctx.Done():

@@ -120,6 +120,10 @@ type MemcachedClientConfig struct {
 	// Items bigger than MaxItemSize are skipped. If set to 0, no maximum size is enforced.
 	MaxItemSize int `yaml:"max_item_size" category:"advanced"`
 
+	// FreeListShards specifies the number of shards to "stripe" the free list used for connections
+	// in the cache client over.
+	FreeListShards int `yaml:"free_list_shards" category:"experimental"`
+
 	// TLSEnabled enables connecting to Memcached with TLS.
 	TLSEnabled bool `yaml:"tls_enabled" category:"advanced"`
 
@@ -140,6 +144,7 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxGetMultiConcurrency, prefix+"max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
 	f.IntVar(&c.MaxGetMultiBatchSize, prefix+"max-get-multi-batch-size", 100, "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.")
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
+	f.IntVar(&c.FreeListShards, prefix+"free-list-shards", 16, "The number of shards to stripe the free list of used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.")
 	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
@@ -209,7 +214,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	// for servers selection.
 	selector := &MemcachedJumpHashSelector{}
 
-	client := memcache.NewFromSelector(selector)
+	client := memcache.NewShardedFromSelector(selector, config.FreeListShards)
 	client.Timeout = config.Timeout
 	client.ConnectTimeout = config.ConnectTimeout
 	client.MinIdleConnsHeadroomPercentage = config.MinIdleConnectionsHeadroomPercentage

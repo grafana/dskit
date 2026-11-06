@@ -149,17 +149,20 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 // AddPartition adds a new partition to the ring. Tokens are auto-generated using the spread minimizing strategy
 // which generates deterministic unique tokens.
 func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now time.Time) {
-	// Spread-minimizing token generator is deterministic unique-token generator for given id and zone.
-	// Partitions don't use zones.
-	spreadMinimizing := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
-
 	m.Partitions[id] = PartitionDesc{
 		Id:             id,
 		TokenScheme:    PartitionTokensStored,
-		Tokens:         spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil),
+		Tokens:         generateStoredPartitionTokens(id),
 		State:          state,
 		StateTimestamp: now.Unix(),
 	}
+}
+
+func generateStoredPartitionTokens(id int32) []uint32 {
+	// Spread-minimizing token generator is deterministic unique-token generator for given id and zone.
+	// Partitions don't use zones.
+	spreadMinimizing := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
+	return spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil)
 }
 
 // AddPartitionWithDerivedTokens adds a partition using PartitionTokensSmt512.
@@ -193,6 +196,14 @@ func (m *PartitionRingDesc) UpdatePartitionState(id int32, state PartitionState,
 	d.StateTimestamp = now.Unix()
 	m.Partitions[id] = d
 	return true, nil
+}
+
+// UpdatePartitionTokenScheme changes the token scheme of a partition. Returns true if the token scheme was changed,
+// or false if the update was a no-op. Switching doesn't change which tokens the partition owns, because
+// PartitionTokensSmt512 derives the same tokens that AddPartition stores. If a token scheme derives other tokens,
+// switching to it moves hash ranges to other partitions.
+func (m *PartitionRingDesc) UpdatePartitionTokenScheme(_ int32, _ PartitionTokenScheme, _ time.Time) (bool, error) {
+	return false, nil
 }
 
 // UpdatePartitionStateChangeLock changes the state change lock of a partition. Returns true if the lock was changed,

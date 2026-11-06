@@ -510,16 +510,33 @@ func TestPartitionInstanceLifecycler_CreatePartition(t *testing.T) {
 	}
 }
 
-// The option only affects partitions that the lifecycler creates.
-func TestPartitionInstanceLifecycler_KeepExistingPartition(t *testing.T) {
-	for name, existing := range map[string]PartitionDesc{
-		"stored tokens":  {Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: []uint32{1, 2}},
-		"derived tokens": {Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512},
+func TestPartitionInstanceLifecycler_UpdateExistingPartitionTokenScheme(t *testing.T) {
+	stored := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: generateStoredPartitionTokens(1)}
+	derived := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512}
+
+	for _, tc := range []struct {
+		name            string
+		existing        PartitionDesc
+		useDerived      bool
+		expected        PartitionDesc
+		expectedUpdated bool
+	}{
+		{name: "stored tokens are kept", existing: stored, useDerived: false, expected: stored},
+		{name: "derived tokens are kept", existing: derived, useDerived: true, expected: derived},
+		{name: "stored tokens are converted to derived tokens", existing: stored, useDerived: true, expected: derived, expectedUpdated: true},
+		{name: "derived tokens are converted to stored tokens", existing: derived, useDerived: false, expected: stored, expectedUpdated: true},
 	} {
-		for _, derived := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/derived=%t", name, derived), func(t *testing.T) {
-				desc := createPartitionAndRegisterOwnerForTest(t, &existing, derivedTokensLifecyclerConfig(1, derived))
-				assert.Equal(t, existing, desc.Partitions[1])
+		for _, createOnStartup := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/create on startup=%t", tc.name, createOnStartup), func(t *testing.T) {
+				desc := startPartitionLifecyclerForTest(t, &tc.existing, derivedTokensLifecyclerConfig(1, tc.useDerived), createOnStartup)
+				actual := desc.Partitions[1]
+				if tc.expectedUpdated {
+					assert.NotZero(t, actual.TokenSchemeTimestamp)
+				} else {
+					assert.Zero(t, actual.TokenSchemeTimestamp)
+				}
+				actual.TokenSchemeTimestamp = 0
+				assert.Equal(t, tc.expected, actual)
 				assert.Equal(t, int32(1), desc.Owners["instance-1"].OwnedPartition)
 			})
 		}
@@ -529,7 +546,7 @@ func TestPartitionInstanceLifecycler_KeepExistingPartition(t *testing.T) {
 func derivedTokensLifecyclerConfig(partitionID int32, derived bool) PartitionInstanceLifecyclerConfig {
 	cfg := createTestPartitionInstanceLifecyclerConfig(partitionID, "instance-1")
 	cfg.CreatePartitionsWithDerivedTokens = derived
-	// Partitions 0-7 can be created with derived tokens.
+	// Partitions 0-7 can use derived tokens.
 	cfg.MaxDerivedTokenPartitions = 8
 	return cfg
 }
@@ -537,6 +554,12 @@ func derivedTokensLifecyclerConfig(partitionID int32, derived bool) PartitionIns
 // createPartitionAndRegisterOwnerForTest runs the lifecycler against a ring that contains existing, if set,
 // and returns the resulting ring.
 func createPartitionAndRegisterOwnerForTest(t *testing.T, existing *PartitionDesc, cfg PartitionInstanceLifecyclerConfig) *PartitionRingDesc {
+	return startPartitionLifecyclerForTest(t, existing, cfg, true)
+}
+
+// startPartitionLifecyclerForTest runs the lifecycler startup against a ring that contains existing, if set,
+// and returns the resulting ring.
+func startPartitionLifecyclerForTest(t *testing.T, existing *PartitionDesc, cfg PartitionInstanceLifecyclerConfig, createOnStartup bool) *PartitionRingDesc {
 	t.Helper()
 	ctx := context.Background()
 	store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
@@ -550,7 +573,8 @@ func createPartitionAndRegisterOwnerForTest(t *testing.T, existing *PartitionDes
 	}
 	lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, log.NewNopLogger(), nil)
 	require.NoError(t, err)
-	require.NoError(t, lifecycler.createPartitionAndRegisterOwner(ctx))
+	lifecycler.SetCreatePartitionOnStartup(createOnStartup)
+	require.NoError(t, lifecycler.starting(ctx))
 
 	return getPartitionRingFromStore(t, store, ringKey)
 }

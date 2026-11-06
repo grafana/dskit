@@ -33,12 +33,13 @@ type PartitionInstanceLifecyclerConfig struct {
 	// PartitionID is the ID of the partition managed by the lifecycler. It must not be negative.
 	PartitionID int32
 
-	// CreatePartitionsWithDerivedTokens creates new partitions using PartitionTokensSmt512, without stored tokens.
+	// CreatePartitionsWithDerivedTokens creates the partition with PartitionTokensSmt512, without stored tokens,
+	// instead of PartitionTokensStored. At startup, if the partition already exists, the lifecycler switches it to
+	// the configured token scheme, so disabling it switches a derived partition back to stored tokens.
 	// When enabled, PartitionID must be below MaxDerivedTokenPartitions.
-	// An existing partition keeps its token scheme.
 	CreatePartitionsWithDerivedTokens bool
 
-	// MaxDerivedTokenPartitions is the number of partition IDs, from 0, that can be created with derived tokens.
+	// MaxDerivedTokenPartitions is the number of partition IDs, from 0, that can use derived tokens.
 	MaxDerivedTokenPartitions int32
 
 	// InstanceID is the ID of the instance managed by the lifecycler.
@@ -97,7 +98,7 @@ func NewPartitionInstanceLifecycler(cfg PartitionInstanceLifecyclerConfig, ringN
 	}
 
 	if cfg.CreatePartitionsWithDerivedTokens && cfg.PartitionID >= cfg.MaxDerivedTokenPartitions {
-		return nil, fmt.Errorf("invalid partition ID %d: must be below the maximum derived token partitions (%d) when creating partitions with derived tokens", cfg.PartitionID, cfg.MaxDerivedTokenPartitions)
+		return nil, fmt.Errorf("invalid partition ID %d: must be below the maximum derived token partitions (%d) when using derived tokens", cfg.PartitionID, cfg.MaxDerivedTokenPartitions)
 	}
 
 	if cfg.PollingInterval == 0 {
@@ -312,6 +313,8 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 				ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
 			}
 			changed = true
+		} else if l.updatePartitionTokenScheme(ring, now) {
+			changed = true
 		}
 
 		// Ensure the instance is added as partition owner.
@@ -363,8 +366,30 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 
 	// Ensure the instance is added as partition owner.
 	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-		return ring.AddOrUpdateOwner(l.partitionOwnerID(), OwnerActive, l.cfg.PartitionID, time.Now()), nil
+		now := time.Now()
+		changed := l.updatePartitionTokenScheme(ring, now)
+		if ring.AddOrUpdateOwner(l.partitionOwnerID(), OwnerActive, l.cfg.PartitionID, now) {
+			changed = true
+		}
+		return changed, nil
 	})
+}
+
+// updatePartitionTokenScheme switches the existing partition to the configured token scheme. An error is logged
+// instead of failing the startup, because the partition keeps working with its current token scheme.
+func (l *PartitionInstanceLifecycler) updatePartitionTokenScheme(ring *PartitionRingDesc, now time.Time) bool {
+	from := ring.Partitions[l.cfg.PartitionID].TokenScheme
+	to := PartitionTokensStored
+	if l.cfg.CreatePartitionsWithDerivedTokens {
+		to = PartitionTokensSmt512
+	}
+	changed, err := ring.UpdatePartitionTokenScheme(l.cfg.PartitionID, to, now)
+	if err != nil {
+		level.Warn(l.logger).Log("msg", "failed to update partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", from, "to_token_scheme", to, "err", err)
+	} else if changed {
+		level.Info(l.logger).Log("msg", "updated partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", from, "to_token_scheme", to)
+	}
+	return changed
 }
 
 // reconcileOwnedPartition reconciles the owned partition.

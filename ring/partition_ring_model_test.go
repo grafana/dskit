@@ -407,7 +407,7 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 				Owners: map[string]OwnerDesc{},
 			},
 		},
-		"token scheme and tokens are not merged": {
+		"token scheme and tokens are not merged without a newer token scheme timestamp": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
 					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
@@ -432,6 +432,142 @@ func TestPartitionRingDesc_Merge_UpdatePartition(t *testing.T) {
 				},
 				Owners: map[string]OwnerDesc{},
 			},
+		},
+		"token scheme and tokens changed with newer token scheme timestamp": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+		},
+		"token scheme and tokens reverted with newer token scheme timestamp": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, TokenScheme: PartitionTokensStored, TokenSchemeTimestamp: 30, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, TokenScheme: PartitionTokensStored, TokenSchemeTimestamp: 30, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, TokenScheme: PartitionTokensStored, TokenSchemeTimestamp: 30, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+		},
+		"token scheme and tokens changed with older token scheme timestamp": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, TokenScheme: PartitionTokensStored, TokenSchemeTimestamp: 30, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, TokenScheme: PartitionTokensStored, TokenSchemeTimestamp: 30, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: nil,
+		},
+		"local derived token scheme is kept with equal token scheme timestamp": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, TokenScheme: PartitionTokensStored, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: nil,
+		},
+		"derived token scheme is kept when an incoming stored token scheme has no token scheme timestamp": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: nil,
+		},
+		"local stored token scheme is kept with equal token scheme timestamp": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, TokenScheme: PartitionTokensStored, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, TokenScheme: PartitionTokensStored, TokenSchemeTimestamp: 20, State: PartitionActive, StateTimestamp: 10},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: nil,
 		},
 	}
 
@@ -1127,6 +1263,59 @@ func TestPartitionRingDesc_UpdatePartitionState(t *testing.T) {
 	})
 }
 
+func TestPartitionRingDesc_UpdatePartitionTokenScheme(t *testing.T) {
+	now := time.Now()
+
+	t.Run("should switch stored tokens to derived tokens and back", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(1, PartitionActive, now)
+		storedTokens := desc.Partitions[1].Tokens
+
+		changed, err := desc.UpdatePartitionTokenScheme(1, PartitionTokensSmt512, now.Add(time.Second))
+		require.NoError(t, err)
+		assert.True(t, changed)
+		assert.Equal(t, PartitionTokensSmt512, desc.Partitions[1].TokenScheme)
+		assert.Empty(t, desc.Partitions[1].Tokens)
+		assert.Equal(t, now.Add(time.Second).Unix(), desc.Partitions[1].TokenSchemeTimestamp)
+
+		changed, err = desc.UpdatePartitionTokenScheme(1, PartitionTokensStored, now.Add(2*time.Second))
+		require.NoError(t, err)
+		assert.True(t, changed)
+		assert.Equal(t, PartitionTokensStored, desc.Partitions[1].TokenScheme)
+		assert.Equal(t, storedTokens, desc.Partitions[1].Tokens)
+		assert.Equal(t, now.Add(2*time.Second).Unix(), desc.Partitions[1].TokenSchemeTimestamp)
+	})
+
+	t.Run("should be a no-op if the token scheme is unchanged", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		desc.AddPartitionWithDerivedTokens(1, PartitionActive, now)
+
+		changed, err := desc.UpdatePartitionTokenScheme(1, PartitionTokensSmt512, now.Add(time.Second))
+		require.NoError(t, err)
+		assert.False(t, changed)
+		assert.Zero(t, desc.Partitions[1].TokenSchemeTimestamp)
+	})
+
+	t.Run("should be a no-op if the partition does not exist", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+
+		changed, err := desc.UpdatePartitionTokenScheme(1, PartitionTokensSmt512, now)
+		require.NoError(t, err)
+		assert.False(t, changed)
+		assert.False(t, desc.HasPartition(1))
+	})
+
+	t.Run("should return error for an unknown token scheme", func(t *testing.T) {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(1, PartitionActive, now)
+
+		changed, err := desc.UpdatePartitionTokenScheme(1, 99, now.Add(time.Second))
+		require.Error(t, err)
+		assert.False(t, changed)
+		assert.Equal(t, PartitionTokensStored, desc.Partitions[1].TokenScheme)
+	})
+}
+
 func TestPartitionRingDesc_PartitionOwnersCountUpdatedBefore(t *testing.T) {
 	now := time.Now()
 
@@ -1315,6 +1504,51 @@ func TestPartitionRingDesc_Merge_FutureTimestamps(t *testing.T) {
 				Owners: map[string]OwnerDesc{},
 			},
 		},
+		"incoming token scheme too far in the future is ignored": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: valid, TokenSchemeTimestamp: valid},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, State: PartitionActive, StateTimestamp: valid, TokenSchemeTimestamp: skewed},
+				},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: valid, TokenSchemeTimestamp: valid},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: nil,
+		},
+		"local token scheme too far in the future is replaced by an older incoming one": {
+			local: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, TokenScheme: PartitionTokensSmt512, State: PartitionActive, StateTimestamp: valid, TokenSchemeTimestamp: skewed},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			incoming: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: valid, TokenSchemeTimestamp: valid},
+				},
+			},
+			expectedUpdatedLocal: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: valid, TokenSchemeTimestamp: valid},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+			expectedChange: &PartitionRingDesc{
+				Partitions: map[int32]PartitionDesc{
+					1: {Id: 1, Tokens: []uint32{1, 2, 3}, State: PartitionActive, StateTimestamp: valid, TokenSchemeTimestamp: valid},
+				},
+				Owners: map[string]OwnerDesc{},
+			},
+		},
 		"local partition too far in the future is not replaced by itself": {
 			local: &PartitionRingDesc{
 				Partitions: map[int32]PartitionDesc{
@@ -1443,7 +1677,7 @@ func TestPartitionRingDesc_TokenSchemeSurvivesEncodeAndClone(t *testing.T) {
 	for _, scheme := range []PartitionTokenScheme{PartitionTokensStored, PartitionTokensSmt512, 99} {
 		t.Run(fmt.Sprint(scheme), func(t *testing.T) {
 			desc := NewPartitionRingDesc()
-			desc.Partitions[1] = PartitionDesc{Id: 1, Tokens: []uint32{10}, TokenScheme: scheme, State: PartitionActive, StateTimestamp: 1}
+			desc.Partitions[1] = PartitionDesc{Id: 1, Tokens: []uint32{10}, TokenScheme: scheme, TokenSchemeTimestamp: 2, State: PartitionActive, StateTimestamp: 1}
 			encoded, err := GetPartitionRingCodec().Encode(desc)
 			require.NoError(t, err)
 			decoded, err := GetPartitionRingCodec().Decode(encoded)

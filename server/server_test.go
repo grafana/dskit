@@ -135,6 +135,101 @@ func TestDefaultAddresses(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestUnixNetwork(t *testing.T) {
+	testSockDir, err := os.MkdirTemp("", "sock")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(testSockDir))
+	})
+
+	var cfg Config
+	setAutoAssignedPorts(NetworkUnix, &cfg)
+	cfg.HTTPListenAddress = filepath.Join(testSockDir, "http.sock")
+	cfg.GRPCListenAddress = filepath.Join(testSockDir, "grpc.sock")
+
+	t.Run("unix_http", func(t *testing.T) {
+		var level log.Level
+		require.NoError(t, level.Set("info"))
+		cfg.LogLevel = level
+		cfg.MetricsNamespace = "testing_http_unix"
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		require.NoError(t, srv.httpListener.Close())
+		require.NotNil(t, <-errChan)
+
+		// So that address is freed for further tests.
+		srv.GRPC.Stop()
+	})
+
+	t.Run("unix_http", func(t *testing.T) {
+		cfg.MetricsNamespace = "testing_grpc_unix"
+		srv, err := New(cfg)
+		require.NoError(t, err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- srv.Run()
+		}()
+
+		require.NoError(t, srv.grpcListener.Close())
+		require.NotNil(t, <-errChan)
+	})
+}
+
+// TestUnixNetworkSocketPath asserts the listeners bind the configured socket
+// paths verbatim. The pre-fix code built every address with net.JoinHostPort,
+// so a unix listener silently bound "<path>:<port>" (Go binds the suffixed
+// path without error) — the listener-closing test above passes with the bug.
+func TestUnixNetworkSocketPath(t *testing.T) {
+	testSockDir := t.TempDir()
+
+	httpSock := filepath.Join(testSockDir, "http.sock")
+	grpcSock := filepath.Join(testSockDir, "grpc.sock")
+
+	var level log.Level
+	require.NoError(t, level.Set("info"))
+
+	var cfg Config
+	cfg.LogLevel = level
+	cfg.HTTPListenNetwork = NetworkUnix
+	cfg.HTTPListenAddress = httpSock
+	cfg.HTTPListenPort = 3100
+	cfg.GRPCListenNetwork = NetworkUnix
+	cfg.GRPCListenAddress = grpcSock
+	cfg.GRPCListenPort = 9096
+	cfg.MetricsNamespace = "test_unix_socket_path"
+
+	srv, err := New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(srv.Stop)
+	go func() { _ = srv.Run() }()
+
+	require.Equal(t, httpSock, srv.httpListener.Addr().String())
+	require.Equal(t, grpcSock, srv.grpcListener.Addr().String())
+
+	// Serve a real request over the unix socket.
+	srv.HTTP.HandleFunc("/ping", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("pong"))
+	})
+	httpc := &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, NetworkUnix, httpSock)
+		},
+	}}
+	resp, err := httpc.Get("http://localhost/ping")
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, "pong", string(body))
+}
+
 func TestErrorInstrumentationMiddleware(t *testing.T) {
 	newRegistry := prometheus.NewRegistry()
 	prometheus.DefaultRegisterer = newRegistry

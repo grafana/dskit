@@ -87,6 +87,55 @@ func TestPartitionRing_ShuffleShard_SubringIndexes(t *testing.T) {
 	}
 }
 
+// TestPartitionRing_ShuffleShard_SharesAllActiveSubring checks that every shard covering all Active
+// partitions is one subring per ring, whatever the tenant or size, and that a subring's own full
+// shard covers only the subring, not its parent.
+func TestPartitionRing_ShuffleShard_SharesAllActiveSubring(t *testing.T) {
+	tokens, err := generatePartitionTokens(15)
+	require.NoError(t, err)
+	desc := NewPartitionRingDesc()
+	var active []int32
+	for id := int32(0); id < 16; id++ {
+		// Pending and Inactive partitions keep the all-Active shard from being the whole ring, which
+		// is when building it costs the most.
+		state := PartitionActive
+		switch {
+		case id >= 14:
+			state = PartitionInactive
+		case id >= 12:
+			state = PartitionPending
+		default:
+			active = append(active, id)
+		}
+		desc.Partitions[id] = PartitionDesc{Id: id, State: state, Tokens: tokens[id]}
+		desc.Owners[fmt.Sprintf("owner-%d", id)] = OwnerDesc{OwnedPartition: id}
+	}
+	r, err := NewPartitionRingWithOptions(*desc, DefaultPartitionRingOptions())
+	require.NoError(t, err)
+
+	// Size 0 is the default (every partition); sizes at or above the Active count select the same.
+	full, err := r.ShuffleShard("tenant-a", 0)
+	require.NoError(t, err)
+	assert.Equal(t, active, full.PartitionIDs())
+	for _, req := range []struct {
+		tenant string
+		size   int
+	}{{"tenant-b", 0}, {"tenant-c", len(active)}, {"tenant-d", 100}} {
+		shard, err := r.ShuffleShard(req.tenant, req.size)
+		require.NoError(t, err)
+		assert.Same(t, full, shard, "tenant %s, size %d", req.tenant, req.size)
+	}
+
+	// A shard of a quarter of the ring or more is filtered from the parent's indexes, copying the
+	// parent ring; its own full shard must still be built from its partitions alone.
+	sub, err := r.ShuffleShard("tenant-e", 6)
+	require.NoError(t, err)
+	require.Len(t, sub.PartitionIDs(), 6)
+	nested, err := sub.ShuffleShard("nested", 0)
+	require.NoError(t, err)
+	assert.Equal(t, sub.PartitionIDs(), nested.PartitionIDs())
+}
+
 func assertPartitionRingSubringIndexes(t *testing.T, expected, actual *PartitionRing) {
 	t.Helper()
 	assert.Equal(t, expected.ringTokens, actual.ringTokens)
@@ -125,6 +174,8 @@ func BenchmarkPartitionRing_ShuffleShardUncached(b *testing.B) {
 			b.Run(fmt.Sprintf("derived=%t/size=%d", derived, size), func(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
+					// Full shards are memoized per ring; reset the memo so each iteration builds one.
+					r.allActive = &partitionRingAllActive{}
 					_, err := r.shuffleShard("tenant", size, 0, time.Time{})
 					if err != nil {
 						b.Fatal(err)

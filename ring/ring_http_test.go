@@ -239,6 +239,38 @@ func TestRingPageHandler_handle(t *testing.T) {
 			"<td>", `1 \(Component X\): v3`, "<br/>", "3: v5", "<br/>", "</td>",
 		}, `\s*`))), recorder.Body.String())
 	})
+
+	t.Run("displays instances without links by default", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		handler.handle(recorder, httptest.NewRequest(http.MethodGet, "/ring", nil))
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.NotContains(t, recorder.Body.String(), "<a href=")
+	})
+
+	instanceLinkHandler := newRingPageHandler(&ring, 10*time.Second, StatusPageConfig{
+		InstanceLink: func(instanceID string, instance InstanceDesc) string {
+			if instanceID == "2" {
+				return ""
+			}
+			return "http://" + instance.Addr + "/instance/" + instanceID
+		},
+	})
+
+	t.Run("links instances when InstanceLink is set", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		instanceLinkHandler.handle(recorder, httptest.NewRequest(http.MethodGet, "/ring", nil))
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", `<a href="http://addr-a/instance/1">1</a>`, "</td>",
+			"<td>", "zone-a", "</td>",
+		}, `\s*`))), recorder.Body.String())
+		assert.Regexp(t, regexp.MustCompile(fmt.Sprintf("(?m)%s", strings.Join([]string{
+			"<td>", "2", "</td>",
+			"<td>", "zone-b", "</td>",
+		}, `\s*`))), recorder.Body.String())
+	})
 }
 
 type fakeRingAccess struct {

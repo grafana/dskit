@@ -11,7 +11,9 @@ import (
 	"fmt"
 	mathRand "math/rand"
 	"net"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -636,58 +638,49 @@ func BenchmarkStreamTracker(b *testing.B) {
 	})
 }
 
+// BenchmarkStreamTrackerConnectionsSimulation exercises StreamTracker from many goroutines at once.
+// Each goroutine runs OpenStream/CloseStream on randomly chosen connections, with
+// occasional MaxStreams calls (as a metrics scrape would make) mixed in.
 func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
-	tracker := NewStreamTracker(prometheus.NewDesc(
-		"grpc_streams_by_conn_max",
-		"The current number of concurrent streams in the connection with the most concurrent streams.",
-		[]string{},
-		prometheus.Labels{},
-	))
+	const maxStreamsEveryN = 1000 // One MaxStreams call per this many bursts.
 
-	for i := 0; i < b.N; i++ {
-		numRoutines := 10000
+	for _, numConns := range []int{1, 100, 1000} {
+		b.Run(fmt.Sprintf("conns=%d", numConns), func(b *testing.B) {
+			tracker := NewStreamTracker(prometheus.NewDesc(
+				"grpc_streams_by_conn_max",
+				"The current number of concurrent streams in the connection with the most concurrent streams.",
+				[]string{},
+				prometheus.Labels{},
+			))
+			connIDs := make([]string, numConns)
+			for i := range connIDs {
+				connIDs[i] = fmt.Sprintf("conn%d", i)
+			}
 
-		wg := sync.WaitGroup{}
-		wg.Add(numRoutines)
-		for i := 0; i < numRoutines; i++ {
-			go func(i int) {
-				defer wg.Done()
+			var workers atomic.Int64
+			b.SetParallelism(1000) // Increase the chance of contention.
+			b.RunParallel(func(pb *testing.PB) {
+				// Per-goroutine source, to avoid contending on the global one.
+				rnd := mathRand.New(mathRand.NewSource(workers.Add(1)))
+				for n := 0; pb.Next(); n++ {
+					connID := connIDs[rnd.Intn(numConns)]
+					tracker.OpenStream(connID)
 
-				// Open 3, close 3
-				connID := fmt.Sprintf("conn%d", i%10)
-				tracker.OpenStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.OpenStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.CloseStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.OpenStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.CloseStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.CloseStream(connID)
-				time.Sleep(time.Millisecond)
-				tracker.OpenStream(connID)
-				tracker.OpenStream(connID)
-				tracker.CloseStream(connID)
-				tracker.CloseStream(connID)
-			}(i)
-		}
-
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < 1000; i++ {
-					tracker.MaxStreams()
+					if n%maxStreamsEveryN == 0 {
+						if got := tracker.MaxStreams(); got < 0 {
+							b.Errorf("MaxStreams() = %d, want >= 0", got)
+							return
+						}
+					}
+					// Let other goroutines interleave while streams are open.
+					runtime.Gosched()
+					tracker.CloseStream(connID)
 				}
-			}()
-		}
+			})
 
-		wg.Wait()
-
-		if tracker.MaxStreams() != 0 {
-			b.Fatalf("MaxStreams() = %d, want 0", tracker.MaxStreams())
-		}
+			if got := tracker.MaxStreams(); got != 0 {
+				b.Fatalf("MaxStreams() = %d, want 0", got)
+			}
+		})
 	}
 }

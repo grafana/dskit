@@ -684,3 +684,29 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 		})
 	}
 }
+
+func TestGrpcStreamTrackerPrunesIdleConnections(t *testing.T) {
+	tracker := NewStreamTracker(prometheus.NewDesc("grpc_streams_by_conn_max", "", nil, nil))
+
+	tracker.OpenStream("idle")
+	tracker.CloseStream("idle")
+	tracker.OpenStream("busy")
+
+	// Idle entries are retained, and not pruned yet.
+	tracker.OpenStream("new1")
+	require.Contains(t, tracker.connMap, "idle")
+
+	// Now open/close a bunch of extra connections to trigger pruning.
+	for i := range streamTrackerPruneGrowth {
+		tracker.OpenStream(fmt.Sprintf("extra%d", i))
+		tracker.CloseStream(fmt.Sprintf("extra%d", i))
+	}
+
+	tracker.OpenStream("new2")
+
+	// Only the non-idle connections should remain.
+	require.NotContains(t, tracker.connMap, "idle")
+	require.Contains(t, tracker.connMap, "busy")
+	require.Contains(t, tracker.connMap, "new1")
+	require.Contains(t, tracker.connMap, "new2")
+}

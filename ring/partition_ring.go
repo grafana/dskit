@@ -412,6 +412,66 @@ func (r *PartitionRing) allActivePartitions() (*PartitionRing, error) {
 	return r.withPartitions(partitions)
 }
 
+// inheritShards makes r reuse prev's shuffle-shard cache and all-Active subring when no shard can
+// differ between the two rings, that is, when they differ only in Pending partitions and their
+// owners. Creating a partition and registering its owners are such updates.
+func (r *PartitionRing) inheritShards(prev *PartitionRing) {
+	// Shards, with or without lookback, never include Pending partitions or their owners. And the
+	// ring walk skips a Pending partition's tokens, so it stops where it would without them.
+	if prev == nil || prev.allActive == nil || !sameExceptPending(&prev.desc, &r.desc) {
+		return
+	}
+	r.shuffleShardCache = prev.shuffleShardCache
+	r.allActive = prev.allActive
+}
+
+// sameExceptPending reports whether a and b hold the same non-Pending partitions and the same
+// owners of them.
+func sameExceptPending(a, b *PartitionRingDesc) bool {
+	count := 0
+	for id, pa := range a.Partitions {
+		if pa.IsPending() {
+			continue
+		}
+		count++
+		pb, ok := b.Partitions[id]
+		if !ok || !pa.Equal(&pb) {
+			return false
+		}
+	}
+	for _, pb := range b.Partitions {
+		if !pb.IsPending() {
+			count--
+		}
+	}
+	if count != 0 {
+		return false
+	}
+
+	// The partitions match, so an owner belongs to a non-Pending partition in a exactly when it does in b.
+	ownsNonPending := func(o OwnerDesc) bool {
+		p, ok := a.Partitions[o.OwnedPartition]
+		return ok && !p.IsPending()
+	}
+	count = 0
+	for id, oa := range a.Owners {
+		if !ownsNonPending(oa) {
+			continue
+		}
+		count++
+		ob, ok := b.Owners[id]
+		if !ok || !oa.Equal(&ob) {
+			return false
+		}
+	}
+	for _, ob := range b.Owners {
+		if ownsNonPending(ob) {
+			count--
+		}
+	}
+	return count == 0
+}
+
 // withPartitions builds a subring from this immutable snapshot.
 func (r *PartitionRing) withPartitions(partitions map[int32]struct{}) (*PartitionRing, error) {
 	// Small shards are cheaper to build from their own tokens than by scanning the parent ring.

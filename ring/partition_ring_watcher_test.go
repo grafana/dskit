@@ -203,6 +203,7 @@ func setPartitionRingDesc(t *testing.T, store kv.Client, desc *PartitionRingDesc
 // owners register, then it switches to Active. Steps are batched across partitions, as when many
 // ingesters start at once, so 4k descriptors follow the first.
 func partitionCreationDescs(tb testing.TB, active, k int) []*PartitionRingDesc {
+	tb.Helper()
 	tokens, err := generatePartitionTokens(int32(active + k - 1))
 	require.NoError(tb, err)
 	start := NewPartitionRingDesc()
@@ -244,17 +245,22 @@ func partitionCreationDescs(tb testing.TB, active, k int) []*PartitionRingDesc {
 	return descs
 }
 
-// TestPartitionRingWatcher_ShardsThroughPartitionCreation checks that shards served while partitions
+// TestPartitionRingWatcher_ShardReuseDuringPartitionCreation checks that shards served while partitions
 // are created match shards of a freshly built ring after every update, and that updates touching only
-// Pending partitions and their owners keep serving the previously built shards.
-func TestPartitionRingWatcher_ShardsThroughPartitionCreation(t *testing.T) {
+// Pending partitions and their owners keep serving the previously built shards, with and without
+// lookback, without adding cache entries.
+func TestPartitionRingWatcher_ShardReuseDuringPartitionCreation(t *testing.T) {
 	// Sizes cover the default (0, every partition), small shards, and a shard of a quarter of the
 	// ring or more, which is filtered from the parent ring rather than built from its own tokens.
 	sizes := []int{0, 1, 5, 12}
 	descs := partitionCreationDescs(t, 40, 4)
 	watcher := NewPartitionRingWatcherWithOptions("test", "test", nil, DefaultPartitionRingOptions(), log.NewNopLogger(), nil)
-	now := time.Unix(1000, 0)
-	var prev []*PartitionRing
+	// The hour of lookback starts at 25: the starting partitions (state changed at 10) are outside
+	// it, so lookback shards of different sizes differ, and the created ones (Active at 30) are
+	// inside it, so their activation extends shards.
+	const lookback = time.Hour
+	now := time.Unix(3625, 0)
+	var prev, prevLookback []*PartitionRing
 	for i, desc := range descs {
 		require.NoError(t, watcher.updatePartitionRing(desc))
 		fresh, err := NewPartitionRingWithOptions(*desc, DefaultPartitionRingOptions())
@@ -262,6 +268,7 @@ func TestPartitionRingWatcher_ShardsThroughPartitionCreation(t *testing.T) {
 		pendingOnly := i > 0 && sameExceptPending(descs[i-1], desc)
 
 		shards := make([]*PartitionRing, len(sizes))
+		lookbackShards := make([]*PartitionRing, len(sizes))
 		for j, size := range sizes {
 			tenant := fmt.Sprintf("tenant-%d", j)
 			got, err := watcher.PartitionRing().ShuffleShard(tenant, size)
@@ -274,13 +281,27 @@ func TestPartitionRingWatcher_ShardsThroughPartitionCreation(t *testing.T) {
 			}
 			shards[j] = got
 
-			gotLookback, err := watcher.PartitionRing().ShuffleShardWithLookback(tenant, size, time.Hour, now)
+			gotLookback, err := watcher.PartitionRing().ShuffleShardWithLookback(tenant, size, lookback, now)
 			require.NoError(t, err)
-			wantLookback, err := fresh.ShuffleShardWithLookback(tenant, size, time.Hour, now)
+			wantLookback, err := fresh.ShuffleShardWithLookback(tenant, size, lookback, now)
 			require.NoError(t, err)
 			require.Equal(t, wantLookback.PartitionIDs(), gotLookback.PartitionIDs(), "update %d, size %d, with lookback", i, size)
+			if pendingOnly {
+				if size > 0 {
+					// No partition is inside lookback before the first activation, so a lookback shard
+					// holds exactly its size; otherwise every size would select the same partitions.
+					require.Len(t, gotLookback.PartitionIDs(), size, "update %d: lookback fixture", i)
+				}
+				require.Same(t, prevLookback[j], gotLookback, "update %d, size %d: lookback shard rebuilt after a Pending-only update", i, size)
+			}
+			lookbackShards[j] = gotLookback
 		}
-		prev = shards
+		// Each tenant requests one size, so more entries would mean a Pending-only update changed a
+		// cache key. Without lookback, Same can't catch that, because a miss returns the shared subring.
+		cache := watcher.PartitionRing().shuffleShardCache
+		require.Equal(t, len(sizes), cache.cacheWithoutLookback.len(), "update %d: entries without lookback", i)
+		require.Equal(t, len(sizes), cache.cacheWithLookback.len(), "update %d: entries with lookback", i)
+		prev, prevLookback = shards, lookbackShards
 	}
 }
 
@@ -310,7 +331,7 @@ func BenchmarkPartitionRingWatcher_PartitionCreation(b *testing.B) {
 						}
 					}
 				}
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					// Start from a ring whose shards are all cached, as in steady state.
 					b.StopTimer()
 					require.NoError(b, watcher.updatePartitionRing(descs[0]))

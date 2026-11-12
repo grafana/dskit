@@ -38,7 +38,15 @@ func TestPartitionRing_ShuffleShardCache(t *testing.T) {
 								require.NoError(t, err)
 								require.Equal(t, expected, first.PartitionIDs())
 
-								sizes := []int{math.MinInt, -1, 0, r.PartitionsCount(), r.PartitionsCount() + 1, math.MaxInt}
+								// Shards never include Pending partitions, so sizes from the non-Pending count up
+								// must share the entry too.
+								nonPending := 0
+								for _, state := range tc.states {
+									if state != PartitionPending {
+										nonPending++
+									}
+								}
+								sizes := []int{math.MinInt, -1, 0, nonPending, r.PartitionsCount(), r.PartitionsCount() + 1, math.MaxInt}
 								for size := r.PartitionsCount() + 2; size < r.PartitionsCount()+34; size++ {
 									sizes = append(sizes, size)
 								}

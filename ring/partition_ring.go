@@ -56,6 +56,10 @@ type PartitionRing struct {
 	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
 	activePartitionsCount int
 
+	// nonPendingPartitionsCount is a saved count of non-Pending partitions, the most a shard can
+	// include. It keys default-size shards; see normalizeShuffleShardSize.
+	nonPendingPartitionsCount int
+
 	// maxPartitionID is the highest partition ID in the ring, or -1 if there are no partitions.
 	maxPartitionID int32
 
@@ -105,17 +109,18 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 	}
 
 	return &PartitionRing{
-		desc:                  desc,
-		ringTokens:            ringTokens,
-		partitionByToken:      partitionByToken,
-		ringPartitionIDs:      ringPartitionIDs,
-		ringPartitionActive:   ringPartitionActive,
-		ownersByPartition:     desc.ownersByPartition(),
-		activePartitionsCount: desc.activePartitionsCount(),
-		maxPartitionID:        desc.maxPartitionID(),
-		shuffleShardCache:     shuffleShardCache,
-		allActive:             &partitionRingAllActive{},
-		opts:                  opts,
+		desc:                      desc,
+		ringTokens:                ringTokens,
+		partitionByToken:          partitionByToken,
+		ringPartitionIDs:          ringPartitionIDs,
+		ringPartitionActive:       ringPartitionActive,
+		ownersByPartition:         desc.ownersByPartition(),
+		activePartitionsCount:     desc.activePartitionsCount(),
+		nonPendingPartitionsCount: desc.nonPendingPartitionsCount(),
+		maxPartitionID:            desc.maxPartitionID(),
+		shuffleShardCache:         shuffleShardCache,
+		allActive:                 &partitionRingAllActive{},
+		opts:                      opts,
 	}, nil
 }
 
@@ -277,10 +282,13 @@ func (r *PartitionRing) ShuffleShardWithLookback(identifier string, size int, lo
 }
 
 // normalizeShuffleShardSize gives equivalent out-of-range requests the same cache key.
-// The total partition count preserves the sharding algorithm's filtering and lookback behavior.
+// Shards never include Pending partitions, so every size from the non-Pending partition count up
+// selects the same partitions, filtering and lookback included. Keying them by that count, rather
+// than by all partitions, also keeps the key stable while partitions are added Pending, so a cache
+// inherited across such updates (see inheritShards) still hits.
 func (r *PartitionRing) normalizeShuffleShardSize(size int) int {
-	if size <= 0 || size >= len(r.desc.Partitions) {
-		return len(r.desc.Partitions)
+	if size <= 0 || size >= r.nonPendingPartitionsCount {
+		return r.nonPendingPartitionsCount
 	}
 	return size
 }
@@ -417,7 +425,8 @@ func (r *PartitionRing) allActivePartitions() (*PartitionRing, error) {
 // owners. Creating a partition and registering its owners are such updates.
 func (r *PartitionRing) inheritShards(prev *PartitionRing) {
 	// Shards, with or without lookback, never include Pending partitions or their owners. And the
-	// ring walk skips a Pending partition's tokens, so it stops where it would without them.
+	// ring walk skips a Pending partition's tokens, so it stops where it would without them. Nor do
+	// cache keys change, because normalizeShuffleShardSize counts only non-Pending partitions.
 	if prev == nil || prev.allActive == nil || !sameExceptPending(&prev.desc, &r.desc) {
 		return
 	}
@@ -491,6 +500,7 @@ func (r *PartitionRing) withPartitions(partitions map[int32]struct{}) (*Partitio
 	subring.allActive = &partitionRingAllActive{}
 	subring.ownersByPartition = subring.desc.ownersByPartition()
 	subring.activePartitionsCount = subring.desc.activePartitionsCount()
+	subring.nonPendingPartitionsCount = subring.desc.nonPendingPartitionsCount()
 	subring.maxPartitionID = subring.desc.maxPartitionID()
 
 	// Every token index is immutable, so full shards can share the parent's indexes.

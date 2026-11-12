@@ -144,6 +144,7 @@ func assertPartitionRingSubringIndexes(t *testing.T, expected, actual *Partition
 	assert.Equal(t, expected.partitionByToken, actual.partitionByToken)
 	assert.Equal(t, expected.ownersByPartition, actual.ownersByPartition)
 	assert.Equal(t, expected.activePartitionsCount, actual.activePartitionsCount)
+	assert.Equal(t, expected.nonPendingPartitionsCount, actual.nonPendingPartitionsCount)
 	assert.Equal(t, expected.maxPartitionID, actual.maxPartitionID)
 }
 

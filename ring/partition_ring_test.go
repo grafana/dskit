@@ -1807,9 +1807,9 @@ func assertEquivalentPartitionRouting(t *testing.T, want, got *PartitionRing) {
 	}
 }
 
-// TestSameExceptPending pins which descriptor differences let a ring reuse the previous ring's
+// TestPartitionRingDesc_SameExceptPending pins which descriptor differences let a ring reuse the previous ring's
 // shuffle shards: only differences in Pending partitions and their owners, which no shard includes.
-func TestSameExceptPending(t *testing.T) {
+func TestPartitionRingDesc_SameExceptPending(t *testing.T) {
 	base := func() *PartitionRingDesc {
 		d := NewPartitionRingDesc()
 		d.Partitions[1] = PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 10, Tokens: Tokens{100, 200}}

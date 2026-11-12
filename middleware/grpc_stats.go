@@ -145,12 +145,14 @@ func NewStreamTracker(grpcConcurrentStreamsByConnMax *prometheus.Desc) *StreamTr
 	}
 }
 
-func (st *StreamTracker) createOrGetConnEntry(connID string) *atomic.Int32 {
+// openStreamSlow registers a stream on a connection with no entry, or whose entry was added since we last checked.
+// The increment happens under the write lock so that pruning can't remove the entry beforehand.
+func (st *StreamTracker) openStreamSlow(connID string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	got, ok := st.connMap[connID] // Do not overwrite new entries.
-	if ok {
-		return got
+	if conn, ok := st.connMap[connID]; ok { // Do not overwrite new entries.
+		conn.Inc()
+		return
 	}
 	// Prune the map occasionally, to avoid endless growth.
 	if len(st.connMap)-st.lastSize > streamTrackerPruneGrowth && time.Since(st.lastPrune) >= streamTrackerPruneInterval {
@@ -162,29 +164,29 @@ func (st *StreamTracker) createOrGetConnEntry(connID string) *atomic.Int32 {
 		st.lastPrune = time.Now()
 		st.lastSize = len(st.connMap) + 1
 	}
-	got = atomic.NewInt32(0)
-	st.connMap[connID] = got
-	return got
+	st.connMap[connID] = atomic.NewInt32(1)
 }
 
 func (st *StreamTracker) OpenStream(connID string) {
+	// Increment while holding the read lock, so pruning (which needs the write lock)
+	// can't remove the entry between the lookup and the increment.
 	st.mu.RLock()
 	conn, ok := st.connMap[connID]
+	if ok {
+		conn.Inc()
+	}
 	st.mu.RUnlock()
 	if !ok {
-		conn = st.createOrGetConnEntry(connID)
+		st.openStreamSlow(connID)
 	}
-	conn.Inc()
 }
 
 func (st *StreamTracker) CloseStream(connID string) {
 	st.mu.RLock()
-	conn := st.connMap[connID]
-	st.mu.RUnlock()
-	if conn == nil {
-		return
+	if conn := st.connMap[connID]; conn != nil {
+		conn.Dec()
 	}
-	conn.Dec()
+	st.mu.RUnlock()
 }
 
 // MaxStreams returns the number of streams in the connection with the most streams.

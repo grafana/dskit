@@ -197,3 +197,155 @@ func setPartitionRingDesc(t *testing.T, store kv.Client, desc *PartitionRingDesc
 		return desc, true, nil
 	}))
 }
+
+// partitionCreationDescs returns a ring of active partitions and the descriptors that follow it
+// while k partitions are created the way a scale-up creates them: each is added Pending, its two
+// owners register, then it switches to Active. Steps are batched across partitions, as when many
+// ingesters start at once, so 4k descriptors follow the first.
+func partitionCreationDescs(tb testing.TB, active, k int) []*PartitionRingDesc {
+	tb.Helper()
+	tokens, err := generatePartitionTokens(int32(active + k - 1))
+	require.NoError(tb, err)
+	start := NewPartitionRingDesc()
+	for id := int32(0); id < int32(active); id++ {
+		start.Partitions[id] = PartitionDesc{Id: id, State: PartitionActive, StateTimestamp: 10, Tokens: tokens[id]}
+		for _, zone := range []string{"a", "b"} {
+			start.Owners[fmt.Sprintf("ingester-zone-%s-%d", zone, id)] = OwnerDesc{OwnedPartition: id, State: OwnerActive}
+		}
+	}
+	descs := []*PartitionRingDesc{start}
+	step := func(change func(d *PartitionRingDesc)) {
+		next := descs[len(descs)-1].Clone().(*PartitionRingDesc)
+		change(next)
+		descs = append(descs, next)
+	}
+	created := make([]int32, k)
+	for j := range created {
+		created[j] = int32(active + j)
+	}
+	for _, id := range created {
+		step(func(d *PartitionRingDesc) {
+			d.Partitions[id] = PartitionDesc{Id: id, State: PartitionPending, StateTimestamp: 20, Tokens: tokens[id]}
+		})
+	}
+	for _, zone := range []string{"a", "b"} {
+		for _, id := range created {
+			step(func(d *PartitionRingDesc) {
+				d.Owners[fmt.Sprintf("ingester-zone-%s-%d", zone, id)] = OwnerDesc{OwnedPartition: id, State: OwnerActive}
+			})
+		}
+	}
+	for _, id := range created {
+		step(func(d *PartitionRingDesc) {
+			p := d.Partitions[id]
+			p.State, p.StateTimestamp = PartitionActive, 30
+			d.Partitions[id] = p
+		})
+	}
+	return descs
+}
+
+// TestPartitionRingWatcher_ShardReuseDuringPartitionCreation checks that shards served while partitions
+// are created match shards of a freshly built ring after every update, and that updates touching only
+// Pending partitions and their owners keep serving the previously built shards, with and without
+// lookback, without adding cache entries.
+func TestPartitionRingWatcher_ShardReuseDuringPartitionCreation(t *testing.T) {
+	// Sizes cover the default (0, every partition), small shards, and a shard of a quarter of the
+	// ring or more, which is filtered from the parent ring rather than built from its own tokens.
+	sizes := []int{0, 1, 5, 12}
+	descs := partitionCreationDescs(t, 40, 4)
+	watcher := NewPartitionRingWatcherWithOptions("test", "test", nil, DefaultPartitionRingOptions(), log.NewNopLogger(), nil)
+	// The hour of lookback starts at 25: the starting partitions (state changed at 10) are outside
+	// it, so lookback shards of different sizes differ, and the created ones (Active at 30) are
+	// inside it, so their activation extends shards.
+	const lookback = time.Hour
+	now := time.Unix(3625, 0)
+	var prev, prevLookback []*PartitionRing
+	for i, desc := range descs {
+		require.NoError(t, watcher.updatePartitionRing(desc))
+		fresh, err := NewPartitionRingWithOptions(*desc, DefaultPartitionRingOptions())
+		require.NoError(t, err)
+		pendingOnly := i > 0 && sameExceptPending(descs[i-1], desc)
+
+		shards := make([]*PartitionRing, len(sizes))
+		lookbackShards := make([]*PartitionRing, len(sizes))
+		for j, size := range sizes {
+			tenant := fmt.Sprintf("tenant-%d", j)
+			got, err := watcher.PartitionRing().ShuffleShard(tenant, size)
+			require.NoError(t, err)
+			want, err := fresh.ShuffleShard(tenant, size)
+			require.NoError(t, err)
+			require.Equal(t, want.PartitionIDs(), got.PartitionIDs(), "update %d, size %d", i, size)
+			if pendingOnly {
+				require.Same(t, prev[j], got, "update %d, size %d: shard rebuilt after a Pending-only update", i, size)
+			}
+			shards[j] = got
+
+			gotLookback, err := watcher.PartitionRing().ShuffleShardWithLookback(tenant, size, lookback, now)
+			require.NoError(t, err)
+			wantLookback, err := fresh.ShuffleShardWithLookback(tenant, size, lookback, now)
+			require.NoError(t, err)
+			require.Equal(t, wantLookback.PartitionIDs(), gotLookback.PartitionIDs(), "update %d, size %d, with lookback", i, size)
+			if pendingOnly {
+				if size > 0 {
+					// No partition is inside lookback before the first activation, so a lookback shard
+					// holds exactly its size; otherwise every size would select the same partitions.
+					require.Len(t, gotLookback.PartitionIDs(), size, "update %d: lookback fixture", i)
+				}
+				require.Same(t, prevLookback[j], gotLookback, "update %d, size %d: lookback shard rebuilt after a Pending-only update", i, size)
+			}
+			lookbackShards[j] = gotLookback
+		}
+		// Each tenant requests one size, so more entries would mean a Pending-only update changed a
+		// cache key. Without lookback, Same can't catch that, because a miss returns the shared subring.
+		cache := watcher.PartitionRing().shuffleShardCache
+		require.Equal(t, len(sizes), cache.cacheWithoutLookback.len(), "update %d: entries without lookback", i)
+		require.Equal(t, len(sizes), cache.cacheWithLookback.len(), "update %d: entries with lookback", i)
+		prev, prevLookback = shards, lookbackShards
+	}
+}
+
+// BenchmarkPartitionRingWatcher_PartitionCreation times what a distributor spends while 8 partitions
+// are created: for each ring update, building the new ring, then serving the write shard of every
+// tenant, as if each pushed before the next update. Most tenants use the default shard size, as in a
+// multi-tenant cluster; tenants=0 times the ring builds alone.
+func BenchmarkPartitionRingWatcher_PartitionCreation(b *testing.B) {
+	const created = 8
+	var tenants []string
+	var sizes []int
+	for i := 0; i < 100; i++ {
+		tenants, sizes = append(tenants, fmt.Sprintf("default-%d", i)), append(sizes, 0)
+	}
+	for _, size := range []int{2, 4, 8, 16, 32, 64, 128, 309, 674, 1022} {
+		tenants, sizes = append(tenants, fmt.Sprintf("explicit-%d", size)), append(sizes, size)
+	}
+	for _, active := range []int{500, 1500} {
+		descs := partitionCreationDescs(b, active, created)
+		for _, n := range []int{0, len(tenants)} {
+			b.Run(fmt.Sprintf("partitions=%d/tenants=%d", active, n), func(b *testing.B) {
+				watcher := NewPartitionRingWatcherWithOptions("test", "test", nil, DefaultPartitionRingOptions(), log.NewNopLogger(), nil)
+				serve := func() {
+					for j := 0; j < n; j++ {
+						if _, err := watcher.PartitionRing().ShuffleShard(tenants[j], sizes[j]); err != nil {
+							b.Fatal(err)
+						}
+					}
+				}
+				for b.Loop() {
+					// Start from a ring whose shards are all cached, as in steady state.
+					b.StopTimer()
+					require.NoError(b, watcher.updatePartitionRing(descs[0]))
+					serve()
+					b.StartTimer()
+					for _, desc := range descs[1:] {
+						if err := watcher.updatePartitionRing(desc); err != nil {
+							b.Fatal(err)
+						}
+						serve()
+					}
+				}
+				b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N)/created, "ms/partition")
+			})
+		}
+	}
+}

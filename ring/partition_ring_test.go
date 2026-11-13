@@ -1806,3 +1806,63 @@ func assertEquivalentPartitionRouting(t *testing.T, want, got *PartitionRing) {
 		assert.Equal(t, wantRanges, gotRanges)
 	}
 }
+
+// TestPartitionRingDesc_SameExceptPending pins which descriptor differences let a ring reuse the previous ring's
+// shuffle shards: only differences in Pending partitions and their owners, which no shard includes.
+func TestPartitionRingDesc_SameExceptPending(t *testing.T) {
+	base := func() *PartitionRingDesc {
+		d := NewPartitionRingDesc()
+		d.Partitions[1] = PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 10, Tokens: Tokens{100, 200}}
+		// Shards with lookback include Inactive partitions until their state timestamp ages out.
+		d.Partitions[2] = PartitionDesc{Id: 2, State: PartitionInactive, StateTimestamp: 10, Tokens: Tokens{300}}
+		d.Partitions[3] = PartitionDesc{Id: 3, State: PartitionPending, StateTimestamp: 10, Tokens: Tokens{400}}
+		d.Owners["owner-1"] = OwnerDesc{OwnedPartition: 1, State: OwnerActive}
+		d.Owners["owner-2"] = OwnerDesc{OwnedPartition: 2, State: OwnerActive}
+		d.Owners["owner-3"] = OwnerDesc{OwnedPartition: 3, State: OwnerActive}
+		return d
+	}
+	for name, tc := range map[string]struct {
+		change func(d *PartitionRingDesc)
+		same   bool
+	}{
+		// The steps of creating a partition, before it turns Active, and removing a Pending one.
+		"pending partition added": {same: true, change: func(d *PartitionRingDesc) {
+			d.Partitions[4] = PartitionDesc{Id: 4, State: PartitionPending, Tokens: Tokens{500}}
+		}},
+		"owner of a pending partition registered": {same: true, change: func(d *PartitionRingDesc) {
+			d.Owners["owner-3b"] = OwnerDesc{OwnedPartition: 3, State: OwnerActive}
+		}},
+		"pending partition and its owner removed": {same: true, change: func(d *PartitionRingDesc) {
+			delete(d.Partitions, 3)
+			delete(d.Owners, "owner-3")
+		}},
+		"pending partition switched to active": {change: func(d *PartitionRingDesc) {
+			p := d.Partitions[3]
+			p.State = PartitionActive
+			d.Partitions[3] = p
+		}},
+		"active partition's tokens changed": {change: func(d *PartitionRingDesc) {
+			p := d.Partitions[1]
+			p.Tokens = Tokens{100, 250}
+			d.Partitions[1] = p
+		}},
+		"inactive partition's state timestamp changed": {change: func(d *PartitionRingDesc) {
+			p := d.Partitions[2]
+			p.StateTimestamp = 20
+			d.Partitions[2] = p
+		}},
+		"owner of an active partition registered": {change: func(d *PartitionRingDesc) {
+			d.Owners["owner-1b"] = OwnerDesc{OwnedPartition: 1, State: OwnerActive}
+		}},
+		"owner moved from a pending to an active partition": {change: func(d *PartitionRingDesc) {
+			d.Owners["owner-3"] = OwnerDesc{OwnedPartition: 1, State: OwnerActive}
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, b := base(), base()
+			tc.change(b)
+			assert.Equal(t, tc.same, sameExceptPending(a, b), "a to b")
+			assert.Equal(t, tc.same, sameExceptPending(b, a), "b to a")
+		})
+	}
+}

@@ -429,6 +429,57 @@ func TestClusterValidationMiddlewareWithExcludedPaths(t *testing.T) {
 	}
 }
 
+func TestClusterValidationMiddlewareExcludedPathsMatchWholePaths(t *testing.T) {
+	testCases := map[string]struct {
+		requestPath   string
+		excludedPaths []string
+		wantValidated bool
+	}{
+		"the built-in metrics path is excluded":                  {requestPath: "/metrics", wantValidated: false},
+		"the built-in ready path is excluded":                    {requestPath: "/ready", wantValidated: false},
+		"a pprof subpath is excluded":                            {requestPath: "/debug/pprof/heap", wantValidated: false},
+		"a path prefix before a built-in path is excluded":       {requestPath: "/some/prefix/metrics", wantValidated: false},
+		"a trailing slash is the same path":                      {requestPath: "/metrics/", wantValidated: false},
+		"a configured path is excluded":                          {requestPath: "/Test/Me", excludedPaths: []string{"Test/Me"}, wantValidated: false},
+		"an ordinary route is validated":                         {requestPath: "/api/v1/push", wantValidated: true},
+		"a segment starting with metrics is validated":           {requestPath: "/prometheus/api/v1/metrics_metadata", wantValidated: true},
+		"a segment starting with ready is validated":             {requestPath: "/api/v1/readyz", wantValidated: true},
+		"a hyphenated segment starting with ready is validated":  {requestPath: "/loki/api/v1/ready-check", wantValidated: true},
+		"a segment starting with a configured path is validated": {requestPath: "/Test/Members", excludedPaths: []string{"Test/Me"}, wantValidated: true},
+		"a path below the built-in metrics path is validated":    {requestPath: "/metrics/extra", wantValidated: true},
+		"a path below a configured path is validated":            {requestPath: "/Test/Me/sub", excludedPaths: []string{"Test/Me"}, wantValidated: true},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			cfg := clusterutil.ClusterValidationProtocolConfigForHTTP{
+				ExcludedPaths: testCase.excludedPaths,
+			}
+
+			reached := false
+			handler := ClusterValidationMiddleware(
+				[]string{"server-cluster"}, cfg, NewInvalidClusterRequests(reg, "test"), log.NewNopLogger(),
+			).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				reached = true
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, testCase.requestPath, nil)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			if testCase.wantValidated {
+				require.False(t, reached, "the wrapped handler should not have been reached")
+				require.Equal(t, http.StatusNetworkAuthenticationRequired, recorder.Code)
+			} else {
+				require.True(t, reached, "the wrapped handler should have been reached")
+				require.Equal(t, http.StatusOK, recorder.Code)
+			}
+		})
+	}
+}
+
 func TestClusterValidationMiddlewareWithExcludedUserAgents(t *testing.T) {
 	const urlPath = "Test/Me"
 	testCases := map[string]struct {

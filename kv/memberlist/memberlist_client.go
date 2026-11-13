@@ -507,6 +507,10 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 		maxCasRetries:    maxCasRetries,
 	}
 
+	// The service must be set before registering metrics: a concurrent scrape can call
+	// the metrics callbacks, which read the service state, as soon as they are registered.
+	mlkv.NamedService = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping).WithName("memberlist_kv")
+
 	mlkv.createAndRegisterMetrics()
 
 	for _, c := range cfg.Codecs {
@@ -517,8 +521,6 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 	if cfg.PropagationDelayTracker.Enabled {
 		mlkv.codecs[PropagationDelayTrackerCodecID] = GetPropagationDelayTrackerCodec()
 	}
-
-	mlkv.NamedService = services.NewBasicService(mlkv.starting, mlkv.running, mlkv.stopping).WithName("memberlist_kv")
 
 	return mlkv
 }

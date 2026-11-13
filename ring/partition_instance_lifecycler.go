@@ -33,9 +33,8 @@ type PartitionInstanceLifecyclerConfig struct {
 	// PartitionID is the ID of the partition managed by the lifecycler. It must not be negative.
 	PartitionID int32
 
-	// CreatePartitionsWithDerivedTokens creates new partitions using PartitionTokensSmt512, without stored tokens.
+	// CreatePartitionsWithDerivedTokens creates the partition with PartitionTokensSmt512, without stored tokens.
 	// When enabled, PartitionID must be below MaxDerivedTokenPartitions.
-	// An existing partition keeps its token scheme.
 	CreatePartitionsWithDerivedTokens bool
 
 	// MaxDerivedTokenPartitions is the number of partition IDs, from 0, that can be created with derived tokens.
@@ -312,6 +311,12 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 				ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
 			}
 			changed = true
+		} else {
+			updated, err := l.updatePartitionTokenScheme(ring, now)
+			if err != nil {
+				return false, err
+			}
+			changed = updated
 		}
 
 		// Ensure the instance is added as partition owner.
@@ -363,8 +368,32 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 
 	// Ensure the instance is added as partition owner.
 	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-		return ring.AddOrUpdateOwner(l.partitionOwnerID(), OwnerActive, l.cfg.PartitionID, time.Now()), nil
+		now := time.Now()
+		changed, err := l.updatePartitionTokenScheme(ring, now)
+		if err != nil {
+			return false, err
+		}
+		if ring.AddOrUpdateOwner(l.partitionOwnerID(), OwnerActive, l.cfg.PartitionID, now) {
+			changed = true
+		}
+		return changed, nil
 	})
+}
+
+func (l *PartitionInstanceLifecycler) updatePartitionTokenScheme(ring *PartitionRingDesc, now time.Time) (bool, error) {
+	from := ring.Partitions[l.cfg.PartitionID].TokenScheme
+	to := PartitionTokensStored
+	if l.cfg.CreatePartitionsWithDerivedTokens {
+		to = PartitionTokensSmt512
+	}
+	changed, err := ring.UpdatePartitionTokenScheme(l.cfg.PartitionID, to, now)
+	if err != nil {
+		return false, err
+	}
+	if changed {
+		level.Info(l.logger).Log("msg", "updated partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", from, "to_token_scheme", to)
+	}
+	return changed, nil
 }
 
 // reconcileOwnedPartition reconciles the owned partition.

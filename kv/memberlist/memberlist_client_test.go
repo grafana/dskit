@@ -2038,6 +2038,38 @@ func TestMetricsRegistration(t *testing.T) {
 
 }
 
+// scrapingRegisterer gathers the registry right after every registration, simulating a
+// scrape that runs concurrently with the registration of the KV metrics.
+type scrapingRegisterer struct {
+	*prometheus.Registry
+	scrape func()
+}
+
+func (r scrapingRegisterer) Register(c prometheus.Collector) error {
+	defer r.scrape()
+	return r.Registry.Register(c)
+}
+
+func (r scrapingRegisterer) MustRegister(cs ...prometheus.Collector) {
+	defer r.scrape()
+	r.Registry.MustRegister(cs...)
+}
+
+func TestMetricsScrapedWhileKVIsBeingCreated(t *testing.T) {
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+
+	reg := scrapingRegisterer{Registry: prometheus.NewPedanticRegistry()}
+	reg.scrape = func() {
+		_, err := reg.Gather()
+		require.NoError(t, err)
+	}
+
+	require.NotPanics(t, func() {
+		NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, reg)
+	})
+}
+
 func decodeDataFromMarshalledKeyValuePair(t *testing.T, marshalledKVP []byte, key string, codec dataCodec) *data {
 	kvp := KeyValuePair{}
 	require.NoError(t, kvp.Unmarshal(marshalledKVP))

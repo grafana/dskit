@@ -504,6 +504,7 @@ func TestPartitionInstanceLifecycler_CreatePartition(t *testing.T) {
 			partition := desc.Partitions[7]
 			assert.Equal(t, PartitionPending, partition.State)
 			assert.Equal(t, tc.expectedScheme, partition.TokenScheme)
+			assert.NotZero(t, partition.TokenSchemeTimestamp)
 			assert.Len(t, partition.Tokens, tc.expectedTokens)
 			assert.Equal(t, int32(7), desc.Owners["instance-1"].OwnedPartition)
 		})

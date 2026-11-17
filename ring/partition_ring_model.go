@@ -163,11 +163,12 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 // which generates deterministic unique tokens.
 func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now time.Time) {
 	m.Partitions[id] = PartitionDesc{
-		Id:             id,
-		TokenScheme:    PartitionTokensStored,
-		Tokens:         generateStoredPartitionTokens(id),
-		State:          state,
-		StateTimestamp: now.Unix(),
+		Id:                   id,
+		TokenScheme:          PartitionTokensStored,
+		TokenSchemeTimestamp: now.Unix(),
+		Tokens:               generateStoredPartitionTokens(id),
+		State:                state,
+		StateTimestamp:       now.Unix(),
 	}
 }
 
@@ -181,11 +182,12 @@ func generateStoredPartitionTokens(id int32) []uint32 {
 // AddPartitionWithDerivedTokens adds a partition using PartitionTokensSmt512.
 func (m *PartitionRingDesc) AddPartitionWithDerivedTokens(id int32, state PartitionState, now time.Time) {
 	m.Partitions[id] = PartitionDesc{
-		Id:             id,
-		TokenScheme:    PartitionTokensSmt512,
-		Tokens:         nil, // Tokens will be derived by readers
-		State:          state,
-		StateTimestamp: now.Unix(),
+		Id:                   id,
+		TokenScheme:          PartitionTokensSmt512,
+		TokenSchemeTimestamp: now.Unix(),
+		Tokens:               nil, // Tokens will be derived by readers
+		State:                state,
+		StateTimestamp:       now.Unix(),
 	}
 }
 
@@ -373,7 +375,7 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 		if !exists {
 			if otherPart.StateTimestamp > timestampLimit {
 				// Written by a node with a clock too far ahead. Accepting it would block all later updates.
-				// A state change lock timestamp too far ahead is kept, because any valid one replaces it.
+				// State change lock and token scheme timestamps too far ahead are kept, because any valid one replaces them.
 				continue
 			}
 

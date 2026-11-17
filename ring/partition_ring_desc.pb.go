@@ -191,7 +191,8 @@ type PartitionDesc struct {
 	StateChangeLockedTimestamp int64 `protobuf:"varint,6,opt,name=stateChangeLockedTimestamp,proto3" json:"stateChangeLockedTimestamp,omitempty"`
 	// Token scheme. Unset means stored tokens.
 	TokenScheme PartitionTokenScheme `protobuf:"varint,7,opt,name=tokenScheme,proto3,enum=ring.PartitionTokenScheme" json:"tokenScheme,omitempty"`
-	// Unix timestamp (with seconds precision) of when the token scheme and tokens have been changed last time for this partition.
+	// Unix timestamp (with seconds precision) of when the partition was created or its token scheme and tokens have been
+	// changed last time.
 	TokenSchemeTimestamp int64 `protobuf:"varint,8,opt,name=tokenSchemeTimestamp,proto3" json:"tokenSchemeTimestamp,omitempty"`
 }
 

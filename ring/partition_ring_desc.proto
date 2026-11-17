@@ -43,7 +43,8 @@ message PartitionDesc {
   // Token scheme. Unset means stored tokens.
   PartitionTokenScheme tokenScheme = 7;
 
-  // Unix timestamp (with seconds precision) of when the token scheme and tokens have been changed last time for this partition.
+  // Unix timestamp (with seconds precision) of when the partition was created or its token scheme and tokens have been
+  // changed last time.
   int64 tokenSchemeTimestamp = 8;
 }
 

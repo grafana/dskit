@@ -1242,6 +1242,18 @@ func TestPartitionRingDesc_UpdatePartitionState(t *testing.T) {
 	})
 }
 
+func TestPartitionRingDesc_UpdatePartitionTokenScheme_EqualTimestamp(t *testing.T) {
+	now := time.Now()
+	stored := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: generateStoredPartitionTokens(1), TokenSchemeTimestamp: now.Unix()}
+	desc := NewPartitionRingDesc()
+	desc.Partitions[1] = stored
+
+	changed, err := desc.UpdatePartitionTokenScheme(1, PartitionTokensSmt512, now)
+	require.NoError(t, err)
+	assert.False(t, changed)
+	assert.Equal(t, stored, desc.Partitions[1])
+}
+
 func TestPartitionRingDesc_PartitionOwnersCountUpdatedBefore(t *testing.T) {
 	now := time.Now()
 

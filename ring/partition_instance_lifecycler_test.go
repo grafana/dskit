@@ -514,6 +514,12 @@ func TestPartitionInstanceLifecycler_UpdateExistingPartitionTokenScheme(t *testi
 	stored := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: generateStoredPartitionTokens(1)}
 	derived := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512}
 
+	now := time.Now()
+	storedLater := stored
+	storedLater.TokenSchemeTimestamp = now.Add(30 * time.Second).Unix()
+	storedTooFarInTheFuture := stored
+	storedTooFarInTheFuture.TokenSchemeTimestamp = now.Add(maxFutureTimestampSkew + time.Minute).Unix()
+
 	for _, tc := range []struct {
 		name            string
 		existing        PartitionDesc
@@ -525,17 +531,17 @@ func TestPartitionInstanceLifecycler_UpdateExistingPartitionTokenScheme(t *testi
 		{name: "derived tokens are kept", existing: derived, useDerived: true, expected: derived},
 		{name: "stored tokens are converted to derived tokens", existing: stored, useDerived: true, expected: derived, expectedUpdated: true},
 		{name: "derived tokens are converted to stored tokens", existing: derived, useDerived: false, expected: stored, expectedUpdated: true},
+		{name: "stored tokens changed later are kept", existing: storedLater, useDerived: true, expected: storedLater},
+		{name: "stored tokens changed too far in the future are converted to derived tokens", existing: storedTooFarInTheFuture, useDerived: true, expected: derived, expectedUpdated: true},
 	} {
 		for _, createOnStartup := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s/create on startup=%t", tc.name, createOnStartup), func(t *testing.T) {
 				desc := startPartitionLifecyclerForTest(t, &tc.existing, derivedTokensLifecyclerConfig(1, tc.useDerived), createOnStartup)
 				actual := desc.Partitions[1]
 				if tc.expectedUpdated {
-					assert.NotZero(t, actual.TokenSchemeTimestamp)
-				} else {
-					assert.Zero(t, actual.TokenSchemeTimestamp)
+					assert.NotEqual(t, tc.existing.TokenSchemeTimestamp, actual.TokenSchemeTimestamp)
+					actual.TokenSchemeTimestamp = tc.expected.TokenSchemeTimestamp
 				}
-				actual.TokenSchemeTimestamp = 0
 				assert.Equal(t, tc.expected, actual)
 				assert.Equal(t, int32(1), desc.Owners["instance-1"].OwnedPartition)
 			})

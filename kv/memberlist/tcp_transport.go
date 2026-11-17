@@ -63,8 +63,9 @@ type TCPTransportConfig struct {
 	// Where to put custom metrics. nil = don't register.
 	MetricsNamespace string `yaml:"-"`
 
-	TLSEnabled bool               `yaml:"tls_enabled" category:"advanced"`
-	TLS        dstls.ClientConfig `yaml:",inline"`
+	TLSEnabled    bool               `yaml:"tls_enabled" category:"advanced"`
+	TLSClientAuth string             `yaml:"tls_client_auth" category:"advanced"`
+	TLS           dstls.ClientConfig `yaml:",inline"`
 }
 
 func (cfg *TCPTransportConfig) RegisterFlags(f *flag.FlagSet) {
@@ -83,6 +84,7 @@ func (cfg *TCPTransportConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix s
 	f.BoolVar(&cfg.TransportDebug, prefix+"memberlist.transport-debug", false, "Log debug transport messages. Note: global log.level must be at debug level as well.")
 
 	f.BoolVar(&cfg.TLSEnabled, prefix+"memberlist.tls-enabled", false, "Enable TLS on the memberlist transport layer.")
+	f.StringVar(&cfg.TLSClientAuth, prefix+"memberlist.tls-client-auth", "NoClientCert", "Client certificate policy for incoming memberlist TLS connections. Allowed values: NoClientCert, RequireAndVerifyClientCert. RequireAndVerifyClientCert verifies client certificates against the configured CA.")
 	cfg.TLS.RegisterFlagsWithPrefix(prefix+"memberlist", f)
 }
 
@@ -157,10 +159,22 @@ func NewTCPTransport(config TCPTransportConfig, logger log.Logger, registerer pr
 	}
 
 	var err error
+	var listenerTLSConfig *tls.Config
 	if config.TLSEnabled {
 		t.tlsConfig, err = config.TLS.GetTLSConfig()
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to create TLS config")
+		}
+
+		listenerTLSConfig = t.tlsConfig
+		switch config.TLSClientAuth {
+		case "", "NoClientCert":
+		case "RequireAndVerifyClientCert":
+			listenerTLSConfig = t.tlsConfig.Clone()
+			listenerTLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
+			listenerTLSConfig.ClientCAs = t.tlsConfig.RootCAs
+		default:
+			return nil, fmt.Errorf("invalid TLS client auth type %q", config.TLSClientAuth)
 		}
 	}
 
@@ -185,7 +199,7 @@ func NewTCPTransport(config TCPTransportConfig, logger log.Logger, registerer pr
 
 		var tcpLn net.Listener
 		if config.TLSEnabled {
-			tcpLn, err = tls.Listen("tcp", tcpAddr.String(), t.tlsConfig)
+			tcpLn, err = tls.Listen("tcp", tcpAddr.String(), listenerTLSConfig)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to start TLS TCP listener on %q port %d", addr, port)
 			}

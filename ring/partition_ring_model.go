@@ -162,27 +162,32 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 // AddPartition adds a new partition to the ring. Tokens are auto-generated using the spread minimizing strategy
 // which generates deterministic unique tokens.
 func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now time.Time) {
+	m.Partitions[id] = PartitionDesc{
+		Id:                   id,
+		TokenScheme:          PartitionTokensStored,
+		TokenSchemeTimestamp: now.Unix(),
+		Tokens:               generateStoredPartitionTokens(id),
+		State:                state,
+		StateTimestamp:       now.Unix(),
+	}
+}
+
+func generateStoredPartitionTokens(id int32) []uint32 {
 	// Spread-minimizing token generator is deterministic unique-token generator for given id and zone.
 	// Partitions don't use zones.
 	spreadMinimizing := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
-
-	m.Partitions[id] = PartitionDesc{
-		Id:             id,
-		TokenScheme:    PartitionTokensStored,
-		Tokens:         spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil),
-		State:          state,
-		StateTimestamp: now.Unix(),
-	}
+	return spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil)
 }
 
 // AddPartitionWithDerivedTokens adds a partition using PartitionTokensSmt512.
 func (m *PartitionRingDesc) AddPartitionWithDerivedTokens(id int32, state PartitionState, now time.Time) {
 	m.Partitions[id] = PartitionDesc{
-		Id:             id,
-		TokenScheme:    PartitionTokensSmt512,
-		Tokens:         nil, // Tokens will be derived by readers
-		State:          state,
-		StateTimestamp: now.Unix(),
+		Id:                   id,
+		TokenScheme:          PartitionTokensSmt512,
+		TokenSchemeTimestamp: now.Unix(),
+		Tokens:               nil, // Tokens will be derived by readers
+		State:                state,
+		StateTimestamp:       now.Unix(),
 	}
 }
 
@@ -206,6 +211,63 @@ func (m *PartitionRingDesc) UpdatePartitionState(id int32, state PartitionState,
 	d.StateTimestamp = now.Unix()
 	m.Partitions[id] = d
 	return true, nil
+}
+
+// UpdatePartitionTokenScheme changes the token scheme of a partition. Returns true if the token scheme was changed,
+// or false if the update was a no-op or the current token scheme was changed at or after now. One member can make
+// the switch and the others pick it up through the regular memberlist merge mechanism, because both token schemes
+// give the partition the same tokens, so routing doesn't change while members disagree. If a token scheme gave
+// other tokens, switching to it would need a more involved migration, because the switch would move hash ranges to
+// other partitions, and members would route writes and reads differently until it reached all of them.
+func (m *PartitionRingDesc) UpdatePartitionTokenScheme(id int32, scheme PartitionTokenScheme, now time.Time) (bool, error) {
+	d, ok := m.Partitions[id]
+	if !ok {
+		return false, nil
+	}
+
+	if d.TokenScheme == scheme {
+		return false, nil
+	}
+
+	if scheme != PartitionTokensStored && scheme != PartitionTokensSmt512 {
+		return false, fmt.Errorf("cannot update token scheme for partition %d: unknown token scheme %d", id, scheme)
+	}
+
+	if !incomingTokenSchemeWins(scheme, now.Unix(), d.TokenScheme, d.TokenSchemeTimestamp, futureTimestampLimit(now)) {
+		return false, nil
+	}
+
+	// Switching only keeps the partition tokens if the current token scheme gives the same tokens.
+	if d.TokenScheme != PartitionTokensStored && d.TokenScheme != PartitionTokensSmt512 {
+		return false, fmt.Errorf("%w: partition %d has unknown token scheme %d", ErrPartitionTokenSchemeSwitchUnsafe, id, d.TokenScheme)
+	}
+	storedTokens := generateStoredPartitionTokens(id)
+	if scheme == PartitionTokensStored {
+		d.Tokens = storedTokens
+	} else {
+		if !slices.Equal(d.Tokens, storedTokens) {
+			return false, fmt.Errorf("%w: stored tokens of partition %d differ from the derived ones", ErrPartitionTokenSchemeSwitchUnsafe, id)
+		}
+		d.Tokens = nil // Tokens will be derived by readers
+	}
+
+	d.TokenScheme = scheme
+	d.TokenSchemeTimestamp = now.Unix()
+	m.Partitions[id] = d
+	return true, nil
+}
+
+// incomingTokenSchemeWins reports whether the merge replaces the local token scheme with the incoming one. In case the
+// timestamp is equal we give priority to the derived token scheme, so members converge. Both token schemes give the
+// same tokens, so either choice routes the same. We don't give priority to stored tokens, because members running a
+// version without token schemes drop the token scheme, and gossip derived partitions as stored ones without tokens and
+// token scheme timestamp.
+func incomingTokenSchemeWins(incoming PartitionTokenScheme, incomingTimestamp int64, local PartitionTokenScheme, localTimestamp, limit int64) bool {
+	if incomingTimestamp > limit {
+		return false
+	}
+	localTimestamp = localMergeTimestamp(localTimestamp, limit)
+	return incomingTimestamp > localTimestamp || (incomingTimestamp == localTimestamp && incoming == PartitionTokensSmt512 && local == PartitionTokensStored)
 }
 
 // UpdatePartitionStateChangeLock changes the state change lock of a partition. Returns true if the lock was changed,
@@ -335,18 +397,14 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 		if !exists {
 			if otherPart.StateTimestamp > timestampLimit {
 				// Written by a node with a clock too far ahead. Accepting it would block all later updates.
-				// A state change lock timestamp too far ahead is kept, because any valid one replaces it.
+				// State change lock and token scheme timestamps too far ahead are kept, because any valid one replaces them.
 				continue
 			}
 
 			changed = true
 			thisPart = otherPart
 		} else {
-			// We don't merge changes to partition ID, tokens and token scheme because we expect them to be immutable.
-			//
-			// If in the future we'll change the tokens generation algorithm and we'll have to handle migration to
-			// a different set of tokens then we'll add the support. For example, we could add a new token scheme
-			// and preserve tokens generated by the latest scheme only, or a timestamp for tokens update too.
+			// We don't merge changes to partition ID because we expect it to be immutable.
 
 			// Timestamps from a node with a clock too far ahead are ignored when incoming,
 			// and replaceable by any valid incoming timestamp when local.
@@ -368,6 +426,16 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 
 				thisPart.StateChangeLocked = otherPart.StateChangeLocked
 				thisPart.StateChangeLockedTimestamp = otherPart.StateChangeLockedTimestamp
+			}
+
+			// Token scheme and tokens are merged together, because tokens currently only change when the token scheme
+			// changes.
+			if incomingTokenSchemeWins(otherPart.TokenScheme, otherPart.TokenSchemeTimestamp, thisPart.TokenScheme, thisPart.TokenSchemeTimestamp, timestampLimit) {
+				changed = true
+
+				thisPart.TokenScheme = otherPart.TokenScheme
+				thisPart.Tokens = otherPart.Tokens
+				thisPart.TokenSchemeTimestamp = otherPart.TokenSchemeTimestamp
 			}
 		}
 

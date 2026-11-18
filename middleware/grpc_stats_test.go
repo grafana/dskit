@@ -643,7 +643,7 @@ func BenchmarkStreamTracker(b *testing.B) {
 // Each goroutine runs OpenStream/CloseStream on randomly chosen connections, with
 // occasional MaxStreams calls (as a metrics scrape would make) mixed in.
 func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
-	const maxStreamsEveryN = 1000 // One MaxStreams call per this many bursts.
+	const maxStreamsEveryN = 1000 // Each goroutine calls MaxStreams once per this many iterations.
 
 	for _, numConns := range []int{1, 100, 1000} {
 		b.Run(fmt.Sprintf("conns=%d", numConns), func(b *testing.B) {
@@ -661,7 +661,8 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 			var workers atomic.Int64
 			b.SetParallelism(1000) // Increase the chance of contention.
 			b.RunParallel(func(pb *testing.PB) {
-				// Per-goroutine source, to avoid contending on the global one.
+				// Per-goroutine source.
+				// The global source has no lock, but this benchmark measured slower with it.
 				rnd := mathRand.New(mathRand.NewSource(workers.Add(1)))
 				for n := 0; pb.Next(); n++ {
 					connID := connIDs[rnd.Intn(numConns)]

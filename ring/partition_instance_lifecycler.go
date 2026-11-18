@@ -34,10 +34,7 @@ type PartitionInstanceLifecyclerConfig struct {
 	PartitionID int32
 
 	// CreatePartitionsWithDerivedTokens creates the partition with PartitionTokensSmt512, without stored tokens.
-	// At startup, if the partition already exists, the lifecycler switches it to the configured token scheme, in either
-	// direction. It keeps a token scheme set at or after the time it attempts the switch, as by a node with a clock
-	// ahead, unless that is too far in the future to be valid.
-	// All owners of a partition should use the same setting, otherwise the owner that started last decides the scheme.
+	// At startup, if the partition already exists, the lifecycler switches it to the configured token scheme.
 	// When enabled, PartitionID must be below MaxDerivedTokenPartitions.
 	CreatePartitionsWithDerivedTokens bool
 

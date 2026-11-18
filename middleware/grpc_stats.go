@@ -135,9 +135,9 @@ type StreamTracker struct {
 	grpcConcurrentStreamsByConnMax *prometheus.Desc
 
 	mu        sync.RWMutex
-	connMap   map[string]*atomic.Int32
+	connMap   map[string]*atomic.Int32 // An entry stays after its last stream closes, until openStreamSlow prunes it.
 	lastPrune time.Time
-	lastSize  int
+	lastSize  int // Map size after the last prune, including the entry added in the same call.
 }
 
 func NewStreamTracker(grpcConcurrentStreamsByConnMax *prometheus.Desc) *StreamTracker {
@@ -148,6 +148,7 @@ func NewStreamTracker(grpcConcurrentStreamsByConnMax *prometheus.Desc) *StreamTr
 }
 
 // openStreamSlow registers a stream on a connection with no entry, or whose entry was added since we last checked.
+// Before it adds a new entry, it prunes idle entries if the prune conditions hold.
 // The increment happens under the write lock so that pruning can't remove the entry beforehand.
 func (st *StreamTracker) openStreamSlow(connID string) {
 	st.mu.Lock()

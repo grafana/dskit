@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -709,4 +710,41 @@ func TestGrpcStreamTrackerPrunesIdleConnections(t *testing.T) {
 	require.Contains(t, tracker.connMap, "busy")
 	require.Contains(t, tracker.connMap, "new1")
 	require.Contains(t, tracker.connMap, "new2")
+}
+
+func TestGrpcStreamTrackerPruneConditions(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tracker := NewStreamTracker(prometheus.NewDesc("grpc_streams_by_conn_max", "", nil, nil))
+		next := 0
+		addIdle := func(n int) {
+			for range n {
+				connID := fmt.Sprintf("conn%d", next)
+				next++
+				tracker.OpenStream(connID)
+				tracker.CloseStream(connID)
+			}
+		}
+
+		// The first prune does not wait for the interval, because lastPrune is zero.
+		addIdle(streamTrackerPruneGrowth + 2)
+		require.Len(t, tracker.connMap, 1)
+
+		// Inside the interval, growth past the threshold does not prune.
+		addIdle(streamTrackerPruneGrowth + 2)
+		require.Len(t, tracker.connMap, streamTrackerPruneGrowth+3)
+
+		// After the interval, the next new entry prunes.
+		time.Sleep(streamTrackerPruneInterval)
+		addIdle(1)
+		require.Len(t, tracker.connMap, 1)
+
+		// After the interval, growth up to the threshold does not prune.
+		time.Sleep(streamTrackerPruneInterval)
+		addIdle(streamTrackerPruneGrowth + 1)
+		require.Len(t, tracker.connMap, streamTrackerPruneGrowth+2)
+
+		// One more entry crosses the threshold and prunes.
+		addIdle(1)
+		require.Len(t, tracker.connMap, 1)
+	})
 }

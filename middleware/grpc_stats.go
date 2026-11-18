@@ -122,10 +122,12 @@ func (g *grpcStatsHandler) HandleConn(_ context.Context, _ stats.ConnStats) {
 	// Not interested.
 }
 
-// streamTrackerPruneInterval is the minimum time between removals of idle connection entries.
 const (
+	// streamTrackerPruneInterval is the minimum time between removals of idle connection entries.
 	streamTrackerPruneInterval = time.Minute
-	streamTrackerPruneGrowth   = 100
+	// streamTrackerPruneGrowth is the growth limit for a prune.
+	// A prune runs only when the map grew by more than this number of entries since the last prune.
+	streamTrackerPruneGrowth = 100
 )
 
 // StreamTracker tracks the number of streams per connection and the max.

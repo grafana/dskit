@@ -1242,26 +1242,33 @@ func TestPartitionRingDesc_UpdatePartitionState(t *testing.T) {
 	})
 }
 
-func TestPartitionRingDesc_UpdatePartitionTokenScheme_EqualTimestamp(t *testing.T) {
+func TestPartitionRingDesc_UpdatePartitionTokenScheme(t *testing.T) {
 	now := time.Now()
 	stored := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: generateStoredPartitionTokens(1), TokenSchemeTimestamp: now.Unix()}
 	derived := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: now.Unix()}
+	otherStoredTokens := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: []uint32{1, 2, 3}}
+	noStoredTokens := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1}
+	unknownScheme := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: 99}
 
 	for name, tc := range map[string]struct {
 		existing        PartitionDesc
 		scheme          PartitionTokenScheme
 		expected        PartitionDesc
 		expectedChanged bool
+		expectedErr     error
 	}{
-		"stored tokens are converted to derived tokens": {existing: stored, scheme: PartitionTokensSmt512, expected: derived, expectedChanged: true},
-		"derived tokens are kept":                       {existing: derived, scheme: PartitionTokensStored, expected: derived},
+		"stored tokens are converted to derived tokens with equal timestamp": {existing: stored, scheme: PartitionTokensSmt512, expected: derived, expectedChanged: true},
+		"derived tokens are kept with equal timestamp":                       {existing: derived, scheme: PartitionTokensStored, expected: derived},
+		"stored tokens that differ from derived tokens are kept":             {existing: otherStoredTokens, scheme: PartitionTokensSmt512, expected: otherStoredTokens, expectedErr: ErrPartitionTokenSchemeSwitchUnsafe},
+		"empty stored tokens are kept":                                       {existing: noStoredTokens, scheme: PartitionTokensSmt512, expected: noStoredTokens, expectedErr: ErrPartitionTokenSchemeSwitchUnsafe},
+		"unknown token scheme is kept":                                       {existing: unknownScheme, scheme: PartitionTokensStored, expected: unknownScheme, expectedErr: ErrPartitionTokenSchemeSwitchUnsafe},
 	} {
 		t.Run(name, func(t *testing.T) {
 			desc := NewPartitionRingDesc()
 			desc.Partitions[1] = tc.existing
 
 			changed, err := desc.UpdatePartitionTokenScheme(1, tc.scheme, now)
-			require.NoError(t, err)
+			require.ErrorIs(t, err, tc.expectedErr)
 			assert.Equal(t, tc.expectedChanged, changed)
 			assert.Equal(t, tc.expected, desc.Partitions[1])
 		})

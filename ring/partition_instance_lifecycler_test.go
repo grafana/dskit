@@ -526,6 +526,8 @@ func TestPartitionInstanceLifecycler_UpdateExistingPartitionTokenScheme(t *testi
 	storedLater.TokenSchemeTimestamp = now.Add(30 * time.Second).Unix()
 	storedTooFarInTheFuture := stored
 	storedTooFarInTheFuture.TokenSchemeTimestamp = now.Add(maxFutureTimestampSkew + time.Minute).Unix()
+	otherStoredTokens := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: []uint32{1, 2, 3}}
+	unknownScheme := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: 99}
 
 	for _, tc := range []struct {
 		name            string
@@ -540,6 +542,8 @@ func TestPartitionInstanceLifecycler_UpdateExistingPartitionTokenScheme(t *testi
 		{name: "derived tokens are converted to stored tokens", existing: derived, useDerived: false, expected: stored, expectedUpdated: true},
 		{name: "stored tokens changed later are kept", existing: storedLater, useDerived: true, expected: storedLater},
 		{name: "stored tokens changed too far in the future are converted to derived tokens", existing: storedTooFarInTheFuture, useDerived: true, expected: derived, expectedUpdated: true},
+		{name: "stored tokens that differ from derived tokens are kept", existing: otherStoredTokens, useDerived: true, expected: otherStoredTokens},
+		{name: "unknown token scheme is kept", existing: unknownScheme, useDerived: false, expected: unknownScheme},
 	} {
 		for _, createOnStartup := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s/create on startup=%t", tc.name, createOnStartup), func(t *testing.T) {

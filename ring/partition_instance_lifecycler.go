@@ -22,6 +22,10 @@ var (
 	ErrPartitionStateChangeNotAllowed = errors.New("partition state change not allowed")
 	ErrPartitionStateChangeLocked     = errors.New("partition state change is locked")
 
+	// ErrPartitionTokenSchemeSwitchUnsafe means a token scheme switch would change the tokens of the partition, so it
+	// was skipped. This should not happen, because all known token schemes give the same tokens.
+	ErrPartitionTokenSchemeSwitchUnsafe = errors.New("partition token scheme switch would change the partition tokens")
+
 	allowedPartitionStateChanges = map[PartitionState][]PartitionState{
 		PartitionPending:  {PartitionActive, PartitionInactive},
 		PartitionActive:   {PartitionInactive},
@@ -292,12 +296,11 @@ func (l *PartitionInstanceLifecycler) partitionOwnerID() string {
 }
 
 func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx context.Context) error {
-	var tokenSchemeUpdated bool
-	var previousTokenScheme PartitionTokenScheme
+	var update tokenSchemeUpdate
 	err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 		now := time.Now()
 		changed := false
-		tokenSchemeUpdated = false
+		update = tokenSchemeUpdate{}
 
 		partitionDesc, exists := ring.Partitions[l.cfg.PartitionID]
 		if exists {
@@ -316,12 +319,12 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 			}
 			changed = true
 		} else {
-			from, updated, err := l.updatePartitionTokenScheme(ring, now)
+			var err error
+			update, err = l.updatePartitionTokenScheme(ring, now)
 			if err != nil {
 				return false, err
 			}
-			tokenSchemeUpdated, previousTokenScheme = updated, from
-			changed = updated
+			changed = update.changed
 		}
 
 		// Ensure the instance is added as partition owner.
@@ -334,9 +337,7 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 	if err != nil {
 		return err
 	}
-	if tokenSchemeUpdated {
-		l.logPartitionTokenSchemeUpdated(previousTokenScheme)
-	}
+	l.logPartitionTokenSchemeUpdate(update)
 	return nil
 }
 
@@ -379,15 +380,15 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 	}
 
 	// Ensure the instance is added as partition owner.
-	var tokenSchemeUpdated bool
-	var previousTokenScheme PartitionTokenScheme
+	var update tokenSchemeUpdate
 	err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 		now := time.Now()
-		from, changed, err := l.updatePartitionTokenScheme(ring, now)
+		var err error
+		update, err = l.updatePartitionTokenScheme(ring, now)
 		if err != nil {
 			return false, err
 		}
-		tokenSchemeUpdated, previousTokenScheme = changed, from
+		changed := update.changed
 		if ring.AddOrUpdateOwner(l.partitionOwnerID(), OwnerActive, l.cfg.PartitionID, now) {
 			changed = true
 		}
@@ -396,27 +397,38 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 	if err != nil {
 		return err
 	}
-	if tokenSchemeUpdated {
-		l.logPartitionTokenSchemeUpdated(previousTokenScheme)
-	}
+	l.logPartitionTokenSchemeUpdate(update)
 	return nil
 }
 
-// updatePartitionTokenScheme switches the partition to the configured token scheme. It returns the previous token
-// scheme, and whether it was switched.
-func (l *PartitionInstanceLifecycler) updatePartitionTokenScheme(ring *PartitionRingDesc, now time.Time) (PartitionTokenScheme, bool, error) {
-	from := ring.Partitions[l.cfg.PartitionID].TokenScheme
-	changed, err := ring.UpdatePartitionTokenScheme(l.cfg.PartitionID, l.tokenScheme(), now)
-	if err != nil {
-		return from, false, err
-	}
-	return from, changed, nil
+// tokenSchemeUpdate is the result of switching the partition to the configured token scheme.
+type tokenSchemeUpdate struct {
+	from    PartitionTokenScheme
+	changed bool
+	// skipped is set if the switch was skipped because it would change the partition tokens.
+	skipped error
 }
 
-// logPartitionTokenSchemeUpdated logs a token scheme switch. Callers log it only once the ring update succeeds,
-// because the CAS callback can run several times.
-func (l *PartitionInstanceLifecycler) logPartitionTokenSchemeUpdated(from PartitionTokenScheme) {
-	level.Info(l.logger).Log("msg", "updated partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", from, "to_token_scheme", l.tokenScheme())
+// updatePartitionTokenScheme switches the partition to the configured token scheme. A switch that would change the
+// partition tokens is skipped instead of failing the startup, because the partition keeps routing as it does now.
+func (l *PartitionInstanceLifecycler) updatePartitionTokenScheme(ring *PartitionRingDesc, now time.Time) (tokenSchemeUpdate, error) {
+	from := ring.Partitions[l.cfg.PartitionID].TokenScheme
+	changed, err := ring.UpdatePartitionTokenScheme(l.cfg.PartitionID, l.tokenScheme(), now)
+	if errors.Is(err, ErrPartitionTokenSchemeSwitchUnsafe) {
+		return tokenSchemeUpdate{from: from, skipped: err}, nil
+	}
+	if err != nil {
+		return tokenSchemeUpdate{}, err
+	}
+	return tokenSchemeUpdate{from: from, changed: changed}, nil
+}
+
+func (l *PartitionInstanceLifecycler) logPartitionTokenSchemeUpdate(update tokenSchemeUpdate) {
+	if update.changed {
+		level.Info(l.logger).Log("msg", "updated partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", update.from, "to_token_scheme", l.tokenScheme())
+	} else if update.skipped != nil {
+		level.Warn(l.logger).Log("msg", "skipped partition token scheme switch, this should not happen", "partition", l.cfg.PartitionID, "from_token_scheme", update.from, "to_token_scheme", l.tokenScheme(), "err", update.skipped)
+	}
 }
 
 // tokenScheme returns the configured token scheme.

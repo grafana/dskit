@@ -237,10 +237,20 @@ func (m *PartitionRingDesc) UpdatePartitionTokenScheme(id int32, scheme Partitio
 		return false, nil
 	}
 
-	d.Tokens = nil // Tokens will be derived by readers
-	if scheme == PartitionTokensStored {
-		d.Tokens = generateStoredPartitionTokens(id)
+	// Switching only keeps the partition tokens if the current token scheme gives the same tokens.
+	if d.TokenScheme != PartitionTokensStored && d.TokenScheme != PartitionTokensSmt512 {
+		return false, fmt.Errorf("%w: partition %d has unknown token scheme %d", ErrPartitionTokenSchemeSwitchUnsafe, id, d.TokenScheme)
 	}
+	storedTokens := generateStoredPartitionTokens(id)
+	if scheme == PartitionTokensStored {
+		d.Tokens = storedTokens
+	} else {
+		if !slices.Equal(d.Tokens, storedTokens) {
+			return false, fmt.Errorf("%w: stored tokens of partition %d differ from the derived ones", ErrPartitionTokenSchemeSwitchUnsafe, id)
+		}
+		d.Tokens = nil // Tokens will be derived by readers
+	}
+
 	d.TokenScheme = scheme
 	d.TokenSchemeTimestamp = now.Unix()
 	m.Partitions[id] = d

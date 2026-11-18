@@ -668,10 +668,7 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 					tracker.OpenStream(connID)
 
 					if n%maxStreamsEveryN == 0 {
-						if got := tracker.MaxStreams(); got < 0 {
-							b.Errorf("MaxStreams() = %d, want >= 0", got)
-							return
-						}
+						tracker.MaxStreams()
 					}
 					// Let other goroutines interleave while streams are open.
 					runtime.Gosched()
@@ -679,8 +676,11 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 				}
 			})
 
-			if got := tracker.MaxStreams(); got != 0 {
-				b.Fatalf("MaxStreams() = %d, want 0", got)
+			// MaxStreams ignores negative counts, so check each entry.
+			for connID, conn := range tracker.connMap {
+				if got := conn.Load(); got != 0 {
+					b.Fatalf("stream count for %s = %d, want 0", connID, got)
+				}
 			}
 		})
 	}

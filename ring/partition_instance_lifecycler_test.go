@@ -6,16 +6,22 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/services"
 )
 
@@ -576,10 +582,90 @@ func startPartitionLifecyclerForTest(t *testing.T, existing *PartitionDesc, cfg 
 			return desc, true, nil
 		}))
 	}
+	return startPartitionLifecyclerWithStoreForTest(t, store, cfg, createOnStartup)
+}
+
+// startPartitionLifecyclerWithStoreForTest runs the lifecycler startup against store and returns the resulting ring.
+func startPartitionLifecyclerWithStoreForTest(t *testing.T, store kv.Client, cfg PartitionInstanceLifecyclerConfig, createOnStartup bool) *PartitionRingDesc {
+	t.Helper()
 	lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	lifecycler.SetCreatePartitionOnStartup(createOnStartup)
-	require.NoError(t, lifecycler.starting(ctx))
+	require.NoError(t, lifecycler.starting(t.Context()))
 
 	return getPartitionRingFromStore(t, store, ringKey)
+}
+
+// newPartitionRingMemberlistClientForTest returns a client of a single-node memberlist KV store, and the registry
+// of the store's metrics. Unlike the in-memory Consul client, the store merges updates and keeps tombstones.
+func newPartitionRingMemberlistClientForTest(t *testing.T) (kv.Client, *prometheus.Registry) {
+	t.Helper()
+	c := GetPartitionRingCodec()
+	var cfg memberlist.KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = memberlist.TCPTransportConfig{BindAddrs: []string{"127.0.0.1"}}
+	cfg.Codecs = []codec.Codec{c}
+	// Keep tombstones for longer than any test runs, independently of the default.
+	cfg.LeftIngestersTimeout = time.Hour
+	reg := prometheus.NewRegistry()
+	store := memberlist.NewKV(cfg, log.NewNopLogger(), nil, reg)
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), store))
+	// t.Context() is canceled before cleanup runs.
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), store)) })
+	client, err := memberlist.NewClient(store, c)
+	require.NoError(t, err)
+	return client, reg
+}
+
+// A partition can be recreated while memberlist still holds the tombstone of its previous incarnation. Get hides
+// tombstones, so the lifecycler creates the partition, and the merge into the tombstone must take the token scheme
+// of the new partition.
+func TestPartitionInstanceLifecycler_CreatePartition_ReplacesTombstoneTokenScheme(t *testing.T) {
+	// In the past, so the new partition state isn't in the same second as the deletion, which would win.
+	deletedAt := time.Now().Add(-time.Minute).Unix()
+	storedTokens := generateStoredPartitionTokens(1)
+
+	for _, tc := range []struct {
+		name           string
+		tombstone      PartitionDesc
+		useDerived     bool
+		expectedScheme PartitionTokenScheme
+		expectedTokens []uint32
+	}{
+		{
+			name:           "derived tombstone replaced by stored tokens",
+			tombstone:      PartitionDesc{Id: 1, State: PartitionDeleted, StateTimestamp: deletedAt, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: deletedAt},
+			useDerived:     false,
+			expectedScheme: PartitionTokensStored,
+			expectedTokens: storedTokens,
+		},
+		{
+			name:           "stored tombstone replaced by derived tokens",
+			tombstone:      PartitionDesc{Id: 1, State: PartitionDeleted, StateTimestamp: deletedAt, Tokens: storedTokens, TokenSchemeTimestamp: deletedAt},
+			useDerived:     true,
+			expectedScheme: PartitionTokensSmt512,
+			expectedTokens: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, reg := newPartitionRingMemberlistClientForTest(t)
+			require.NoError(t, store.CAS(t.Context(), ringKey, func(interface{}) (interface{}, bool, error) {
+				desc := NewPartitionRingDesc()
+				desc.Partitions[1] = tc.tombstone
+				return desc, true, nil
+			}))
+			// Get hides tombstones, so check through the store's metrics that it holds the tombstone.
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+				# HELP memberlist_client_kv_store_value_tombstones Number of tombstones currently present in KV store values
+				# TYPE memberlist_client_kv_store_value_tombstones gauge
+				memberlist_client_kv_store_value_tombstones{key="`+ringKey+`"} 1
+			`), "memberlist_client_kv_store_value_tombstones"))
+
+			desc := startPartitionLifecyclerWithStoreForTest(t, store, derivedTokensLifecyclerConfig(1, tc.useDerived), true)
+			actual := desc.Partitions[1]
+			assert.Equal(t, PartitionPending, actual.State)
+			assert.Equal(t, tc.expectedScheme, actual.TokenScheme)
+			assert.Equal(t, tc.expectedTokens, actual.Tokens)
+		})
+	}
 }

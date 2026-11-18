@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"maps"
 	mathRand "math/rand"
 	"net"
 	"runtime"
@@ -682,6 +683,34 @@ func BenchmarkStreamTrackerConnectionsSimulation(b *testing.B) {
 				if got := conn.Load(); got != 0 {
 					b.Fatalf("stream count for %s = %d, want 0", connID, got)
 				}
+			}
+		})
+	}
+}
+
+// BenchmarkStreamTrackerPrune measures an OpenStream call that prunes numIdle idle entries.
+// The prune holds the write lock, so it blocks all other OpenStream and CloseStream calls.
+func BenchmarkStreamTrackerPrune(b *testing.B) {
+	for _, numIdle := range []int{1000, 10000} {
+		b.Run(fmt.Sprintf("idle=%d", numIdle), func(b *testing.B) {
+			tracker := NewStreamTracker(prometheus.NewDesc("grpc_streams_by_conn_max", "", nil, nil))
+			idle := make(map[string]*atomic.Int32, numIdle)
+			for i := range numIdle {
+				idle[fmt.Sprintf("conn%d", i)] = atomic.NewInt32(0)
+			}
+
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				tracker.connMap = maps.Clone(idle)
+				tracker.lastPrune = time.Time{}
+				tracker.lastSize = 0
+				b.StartTimer()
+
+				tracker.OpenStream("new")
+			}
+
+			if got := len(tracker.connMap); got != 1 {
+				b.Fatalf("len(connMap) = %d after prune, want 1", got)
 			}
 		})
 	}

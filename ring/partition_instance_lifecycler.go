@@ -34,7 +34,9 @@ type PartitionInstanceLifecyclerConfig struct {
 	PartitionID int32
 
 	// CreatePartitionsWithDerivedTokens creates the partition with PartitionTokensSmt512, without stored tokens.
-	// At startup, if the partition already exists, the lifecycler switches it to the configured token scheme.
+	// At startup, if the partition already exists, the lifecycler switches it to the configured token scheme, in either
+	// direction, unless its token scheme was changed at or after startup, as by a node with a clock ahead.
+	// All owners of a partition should use the same setting, otherwise the owner that started last decides the scheme.
 	// When enabled, PartitionID must be below MaxDerivedTokenPartitions.
 	CreatePartitionsWithDerivedTokens bool
 
@@ -292,9 +294,12 @@ func (l *PartitionInstanceLifecycler) partitionOwnerID() string {
 }
 
 func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx context.Context) error {
-	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
+	var tokenSchemeUpdated bool
+	var previousTokenScheme PartitionTokenScheme
+	err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 		now := time.Now()
 		changed := false
+		tokenSchemeUpdated = false
 
 		partitionDesc, exists := ring.Partitions[l.cfg.PartitionID]
 		if exists {
@@ -313,10 +318,11 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 			}
 			changed = true
 		} else {
-			updated, err := l.updatePartitionTokenScheme(ring, now)
+			from, updated, err := l.updatePartitionTokenScheme(ring, now)
 			if err != nil {
 				return false, err
 			}
+			tokenSchemeUpdated, previousTokenScheme = updated, from
 			changed = updated
 		}
 
@@ -327,6 +333,13 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 
 		return changed, nil
 	})
+	if err != nil {
+		return err
+	}
+	if tokenSchemeUpdated {
+		l.logPartitionTokenSchemeUpdated(previousTokenScheme)
+	}
+	return nil
 }
 
 func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.Context) error {
@@ -368,33 +381,52 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 	}
 
 	// Ensure the instance is added as partition owner.
-	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
+	var tokenSchemeUpdated bool
+	var previousTokenScheme PartitionTokenScheme
+	err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 		now := time.Now()
-		changed, err := l.updatePartitionTokenScheme(ring, now)
+		from, changed, err := l.updatePartitionTokenScheme(ring, now)
 		if err != nil {
 			return false, err
 		}
+		tokenSchemeUpdated, previousTokenScheme = changed, from
 		if ring.AddOrUpdateOwner(l.partitionOwnerID(), OwnerActive, l.cfg.PartitionID, now) {
 			changed = true
 		}
 		return changed, nil
 	})
+	if err != nil {
+		return err
+	}
+	if tokenSchemeUpdated {
+		l.logPartitionTokenSchemeUpdated(previousTokenScheme)
+	}
+	return nil
 }
 
-func (l *PartitionInstanceLifecycler) updatePartitionTokenScheme(ring *PartitionRingDesc, now time.Time) (bool, error) {
+// updatePartitionTokenScheme switches the partition to the configured token scheme. It returns the previous token
+// scheme, and whether it was switched.
+func (l *PartitionInstanceLifecycler) updatePartitionTokenScheme(ring *PartitionRingDesc, now time.Time) (PartitionTokenScheme, bool, error) {
 	from := ring.Partitions[l.cfg.PartitionID].TokenScheme
-	to := PartitionTokensStored
-	if l.cfg.CreatePartitionsWithDerivedTokens {
-		to = PartitionTokensSmt512
-	}
-	changed, err := ring.UpdatePartitionTokenScheme(l.cfg.PartitionID, to, now)
+	changed, err := ring.UpdatePartitionTokenScheme(l.cfg.PartitionID, l.tokenScheme(), now)
 	if err != nil {
-		return false, err
+		return from, false, err
 	}
-	if changed {
-		level.Info(l.logger).Log("msg", "updated partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", from, "to_token_scheme", to)
+	return from, changed, nil
+}
+
+// logPartitionTokenSchemeUpdated logs a token scheme switch. Callers log it only once the ring update succeeds,
+// because the CAS callback can run several times.
+func (l *PartitionInstanceLifecycler) logPartitionTokenSchemeUpdated(from PartitionTokenScheme) {
+	level.Info(l.logger).Log("msg", "updated partition token scheme", "partition", l.cfg.PartitionID, "from_token_scheme", from, "to_token_scheme", l.tokenScheme())
+}
+
+// tokenScheme returns the configured token scheme.
+func (l *PartitionInstanceLifecycler) tokenScheme() PartitionTokenScheme {
+	if l.cfg.CreatePartitionsWithDerivedTokens {
+		return PartitionTokensSmt512
 	}
-	return changed, nil
+	return PartitionTokensStored
 }
 
 // reconcileOwnedPartition reconciles the owned partition.

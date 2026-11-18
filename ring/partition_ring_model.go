@@ -408,8 +408,11 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 			}
 
 			// Token scheme and tokens are merged together, because tokens currently only change when the token scheme
-			// changes. In case the timestamp is equal we keep the local one.
-			if otherPart.TokenSchemeTimestamp <= timestampLimit && otherPart.TokenSchemeTimestamp > thisTokenSchemeTimestamp {
+			// changes. In case the timestamp is equal we give priority to the derived token scheme, so members converge.
+			// Both token schemes give the same tokens, so either choice routes the same. We don't give priority to stored
+			// tokens, because members running a version without token schemes drop the token scheme, and gossip derived
+			// partitions as stored ones without tokens and token scheme timestamp.
+			if otherPart.TokenSchemeTimestamp <= timestampLimit && (otherPart.TokenSchemeTimestamp > thisTokenSchemeTimestamp || (otherPart.TokenSchemeTimestamp == thisTokenSchemeTimestamp && otherPart.TokenScheme == PartitionTokensSmt512 && thisPart.TokenScheme == PartitionTokensStored)) {
 				changed = true
 
 				thisPart.TokenScheme = otherPart.TokenScheme

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"sync"
 	"time"
 
 	kitlog "github.com/go-kit/log"
@@ -49,9 +48,9 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	// Initialise the result tracker, which is use to keep track of successes and failures.
 	var tracker replicationSetResultTracker
 	if r.MaxUnavailableZones > 0 {
-		tracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, nil, kitlog.NewNopLogger())
+		tracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, nil, nil, kitlog.NewNopLogger())
 	} else {
-		tracker = newDefaultResultTracker(r.Instances, r.MaxErrors, kitlog.NewNopLogger())
+		tracker = newDefaultResultTracker(r.Instances, r.MaxErrors, nil, kitlog.NewNopLogger())
 	}
 
 	var (
@@ -250,12 +249,62 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuor
 //
 // Failing to do this may result in a memory leak.
 func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
+	wrappedF := func(ctx context.Context, _ int, instance *InstanceDesc, cancel context.CancelCauseFunc) (T, error) {
+		return f(ctx, instance, cancel)
+	}
+
+	return doUntilQuorum(ctx, []ReplicationSet{r}, cfg, wrappedF, cleanupFunc)
+}
+
+// quorumSetState is the state of one replication set in doUntilQuorum.
+type quorumSetState[T any] struct {
+	set            *ReplicationSet
+	resultTracker  replicationSetResultTracker
+	contextTracker replicationSetContextTracker
+	resultsMap     map[*InstanceDesc]T
+	done           bool
+}
+
+// finish is called once the set has reached quorum. It appends the results required for quorum to results, and
+// cancels the requests and cleans up the results of the other instances.
+func (s *quorumSetState[T]) finish(results []T, cleanupFunc func(T)) []T {
+	for i := range s.set.Instances {
+		instance := &s.set.Instances[i]
+		result, haveResult := s.resultsMap[instance]
+
+		if haveResult {
+			if s.resultTracker.shouldIncludeResultFrom(instance) {
+				results = append(results, result)
+			} else {
+				s.contextTracker.cancelContextFor(instance, cancellation.NewErrorf("quorum reached, result not required from this instance"))
+				cleanupFunc(result)
+			}
+		} else {
+			// Nothing to clean up (yet) - this will be handled when the result arrives.
+			s.contextTracker.cancelContextFor(instance, cancellation.NewErrorf("quorum reached, result not required from this instance"))
+		}
+	}
+
+	s.resultsMap = nil
+	s.done = true
+	return results
+}
+
+// doUntilQuorum implements DoUntilQuorumWithoutSuccessfulContextCancellation for any number of replication sets. It
+// applies DoUntilQuorumWithoutSuccessfulContextCancellation's rules to each set, returns the results of every set
+// once they have all reached quorum, and fails as soon as any set fails.
+//
+// A single goroutine coordinates every set: the result trackers start requests through the start function, and the
+// results are fed back to the tracker of the set they belong to. f is also passed the index of the instance's set.
+func doUntilQuorum[T any](ctx context.Context, sets []ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, int, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
-	if r.ZoneAwarenessEnabled && r.MaxErrors > 0 {
-		return nil, fmt.Errorf("invalid ReplicationSet: MaxErrors is non-zero (is %v) and ZoneAwarenessEnabled is true", r.MaxErrors)
+	for _, r := range sets {
+		if r.ZoneAwarenessEnabled && r.MaxErrors > 0 {
+			return nil, fmt.Errorf("invalid ReplicationSet: MaxErrors is non-zero (is %v) and ZoneAwarenessEnabled is true", r.MaxErrors)
+		}
 	}
 
 	var logger kitlog.Logger = cfg.Logger
@@ -265,12 +314,13 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		logger = kitlog.With(logger, "partition_id", r.PartitionID)
 	}
 
-	if cfg.IncludeReplicaCount {
-		ctx = ContextWithAvailableReplicas(ctx, len(r.Instances))
+	totalInstances := 0
+	for _, r := range sets {
+		totalInstances += len(r.Instances)
 	}
 
-	resultsChan := make(chan instanceResult[T], len(r.Instances))
-	resultsRemaining := len(r.Instances)
+	resultsChan := make(chan instanceResult[T], totalInstances)
+	resultsRemaining := 0
 
 	defer func() {
 		go func() {
@@ -285,61 +335,89 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		}()
 	}()
 
-	var resultTracker replicationSetResultTracker
-	var contextTracker replicationSetContextTracker
-	if r.MaxUnavailableZones > 0 || r.ZoneAwarenessEnabled {
-		resultTracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, cfg.ZoneSorter, logger)
-		contextTracker = newZoneAwareContextTracker(ctx, r.Instances)
-	} else {
-		resultTracker = newDefaultResultTracker(r.Instances, r.MaxErrors, logger)
-		contextTracker = newDefaultContextTracker(ctx, r.Instances)
-	}
+	states := make([]quorumSetState[T], len(sets))
 
-	if cfg.MinimizeRequests {
-		resultTracker.startMinimumRequests()
-	} else {
-		resultTracker.startAllRequests()
-	}
+	for setIdx := range sets {
+		r := &sets[setIdx]
+		state := &states[setIdx]
+		state.set = r
+		state.resultsMap = make(map[*InstanceDesc]T, len(r.Instances))
 
-	for i := range r.Instances {
-		instance := &r.Instances[i]
-		ctx, ctxCancel := contextTracker.contextFor(instance)
+		setCtx := ctx
+		if cfg.IncludeReplicaCount {
+			setCtx = ContextWithAvailableReplicas(ctx, len(r.Instances))
+		}
 
-		go func(desc *InstanceDesc) {
-			if err := resultTracker.awaitStart(ctx, desc); err != nil {
-				// Post to resultsChan so that the deferred cleanup handler above eventually terminates.
+		// start calls f for instance in its own goroutine. The result tracker calls it for each instance whose
+		// request should start, so instances whose requests are never needed don't cost a goroutine.
+		start := func(instance *InstanceDesc) {
+			ctx, ctxCancel := state.contextTracker.contextFor(instance)
+			resultsRemaining++
+
+			go func() {
+				result, err := f(ctx, setIdx, instance, ctxCancel)
 				resultsChan <- instanceResult[T]{
+					result:   result,
 					err:      err,
-					instance: desc,
+					set:      setIdx,
+					instance: instance,
 				}
+			}()
+		}
 
-				return
-			}
-
-			result, err := f(ctx, desc, ctxCancel)
-			resultsChan <- instanceResult[T]{
-				result:   result,
-				err:      err,
-				instance: desc,
-			}
-		}(instance)
-	}
-
-	resultsMap := make(map[*InstanceDesc]T, len(r.Instances))
-	cleanupResultsAlreadyReceived := func() {
-		for _, result := range resultsMap {
-			cleanupFunc(result)
+		if r.MaxUnavailableZones > 0 || r.ZoneAwarenessEnabled {
+			state.resultTracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, cfg.ZoneSorter, start, logger)
+			state.contextTracker = newZoneAwareContextTracker(setCtx, r.Instances)
+		} else {
+			state.resultTracker = newDefaultResultTracker(r.Instances, r.MaxErrors, start, logger)
+			state.contextTracker = newDefaultContextTracker(setCtx, r.Instances)
 		}
 	}
 
-	terminate := func(err error, cause string) ([]T, error) {
+	results := make([]T, 0, totalInstances)
+	setsRemaining := len(sets)
+
+	cleanupResultsAlreadyReceived := func() {
+		for i := range states {
+			for _, result := range states[i].resultsMap {
+				cleanupFunc(result)
+			}
+		}
+	}
+
+	terminate := func(failed *quorumSetState[T], err error, cause string) ([]T, error) {
 		if cfg.Logger != nil && !errors.Is(err, context.Canceled) { // Cancellation is not an error.
 			cfg.Logger.SetError()
 		}
 
-		contextTracker.cancelAllContexts(cancellation.NewError(errors.New(cause)))
+		for i := range states {
+			if &states[i] == failed {
+				states[i].contextTracker.cancelAllContexts(cancellation.NewError(errors.New(cause)))
+			} else {
+				states[i].contextTracker.cancelAllContexts(fmt.Errorf("request canceled because quorum was not reached in another replication set due to error: %w", err))
+			}
+		}
+
 		cleanupResultsAlreadyReceived()
 		return nil, err
+	}
+
+	for i := range states {
+		if cfg.MinimizeRequests {
+			states[i].resultTracker.startMinimumRequests()
+		} else {
+			states[i].resultTracker.startAllRequests()
+		}
+	}
+
+	// A set that needs no successful requests (which should only happen if it's misconfigured) has already
+	// reached quorum.
+	for i := range states {
+		if states[i].resultTracker.succeeded() {
+			level.Debug(logger).Log("msg", "quorum reached")
+			results = states[i].finish(results, cleanupFunc)
+			setsRemaining--
+		}
 	}
 
 	var hedgingTrigger <-chan time.Time
@@ -350,7 +428,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		hedgingTrigger = ticker.C
 	}
 
-	for !resultTracker.succeeded() {
+	for setsRemaining > 0 {
 		select {
 		case <-ctx.Done():
 			err := context.Cause(ctx)
@@ -361,49 +439,48 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 
 			return nil, err
 		case <-hedgingTrigger:
-			resultTracker.startAdditionalRequests()
+			for i := range states {
+				if !states[i].done {
+					states[i].resultTracker.startAdditionalRequests()
+				}
+			}
 		case result := <-resultsChan:
 			resultsRemaining--
+			state := &states[result.set]
+
+			if state.done {
+				// The set has already reached quorum, and the context of this request was cancelled then.
+				if result.err == nil {
+					cleanupFunc(result.result)
+				}
+
+				continue
+			}
 
 			if result.err != nil && cfg.IsTerminalError != nil && cfg.IsTerminalError(result.err) {
 				level.Warn(logger).Log("msg", "cancelling all outstanding requests because a terminal error occurred", "err", result.err)
 				// We must return before calling resultTracker.done() below, otherwise done() might start further requests if request minimisation is enabled.
-				return terminate(result.err, "a terminal error occurred")
+				return terminate(state, result.err, "a terminal error occurred")
 			}
 
-			resultTracker.done(result.instance, result.err)
+			state.resultTracker.done(result.instance, result.err)
 
 			if result.err == nil {
-				resultsMap[result.instance] = result.result
+				state.resultsMap[result.instance] = result.result
 			} else {
-				contextTracker.cancelContextFor(result.instance, cancellation.NewErrorf("this instance returned an error: %w", result.err))
+				state.contextTracker.cancelContextFor(result.instance, cancellation.NewErrorf("this instance returned an error: %w", result.err))
 
-				if resultTracker.failed() {
+				if state.resultTracker.failed() {
 					level.Error(logger).Log("msg", "cancelling all outstanding requests because quorum cannot be reached")
-					return terminate(result.err, "quorum cannot be reached")
+					return terminate(state, result.err, "quorum cannot be reached")
 				}
 			}
-		}
-	}
 
-	level.Debug(logger).Log("msg", "quorum reached")
-
-	results := make([]T, 0, len(r.Instances))
-
-	for i := range r.Instances {
-		instance := &r.Instances[i]
-		result, haveResult := resultsMap[instance]
-
-		if haveResult {
-			if resultTracker.shouldIncludeResultFrom(instance) {
-				results = append(results, result)
-			} else {
-				contextTracker.cancelContextFor(instance, cancellation.NewErrorf("quorum reached, result not required from this instance"))
-				cleanupFunc(result)
+			if state.resultTracker.succeeded() {
+				level.Debug(logger).Log("msg", "quorum reached")
+				results = state.finish(results, cleanupFunc)
+				setsRemaining--
 			}
-		} else {
-			// Nothing to clean up (yet) - this will be handled by deferred call above.
-			contextTracker.cancelContextFor(instance, cancellation.NewErrorf("quorum reached, result not required from this instance"))
 		}
 	}
 
@@ -413,9 +490,9 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 // DoMultiUntilQuorumWithoutSuccessfulContextCancellation behaves similar to DoUntilQuorumWithoutSuccessfulContextCancellation
 // with the following exceptions:
 //
-//   - This function calls DoUntilQuorumWithoutSuccessfulContextCancellation for each input ReplicationSet and requires
-//     DoUntilQuorumWithoutSuccessfulContextCancellation to successfully run for each of them. Execution breaks on the
-//     first error returned by DoUntilQuorumWithoutSuccessfulContextCancellation on any ReplicationSet.
+//   - This function applies DoUntilQuorumWithoutSuccessfulContextCancellation's rules to each input ReplicationSet,
+//     all at once, and requires each of them to reach quorum. Execution breaks on the first ReplicationSet that
+//     fails, and requests to the other ReplicationSets are cancelled.
 //
 //   - This function requires that the callback function f always call context.CancelCauseFunc once done. Failing to
 //     cancel the context will leak resources.
@@ -436,13 +513,6 @@ func DoMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.C
 // The returned context.Context is the internal context used by workers and it's used for testing purposes.
 func doMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, sets []ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, context.Context, error) {
 	var (
-		returnResultsMx = sync.Mutex{}
-		returnResults   = make([]T, 0, len(sets)*len(sets[0].Instances)) // Assume all replication sets have the same number of instances.
-
-		returnErrOnce sync.Once
-		returnErr     error // The first error occurred.
-
-		workersGroup                 = sync.WaitGroup{}
 		workersCtx, cancelWorkersCtx = context.WithCancelCause(ctx)
 
 		inflightTracker = newInflightInstanceTracker(sets)
@@ -454,57 +524,27 @@ func doMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.C
 		}
 	}
 
-	// Start a worker for each set. A worker is responsible to call DoUntilQuorumWithoutSuccessfulContextCancellation()
-	// for the given replication set and handle the result.
-	workersGroup.Add(len(sets))
+	wrappedFn := func(ctx context.Context, setIdx int, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (T, error) {
+		// The callback function has been called, so we need to track it.
+		inflightTracker.addInstance(setIdx, instance)
 
-	for idx, set := range sets {
-		go func(idx int, set ReplicationSet) {
-			defer workersGroup.Done()
+		// Inject custom logic in the context.CancelCauseFunc.
+		return f(ctx, instance, func(cause error) {
+			// Call the original one.
+			cancelCtx(cause)
 
-			wrappedFn := func(ctx context.Context, instance *InstanceDesc, cancelCtx context.CancelCauseFunc) (T, error) {
-				// The callback function has been called, so we need to track it.
-				inflightTracker.addInstance(idx, instance)
-
-				// Inject custom logic in the context.CancelCauseFunc.
-				return f(ctx, instance, func(cause error) {
-					// Call the original one.
-					cancelCtx(cause)
-
-					// The callback has done, so we can remove it from tracker and then check if it's safe
-					// to cancel the workers context.
-					inflightTracker.removeInstance(idx, instance)
-					cancelWorkersCtxIfSafe()
-				})
-			}
-
-			setResults, setErr := DoUntilQuorumWithoutSuccessfulContextCancellation[T](workersCtx, set, cfg, wrappedFn, cleanupFunc)
-
-			if setErr != nil {
-				returnErrOnce.Do(func() {
-					returnErr = setErr
-
-					// Interrupt the execution of all workers.
-					cancelWorkersCtx(fmt.Errorf("request canceled because quorum was not reached in another replication set due to error: %w", setErr))
-				})
-
-				return
-			}
-
-			// Keep track of the results.
-			returnResultsMx.Lock()
-			returnResults = append(returnResults, setResults...)
-			returnResultsMx.Unlock()
-		}(idx, set)
+			// The callback has done, so we can remove it from tracker and then check if it's safe
+			// to cancel the workers context.
+			inflightTracker.removeInstance(setIdx, instance)
+			cancelWorkersCtxIfSafe()
+		})
 	}
 
-	// Wait until all goroutines have terminated.
-	workersGroup.Wait()
-
-	// All workers completed, so it's guaranteed returnResults and returnErr won't be accessed by workers anymore,
-	// and it's safe to read them with no locking.
-	if returnErr != nil {
-		return nil, workersCtx, returnErr
+	results, err := doUntilQuorum[T](workersCtx, sets, cfg, wrappedFn, cleanupFunc)
+	if err != nil {
+		// Interrupt the requests of all replication sets.
+		cancelWorkersCtx(fmt.Errorf("request canceled because quorum was not reached in another replication set due to error: %w", err))
+		return nil, workersCtx, err
 	}
 
 	// No error occurred. It means workers context hasn't been canceled yet, and we don't expect more callbacks
@@ -512,12 +552,13 @@ func doMultiUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.C
 	inflightTracker.allInstancesAdded()
 	cancelWorkersCtxIfSafe()
 
-	return returnResults, workersCtx, nil
+	return results, workersCtx, nil
 }
 
 type instanceResult[T any] struct {
 	result   T
 	err      error
+	set      int // The index of the replication set instance belongs to, for doUntilQuorum.
 	instance *InstanceDesc
 }
 

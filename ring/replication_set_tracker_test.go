@@ -3,20 +3,16 @@ package ring
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/dskit/test"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 )
 
 type contextKey int
@@ -164,25 +160,16 @@ func TestDefaultResultTracker(t *testing.T) {
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			testCase.run(t, newDefaultResultTracker(testCase.instances, testCase.maxErrors, log.NewNopLogger()))
+			testCase.run(t, newDefaultResultTracker(testCase.instances, testCase.maxErrors, nil, log.NewNopLogger()))
 		})
 	}
 }
 
-func TestDefaultResultTracker_AwaitStart_ContextCancelled(t *testing.T) {
-	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
-	instances := []InstanceDesc{instance1}
-	tracker := newDefaultResultTracker(instances, 0, log.NewNopLogger())
+// startedInstances records the instances a result tracker starts requests for, in order.
+type startedInstances []*InstanceDesc
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		cancel()
-	}()
-
-	instance := &instances[0]
-	require.Equal(t, context.Canceled, tracker.awaitStart(ctx, instance), "expected awaitStart() to abort when context cancelled")
+func (s *startedInstances) onStart(instance *InstanceDesc) {
+	*s = append(*s, instance)
 }
 
 func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
@@ -193,15 +180,16 @@ func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	logger := &testLogger{}
-	tracker := newDefaultResultTracker(instances, 1, logger)
+	var started startedInstances
+	tracker := newDefaultResultTracker(instances, 1, started.onStart, logger)
 
 	tracker.startAllRequests()
+	expectedStarted := []*InstanceDesc{}
 	expectedLogMessages := []map[interface{}]interface{}{}
 
 	for i := range instances {
 		instance := &instances[i]
-		require.NoError(t, tracker.awaitStart(context.Background(), instance), "requests for all instances should be released immediately")
-
+		expectedStarted = append(expectedStarted, instance)
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 			"level":        level.DebugValue(),
 			"msg":          "starting request to instance",
@@ -211,62 +199,32 @@ func TestDefaultResultTracker_StartAllRequests(t *testing.T) {
 		})
 	}
 
+	require.ElementsMatch(t, expectedStarted, started, "requests for all instances should be started immediately")
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 }
 
 func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
-	t.Parallel()
-
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Id: "instance-1"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Id: "instance-2"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Id: "instance-3"}
 	instance4 := InstanceDesc{Addr: "127.0.0.4", Id: "instance-4"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
-	instanceRequestCounts := make([]atomic.Uint64, len(instances))
+	instanceRequestCounts := make(map[*InstanceDesc]int, len(instances))
 
 	const iterations = 1000
-	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) (retErr error) {
-		t := test.NewRecoverableT(t)
-		defer t.RecoverError(&retErr)
-
+	for range iterations {
 		logger := &testLogger{}
-		tracker := newDefaultResultTracker(instances, 1, logger)
+		var started startedInstances
+		tracker := newDefaultResultTracker(instances, 1, started.onStart, logger)
 		tracker.startMinimumRequests()
 
-		mtx := sync.RWMutex{}
-		instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
-		countInstancesReleased := 0
-
-		for instanceIdx := range instances {
-			instanceIdx := instanceIdx
-			instance := &instances[instanceIdx]
-			go func() {
-				err := tracker.awaitStart(context.Background(), instance)
-
-				mtx.Lock()
-				defer mtx.Unlock()
-				instancesAwaitReleaseResults[instance] = err
-				countInstancesReleased++
-
-				if err == nil {
-					instanceRequestCounts[instanceIdx].Inc()
-				}
-			}()
-		}
-
-		require.Eventually(t, func() bool {
-			mtx.RLock()
-			defer mtx.RUnlock()
-
-			return countInstancesReleased == 3
-		}, 1*time.Second, 10*time.Millisecond, "expected three of the four requests to be released")
-
-		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "all requests released so far should be signalled to start immediately")
+		require.Len(t, started, 3, "expected three of the four requests to be started")
 
 		var expectedLogMessages []map[interface{}]interface{}
 
-		for instance := range instancesAwaitReleaseResults {
+		for _, instance := range started {
+			instanceRequestCounts[instance]++
 			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 				"level":        level.DebugValue(),
 				"msg":          "starting request to instance",
@@ -276,33 +234,22 @@ func TestDefaultResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.
 			})
 		}
 
-		// Signal that the three released requests have completed successfully.
-		tracker.done(nil, nil)
-		tracker.done(nil, nil)
-		tracker.done(nil, nil)
-
-		require.Eventually(t, func() bool {
-			mtx.RLock()
-			defer mtx.RUnlock()
-
-			return countInstancesReleased == 4
-		}, 1*time.Second, 10*time.Millisecond, "expected the final request to be released")
-
-		require.Equal(t, 3, nilErrorCount(instancesAwaitReleaseResults), "expected the final request to be released but not signalled to start")
+		// Signal that the three started requests have completed successfully.
+		for _, instance := range started {
+			tracker.done(instance, nil)
+		}
 
 		require.True(t, tracker.succeeded())
-
+		require.Len(t, started, 3, "expected the final request to not be started")
 		require.ElementsMatch(t, expectedLogMessages, logger.messages)
-		return nil
-	})
-	require.NoError(t, err)
+	}
 
 	// With 1000 iterations, 4 instances and max 1 error, we'd expect each instance to receive
 	// 750 calls each (each instance has a 3-in-4 chance of being called in each iteration).
 	const expectedAverageCallsPerInstance = 750
 	const tolerancePerc = 0.2
-	for _, instanceRequestCount := range instanceRequestCounts {
-		require.InDeltaf(t, expectedAverageCallsPerInstance, instanceRequestCount.Load(), expectedAverageCallsPerInstance*tolerancePerc, "expected roughly even distribution of requests across all instances, but got %v", instanceRequestCounts)
+	for i := range instances {
+		require.InDeltaf(t, expectedAverageCallsPerInstance, instanceRequestCounts[&instances[i]], expectedAverageCallsPerInstance*tolerancePerc, "expected roughly even distribution of requests across all instances, but got %v", instanceRequestCounts)
 	}
 }
 
@@ -314,59 +261,26 @@ func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAl
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	logger := &testLogger{}
-	tracker := newDefaultResultTracker(instances, 2, logger)
+	var started startedInstances
+	tracker := newDefaultResultTracker(instances, 2, started.onStart, logger)
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	instancesReleased := []*InstanceDesc{}
-	countInstancesSignalledToStart := 0
+	require.Len(t, started, 2, "expected two requests to be started initially")
 
-	for instanceIdx := range instances {
-		instance := &instances[instanceIdx]
-		go func() {
-			err := tracker.awaitStart(context.Background(), instance)
-
-			mtx.Lock()
-			defer mtx.Unlock()
-
-			instancesReleased = append(instancesReleased, instance)
-			if err == nil {
-				countInstancesSignalledToStart++
-			}
-
-			// If this is the second request released, mark it as failed.
-			if len(instancesReleased) == 2 {
-				tracker.done(instance, errors.New("something went wrong"))
-			}
-		}()
-	}
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return len(instancesReleased) == 3
-	}, 1*time.Second, 10*time.Millisecond, "expected three requests to be released")
-
-	require.Equal(t, 3, countInstancesSignalledToStart, "all requests released so far should be signalled to start")
+	// Mark the second request as failed, and check that another request is started.
+	tracker.done(started[1], errors.New("something went wrong"))
+	require.Len(t, started, 3, "expected a third request to be started after a failure")
 
 	// Mark the remaining two requests as successful.
-	tracker.done(nil, nil)
-	tracker.done(nil, nil)
+	tracker.done(started[0], nil)
+	tracker.done(started[2], nil)
 
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return len(instancesReleased) == 4
-	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
-
-	require.Equal(t, 3, countInstancesSignalledToStart, "final request should not be signalled to start")
+	require.Len(t, started, 3, "final request should not be started")
 	require.True(t, tracker.succeeded(), "overall request should succeed")
 
 	var expectedLogMessages []map[interface{}]interface{}
 
-	for _, instance := range instancesReleased[0:2] {
+	for _, instance := range started[0:2] {
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 			"level":        level.DebugValue(),
 			"msg":          "starting request to instance",
@@ -380,16 +294,16 @@ func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsBelowMaximumAl
 		map[interface{}]interface{}{
 			"level":        level.WarnValue(),
 			"msg":          "instance failed",
-			"instanceAddr": instancesReleased[1].Addr,
-			"instanceID":   instancesReleased[1].Id,
+			"instanceAddr": started[1].Addr,
+			"instanceID":   started[1].Id,
 			"err":          errors.New("something went wrong"),
 		},
 		map[interface{}]interface{}{
 			"level":        level.DebugValue(),
 			"msg":          "starting request to instance",
 			"reason":       "failure of other instance",
-			"instanceAddr": instancesReleased[2].Addr,
-			"instanceID":   instancesReleased[2].Id,
+			"instanceAddr": started[2].Addr,
+			"instanceID":   started[2].Id,
 		},
 	)
 
@@ -403,46 +317,22 @@ func TestDefaultResultTracker_StartMinimumRequests_FailingRequestsEqualToMaximum
 	instance4 := InstanceDesc{Addr: "127.0.0.4"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
-	tracker := newDefaultResultTracker(instances, 2, log.NewNopLogger())
+	var started startedInstances
+	tracker := newDefaultResultTracker(instances, 2, started.onStart, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	countInstancesReleased := 0
-	countInstancesSignalledToStart := 0
+	require.Len(t, started, 2, "expected two requests to be started initially")
 
-	for instanceIdx := range instances {
-		instanceIdx := instanceIdx
-		instance := &instances[instanceIdx]
-		go func() {
-			err := tracker.awaitStart(context.Background(), instance)
+	// Mark the first two requests as failed.
+	tracker.done(started[0], errors.New("something went wrong"))
+	tracker.done(started[1], errors.New("something went wrong"))
 
-			mtx.Lock()
-			defer mtx.Unlock()
-
-			countInstancesReleased++
-			if err == nil {
-				countInstancesSignalledToStart++
-			}
-
-			// If this is the first or second request released, mark it as failed.
-			if countInstancesReleased <= 2 {
-				tracker.done(instance, errors.New("something went wrong"))
-			}
-		}()
-	}
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return countInstancesReleased == 4
-	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
+	require.Len(t, started, 4, "expected all four requests to be started")
 
 	// Mark the remaining requests as successful.
-	tracker.done(nil, nil)
-	tracker.done(nil, nil)
+	tracker.done(started[2], nil)
+	tracker.done(started[3], nil)
 
-	require.Equal(t, 4, countInstancesSignalledToStart, "expected all four instances to be signalled to start")
 	require.True(t, tracker.succeeded(), "overall request should succeed")
 }
 
@@ -453,72 +343,36 @@ func TestDefaultResultTracker_StartMinimumRequests_MoreFailingRequestsThanMaximu
 	instance4 := InstanceDesc{Addr: "127.0.0.4"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
-	tracker := newDefaultResultTracker(instances, 1, log.NewNopLogger())
+	var started startedInstances
+	tracker := newDefaultResultTracker(instances, 1, started.onStart, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	countInstancesReleased := 0
-	countInstancesSignalledToStart := 0
+	require.Len(t, started, 3, "expected three requests to be started initially")
 
-	for instanceIdx := range instances {
-		instanceIdx := instanceIdx
-		instance := &instances[instanceIdx]
-		go func() {
-			err := tracker.awaitStart(context.Background(), instance)
-
-			mtx.Lock()
-			defer mtx.Unlock()
-
-			countInstancesReleased++
-			if err == nil {
-				countInstancesSignalledToStart++
-			}
-
-			// If this is the first or second request released, mark it as failed.
-			if countInstancesReleased <= 2 {
-				tracker.done(instance, errors.New("something went wrong"))
-			}
-		}()
-	}
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return countInstancesReleased == 4
-	}, 1*time.Second, 10*time.Millisecond, "expected all four requests to be released")
+	// Mark the first two requests as failed.
+	tracker.done(started[0], errors.New("something went wrong"))
+	require.Len(t, started, 4, "expected the final request to be started after a failure")
+	tracker.done(started[1], errors.New("something went wrong"))
 
 	// Mark the remaining requests as successful.
-	tracker.done(nil, nil)
-	tracker.done(nil, nil)
+	tracker.done(started[2], nil)
+	tracker.done(started[3], nil)
 
-	require.Equal(t, 4, countInstancesSignalledToStart, "expected all four instances to be signalled to start")
 	require.True(t, tracker.failed(), "overall request should fail")
 }
 
 func TestDefaultResultTracker_StartMinimumRequests_MaxErrorsIsNumberOfInstances(t *testing.T) {
 	// This scenario should never happen in the real world, but if we were to get into this situation,
-	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorumWithoutSuccessfulContextCancellation.
+	// no request is needed to reach quorum, so none should be started.
 
 	instance1 := InstanceDesc{Addr: "127.0.0.1"}
 	instances := []InstanceDesc{instance1}
-	tracker := newDefaultResultTracker(instances, 1, log.NewNopLogger())
+	var started startedInstances
+	tracker := newDefaultResultTracker(instances, 1, started.onStart, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
-	var err error
-	released := make(chan struct{})
-
-	go func() {
-		err = tracker.awaitStart(context.Background(), &instances[0])
-		close(released)
-	}()
-
-	select {
-	case <-released:
-		require.Equal(t, errResultNotNeeded, err, "should not start request not required for quorum")
-	case <-time.After(time.Second):
-		require.Fail(t, "gave up waiting for request to be released")
-	}
+	require.Empty(t, started, "should not start request not required for quorum")
+	require.True(t, tracker.succeeded())
 }
 
 func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
@@ -529,76 +383,48 @@ func TestDefaultResultTracker_StartAdditionalRequests(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4}
 
 	logger := &testLogger{}
-	tracker := newDefaultResultTracker(instances, 2, logger)
+	var started startedInstances
+	tracker := newDefaultResultTracker(instances, 2, started.onStart, logger)
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	instancesReleased := []*InstanceDesc{}
-	countInstancesSignalledToStart := 0
-
-	for instanceIdx := range instances {
-		instanceIdx := instanceIdx
-		instance := &instances[instanceIdx]
-		go func() {
-			err := tracker.awaitStart(context.Background(), instance)
-
-			mtx.Lock()
-			defer mtx.Unlock()
-
-			instancesReleased = append(instancesReleased, instance)
-			if err == nil {
-				countInstancesSignalledToStart++
-			}
-		}()
-	}
-
-	waitForInstancesReleased := func(expected int, msg string) {
-		require.Eventually(t, func() bool {
-			mtx.RLock()
-			defer mtx.RUnlock()
-
-			return len(instancesReleased) == expected && countInstancesSignalledToStart == expected
-		}, time.Second, 10*time.Millisecond, msg)
-	}
-
-	waitForInstancesReleased(2, "should initially release two requests")
+	require.Len(t, started, 2, "should initially start two requests")
 	expectedLogMessages := []map[interface{}]interface{}{
 		{
 			"level":        level.DebugValue(),
 			"msg":          "starting request to instance",
 			"reason":       "initial requests",
-			"instanceAddr": instancesReleased[0].Addr,
-			"instanceID":   instancesReleased[0].Id,
+			"instanceAddr": started[0].Addr,
+			"instanceID":   started[0].Id,
 		},
 		{
 			"level":        level.DebugValue(),
 			"msg":          "starting request to instance",
 			"reason":       "initial requests",
-			"instanceAddr": instancesReleased[1].Addr,
-			"instanceID":   instancesReleased[1].Id,
+			"instanceAddr": started[1].Addr,
+			"instanceID":   started[1].Id,
 		},
 	}
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 
 	tracker.startAdditionalRequests()
-	waitForInstancesReleased(3, "should release a third request after startAdditionalRequests()")
+	require.Len(t, started, 3, "should start a third request after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 		"level":        level.DebugValue(),
 		"msg":          "starting request to instance",
 		"reason":       "hedging",
-		"instanceAddr": instancesReleased[2].Addr,
-		"instanceID":   instancesReleased[2].Id,
+		"instanceAddr": started[2].Addr,
+		"instanceID":   started[2].Id,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 
 	tracker.startAdditionalRequests()
-	waitForInstancesReleased(4, "should release remaining request after startAdditionalRequests()")
+	require.Len(t, started, 4, "should start remaining request after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 		"level":        level.DebugValue(),
 		"msg":          "starting request to instance",
 		"reason":       "hedging",
-		"instanceAddr": instancesReleased[3].Addr,
-		"instanceID":   instancesReleased[3].Id,
+		"instanceAddr": started[3].Addr,
+		"instanceID":   started[3].Id,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 }
@@ -822,25 +648,9 @@ func TestZoneAwareResultTracker(t *testing.T) {
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			testCase.run(t, newZoneAwareResultTracker(testCase.instances, testCase.maxUnavailableZones, nil, log.NewNopLogger()))
+			testCase.run(t, newZoneAwareResultTracker(testCase.instances, testCase.maxUnavailableZones, nil, nil, log.NewNopLogger()))
 		})
 	}
-}
-
-func TestZoneAwareResultTracker_AwaitStart_ContextCancelled(t *testing.T) {
-	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
-	instances := []InstanceDesc{instance1}
-	tracker := newZoneAwareResultTracker(instances, 0, nil, log.NewNopLogger())
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		cancel()
-	}()
-
-	instance := &instances[0]
-	require.Equal(t, context.Canceled, tracker.awaitStart(ctx, instance), "expected awaitStart() to abort when context cancelled")
 }
 
 func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
@@ -853,14 +663,16 @@ func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6}
 
 	logger := &testLogger{}
-	tracker := newZoneAwareResultTracker(instances, 1, nil, logger)
+	var started startedInstances
+	tracker := newZoneAwareResultTracker(instances, 1, nil, started.onStart, logger)
 
 	tracker.startAllRequests()
 
+	expectedStarted := []*InstanceDesc{}
 	for i := range instances {
-		instance := &instances[i]
-		require.NoError(t, tracker.awaitStart(context.Background(), instance), "requests for all instances should be released immediately")
+		expectedStarted = append(expectedStarted, &instances[i])
 	}
+	require.ElementsMatch(t, expectedStarted, started, "requests for all instances should be started immediately")
 
 	expectedLogMessages := []map[interface{}]interface{}{}
 
@@ -877,8 +689,6 @@ func TestZoneAwareResultTracker_StartAllRequests(t *testing.T) {
 }
 
 func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testing.T) {
-	t.Parallel()
-
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instance3 := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-b"}
@@ -887,111 +697,45 @@ func TestZoneAwareResultTracker_StartMinimumRequests_NoFailingRequests(t *testin
 	instance6 := InstanceDesc{Addr: "127.0.0.6", Zone: "zone-c"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6}
 
-	var zoneARequestCount, zoneBRequestCount, zoneCRequestCount atomic.Int64
+	zoneRequestCounts := map[string]int{}
 
 	const iterations = 900
-	err := concurrency.ForEachJob(context.Background(), iterations, 50, func(_ context.Context, _ int) (retErr error) {
-		t := test.NewRecoverableT(t)
-		defer t.RecoverError(&retErr)
-
+	for range iterations {
 		logger := &testLogger{}
-		tracker := newZoneAwareResultTracker(instances, 1, nil, logger)
+		var started startedInstances
+		tracker := newZoneAwareResultTracker(instances, 1, nil, started.onStart, logger)
 		tracker.startMinimumRequests()
 
-		mtx := sync.RWMutex{}
-		instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
-		instancesReleased := make([]*InstanceDesc, 0, len(instances))
+		require.Len(t, started, 4, "expected four instances to be started")
+		require.Equal(t, 2, uniqueZoneCount(started), "expected two zones to be started initially")
 
-		for instanceIdx := range instances {
-			instanceIdx := instanceIdx
-			instance := &instances[instanceIdx]
-			go func() {
-				released := tracker.awaitStart(context.Background(), instance)
-
-				mtx.Lock()
-				defer mtx.Unlock()
-				instancesAwaitReleaseResults[instance] = released
-				instancesReleased = append(instancesReleased, instance)
-			}()
-		}
-
-		require.Eventually(t, func() bool {
-			mtx.RLock()
-			defer mtx.RUnlock()
-
-			return len(instancesReleased) == 4
-		}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released")
-
-		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the four instances to be signalled to start immediately")
-		require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
-
-		_, zoneAReleased := instancesAwaitReleaseResults[&instances[0]]
-		_, zoneBReleased := instancesAwaitReleaseResults[&instances[2]]
-		_, zoneCReleased := instancesAwaitReleaseResults[&instances[4]]
 		expectedLogMessages := []map[interface{}]interface{}{}
 
-		if zoneAReleased {
-			zoneARequestCount.Inc()
-			tracker.done(&instance1, nil)
-			tracker.done(&instance2, nil)
-
+		for _, zone := range uniqueZones(started) {
+			zoneRequestCounts[zone]++
 			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 				"level":  level.DebugValue(),
 				"msg":    "starting requests to zone",
 				"reason": "initial requests",
-				"zone":   "zone-a",
+				"zone":   zone,
 			})
 		}
 
-		if zoneBReleased {
-			zoneBRequestCount.Inc()
-			tracker.done(&instance3, nil)
-			tracker.done(&instance4, nil)
-
-			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-				"level":  level.DebugValue(),
-				"msg":    "starting requests to zone",
-				"reason": "initial requests",
-				"zone":   "zone-b",
-			})
-		}
-
-		if zoneCReleased {
-			zoneCRequestCount.Inc()
-			tracker.done(&instance5, nil)
-			tracker.done(&instance6, nil)
-
-			expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
-				"level":  level.DebugValue(),
-				"msg":    "starting requests to zone",
-				"reason": "initial requests",
-				"zone":   "zone-c",
-			})
+		for _, instance := range started {
+			tracker.done(instance, nil)
 		}
 
 		require.True(t, tracker.succeeded())
-
-		require.Eventually(t, func() bool {
-			mtx.RLock()
-			defer mtx.RUnlock()
-
-			return len(instancesReleased) == 6
-		}, 1*time.Second, 10*time.Millisecond, "expected the final requests to be released")
-
-		require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected the final requests to not be signalled to start")
-
+		require.Len(t, started, 4, "expected the final zone to not be started")
 		require.ElementsMatch(t, expectedLogMessages, logger.messages)
-		return nil
-	})
-	require.NoError(t, err)
+	}
 
 	// With 900 iterations, 3 zones and max 1 failing zone, we'd expect each zone to receive
 	// 600 calls each (each zone has a 2-in-3 chance of being called in each iteration).
 	const expectedAverageCallsPerZone = 600
 	const tolerancePerc = 0.2
-	zoneRequestCounts := []int64{zoneARequestCount.Load(), zoneBRequestCount.Load(), zoneCRequestCount.Load()}
-	for _, zoneRequestCount := range zoneRequestCounts {
-		require.InDeltaf(t, expectedAverageCallsPerZone, zoneRequestCount, expectedAverageCallsPerZone*tolerancePerc, "expected roughly even distribution of requests across all zones, but got %v", zoneRequestCounts)
+	for _, zone := range []string{"zone-a", "zone-b", "zone-c"} {
+		require.InDeltaf(t, expectedAverageCallsPerZone, zoneRequestCounts[zone], expectedAverageCallsPerZone*tolerancePerc, "expected roughly even distribution of requests across all zones, but got %v", zoneRequestCounts)
 	}
 }
 
@@ -1007,37 +751,15 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
 	logger := &testLogger{}
-	tracker := newZoneAwareResultTracker(instances, 2, nil, logger)
+	var started startedInstances
+	tracker := newZoneAwareResultTracker(instances, 2, nil, started.onStart, logger)
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
-	instancesReleased := make([]*InstanceDesc, 0, len(instances))
-	for instanceIdx := range instances {
-		instanceIdx := instanceIdx
-		instance := &instances[instanceIdx]
-		go func() {
-			released := tracker.awaitStart(context.Background(), instance)
-
-			mtx.Lock()
-			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instance] = released
-			instancesReleased = append(instancesReleased, instance)
-		}()
-	}
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return len(instancesReleased) == 4
-	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
-
-	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
-	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
+	require.Len(t, started, 4, "expected four instances to be started initially")
+	require.Equal(t, 2, uniqueZoneCount(started), "expected two zones to be started initially")
 	expectedLogMessages := []map[interface{}]interface{}{}
 
-	for _, zone := range uniqueZones(instancesReleased) {
+	for _, zone := range uniqueZones(started) {
 		expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 			"level":  level.DebugValue(),
 			"msg":    "starting requests to zone",
@@ -1048,51 +770,38 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 
-	// Simulate one request failing and check that another zone is released.
-	tracker.done(instancesReleased[0], errors.New("something went wrong"))
+	// Simulate one request failing and check that another zone is started.
+	tracker.done(started[0], errors.New("something went wrong"))
 
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-		return len(instancesReleased) == 6
-	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
-
-	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
-	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
+	require.Len(t, started, 6, "expected an additional two instances to be started after a failed request in one zone")
+	require.Equal(t, 3, uniqueZoneCount(started), "expected three zones to be started after one failed")
 
 	expectedLogMessages = append(expectedLogMessages,
 		map[interface{}]interface{}{
 			"level":               level.WarnValue(),
 			"msg":                 "request to instance has failed, zone cannot contribute to quorum",
-			"zone":                instancesReleased[0].Zone,
-			"failingInstanceAddr": instancesReleased[0].Addr,
-			"failingInstanceID":   instancesReleased[0].Id,
+			"zone":                started[0].Zone,
+			"failingInstanceAddr": started[0].Addr,
+			"failingInstanceID":   started[0].Id,
 			"err":                 errors.New("something went wrong"),
 		},
 		map[interface{}]interface{}{
 			"level":  level.DebugValue(),
 			"msg":    "starting requests to zone",
 			"reason": "failure of other zone",
-			"zone":   instancesReleased[4].Zone,
+			"zone":   started[4].Zone,
 		},
 	)
 
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 
-	// Simulate the remaining requests succeeding and check that the last zone is signalled not to start.
-	for _, i := range instancesReleased[1:] {
+	// Simulate the remaining requests succeeding and check that the last zone is not started.
+	for _, i := range started[1:] {
 		tracker.done(i, nil)
 	}
 
 	require.True(t, tracker.succeeded())
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-		return len(instancesReleased) == 8
-	}, 1*time.Second, 10*time.Millisecond, "expected remaining instances to be released")
-
-	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
+	require.Len(t, started, 6, "expected remaining instances to not be started")
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 }
 
@@ -1107,98 +816,42 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesLessThanMaximum
 	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
-	tracker := newZoneAwareResultTracker(instances, 2, nil, log.NewNopLogger())
+	var started startedInstances
+	tracker := newZoneAwareResultTracker(instances, 2, nil, started.onStart, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
-	instancesReleased := make([]*InstanceDesc, 0, len(instances))
-	reportingSecondFailure := false
-	instanceReleasedWhileReportingSecondFailure := false
+	require.Len(t, started, 4, "expected four instances to be started initially")
+	require.Equal(t, 2, uniqueZoneCount(started), "expected two zones to be started initially")
 
-	for instanceIdx := range instances {
-		instanceIdx := instanceIdx
-		instance := &instances[instanceIdx]
-		go func() {
-			released := tracker.awaitStart(context.Background(), instance)
-
-			mtx.Lock()
-			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instance] = released
-			instancesReleased = append(instancesReleased, instance)
-
-			if reportingSecondFailure {
-				instanceReleasedWhileReportingSecondFailure = true
-			}
-		}()
-	}
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return len(instancesReleased) == 4
-	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
-
-	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
-	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
-
-	// Simulate one request failing and check that another zone is released.
-	failingInstance := instancesReleased[0]
+	// Simulate one request failing and check that another zone is started.
+	failingInstance := started[0]
 	tracker.done(failingInstance, errors.New("something went wrong"))
 
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-		return len(instancesReleased) == 6
-	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
+	require.Len(t, started, 6, "expected an additional two instances to be started after a failed request in one zone")
+	require.Equal(t, 3, uniqueZoneCount(started), "expected three zones to be started after one failed")
 
-	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
-	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
-
-	// Simulate the other request in the same zone as the previous failing request also failing, and check that no further zones are released.
+	// Simulate the other request in the same zone as the previous failing request also failing, and check that no further zones are started.
 	var otherInstanceInFailingZone *InstanceDesc
 
-	for _, i := range instancesReleased[1:] {
+	for _, i := range started[1:] {
 		if i.Zone == failingInstance.Zone {
 			otherInstanceInFailingZone = i
 			break
 		}
 	}
 
-	mtx.Lock()
-	reportingSecondFailure = true
-	mtx.Unlock()
 	tracker.done(otherInstanceInFailingZone, errors.New("something else went wrong"))
+	require.Len(t, started, 6, "expected no instances to be started after reporting a second failure in the same zone")
 
-	// Wait a little to make sure no more requests were released.
-	require.Never(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return instanceReleasedWhileReportingSecondFailure
-	}, 500*time.Millisecond, 10*time.Millisecond, "expected no instances to be released after reporting a second failure in the same zone")
-
-	mtx.Lock()
-	reportingSecondFailure = false
-	mtx.Unlock()
-
-	// Simulate the remaining requests succeeding and check that the last zone is signalled not to start.
-	for _, i := range instancesReleased {
+	// Simulate the remaining requests succeeding and check that the last zone is not started.
+	for _, i := range started {
 		if i != failingInstance && i != otherInstanceInFailingZone {
 			tracker.done(i, nil)
 		}
 	}
 
 	require.True(t, tracker.succeeded())
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-		return len(instancesReleased) == 8
-	}, 1*time.Second, 10*time.Millisecond, "expected remaining instances to be released")
-
-	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected remaining instances to not be signalled to start")
+	require.Len(t, started, 6, "expected remaining instances to not be started")
 }
 
 func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumAllowed(t *testing.T) {
@@ -1212,64 +865,30 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesEqualToMaximumA
 	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
-	tracker := newZoneAwareResultTracker(instances, 2, nil, log.NewNopLogger())
+	var started startedInstances
+	tracker := newZoneAwareResultTracker(instances, 2, nil, started.onStart, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
-	instancesReleased := make([]*InstanceDesc, 0, len(instances))
-	for instanceIdx := range instances {
-		instanceIdx := instanceIdx
-		instance := &instances[instanceIdx]
-		go func() {
-			released := tracker.awaitStart(context.Background(), instance)
+	require.Len(t, started, 4, "expected four instances to be started initially")
+	require.Equal(t, 2, uniqueZoneCount(started), "expected two zones to be started initially")
 
-			mtx.Lock()
-			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instance] = released
-			instancesReleased = append(instancesReleased, instance)
-		}()
-	}
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return len(instancesReleased) == 4
-	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
-
-	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
-	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
-
-	// Simulate one request failing and check that another zone is released.
-	firstFailingInstance := instancesReleased[0]
+	// Simulate one request failing and check that another zone is started.
+	firstFailingInstance := started[0]
 	tracker.done(firstFailingInstance, errors.New("something went wrong"))
 
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-		return len(instancesReleased) == 6
-	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in one zone")
+	require.Len(t, started, 6, "expected an additional two instances to be started after a failed request in one zone")
+	require.Equal(t, 3, uniqueZoneCount(started), "expected three zones to be started after one failed")
 
-	require.Equal(t, 6, nilErrorCount(instancesAwaitReleaseResults), "expected all six instances to be signalled to start")
-	require.Equal(t, 3, uniqueZoneCount(instancesReleased), "expected three zones to be released after one failed")
-
-	// Simulate another request from another zone failing and check that another zone is released.
-	for _, i := range instancesReleased {
+	// Simulate another request from another zone failing and check that another zone is started.
+	for _, i := range started {
 		if i.Zone != firstFailingInstance.Zone {
 			tracker.done(i, errors.New("something else went wrong"))
 			break
 		}
 	}
 
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-		return len(instancesReleased) == 8
-	}, 1*time.Second, 10*time.Millisecond, "expected an additional two instances to be released after a failed request in a second zone")
-
-	require.Equal(t, 8, nilErrorCount(instancesAwaitReleaseResults), "expected all eight instances to be signalled to start")
-	require.Equal(t, 4, uniqueZoneCount(instancesReleased), "expected four zones to be released after two failed")
+	require.Len(t, started, 8, "expected an additional two instances to be started after a failed request in a second zone")
+	require.Equal(t, 4, uniqueZoneCount(started), "expected four zones to be started after two failed")
 }
 
 func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaximumAllowed(t *testing.T) {
@@ -1283,90 +902,39 @@ func TestZoneAwareResultTracker_StartMinimumRequests_FailingZonesGreaterThanMaxi
 	instance8 := InstanceDesc{Addr: "127.0.0.8", Zone: "zone-d"}
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
-	tracker := newZoneAwareResultTracker(instances, 2, nil, log.NewNopLogger())
+	var started startedInstances
+	tracker := newZoneAwareResultTracker(instances, 2, nil, started.onStart, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
-	instancesReleased := make([]*InstanceDesc, 0, len(instances))
-	for instanceIdx := range instances {
-		instanceIdx := instanceIdx
-		instance := &instances[instanceIdx]
-		go func() {
-			released := tracker.awaitStart(context.Background(), instance)
+	require.Len(t, started, 4, "expected four instances to be started initially")
+	require.Equal(t, 2, uniqueZoneCount(started), "expected two zones to be started initially")
 
-			mtx.Lock()
-			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instance] = released
-			instancesReleased = append(instancesReleased, instance)
-		}()
-	}
-
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return len(instancesReleased) == 4
-	}, 1*time.Second, 10*time.Millisecond, "expected four instances to be released initially")
-
-	require.Equal(t, 4, nilErrorCount(instancesAwaitReleaseResults), "expected all four instances to be signalled to start")
-	require.Equal(t, 2, uniqueZoneCount(instancesReleased), "expected two zones to be released initially")
-
-	// Simulate both initial zones failing and check that the remaining two zones are released.
-	for _, i := range instancesReleased {
+	// Simulate both initial zones failing and check that the remaining two zones are started.
+	for _, i := range slices.Clone(started) {
 		tracker.done(i, errors.New("something went wrong"))
 	}
 
-	require.Eventually(t, func() bool {
-		mtx.RLock()
-		defer mtx.RUnlock()
-
-		return len(instancesReleased) == 8
-	}, 1*time.Second, 10*time.Millisecond, "expected all instances to be released after initial two zone failures")
-
-	require.Equal(t, 8, nilErrorCount(instancesAwaitReleaseResults), "expected all instances to be signalled to start")
+	require.Len(t, started, 8, "expected all instances to be started after initial two zone failures")
 
 	// Simulate one more zone failing.
-	tracker.done(instancesReleased[4], errors.New("something else went wrong"))
+	tracker.done(started[4], errors.New("something else went wrong"))
 
 	require.True(t, tracker.failed())
 }
 
 func TestZoneAwareResultTracker_StartMinimumRequests_MaxUnavailableZonesIsNumberOfZones(t *testing.T) {
 	// This scenario should never happen in the real world, but if we were to get into this situation,
-	// we need to make sure we don't end up blocking forever, which could lead to leaking a goroutine in DoUntilQuorumWithoutSuccessfulContextCancellation.
+	// no zone is needed to reach quorum, so none should be started.
 
 	instance1 := InstanceDesc{Addr: "127.0.0.1", Zone: "zone-a"}
 	instance2 := InstanceDesc{Addr: "127.0.0.2", Zone: "zone-a"}
 	instances := []InstanceDesc{instance1, instance2}
-	tracker := newZoneAwareResultTracker(instances, 1, nil, log.NewNopLogger())
+	var started startedInstances
+	tracker := newZoneAwareResultTracker(instances, 1, nil, started.onStart, log.NewNopLogger())
 	tracker.startMinimumRequests()
 
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-	done := make(chan struct{})
-
-	for i := range instances {
-		i := i
-		instance := &instances[i]
-		go func() {
-			err := tracker.awaitStart(context.Background(), instance)
-			require.Equal(t, errResultNotNeeded, err)
-			wg.Done()
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Nothing more to do here.
-	case <-time.After(time.Second):
-		require.Fail(t, "gave up waiting for requests to be released")
-	}
+	require.Empty(t, started, "should not start requests not required for quorum")
+	require.True(t, tracker.succeeded())
 }
 
 func TestZoneAwareResultTracker_StartMinimumRequests_ZoneSorting(t *testing.T) {
@@ -1375,50 +943,30 @@ func TestZoneAwareResultTracker_StartMinimumRequests_ZoneSorting(t *testing.T) {
 	zoneCInstance := InstanceDesc{Addr: "127.0.0.3", Zone: "zone-c"}
 	zoneDInstance := InstanceDesc{Addr: "127.0.0.4", Zone: "zone-d"}
 	instances := []InstanceDesc{zoneAInstance, zoneBInstance, zoneCInstance, zoneDInstance}
-	mtx := sync.Mutex{}
-	released := []bool{false, false, false, false}
 
 	zoneSorter := func([]string) []string {
 		return []string{"zone-c", "zone-a", "zone-d", "zone-b"}
 	}
 
-	tracker := newZoneAwareResultTracker(instances, 2, zoneSorter, log.NewNopLogger())
+	// Each zone has one instance, so the zones started are the zones of the instances started, in order.
+	var started startedInstances
+	zonesInStartOrder := func(started []*InstanceDesc) []string {
+		zones := make([]string, 0, len(started))
+		for _, instance := range started {
+			zones = append(zones, instance.Zone)
+		}
+		return zones
+	}
+
+	tracker := newZoneAwareResultTracker(instances, 2, zoneSorter, started.onStart, log.NewNopLogger())
 	tracker.startMinimumRequests()
-
-	for i := range instances {
-		i := i
-		instance := &instances[i]
-		go func() {
-			err := tracker.awaitStart(context.Background(), instance)
-			require.NoError(t, err)
-			mtx.Lock()
-			released[i] = true
-			mtx.Unlock()
-		}()
-	}
-
-	requireZonesReleased := func(expected []bool, msg string) {
-		require.Eventually(t, func() bool {
-			mtx.Lock()
-			defer mtx.Unlock()
-
-			for i, e := range expected {
-				if released[i] != e {
-					return false
-				}
-			}
-
-			return true
-		}, time.Second, 10*time.Millisecond, msg+", zones released are: ", released)
-	}
-
-	requireZonesReleased([]bool{true, false, true, false}, "first two zones (A and C) should be released immediately")
+	require.Equal(t, []string{"zone-c", "zone-a"}, zonesInStartOrder(started), "first two zones (C and A) should be started immediately")
 
 	tracker.done(&instances[0], errors.New("zone A failed"))
-	requireZonesReleased([]bool{true, false, true, true}, "third zone (D) should be released after first failure")
+	require.Equal(t, []string{"zone-c", "zone-a", "zone-d"}, zonesInStartOrder(started), "third zone (D) should be started after first failure")
 
 	tracker.done(&instances[3], errors.New("zone D failed"))
-	requireZonesReleased([]bool{true, true, true, true}, "final zone (C) should be released after first failure")
+	require.Equal(t, []string{"zone-c", "zone-a", "zone-d", "zone-b"}, zonesInStartOrder(started), "final zone (B) should be started after second failure")
 }
 
 func TestZoneAwareResultTracker_StartAdditionalRequests(t *testing.T) {
@@ -1433,40 +981,17 @@ func TestZoneAwareResultTracker_StartAdditionalRequests(t *testing.T) {
 	instances := []InstanceDesc{instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8}
 
 	logger := &testLogger{}
-	tracker := newZoneAwareResultTracker(instances, 2, nil, logger)
+	var started startedInstances
+	tracker := newZoneAwareResultTracker(instances, 2, nil, started.onStart, logger)
 	tracker.startMinimumRequests()
 
-	mtx := sync.RWMutex{}
-	instancesAwaitReleaseResults := make(map[*InstanceDesc]error, len(instances))
-	instancesReleased := make([]*InstanceDesc, 0, len(instances))
-	for instanceIdx := range instances {
-		instanceIdx := instanceIdx
-		instance := &instances[instanceIdx]
-		go func() {
-			released := tracker.awaitStart(context.Background(), instance)
-
-			mtx.Lock()
-			defer mtx.Unlock()
-			instancesAwaitReleaseResults[instance] = released
-			instancesReleased = append(instancesReleased, instance)
-		}()
+	requireZonesStarted := func(expectedZones int, msg string) {
+		require.Len(t, started, 2*expectedZones, msg)
+		require.Equal(t, expectedZones, uniqueZoneCount(started), msg)
 	}
 
-	waitForZonesReleased := func(expectedZones int, msg string) {
-		expectedInstances := 2 * expectedZones
-		require.Eventually(t, func() bool {
-			mtx.RLock()
-			defer mtx.RUnlock()
-
-			return len(instancesReleased) == expectedInstances
-		}, time.Second, 10*time.Millisecond, msg)
-
-		require.Equal(t, expectedInstances, nilErrorCount(instancesAwaitReleaseResults), "expected all released instances to be signalled to start")
-		require.Equal(t, expectedZones, uniqueZoneCount(instancesReleased), msg)
-	}
-
-	waitForZonesReleased(2, "should initially release two zones")
-	initialZones := uniqueZones(instancesReleased)
+	requireZonesStarted(2, "should initially start two zones")
+	initialZones := uniqueZones(started)
 	expectedLogMessages := []map[interface{}]interface{}{
 		{
 			"level":  level.DebugValue(),
@@ -1484,22 +1009,22 @@ func TestZoneAwareResultTracker_StartAdditionalRequests(t *testing.T) {
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 
 	tracker.startAdditionalRequests()
-	waitForZonesReleased(3, "should release a third zone after startAdditionalRequests()")
+	requireZonesStarted(3, "should start a third zone after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 		"level":  level.DebugValue(),
 		"msg":    "starting requests to zone",
 		"reason": "hedging",
-		"zone":   instancesReleased[4].Zone,
+		"zone":   started[4].Zone,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 
 	tracker.startAdditionalRequests()
-	waitForZonesReleased(4, "should release remaining zone after startAdditionalRequests()")
+	requireZonesStarted(4, "should start remaining zone after startAdditionalRequests()")
 	expectedLogMessages = append(expectedLogMessages, map[interface{}]interface{}{
 		"level":  level.DebugValue(),
 		"msg":    "starting requests to zone",
 		"reason": "hedging",
-		"zone":   instancesReleased[6].Zone,
+		"zone":   started[6].Zone,
 	})
 	require.ElementsMatch(t, expectedLogMessages, logger.messages)
 }
@@ -1701,16 +1226,4 @@ func uniqueZones(instances []*InstanceDesc) []string {
 
 func uniqueZoneCount(instances []*InstanceDesc) int {
 	return len(uniqueZones(instances))
-}
-
-func nilErrorCount(l map[*InstanceDesc]error) int {
-	count := 0
-
-	for _, err := range l {
-		if err == nil {
-			count++
-		}
-	}
-
-	return count
 }

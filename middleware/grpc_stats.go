@@ -181,6 +181,9 @@ func (st *StreamTracker) OpenStream(connID string) {
 	}
 }
 
+// CloseStream removes a stream from the count for connID.
+// Each call must match an earlier OpenStream call on the same connection.
+// An extra call makes the count too low by one, until a prune removes the entry.
 func (st *StreamTracker) CloseStream(connID string) {
 	st.mu.RLock()
 	if conn := st.connMap[connID]; conn != nil {

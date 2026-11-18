@@ -1245,13 +1245,27 @@ func TestPartitionRingDesc_UpdatePartitionState(t *testing.T) {
 func TestPartitionRingDesc_UpdatePartitionTokenScheme_EqualTimestamp(t *testing.T) {
 	now := time.Now()
 	stored := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, Tokens: generateStoredPartitionTokens(1), TokenSchemeTimestamp: now.Unix()}
-	desc := NewPartitionRingDesc()
-	desc.Partitions[1] = stored
+	derived := PartitionDesc{Id: 1, State: PartitionActive, StateTimestamp: 1, TokenScheme: PartitionTokensSmt512, TokenSchemeTimestamp: now.Unix()}
 
-	changed, err := desc.UpdatePartitionTokenScheme(1, PartitionTokensSmt512, now)
-	require.NoError(t, err)
-	assert.False(t, changed)
-	assert.Equal(t, stored, desc.Partitions[1])
+	for name, tc := range map[string]struct {
+		existing        PartitionDesc
+		scheme          PartitionTokenScheme
+		expected        PartitionDesc
+		expectedChanged bool
+	}{
+		"stored tokens are converted to derived tokens": {existing: stored, scheme: PartitionTokensSmt512, expected: derived, expectedChanged: true},
+		"derived tokens are kept":                       {existing: derived, scheme: PartitionTokensStored, expected: derived},
+	} {
+		t.Run(name, func(t *testing.T) {
+			desc := NewPartitionRingDesc()
+			desc.Partitions[1] = tc.existing
+
+			changed, err := desc.UpdatePartitionTokenScheme(1, tc.scheme, now)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedChanged, changed)
+			assert.Equal(t, tc.expected, desc.Partitions[1])
+		})
+	}
 }
 
 func TestPartitionRingDesc_PartitionOwnersCountUpdatedBefore(t *testing.T) {

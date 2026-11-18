@@ -233,8 +233,7 @@ func (m *PartitionRingDesc) UpdatePartitionTokenScheme(id int32, scheme Partitio
 		return false, fmt.Errorf("cannot update token scheme for partition %d: unknown token scheme %d", id, scheme)
 	}
 
-	// The merge would drop a switch that isn't newer than the current token scheme, so keep the current one.
-	if now.Unix() <= localMergeTimestamp(d.TokenSchemeTimestamp, futureTimestampLimit(now)) {
+	if !incomingTokenSchemeWins(scheme, now.Unix(), d.TokenScheme, d.TokenSchemeTimestamp, futureTimestampLimit(now)) {
 		return false, nil
 	}
 
@@ -246,6 +245,19 @@ func (m *PartitionRingDesc) UpdatePartitionTokenScheme(id int32, scheme Partitio
 	d.TokenSchemeTimestamp = now.Unix()
 	m.Partitions[id] = d
 	return true, nil
+}
+
+// incomingTokenSchemeWins reports whether the merge replaces the local token scheme with the incoming one. In case the
+// timestamp is equal we give priority to the derived token scheme, so members converge. Both token schemes give the
+// same tokens, so either choice routes the same. We don't give priority to stored tokens, because members running a
+// version without token schemes drop the token scheme, and gossip derived partitions as stored ones without tokens and
+// token scheme timestamp.
+func incomingTokenSchemeWins(incoming PartitionTokenScheme, incomingTimestamp int64, local PartitionTokenScheme, localTimestamp, limit int64) bool {
+	if incomingTimestamp > limit {
+		return false
+	}
+	localTimestamp = localMergeTimestamp(localTimestamp, limit)
+	return incomingTimestamp > localTimestamp || (incomingTimestamp == localTimestamp && incoming == PartitionTokensSmt512 && local == PartitionTokensStored)
 }
 
 // UpdatePartitionStateChangeLock changes the state change lock of a partition. Returns true if the lock was changed,
@@ -388,7 +400,6 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 			// and replaceable by any valid incoming timestamp when local.
 			thisStateTimestamp := localMergeTimestamp(thisPart.StateTimestamp, timestampLimit)
 			thisStateChangeLockedTimestamp := localMergeTimestamp(thisPart.StateChangeLockedTimestamp, timestampLimit)
-			thisTokenSchemeTimestamp := localMergeTimestamp(thisPart.TokenSchemeTimestamp, timestampLimit)
 
 			// In case the timestamp is equal we give priority to the deleted state.
 			// Reason is that timestamp has second precision, so we cover the case an
@@ -408,11 +419,8 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 			}
 
 			// Token scheme and tokens are merged together, because tokens currently only change when the token scheme
-			// changes. In case the timestamp is equal we give priority to the derived token scheme, so members converge.
-			// Both token schemes give the same tokens, so either choice routes the same. We don't give priority to stored
-			// tokens, because members running a version without token schemes drop the token scheme, and gossip derived
-			// partitions as stored ones without tokens and token scheme timestamp.
-			if otherPart.TokenSchemeTimestamp <= timestampLimit && (otherPart.TokenSchemeTimestamp > thisTokenSchemeTimestamp || (otherPart.TokenSchemeTimestamp == thisTokenSchemeTimestamp && otherPart.TokenScheme == PartitionTokensSmt512 && thisPart.TokenScheme == PartitionTokensStored)) {
+			// changes.
+			if incomingTokenSchemeWins(otherPart.TokenScheme, otherPart.TokenSchemeTimestamp, thisPart.TokenScheme, thisPart.TokenSchemeTimestamp, timestampLimit) {
 				changed = true
 
 				thisPart.TokenScheme = otherPart.TokenScheme

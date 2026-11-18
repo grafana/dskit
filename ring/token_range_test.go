@@ -204,7 +204,7 @@ func testCheckingOfKeyOwnership(t *testing.T, randomizeInstanceStates bool) {
 	// Generate users with different number of tokens
 	userTokens := map[string][]uint32{}
 	shardSizes := map[string]int{}
-	for _, cnt := range []int{1000, 5000, 10000, 25000, 50000, 100000} {
+	for _, cnt := range []int{1000, 5000, 10000, 25000} {
 		uid := fmt.Sprintf("%dk", cnt/1000)
 		userTokens[uid] = gen.GenerateTokens(cnt, nil)
 

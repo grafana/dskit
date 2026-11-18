@@ -7,12 +7,14 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/hashicorp/golang-lru/v2/simplelru"
 )
 
 // shuffleShardCacheStorage is a generic interface for cache storage.
 // This abstracts the difference between map-based and LRU-based storage.
 type shuffleShardCacheStorage[V any] interface {
 	get(key subringCacheKey) (V, bool)
+	peek(key subringCacheKey) (V, bool)
 	set(key subringCacheKey, value V)
 	len() int
 }
@@ -24,6 +26,12 @@ type partitionRingShuffleShardCache struct {
 	mtx                  sync.RWMutex
 	cacheWithoutLookback shuffleShardCacheStorage[*PartitionRing]
 	cacheWithLookback    shuffleShardCacheStorage[cachedSubringWithLookback[*PartitionRing]]
+
+	// Only watcher caches track fills. Tracking keys avoids extending the lifetime of evicted shards.
+	trackFills            bool
+	activePartitionsCount int
+	recentWithoutLookback *simplelru.LRU[subringCacheKey, struct{}]
+	recentWithLookback    *simplelru.LRU[subringCacheKey, struct{}]
 }
 
 // newPartitionRingShuffleShardCache creates a new partition ring shuffle shard cache.
@@ -62,7 +70,11 @@ func (r *partitionRingShuffleShardCache) setSubring(identifier string, size int,
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
-	r.cacheWithoutLookback.set(subringCacheKey{identifier: identifier, shardSize: size}, subring)
+	key := subringCacheKey{identifier: identifier, shardSize: size}
+	r.cacheWithoutLookback.set(key, subring)
+	if r.trackFills && size < r.activePartitionsCount {
+		recordPartitionShardFill(&r.recentWithoutLookback, key)
+	}
 }
 
 func (r *partitionRingShuffleShardCache) getSubring(identifier string, size int) *PartitionRing {
@@ -109,6 +121,9 @@ func (r *partitionRingShuffleShardCache) setSubringWithLookback(identifier strin
 			validForLookbackWindowsStartingAfter:  lookbackWindowStart,
 			validForLookbackWindowsStartingBefore: validForLookbackWindowsStartingBefore,
 		})
+		if r.trackFills && (lookbackPeriod > 0 || size < r.activePartitionsCount) {
+			recordPartitionShardFill(&r.recentWithLookback, key)
+		}
 	}
 }
 
@@ -121,13 +136,16 @@ func (r *partitionRingShuffleShardCache) getSubringWithLookback(identifier strin
 		return nil
 	}
 
-	lookbackWindowStart := now.Add(-lookbackPeriod).Unix()
-	if lookbackWindowStart < cached.validForLookbackWindowsStartingAfter || lookbackWindowStart > cached.validForLookbackWindowsStartingBefore {
+	if !cached.validForLookbackWindowStartingAt(now.Add(-lookbackPeriod).Unix()) {
 		// The cached subring is not valid for the lookback window that has been requested.
 		return nil
 	}
 
 	return cached.subring
+}
+
+func (c cachedSubringWithLookback[R]) validForLookbackWindowStartingAt(start int64) bool {
+	return start >= c.validForLookbackWindowsStartingAfter && start <= c.validForLookbackWindowsStartingBefore
 }
 
 // mapCacheStorage is a generic map-based implementation of shuffleShardCacheStorage.
@@ -148,6 +166,10 @@ func newMapCacheStorage[V any]() *mapCacheStorage[V] {
 func (s *mapCacheStorage[V]) get(key subringCacheKey) (V, bool) { //nolint:unused
 	cached, ok := s.cache[key]
 	return cached, ok
+}
+
+func (s *mapCacheStorage[V]) peek(key subringCacheKey) (V, bool) { //nolint:unused
+	return s.get(key)
 }
 
 func (s *mapCacheStorage[V]) set(key subringCacheKey, value V) { //nolint:unused
@@ -175,6 +197,10 @@ func newLRUCacheStorage[V any](size int) (*lruCacheStorage[V], error) {
 
 func (s *lruCacheStorage[V]) get(key subringCacheKey) (V, bool) { //nolint:unused
 	return s.cache.Get(key)
+}
+
+func (s *lruCacheStorage[V]) peek(key subringCacheKey) (V, bool) { //nolint:unused
+	return s.cache.Peek(key)
 }
 
 func (s *lruCacheStorage[V]) set(key subringCacheKey, value V) { //nolint:unused

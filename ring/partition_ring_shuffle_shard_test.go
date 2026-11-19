@@ -2,6 +2,7 @@ package ring
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -56,7 +57,7 @@ func TestPartitionRing_ShuffleShard_SubringIndexes(t *testing.T) {
 					require.NoError(t, err)
 					for _, size := range []int{1, 4, 12, 0} {
 						for _, lookback := range []time.Duration{0, time.Hour} {
-							shard, err := parent.shuffleShard("tenant", size, lookback, now)
+							shard, err := parent.shuffleShard("tenant", size, lookback, now, nil)
 							require.NoError(t, err)
 							if lookback == 0 && (size == 0 || size >= len(active)) {
 								ids := make(map[int32]struct{}, shard.PartitionsCount())
@@ -136,6 +137,128 @@ func TestPartitionRing_ShuffleShard_SharesAllActiveSubring(t *testing.T) {
 	assert.Equal(t, sub.PartitionIDs(), nested.PartitionIDs())
 }
 
+// shardReuseDesc returns a ring of 40 Active partitions, each with two owners, and a Pending
+// partition 40, for tests that change it the ways a ring changes after partitions exist.
+func shardReuseDesc(t *testing.T) *PartitionRingDesc {
+	t.Helper()
+	tokens, err := generatePartitionTokens(40)
+	require.NoError(t, err)
+	desc := NewPartitionRingDesc()
+	for id := int32(0); id <= 40; id++ {
+		state := PartitionActive
+		if id == 40 {
+			state = PartitionPending
+		}
+		desc.Partitions[id] = PartitionDesc{Id: id, State: state, StateTimestamp: 10, Tokens: tokens[id]}
+		for _, zone := range []string{"a", "b"} {
+			desc.Owners[fmt.Sprintf("owner-%s-%d", zone, id)] = OwnerDesc{OwnedPartition: id, State: OwnerActive, UpdatedTimestamp: 10}
+		}
+	}
+	return desc
+}
+
+// TestPartitionRing_ShuffleShard_ReusesUnchangedShards checks that after a ring update that isn't
+// Pending-only, every shard equals one built by a fresh ring, and that exactly the shards the update
+// didn't change are served from the previous ring rather than rebuilt.
+func TestPartitionRing_ShuffleShard_ReusesUnchangedShards(t *testing.T) {
+	// Sizes cover small shards, built from their own tokens, and a shard of a quarter of the ring or
+	// more, filtered from the parent ring. Default-size shards get the shared subring instead.
+	sizes := []int{2, 5, 12}
+	// The hour of lookback starts at 25, after every partition's state timestamp (10), so a
+	// partition whose state changes at 30 enters lookback and extends the shards that walk past it.
+	const lookback = time.Hour
+	now := time.Unix(3625, 0)
+	for name, tc := range map[string]struct {
+		change   func(d *PartitionRingDesc, id int32)
+		activate bool
+	}{
+		"pending partition switched to active": {activate: true, change: func(d *PartitionRingDesc, id int32) {
+			p := d.Partitions[id]
+			p.State, p.StateTimestamp = PartitionActive, 30
+			d.Partitions[id] = p
+		}},
+		"active partition switched to inactive": {change: func(d *PartitionRingDesc, id int32) {
+			p := d.Partitions[id]
+			p.State, p.StateTimestamp = PartitionInactive, 30
+			d.Partitions[id] = p
+		}},
+		"owner of an active partition updated": {change: func(d *PartitionRingDesc, id int32) {
+			d.Owners[fmt.Sprintf("owner-a-%d", id)] = OwnerDesc{OwnedPartition: id, State: OwnerActive, UpdatedTimestamp: 30}
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := shardReuseDesc(t)
+			after := shardReuseDesc(t)
+			prev, err := NewPartitionRingWithOptions(*before, DefaultPartitionRingOptions())
+			require.NoError(t, err)
+			prev.inheritShards(nil)
+			// Warm both paths before taking the snapshot. Twelve tenants fit within the budget.
+			var oldShards, oldLookbackShards [12]*PartitionRing
+			for i := range oldShards {
+				tenant, size := fmt.Sprintf("tenant-%d", i), sizes[i%len(sizes)]
+				oldShards[i], err = prev.ShuffleShard(tenant, size)
+				require.NoError(t, err)
+				oldLookbackShards[i], err = prev.ShuffleShardWithLookback(tenant, size, lookback, now)
+				require.NoError(t, err)
+			}
+			// For changes to an active partition, pick one that a warmed shard selected.
+			require.NotEmpty(t, oldShards[0].PartitionIDs())
+			changed := oldShards[0].PartitionIDs()[0]
+			if tc.activate {
+				changed = 40
+			}
+			tc.change(after, changed)
+			require.False(t, sameExceptPending(before, after), "the update must replace the current cache")
+			next, err := NewPartitionRingWithOptions(*after, DefaultPartitionRingOptions())
+			require.NoError(t, err)
+			next.inheritShards(prev)
+			require.NotNil(t, next.prevShardCandidates)
+			t.Cleanup(next.prevShardCandidates.close)
+			next.prevShardCandidates.mu.Lock()
+			candidateCount := len(next.prevShardCandidates.entries)
+			next.prevShardCandidates.mu.Unlock()
+			require.Equal(t, 2*len(oldShards), candidateCount, "fixture must fit in the reuse budget")
+			fresh, err := NewPartitionRingWithOptions(*after, DefaultPartitionRingOptions())
+			require.NoError(t, err)
+
+			reused, rebuilt := 0, 0
+			check := func(label string, old, got, want *PartitionRing) {
+				require.Equal(t, want.PartitionIDs(), got.PartitionIDs(), label)
+				assert.Equal(t, want.desc, got.desc, label)
+				assertPartitionRingSubringIndexes(t, want, got)
+				require.NotEmpty(t, old.ringTokens)
+				require.NotEmpty(t, got.ringTokens)
+				if slices.Equal(old.PartitionIDs(), want.PartitionIDs()) && !slices.Contains(want.PartitionIDs(), changed) {
+					require.Same(t, &old.ringTokens[0], &got.ringTokens[0], "%s: unchanged shard indexes rebuilt", label)
+					reused++
+				} else {
+					require.NotSame(t, &old.ringTokens[0], &got.ringTokens[0], "%s: changed shard indexes reused", label)
+					rebuilt++
+				}
+			}
+			for i := range oldShards {
+				tenant, size := fmt.Sprintf("tenant-%d", i), sizes[i%len(sizes)]
+				label := fmt.Sprintf("%s, size %d", tenant, size)
+
+				got, err := next.ShuffleShard(tenant, size)
+				require.NoError(t, err)
+				want, err := fresh.ShuffleShard(tenant, size)
+				require.NoError(t, err)
+				check(label, oldShards[i], got, want)
+
+				got, err = next.ShuffleShardWithLookback(tenant, size, lookback, now)
+				require.NoError(t, err)
+				want, err = fresh.ShuffleShardWithLookback(tenant, size, lookback, now)
+				require.NoError(t, err)
+				check(label+", with lookback", oldLookbackShards[i], got, want)
+			}
+			// The fixture must exercise both outcomes, or the checks above prove nothing about one.
+			require.Positive(t, reused, "no shard reused")
+			require.Positive(t, rebuilt, "no shard rebuilt")
+		})
+	}
+}
+
 func assertPartitionRingSubringIndexes(t *testing.T, expected, actual *PartitionRing) {
 	t.Helper()
 	assert.Equal(t, expected.ringTokens, actual.ringTokens)
@@ -177,7 +300,7 @@ func BenchmarkPartitionRing_ShuffleShardUncached(b *testing.B) {
 				for b.Loop() {
 					// Full shards are memoized per ring; reset the memo so each iteration builds one.
 					r.allActive = &partitionRingAllActive{}
-					_, err := r.shuffleShard("tenant", size, 0, time.Time{})
+					_, err := r.shuffleShard("tenant", size, 0, time.Time{}, nil)
 					if err != nil {
 						b.Fatal(err)
 					}

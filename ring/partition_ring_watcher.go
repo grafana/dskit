@@ -49,6 +49,7 @@ func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts Par
 	if err != nil {
 		panic(err) // This should never executes.
 	}
+	emptyRing.inheritShards(nil)
 	r := &PartitionRingWatcher{
 		key:    key,
 		kv:     kv,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -142,6 +143,46 @@ func TestManaged_AddDependency_ShouldErrorIfModuleDoesNotExist(t *testing.T) {
 	assert.EqualError(t, err, "no such module: serviceUnknown")
 }
 
+func TestManaged_AddDependency_ShouldErrorOnSelfDependency(t *testing.T) {
+	mm := NewManager(log.NewNopLogger())
+	mm.RegisterModule("serviceA", mockInitFunc)
+	mm.RegisterModule("serviceB", mockInitFunc)
+
+	err := mm.AddDependency("serviceA", "serviceA")
+	require.EqualError(t, err, "module serviceA cannot depend on itself")
+
+	// A rejected dependency must not leave any trace in the graph.
+	assert.Empty(t, mm.modules["serviceA"].deps)
+	assert.Empty(t, mm.modules["serviceA"].reversedDeps)
+}
+
+func TestManaged_AddDependency_ShouldNotModifyGraphOnCircularDependency(t *testing.T) {
+	mm := NewManager(log.NewNopLogger())
+	mm.RegisterModule("serviceA", mockInitFunc)
+	mm.RegisterModule("serviceB", mockInitFunc)
+	mm.RegisterModule("serviceC", mockInitFunc)
+	require.NoError(t, mm.AddDependency("serviceA", "serviceB"))
+	require.NoError(t, mm.AddDependency("serviceB", "serviceC"))
+
+	// Direct circular dependency.
+	require.Error(t, mm.AddDependency("serviceB", "serviceA"))
+
+	// Indirect circular dependency.
+	require.Error(t, mm.AddDependency("serviceC", "serviceA"))
+
+	// Neither the forward nor the reverse index may be polluted by the rejected calls.
+	assert.Equal(t, []string{"serviceB"}, mm.modules["serviceA"].deps)
+	assert.Equal(t, []string{"serviceC"}, mm.modules["serviceB"].deps)
+	assert.Empty(t, mm.modules["serviceC"].deps)
+
+	assert.Equal(t, []string{"serviceA"}, mm.modules["serviceB"].reversedDeps)
+	assert.Equal(t, []string{"serviceB"}, mm.modules["serviceC"].reversedDeps)
+	assert.Empty(t, mm.modules["serviceA"].reversedDeps)
+
+	assert.Equal(t, []string{"serviceB", "serviceC"}, mm.DependenciesForModule("serviceA"))
+	assert.Equal(t, []string{"serviceA", "serviceB"}, mm.inverseDependenciesForModule("serviceC"))
+}
+
 func TestRegisterModuleDefaultsToUserVisible(t *testing.T) {
 	sut := NewManager(log.NewNopLogger())
 	sut.RegisterModule("module1", mockInitFunc)
@@ -150,6 +191,20 @@ func TestRegisterModuleDefaultsToUserVisible(t *testing.T) {
 
 	assert.NotNil(t, mockInitFunc, m.initFn, "initFn not assigned")
 	assert.True(t, m.userVisible, "module should be user visible")
+}
+
+func TestRegisterModuleShouldPanicOnDuplicateRegistration(t *testing.T) {
+	sut := NewManager(log.NewNopLogger())
+	sut.RegisterModule("module1", mockInitFunc, UserInvisibleModule)
+
+	assert.PanicsWithValue(t, "module module1 already registered", func() {
+		sut.RegisterModule("module1", nil)
+	})
+
+	// The already registered module must be left untouched.
+	m := sut.modules["module1"]
+	assert.NotNil(t, m.initFn, "initFn should not be overwritten")
+	assert.False(t, m.userVisible, "options of the original registration should be preserved")
 }
 
 func TestFunctionalOptAtTheEndWins(t *testing.T) {
@@ -277,6 +332,34 @@ func TestManager_DependenciesForModule(t *testing.T) {
 
 	deps := m.DependenciesForModule("test")
 	assert.Equal(t, []string{"dep1", "dep2", "dep3"}, deps)
+}
+
+func TestManager_orderedDeps_DiamondDependency(t *testing.T) {
+	m := NewManager(log.NewNopLogger())
+	for _, name := range []string{"a", "b", "c", "d"} {
+		m.RegisterModule(name, nil)
+	}
+
+	require.NoError(t, m.AddDependency("a", "b", "c"))
+	require.NoError(t, m.AddDependency("b", "d"))
+	require.NoError(t, m.AddDependency("c", "d"))
+
+	// Every dependency is reported exactly once, even though d is reachable through both b and c.
+	assert.Equal(t, []string{"b", "c", "d"}, m.DependenciesForModule("a"))
+
+	// InitModuleServices initialises orderedDeps() first and the module itself last.
+	order := append(m.orderedDeps("a"), "a")
+	for _, edge := range [][2]string{{"a", "b"}, {"a", "c"}, {"b", "d"}, {"c", "d"}} {
+		dependant, dependency := edge[0], edge[1]
+		assert.Less(t, slices.Index(order, dependency), slices.Index(order, dependant),
+			"module %s must be initialised before its dependant %s", dependency, dependant)
+	}
+
+	assert.Equal(t, []string{"a", "b", "c"}, m.inverseDependenciesForModule("d"))
+
+	// Modules without any relation are not reported.
+	assert.Empty(t, m.DependenciesForModule("d"))
+	assert.Empty(t, m.inverseDependenciesForModule("a"))
 }
 
 func TestManager_inverseDependenciesForModule(t *testing.T) {

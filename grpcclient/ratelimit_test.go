@@ -34,3 +34,23 @@ func TestRateLimiterFailureResultsInResourceExhaustedError(t *testing.T) {
 		assert.Fail(t, "Could not convert error into expected Status type")
 	}
 }
+
+func TestRateLimiterWithFractionalLimitAndDefaultBurst(t *testing.T) {
+	config := grpcclient.Config{
+		RateLimitBurst: 0,
+		RateLimit:      0.5,
+	}
+	conn := grpc.ClientConn{}
+	invoked := 0
+	invoker := func(context.Context, string, interface{}, interface{}, *grpc.ClientConn, ...grpc.CallOption) error {
+		invoked++
+		return nil
+	}
+
+	limiter := grpcclient.NewRateLimiter(&config)
+
+	// With the default burst the first call has to go through.
+	err := limiter(context.Background(), "methodName", "", "expectedReply", &conn, invoker)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, invoked)
+}

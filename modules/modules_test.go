@@ -351,6 +351,42 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 	assert.NoError(t, services.StopManagerAndAwaitStopped(context.Background(), servManager))
 }
 
+func TestModuleService_PreservesContextValuesAndStopOrder(t *testing.T) {
+	type contextKey struct{}
+	ctx, cancel := context.WithCancel(context.WithValue(t.Context(), contextKey{}, "value"))
+	defer cancel()
+
+	dependent := services.NewIdleService(nil, nil)
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), dependent))
+	t.Cleanup(dependent.StopAsync)
+
+	var underlyingContext context.Context
+	underlying := services.NewIdleService(func(ctx context.Context) error {
+		underlyingContext = ctx
+		return nil
+	}, nil)
+	waitingForDependent := make(chan struct{})
+	noDeps := func(string) map[string]services.Service { return nil }
+	module := NewModuleService("A", log.NewNopLogger(), underlying, noDeps, func(string) map[string]services.Service {
+		close(waitingForDependent)
+		return map[string]services.Service{"dependent": dependent}
+	})
+	t.Cleanup(module.StopAsync)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, module))
+	assert.Equal(t, "value", underlyingContext.Value(contextKey{}))
+
+	// Cancelling the context passed to StartAndAwaitRunning makes the module start its shutdown
+	// procedure, which first waits for its dependent service to stop.
+	cancel()
+	<-waitingForDependent
+	assert.NoError(t, underlyingContext.Err())
+	assert.Equal(t, services.Running, underlying.State())
+
+	require.NoError(t, services.StopAndAwaitTerminated(t.Context(), dependent))
+	require.NoError(t, module.AwaitTerminated(t.Context()))
+	assert.Equal(t, services.Terminated, underlying.State())
+}
+
 func TestModuleService_InterruptedFastStartup(t *testing.T) {
 	finishStarting := make(chan struct{})
 	subserviceStarted := make(chan struct{})

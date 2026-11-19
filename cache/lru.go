@@ -36,7 +36,7 @@ type Item struct {
 // WrapWithLRUCache wraps a given `Cache` c with a LRU cache. The LRU cache will always store items in both caches.
 // However it will only fetch items from the underlying cache if the LRU cache doesn't have the item.
 // Items fetched from the underlying cache will be stored in the LRU cache with a default TTL.
-// The LRU cache will also remove items from the underlying cache if they are expired.
+// Items that have expired in the LRU cache are evicted from it on read and re-fetched from the underlying cache.
 // The LRU cache is limited in number of items using `lruSize`. This means this cache is not tailored for large items or items that have a big
 // variation in size.
 func WrapWithLRUCache(c Cache, name string, reg prometheus.Registerer, lruSize int, defaultTTL time.Duration, logger log.Logger) (*LRUCache, error) {

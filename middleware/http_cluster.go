@@ -95,7 +95,7 @@ func ClusterValidationMiddleware(
 	for _, path := range cfg.ExcludedPaths {
 		reB.WriteString("|" + regexp.QuoteMeta(path))
 	}
-	reB.WriteString(")")
+	reB.WriteString(")/?$")
 	reExcludedPath := regexp.MustCompile(reB.String())
 
 	// Build user agent regex similar to excluded paths

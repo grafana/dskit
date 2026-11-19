@@ -353,14 +353,12 @@ func TestModuleWaitsForAllDependencies(t *testing.T) {
 
 func TestModuleService_PreservesContextValuesAndStopOrder(t *testing.T) {
 	type contextKey struct{}
-	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), contextKey{}, "value"))
+	ctx, cancel := context.WithCancel(context.WithValue(t.Context(), contextKey{}, "value"))
 	defer cancel()
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer waitCancel()
 
 	dependent := services.NewIdleService(nil, nil)
-	require.NoError(t, services.StartAndAwaitRunning(waitCtx, dependent))
-	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(waitCtx, dependent) })
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), dependent))
+	t.Cleanup(dependent.StopAsync)
 
 	var underlyingContext context.Context
 	underlying := services.NewIdleService(func(ctx context.Context) error {
@@ -373,24 +371,19 @@ func TestModuleService_PreservesContextValuesAndStopOrder(t *testing.T) {
 		close(waitingForDependent)
 		return map[string]services.Service{"dependent": dependent}
 	})
-	t.Cleanup(func() {
-		dependent.StopAsync()
-		_ = services.StopAndAwaitTerminated(waitCtx, module)
-	})
+	t.Cleanup(module.StopAsync)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, module))
 	assert.Equal(t, "value", underlyingContext.Value(contextKey{}))
 
+	// Cancelling the context passed to StartAndAwaitRunning makes the module start its shutdown
+	// procedure, which first waits for its dependent service to stop.
 	cancel()
-	select {
-	case <-waitingForDependent:
-	case <-waitCtx.Done():
-		t.Fatal("module did not wait for its dependent to stop")
-	}
+	<-waitingForDependent
 	assert.NoError(t, underlyingContext.Err())
 	assert.Equal(t, services.Running, underlying.State())
 
-	require.NoError(t, services.StopAndAwaitTerminated(waitCtx, dependent))
-	require.NoError(t, module.AwaitTerminated(waitCtx))
+	require.NoError(t, services.StopAndAwaitTerminated(t.Context(), dependent))
+	require.NoError(t, module.AwaitTerminated(t.Context()))
 	assert.Equal(t, services.Terminated, underlying.State())
 }
 

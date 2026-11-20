@@ -101,6 +101,10 @@ type BasicLifecycler struct {
 	currState        sync.RWMutex
 	currInstanceDesc *InstanceDesc
 
+	// updateMtx serializes updateInstance calls, so that the order in which updates are
+	// applied to the KV store is the same as the order in which currInstanceDesc is updated.
+	updateMtx sync.Mutex
+
 	// Whether to keep the instance in the ring or to unregister it on shutdown
 	keepInstanceInTheRingOnShutdown *atomic.Bool
 
@@ -466,6 +470,9 @@ func (l *BasicLifecycler) unregisterInstance(ctx context.Context) error {
 }
 
 func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc, *InstanceDesc) bool) error {
+	l.updateMtx.Lock()
+	defer l.updateMtx.Unlock()
+
 	var instanceDesc InstanceDesc
 
 	err := l.store.CAS(ctx, l.ringKey, func(in interface{}) (out interface{}, retry bool, err error) {

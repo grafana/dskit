@@ -43,6 +43,7 @@ const (
 type clientMetrics struct {
 	requests        prometheus.Counter
 	hits            prometheus.Counter
+	queueLength     prometheus.GaugeFunc
 	operations      *prometheus.CounterVec
 	failures        *prometheus.CounterVec
 	skipped         *prometheus.CounterVec
@@ -56,7 +57,7 @@ type clientMetrics struct {
 // that there may be multiple cache clients at any given time so the prometheus.Registerer passed
 // to this method should include labels unique to this particular client (e.g. a name for each
 // different cache being used).
-func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
+func newClientMetrics(reg prometheus.Registerer, queueLengthFn func() int) *clientMetrics {
 	cm := &clientMetrics{}
 
 	cm.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -66,6 +67,12 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	cm.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "hits_total",
 		Help: "Total number of items requests to the cache that were a hit.",
+	})
+	cm.queueLength = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "queue_length",
+		Help: "The number of items currently queued to be stored in the cache asynchronously.",
+	}, func() float64 {
+		return float64(queueLengthFn())
 	})
 	cm.operations = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operations_total",

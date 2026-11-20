@@ -271,11 +271,12 @@ func newMemcachedClient(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 	addressProvider := dns.NewProvider(dns.MiekgdnsResolverType, config.AddressesLookupPoolSize, logger, reg)
-	metrics := newClientMetrics(reg)
+	queue := newAsyncQueue(config.MaxAsyncBufferSize, config.MaxAsyncConcurrency)
+	metrics := newClientMetrics(reg, queue.length)
 
 	c := &MemcachedClient{
 		metrics:         metrics,
-		queue:           newAsyncQueue(config.MaxAsyncBufferSize, config.MaxAsyncConcurrency),
+		queue:           queue,
 		logger:          log.With(logger, "name", name),
 		config:          config,
 		client:          client,

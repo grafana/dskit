@@ -332,6 +332,30 @@ func TestKVConfig_Validate(t *testing.T) {
 			modify:  func(cfg *KVConfig) { cfg.ProcessedMessagesQueueSize = -1 },
 			wantErr: "memberlist processed messages queue size must be greater than 0",
 		},
+		"mirrored keys pairs are valid": {
+			modify:  func(cfg *KVConfig) { cfg.MirroredKeys = []string{"a=b", "c=d"} },
+			wantErr: "",
+		},
+		"mirrored keys pair without separator is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.MirroredKeys = []string{"a"} },
+			wantErr: `memberlist mirrored keys pair "a" must have the form <key>=<key>`,
+		},
+		"mirrored keys pair with empty key is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.MirroredKeys = []string{"a="} },
+			wantErr: `memberlist mirrored keys pair "a=" must have the form <key>=<key>`,
+		},
+		"mirrored keys pair with more than two keys is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.MirroredKeys = []string{"a=b=c"} },
+			wantErr: `memberlist mirrored keys pair "a=b=c" must have the form <key>=<key>`,
+		},
+		"mirrored keys pair with the same key twice is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.MirroredKeys = []string{"a=a"} },
+			wantErr: `memberlist mirrored keys pair "a=a" must have two different keys`,
+		},
+		"mirrored key in more than one pair is rejected": {
+			modify:  func(cfg *KVConfig) { cfg.MirroredKeys = []string{"a=b", "b=c"} },
+			wantErr: `memberlist mirrored key "b" must be in only one pair`,
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -847,6 +871,90 @@ func TestDeleteMultipleClients(t *testing.T) {
 	// wait for the obselete entries to be removed.
 	checkMemberlistEntry(t, kv1, key, 10*deleteTime)
 	checkMemberlistEntry(t, kv2, key, 10*deleteTime)
+}
+
+func TestMirroredKeys(t *testing.T) {
+	t.Parallel()
+
+	c := dataCodec{}
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+	}
+	cfg.Codecs = []codec.Codec{c}
+	cfg.MirroredKeys = []string{"first=second"}
+
+	mkv := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv) //nolint:errcheck
+
+	kv, err := NewClient(mkv, c)
+	require.NoError(t, err)
+
+	require.NoError(t, cas(kv, "first", updateFn("written-to-first")))
+	require.Equal(t, []string{"written-to-first"}, getData(t, kv, "second").getAllMembers())
+
+	require.NoError(t, cas(kv, "second", updateFn("written-to-second")))
+	require.Equal(t, []string{"written-to-first", "written-to-second"}, getData(t, kv, "first").getAllMembers())
+	require.Equal(t, getData(t, kv, "first"), getData(t, kv, "second"))
+
+	require.NoError(t, cas(kv, "other", updateFn("written-to-other")))
+	require.Nil(t, get(t, kv, "other-mirror"))
+}
+
+func TestMirroredKeysAcrossClients(t *testing.T) {
+	t.Parallel()
+
+	c := dataCodec{}
+
+	var cfg KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+	}
+	cfg.Codecs = []codec.Codec{c}
+	cfg.GossipNodes = 1
+	cfg.GossipInterval = 100 * time.Millisecond
+
+	// The first KV doesn't mirror keys.
+	mkv1 := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv1))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv1) //nolint:errcheck
+
+	kv1, err := NewClient(mkv1, c)
+	require.NoError(t, err)
+
+	require.NoError(t, cas(kv1, "first", updateFn("before-join")))
+
+	// The second KV mirrors keys. It gets the value of the first key when it joins.
+	cfg.MirroredKeys = []string{"first=second"}
+	cfg.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
+
+	mkv2 := NewKV(cfg, log.NewNopLogger(), &staticDNSProviderMock{}, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv2))
+	defer services.StopAndAwaitTerminated(context.Background(), mkv2) //nolint:errcheck
+
+	kv2, err := NewClient(mkv2, c)
+	require.NoError(t, err)
+
+	membersOf := func(kv *Client, key string) func() interface{} {
+		return func() interface{} {
+			d := getData(t, kv, key)
+			if d == nil {
+				return []string{}
+			}
+			return d.getAllMembers()
+		}
+	}
+
+	test.Poll(t, 5*time.Second, []string{"before-join"}, membersOf(kv2, "second"))
+
+	// The second KV mirrors changes it receives through gossip, and gossips the mirrored changes.
+	require.NoError(t, cas(kv1, "first", updateFn("after-join")))
+	test.Poll(t, 5*time.Second, []string{"after-join", "before-join"}, membersOf(kv2, "second"))
+	test.Poll(t, 5*time.Second, []string{"after-join", "before-join"}, membersOf(kv1, "second"))
 }
 
 func TestMultipleClients(t *testing.T) {

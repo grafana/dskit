@@ -614,3 +614,23 @@ func BenchmarkDesc_RingCompare(b *testing.B) {
 		})
 	}
 }
+
+func TestDesc_getTokensInfo_ConflictingTokens(t *testing.T) {
+	t.Parallel()
+
+	// Run multiple times, because map iteration order is randomized.
+	for i := 0; i < 100; i++ {
+		desc := &Desc{Ingesters: map[string]InstanceDesc{
+			"instance-c": {Zone: "zone-c", Tokens: []uint32{10, 30}},
+			"instance-a": {Zone: "zone-a", Tokens: []uint32{10, 20}},
+			"instance-b": {Zone: "zone-b", Tokens: []uint32{10, 40}},
+		}}
+
+		assert.Equal(t, map[uint32]instanceInfo{
+			10: {InstanceID: "instance-a", Zone: "zone-a"},
+			20: {InstanceID: "instance-a", Zone: "zone-a"},
+			30: {InstanceID: "instance-c", Zone: "zone-c"},
+			40: {InstanceID: "instance-b", Zone: "zone-b"},
+		}, desc.getTokensInfo())
+	}
+}

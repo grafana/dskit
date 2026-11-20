@@ -11,11 +11,16 @@ import (
 )
 
 // ForEachUser runs the provided userFunc for each userIDs up to concurrency concurrent workers.
+// If the concurrency value is <= 0 all users will be processed in parallel.
 // In case userFunc returns error, it will continue to process remaining users but returns an
 // error with all errors userFunc has returned.
 func ForEachUser(ctx context.Context, userIDs []string, concurrency int, userFunc func(ctx context.Context, userID string) error) error {
 	if len(userIDs) == 0 {
 		return nil
+	}
+
+	if concurrency <= 0 {
+		concurrency = len(userIDs)
 	}
 
 	// Push all jobs to a channel.

@@ -29,6 +29,11 @@ func newAsyncQueue(length, maxConcurrency int) *asyncQueue {
 	return q
 }
 
+// length returns the number of items currently in the queue.
+func (q *asyncQueue) length() int {
+	return len(q.queueCh)
+}
+
 // submit adds an operation to the queue or returns an error if the queue is full
 func (q *asyncQueue) submit(op func()) error {
 	select {

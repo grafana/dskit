@@ -34,6 +34,29 @@ func TestForEachUser(t *testing.T) {
 	assert.ElementsMatch(t, input, processed)
 }
 
+func TestForEachUser_ShouldProcessAllUsersWhenConcurrencyIsNotPositive(t *testing.T) {
+	for _, concurrency := range []int{0, -1} {
+		t.Run(fmt.Sprintf("concurrency=%d", concurrency), func(t *testing.T) {
+			var (
+				processedMx sync.Mutex
+				processed   []string
+			)
+
+			input := []string{"a", "b", "c"}
+
+			err := ForEachUser(context.Background(), input, concurrency, func(_ context.Context, user string) error {
+				processedMx.Lock()
+				defer processedMx.Unlock()
+				processed = append(processed, user)
+				return nil
+			})
+
+			require.NoError(t, err)
+			assert.ElementsMatch(t, input, processed)
+		})
+	}
+}
+
 func TestForEachUser_ShouldContinueOnErrorButReturnIt(t *testing.T) {
 	// Keep the processed users count.
 	var processed atomic.Int32

@@ -99,7 +99,7 @@ func (m LimitsMap[T]) Equal(other LimitsMap[T]) bool {
 	}
 
 	for k, v := range m.data {
-		if other.data[k] != v {
+		if otherVal, ok := other.data[k]; !ok || otherVal != v {
 			return false
 		}
 	}

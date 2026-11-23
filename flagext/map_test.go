@@ -335,6 +335,10 @@ func TestLimitsMap_Equal(t *testing.T) {
 				map1: LimitsMap[float64]{data: map[string]float64{"key1": 1.1}},
 				map2: LimitsMap[float64]{data: map[string]float64{"key1": 1.2}},
 			},
+			"Different maps with same length and zero value": {
+				map1: LimitsMap[float64]{data: map[string]float64{"key1": 0}},
+				map2: LimitsMap[float64]{data: map[string]float64{"key2": 1.1}},
+			},
 		}
 
 		for name, tt := range tc {
@@ -382,6 +386,10 @@ func TestLimitsMap_Equal(t *testing.T) {
 			"Different maps with same keys but different values": {
 				map1: LimitsMap[string]{data: map[string]string{"key1": "abc"}},
 				map2: LimitsMap[string]{data: map[string]string{"key1": "def"}},
+			},
+			"Different maps with same length and empty value": {
+				map1: LimitsMap[string]{data: map[string]string{"key1": ""}},
+				map2: LimitsMap[string]{data: map[string]string{"key2": "def"}},
 			},
 		}
 

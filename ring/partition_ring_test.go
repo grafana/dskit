@@ -334,6 +334,31 @@ func TestPartitionRing_Sorting(t *testing.T) {
 	require.Equal(t, []int32{2, 5, 8}, pr.InactivePartitionIDs())
 }
 
+func TestPartitionRing_InactivePartitions(t *testing.T) {
+	desc := NewPartitionRingDesc()
+
+	for i := 0; i < 9; i++ {
+		desc.AddPartition(int32(i), PartitionState(i)%3+PartitionPending, time.Now())
+	}
+
+	pr, err := NewPartitionRing(*desc)
+	require.NoError(t, err)
+
+	inactive := pr.InactivePartitions()
+	require.Len(t, inactive, 3)
+
+	ids := make([]int32, 0, len(inactive))
+	for _, p := range inactive {
+		require.Equal(t, PartitionInactive, p.State)
+		ids = append(ids, p.Id)
+	}
+	require.ElementsMatch(t, pr.InactivePartitionIDs(), ids)
+
+	// The returned partitions must be copies.
+	inactive[0].State = PartitionActive
+	require.Len(t, pr.InactivePartitions(), 3)
+}
+
 func TestPartitionRing_ShuffleShard_ConsistencyOnPartitionsTopologyChange(t *testing.T) {
 	type change string
 

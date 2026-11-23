@@ -3,6 +3,7 @@ package grpcutil
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -41,6 +42,22 @@ func TestDNSWatcher_LookupFailureKeepsKnownAddresses(t *testing.T) {
 	// Once DNS recovers with an unchanged answer there is nothing to report either.
 	lookErr = nil
 	require.Empty(t, w.lookup())
+
+	// An authoritative "no such host" answer is an empty result, not a failure: all addresses are removed.
+	lookErr = &net.DNSError{Err: "no such host", Name: "example.local", IsNotFound: true}
+	updates = w.lookup()
+	require.Len(t, updates, 2)
+	for _, u := range updates {
+		require.Equal(t, Delete, u.Op)
+	}
+
+	// Addresses coming back are added again.
+	lookErr = nil
+	updates = w.lookup()
+	require.Len(t, updates, 2)
+	for _, u := range updates {
+		require.Equal(t, Add, u.Op)
+	}
 
 	// A successful lookup that returns fewer addresses still removes the missing ones.
 	addrs = []string{"10.0.0.1"}

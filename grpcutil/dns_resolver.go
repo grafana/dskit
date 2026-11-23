@@ -223,6 +223,12 @@ func (w *dnsWatcher) lookupHost() map[string]*Update {
 	addrs, err := lookupHost(w.ctx, w.host)
 	if err != nil {
 		level.Warn(w.logger).Log("msg", "failed DNS A record lookup", "err", err)
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+			// The name definitively has no addresses (e.g. a headless service scaled
+			// to zero), so this is an empty answer rather than a failed lookup.
+			return newAddrs
+		}
 		return nil
 	}
 	for _, a := range addrs {
@@ -245,8 +251,8 @@ func (w *dnsWatcher) lookup() []*Update {
 		newAddrs = w.lookupHost()
 	}
 	if newAddrs == nil {
-		// The lookup failed. Keep the addresses we already know about rather than
-		// reporting all of them as removed because of a transient DNS error.
+		// The lookup failed (not "no such host"). Keep the addresses we already know
+		// about rather than reporting all of them as removed because of a transient DNS error.
 		return nil
 	}
 	result := w.compileUpdate(newAddrs)

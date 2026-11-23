@@ -244,6 +244,11 @@ func (w *dnsWatcher) lookup() []*Update {
 		// return any A record info available.
 		newAddrs = w.lookupHost()
 	}
+	if newAddrs == nil {
+		// The lookup failed. Keep the addresses we already know about rather than
+		// reporting all of them as removed because of a transient DNS error.
+		return nil
+	}
 	result := w.compileUpdate(newAddrs)
 	w.curAddrs = newAddrs
 	return result

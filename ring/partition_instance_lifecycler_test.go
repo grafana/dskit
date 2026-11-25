@@ -3,6 +3,7 @@ package ring
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -418,6 +420,79 @@ func TestPartitionInstanceLifecycler_GetAndChangePartitionState(t *testing.T) {
 	// read consistency.
 	require.ErrorIs(t, lifecycler.ChangePartitionState(ctx, PartitionPending), ErrPartitionStateChangeNotAllowed)
 	assertPartitionState(PartitionInactive)
+}
+
+func TestPartitionInstanceLifecycler_DeleteInactivePartitionAfterDurationFunc(t *testing.T) {
+	const eventuallyTick = 10 * time.Millisecond
+
+	ctx := context.Background()
+
+	for name, tc := range map[string]struct {
+		staticDuration  time.Duration
+		funcDuration    time.Duration
+		funcErr         error
+		expectedRemoved bool
+	}{
+		"func enables deletion when static duration is disabled": {
+			staticDuration:  0,
+			funcDuration:    time.Minute,
+			expectedRemoved: true,
+		},
+		"func takes precedence over static duration that would delete the partition": {
+			staticDuration:  time.Minute,
+			funcDuration:    24 * time.Hour,
+			expectedRemoved: false,
+		},
+		"func returning zero disables deletion despite static duration": {
+			staticDuration:  time.Minute,
+			funcDuration:    0,
+			expectedRemoved: false,
+		},
+		"func error prevents deletion despite static duration": {
+			staticDuration:  time.Minute,
+			funcErr:         errors.New("failed to get duration"),
+			expectedRemoved: false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			store, closer := consul.NewInMemoryClient(GetPartitionRingCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			// Seed the ring with an inactive partition with no owners, which has been inactive for an hour.
+			require.NoError(t, store.CAS(ctx, ringKey, func(interface{}) (interface{}, bool, error) {
+				desc := NewPartitionRingDesc()
+				desc.AddPartition(2, PartitionInactive, time.Now().Add(-time.Hour))
+				return desc, true, nil
+			}))
+
+			var calls atomic.Int64
+			cfg := createTestPartitionInstanceLifecyclerConfig(1, "instance-1")
+			cfg.DeleteInactivePartitionAfterDuration = tc.staticDuration
+			cfg.DeleteInactivePartitionAfterDurationFunc = func() (time.Duration, error) {
+				calls.Add(1)
+				return tc.funcDuration, tc.funcErr
+			}
+
+			lifecycler, err := NewPartitionInstanceLifecycler(cfg, "test", ringKey, store, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler)) })
+
+			if tc.expectedRemoved {
+				assert.Eventually(t, func() bool {
+					return !getPartitionRingFromStore(t, store, ringKey).HasPartition(2)
+				}, 5*time.Second, eventuallyTick)
+				return
+			}
+
+			// Wait until the func has been evaluated several times, then check the partition is still there.
+			start := calls.Load()
+			require.Eventually(t, func() bool { return calls.Load() >= start+3 }, 5*time.Second, eventuallyTick)
+			assert.True(t, getPartitionRingFromStore(t, store, ringKey).HasPartition(2))
+		})
+	}
 }
 
 func getPartitionRingFromStore(t *testing.T, store kv.Client, key string) *PartitionRingDesc {

@@ -70,26 +70,26 @@ func NewSnappy(next Cache, logger log.Logger) *SnappyCache {
 }
 
 // SetAsync implements Cache.
-func (s *SnappyCache) SetAsync(key string, value []byte, ttl time.Duration) {
-	s.next.SetAsync(key, snappy.Encode(nil, value), ttl)
+func (s *SnappyCache) SetAsync(key string, value []byte, ttl time.Duration, opts ...Option) {
+	s.next.SetAsync(key, snappy.Encode(nil, value), ttl, opts...)
 }
 
 // SetMultiAsync implements Cache.
-func (s *SnappyCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+func (s *SnappyCache) SetMultiAsync(data map[string][]byte, ttl time.Duration, opts ...Option) {
 	encoded := make(map[string][]byte, len(data))
 	for key, value := range data {
 		encoded[key] = snappy.Encode(nil, value)
 	}
 
-	s.next.SetMultiAsync(encoded, ttl)
+	s.next.SetMultiAsync(encoded, ttl, opts...)
 }
 
-func (s *SnappyCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return s.next.Set(ctx, key, snappy.Encode(nil, value), ttl)
+func (s *SnappyCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
+	return s.next.Set(ctx, key, snappy.Encode(nil, value), ttl, opts...)
 }
 
-func (s *SnappyCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return s.next.Add(ctx, key, snappy.Encode(nil, value), ttl)
+func (s *SnappyCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
+	return s.next.Add(ctx, key, snappy.Encode(nil, value), ttl, opts...)
 }
 
 // GetMulti implements Cache.
@@ -133,6 +133,6 @@ func (s *SnappyCache) Name() string {
 }
 
 // Delete implements Cache.
-func (s *SnappyCache) Delete(ctx context.Context, key string) error {
-	return s.next.Delete(ctx, key)
+func (s *SnappyCache) Delete(ctx context.Context, key string, opts ...Option) error {
+	return s.next.Delete(ctx, key, opts...)
 }

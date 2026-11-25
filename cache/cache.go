@@ -38,23 +38,27 @@ type Cache interface {
 	GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error)
 
 	// SetAsync enqueues an operation to store a key into a cache. In case the underlying
-	// operation fails, the error will be tracked/logged.
-	SetAsync(key string, value []byte, ttl time.Duration)
+	// operation fails, the error will be tracked/logged. Pass an Option to modify the
+	// behavior of this SetAsync call.
+	SetAsync(key string, value []byte, ttl time.Duration, opts ...Option)
 
 	// SetMultiAsync enqueues operations to store a keys and values into a cache. In case
-	// any underlying async operations fail, the errors will be tracked/logged.
-	SetMultiAsync(data map[string][]byte, ttl time.Duration)
+	// any underlying async operations fail, the errors will be tracked/logged. Pass an
+	// Option to modify the behavior of this SetMultiAsync call. It applies to every key.
+	SetMultiAsync(data map[string][]byte, ttl time.Duration, opts ...Option)
 
-	// Set stores a key and value into a cache.
-	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	// Set stores a key and value into a cache. Pass an Option to modify the behavior of
+	// this Set call.
+	Set(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error
 
 	// Add stores a key and value into a cache only if it does not already exist. If the
 	// item was not stored because an entry already exists in the cache, ErrNotStored will
-	// be returned.
-	Add(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	// be returned. Pass an Option to modify the behavior of this Add call.
+	Add(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error
 
-	// Delete deletes a key from a cache.
-	Delete(ctx context.Context, key string) error
+	// Delete deletes a key from a cache. Pass an Option to modify the behavior of this
+	// Delete call.
+	Delete(ctx context.Context, key string, opts ...Option) error
 
 	// Stop client and release underlying resources.
 	Stop()
@@ -63,22 +67,59 @@ type Cache interface {
 	Name() string
 }
 
-// Options are used to modify the behavior of an individual call to get results
-// from a cache backend. They are constructed by applying Option callbacks passed
-// to a client method to a default Options instance.
+// Options are used to modify the behavior of an individual call to a cache
+// backend. They are constructed by applying Option callbacks passed to a client
+// method to a default Options instance.
 type Options struct {
 	Alloc Allocator
+
+	// ShardKey, when it is not empty, picks the cache server of the call instead
+	// of the cache key.
+	ShardKey string
 }
 
 // Option is a callback used to modify the Options that a particular client
 // method uses.
 type Option func(opts *Options)
 
+// newOptions returns the Options that opts build.
+func newOptions(opts []Option) *Options {
+	o := &Options{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
+}
+
 // WithAllocator creates a new Option that makes use of a specific memory Allocator
 // for cache result values.
 func WithAllocator(alloc Allocator) Option {
 	return func(opts *Options) {
 		opts.Alloc = alloc
+	}
+}
+
+// WithShardKey creates a new Option that picks the cache server of a call from
+// shardKey, instead of from the cache key. Items that use the same shard key sit
+// on the same server, so a GetMulti for them sends one request to one server.
+// An empty shardKey means no shard key. If a call has several WithShardKey
+// options, the last one wins.
+//
+// A call must use the shard key that stored the item. Without it, the call picks
+// the server of the cache key, which can be another server. A read then misses
+// the item, and a write stores a second copy. The cache key alone identifies an
+// item on a server, so keep cache keys unique across shard keys.
+//
+// The caller owns the choice of the shard key. The cache does not check that the
+// items of a shard key fit on one server, or that one server can carry their
+// load. A shard key that groups too many items can fill or overload its server.
+//
+// At the moment, only the MemcachedClient supports the shard key. A cache that
+// does not support it ignores it, and a cache that wraps another cache passes it
+// on.
+func WithShardKey(shardKey string) Option {
+	return func(opts *Options) {
+		opts.ShardKey = shardKey
 	}
 }
 

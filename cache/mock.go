@@ -30,13 +30,13 @@ func NewMockCache() *MockCache {
 	return c
 }
 
-func (m *MockCache) SetAsync(key string, value []byte, ttl time.Duration) {
+func (m *MockCache) SetAsync(key string, value []byte, ttl time.Duration, _ ...Option) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cache[key] = Item{Data: value, ExpiresAt: m.now.Add(ttl)}
 }
 
-func (m *MockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+func (m *MockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration, _ ...Option) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -46,14 +46,14 @@ func (m *MockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	}
 }
 
-func (m *MockCache) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
+func (m *MockCache) Set(_ context.Context, key string, value []byte, ttl time.Duration, _ ...Option) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cache[key] = Item{Data: value, ExpiresAt: m.now.Add(ttl)}
 	return nil
 }
 
-func (m *MockCache) Add(_ context.Context, key string, value []byte, ttl time.Duration) error {
+func (m *MockCache) Add(_ context.Context, key string, value []byte, ttl time.Duration, _ ...Option) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -107,7 +107,7 @@ func (m *MockCache) Stop() {
 	// no-op
 }
 
-func (m *MockCache) Delete(_ context.Context, key string) error {
+func (m *MockCache) Delete(_ context.Context, key string, _ ...Option) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -147,24 +147,24 @@ func NewInstrumentedMockCache() *InstrumentedMockCache {
 	}
 }
 
-func (m *InstrumentedMockCache) SetAsync(key string, value []byte, ttl time.Duration) {
+func (m *InstrumentedMockCache) SetAsync(key string, value []byte, ttl time.Duration, opts ...Option) {
 	m.storeCount.Inc()
-	m.cache.SetAsync(key, value, ttl)
+	m.cache.SetAsync(key, value, ttl, opts...)
 }
 
-func (m *InstrumentedMockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+func (m *InstrumentedMockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration, opts ...Option) {
 	m.storeCount.Inc()
-	m.cache.SetMultiAsync(data, ttl)
+	m.cache.SetMultiAsync(data, ttl, opts...)
 }
 
-func (m *InstrumentedMockCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+func (m *InstrumentedMockCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
 	m.storeCount.Inc()
-	return m.cache.Set(ctx, key, value, ttl)
+	return m.cache.Set(ctx, key, value, ttl, opts...)
 }
 
-func (m *InstrumentedMockCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+func (m *InstrumentedMockCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
 	m.storeCount.Inc()
-	return m.cache.Add(ctx, key, value, ttl)
+	return m.cache.Add(ctx, key, value, ttl, opts...)
 }
 
 func (m *InstrumentedMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
@@ -185,9 +185,9 @@ func (m *InstrumentedMockCache) Stop() {
 	m.cache.Stop()
 }
 
-func (m *InstrumentedMockCache) Delete(ctx context.Context, key string) error {
+func (m *InstrumentedMockCache) Delete(ctx context.Context, key string, opts ...Option) error {
 	m.deleteCount.Inc()
-	return m.cache.Delete(ctx, key)
+	return m.cache.Delete(ctx, key, opts...)
 }
 
 func (m *InstrumentedMockCache) GetItems() map[string]Item {

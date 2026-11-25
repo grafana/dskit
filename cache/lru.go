@@ -78,8 +78,8 @@ func WrapWithLRUCache(c Cache, name string, reg prometheus.Registerer, lruSize i
 	return cache, nil
 }
 
-func (l *LRUCache) SetAsync(key string, value []byte, ttl time.Duration) {
-	l.c.SetAsync(key, value, ttl)
+func (l *LRUCache) SetAsync(key string, value []byte, ttl time.Duration, opts ...Option) {
+	l.c.SetAsync(key, value, ttl, opts...)
 
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -91,9 +91,9 @@ func (l *LRUCache) SetAsync(key string, value []byte, ttl time.Duration) {
 	})
 }
 
-func (l *LRUCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+func (l *LRUCache) SetMultiAsync(data map[string][]byte, ttl time.Duration, opts ...Option) {
 	// store the data in the shared cache.
-	l.c.SetMultiAsync(data, ttl)
+	l.c.SetMultiAsync(data, ttl, opts...)
 
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -107,8 +107,8 @@ func (l *LRUCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	}
 }
 
-func (l *LRUCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	err := l.c.Set(ctx, key, value, ttl)
+func (l *LRUCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
+	err := l.c.Set(ctx, key, value, ttl, opts...)
 
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -122,8 +122,8 @@ func (l *LRUCache) Set(ctx context.Context, key string, value []byte, ttl time.D
 	return err
 }
 
-func (l *LRUCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	err := l.c.Add(ctx, key, value, ttl)
+func (l *LRUCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
+	err := l.c.Add(ctx, key, value, ttl, opts...)
 
 	// When a caller uses the Add method, the presence of absence of an entry in the cache
 	// has significance. In order to maintain the semantics of that, we only add an entry to
@@ -206,9 +206,9 @@ func (l *LRUCache) Stop() {
 	l.c.Stop()
 }
 
-func (l *LRUCache) Delete(ctx context.Context, key string) error {
+func (l *LRUCache) Delete(ctx context.Context, key string, opts ...Option) error {
 	l.mtx.Lock()
 	l.lru.Remove(key)
 	l.mtx.Unlock()
-	return l.c.Delete(ctx, key)
+	return l.c.Delete(ctx, key, opts...)
 }

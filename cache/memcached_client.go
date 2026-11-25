@@ -294,7 +294,7 @@ func newMemcachedClient(
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
 			"timeout": config.Timeout.String(),
-			"min_idle_connections_headroom_percentage": fmt.Sprintf("%f.2", config.MinIdleConnectionsHeadroomPercentage),
+			"min_idle_connections_headroom_percentage": fmt.Sprintf("%.2f", config.MinIdleConnectionsHeadroomPercentage),
 			"max_idle_connections":                     strconv.Itoa(config.MaxIdleConnections),
 			"max_async_concurrency":                    strconv.Itoa(config.MaxAsyncConcurrency),
 			"max_async_buffer_size":                    strconv.Itoa(config.MaxAsyncBufferSize),

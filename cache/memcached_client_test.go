@@ -259,6 +259,44 @@ func TestMemcachedClient_Decrement(t *testing.T) {
 	require.Equal(t, uint64(1), incrementedValue)
 }
 
+func TestMemcachedClient_ClientInfoMetric(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	_, err := newMemcachedClient(
+		log.NewNopLogger(),
+		newMockMemcachedClientBackend(),
+		&mockServerSelector{},
+		MemcachedClientConfig{
+			Addresses:                            []string{"localhost"},
+			MaxAsyncConcurrency:                  1,
+			MaxAsyncBufferSize:                   10,
+			MinIdleConnectionsHeadroomPercentage: 12.5,
+		},
+		reg,
+		"test",
+	)
+	require.NoError(t, err)
+
+	families, err := reg.Gather()
+	require.NoError(t, err)
+
+	var found bool
+	for _, mf := range families {
+		if mf.GetName() != "cache_client_info" {
+			continue
+		}
+		found = true
+		require.Len(t, mf.GetMetric(), 1)
+		for _, l := range mf.GetMetric()[0].GetLabel() {
+			if l.GetName() == "min_idle_connections_headroom_percentage" {
+				require.Equal(t, "12.50", l.GetValue())
+				return
+			}
+		}
+		require.Fail(t, "label min_idle_connections_headroom_percentage not found")
+	}
+	require.True(t, found, "cache_client_info metric not found")
+}
+
 func TestMemcachedClient_Touch(t *testing.T) {
 	client, backend, err := setupDefaultMemcachedClient()
 	require.NoError(t, err)

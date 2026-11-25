@@ -3,6 +3,7 @@ package ring
 import (
 	"math/rand"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -55,6 +56,31 @@ func TestTokens_Equals(t *testing.T) {
 		assert.Equal(t, c.expected, c.first.Equals(c.second))
 		assert.Equal(t, c.expected, c.second.Equals(c.first))
 	}
+}
+
+func TestTokens_Equals_ShouldNotModifyInputs(t *testing.T) {
+	first := Tokens{3, 1, 2}
+	second := Tokens{2, 3, 1}
+
+	require.True(t, first.Equals(second))
+	require.Equal(t, Tokens{3, 1, 2}, first)
+	require.Equal(t, Tokens{2, 3, 1}, second)
+}
+
+func TestTokens_Equals_ShouldBeSafeForConcurrentUse(t *testing.T) {
+	shared := Tokens{5, 3, 4, 1, 2}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				require.True(t, shared.Equals(Tokens{1, 2, 3, 4, 5}))
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestLoadTokensFromFile_ShouldGuaranteeSortedTokens(t *testing.T) {

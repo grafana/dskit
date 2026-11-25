@@ -16,15 +16,15 @@ func (t Tokens) Len() int           { return len(t) }
 func (t Tokens) Swap(i, j int)      { t[i], t[j] = t[j], t[i] }
 func (t Tokens) Less(i, j int) bool { return t[i] < t[j] }
 
-// Equals returns whether the tokens are equal to the input ones.
+// Equals returns whether the tokens are equal to the input ones, regardless of their order.
+// Neither t nor other is modified, so it is safe to call concurrently on slices that are shared.
 func (t Tokens) Equals(other Tokens) bool {
 	if len(t) != len(other) {
 		return false
 	}
 
-	mine := t
-	sort.Sort(mine)
-	sort.Sort(other)
+	mine := sortedTokens(t)
+	other = sortedTokens(other)
 
 	for i := 0; i < len(mine); i++ {
 		if mine[i] != other[i] {
@@ -33,6 +33,18 @@ func (t Tokens) Equals(other Tokens) bool {
 	}
 
 	return true
+}
+
+// sortedTokens returns tokens if they are already sorted, or a sorted copy otherwise.
+func sortedTokens(tokens Tokens) Tokens {
+	if sort.IsSorted(tokens) {
+		return tokens
+	}
+
+	sorted := make(Tokens, len(tokens))
+	copy(sorted, tokens)
+	sort.Sort(sorted)
+	return sorted
 }
 
 // StoreToFile stores the tokens in the given directory.

@@ -299,6 +299,25 @@ func setUpStreamClientInstrumentInterceptorTest(t *testing.T, serverStreams bool
 	return stream, mockStream, cancelCtx, reg
 }
 
+func TestStreamClientInstrumentInterceptor_StreamerError(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	metric := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name: "client_request_duration_seconds",
+	}, []string{"method", "result"})
+
+	interceptor := StreamClientInstrumentInterceptor(metric)
+	streamErr := errors.New("failed to open stream")
+	streamer := func(context.Context, *grpc.StreamDesc, *grpc.ClientConn, string, ...grpc.CallOption) (grpc.ClientStream, error) {
+		return nil, streamErr
+	}
+
+	// A context that is never canceled: the failure must be recorded without waiting for it.
+	stream, err := interceptor(context.Background(), &grpc.StreamDesc{ServerStreams: true}, nil, "/thing.Server/DoThing", streamer)
+	require.Equal(t, streamErr, err)
+	require.Nil(t, stream)
+	requireRequestMetrics(t, reg, "error", 1)
+}
+
 func TestStreamClientInstrumentInterceptor_SendMsg(t *testing.T) {
 	stream, mockStream, cancelCtx, reg := setUpStreamClientInstrumentInterceptorTest(t, true)
 

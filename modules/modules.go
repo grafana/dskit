@@ -2,6 +2,7 @@ package modules
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/go-kit/log"
@@ -14,6 +15,9 @@ import (
 type module struct {
 	// dependencies of this module
 	deps []string
+
+	// reversed dependencies of this module
+	reversedDeps []string
 
 	// initFn for this module (can return nil)
 	initFn func() (services.Service, error)
@@ -61,6 +65,9 @@ func NewManager(logger log.Logger) *Manager {
 // be unique to avoid overwriting modules. If initFn is nil, the module will not initialise.
 // Modules are user visible by default.
 func (m *Manager) RegisterModule(name string, initFn func() (services.Service, error), options ...func(option *module)) {
+	if _, ok := m.modules[name]; ok {
+		panic(fmt.Sprintf("module %s already registered", name))
+	}
 	m.modules[name] = &module{
 		initFn:      initFn,
 		userVisible: true,
@@ -82,18 +89,23 @@ func (m *Manager) AddDependency(name string, dependsOn ...string) error {
 
 	// Ensure it doesn't introduce any circular dependency.
 	for _, newDep := range dependsOn {
+		if newDep == name {
+			return fmt.Errorf("module %s cannot depend on itself", name)
+		}
 		if _, ok := m.modules[newDep]; !ok {
 			return fmt.Errorf("no such module: %s", newDep)
 		}
-
-		for _, prevDep := range m.DependenciesForModule(newDep) {
-			if prevDep == name {
-				return fmt.Errorf("found a circular dependency: %s depends on %s", newDep, name)
-			}
+	}
+	for _, n := range m.inverseDependenciesForModule(name) {
+		if slices.Contains(dependsOn, n) {
+			return fmt.Errorf("found a circular dependency: %s depends on %s", n, name)
 		}
 	}
 
 	mod.deps = append(mod.deps, dependsOn...)
+	for _, dep := range dependsOn {
+		m.modules[dep].reversedDeps = append(m.modules[dep].reversedDeps, name)
+	}
 	return nil
 }
 
@@ -201,80 +213,47 @@ func (m *Manager) IsModuleRegistered(mod string) bool {
 	return ok
 }
 
-// listDeps recursively gets a list of dependencies for a passed moduleName
-func (m *Manager) listDeps(mod string) []string {
-	deps := m.modules[mod].deps
-	for _, d := range m.modules[mod].deps {
-		deps = append(deps, m.listDeps(d)...)
-	}
-	return deps
-}
-
 // orderedDeps gets a list of all dependencies ordered so that items are always after any of their dependencies.
 func (m *Manager) orderedDeps(mod string) []string {
-	deps := m.listDeps(mod)
-
-	// get a unique list of moduleNames, with a flag for whether they have been added to our result
-	uniq := map[string]bool{}
-	for _, dep := range deps {
-		uniq[dep] = false
-	}
-
-	result := make([]string, 0, len(uniq))
-
-	// keep looping through all modules until they have all been added to the result.
-
-	for len(result) < len(uniq) {
-	OUTER:
-		for name, added := range uniq {
-			if added {
-				continue
-			}
-			for _, dep := range m.modules[name].deps {
-				// stop processing this module if one of its dependencies has
-				// not been added to the result yet.
-				if !uniq[dep] {
-					continue OUTER
-				}
-			}
-
-			// if all of the module's dependencies have been added to the result slice,
-			// then we can safely add this module to the result slice as well.
-			uniq[name] = true
-			result = append(result, name)
-		}
-	}
-	return result
+	return m.traverse(mod, func(m *module) []string { return m.deps })
 }
 
 // inverseDependenciesForModule returns the list of modules depending on the input module, sorted by name.
 func (m *Manager) inverseDependenciesForModule(mod string) []string {
-	result := []string(nil)
-
-	for n := range m.modules {
-		for _, d := range m.DependenciesForModule(n) {
-			if d == mod {
-				result = append(result, n)
-				break
-			}
-		}
-	}
+	result := m.traverse(mod, func(m *module) []string { return m.reversedDeps })
 
 	sort.Strings(result)
 	return result
 }
 
-// DependenciesForModule returns transitive dependencies for given module, sorted by name.
-func (m *Manager) DependenciesForModule(module string) []string {
-	dedup := map[string]bool{}
-	for _, d := range m.listDeps(module) {
-		dedup[d] = true
+// traverse walks the graph reachable from mod using getNeighbours, appending nodes in post-order,
+// so that a node always appears after all of its neighbours. mod itself is never included in the result.
+// The visited set keeps the complexity at O(V+E) and makes the traversal safe on graphs with cycles.
+func (m *Manager) traverse(mod string, getNeighbours func(*module) []string) (result []string) {
+	visited := map[string]struct{}{}
+
+	var f func(string)
+	f = func(n string) {
+		if _, ok := visited[n]; ok {
+			return
+		}
+		visited[n] = struct{}{}
+		for _, d := range getNeighbours(m.modules[n]) {
+			f(d)
+		}
+		if n != mod {
+			result = append(result, n)
+		}
 	}
 
-	result := make([]string, 0, len(dedup))
-	for d := range dedup {
-		result = append(result, d)
-	}
+	f(mod)
+
+	return
+}
+
+// DependenciesForModule returns transitive dependencies for given module, sorted by name.
+func (m *Manager) DependenciesForModule(module string) []string {
+	result := m.orderedDeps(module)
 	sort.Strings(result)
 	return result
 }

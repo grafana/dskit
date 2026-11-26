@@ -712,7 +712,7 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 
 			// Add the initial shard to the history.
 			currTime := time.Now()
-			subring, err := ring.shuffleShard(userID, shardSize, 0, currTime)
+			subring, err := ring.shuffleShard(userID, shardSize, 0, currTime, nil)
 			require.NoError(t, err)
 
 			history := map[time.Time][]int32{
@@ -804,7 +804,7 @@ func TestPartitionRing_ShuffleShardWithLookback_CorrectnessWithFuzzy(t *testing.
 				}
 
 				// Add the current shard to the history.
-				subring, err = ring.shuffleShard(userID, shardSize, 0, time.Now())
+				subring, err = ring.shuffleShard(userID, shardSize, 0, time.Now(), nil)
 				require.NoError(t, err)
 				history[currTime] = subring.PartitionIDs()
 
@@ -1889,5 +1889,59 @@ func TestPartitionRingDesc_SameExceptPending(t *testing.T) {
 			assert.Equal(t, tc.same, sameExceptPending(a, b), "a to b")
 			assert.Equal(t, tc.same, sameExceptPending(b, a), "b to a")
 		})
+	}
+}
+
+// TestPartitionRing_InheritShards_KeepsOneGeneration checks that a ring keeps at most the shards of
+// the ring it replaced, besides its own. Otherwise every update would keep all earlier shards alive.
+func TestPartitionRing_InheritShards_KeepsOneGeneration(t *testing.T) {
+	descs := []*PartitionRingDesc{shardReuseDesc(t)}
+	step := func(change func(d *PartitionRingDesc)) {
+		next := descs[len(descs)-1].Clone().(*PartitionRingDesc)
+		change(next)
+		descs = append(descs, next)
+	}
+	// Partition 40 turns Active, a partition is created Pending, then an owner of an Active partition
+	// is updated: other, Pending-only, then other again.
+	step(func(d *PartitionRingDesc) {
+		p := d.Partitions[40]
+		p.State = PartitionActive
+		d.Partitions[40] = p
+	})
+	step(func(d *PartitionRingDesc) {
+		d.Partitions[41] = PartitionDesc{Id: 41, State: PartitionPending, Tokens: Tokens{1}}
+	})
+	step(func(d *PartitionRingDesc) {
+		d.Owners["owner-a-7"] = OwnerDesc{OwnedPartition: 7, State: OwnerActive, UpdatedTimestamp: 30}
+	})
+	rings := make([]*PartitionRing, len(descs))
+	for i, desc := range descs {
+		r, err := NewPartitionRingWithOptions(*desc, DefaultPartitionRingOptions())
+		require.NoError(t, err)
+		if i == 0 {
+			r.inheritShards(nil)
+		} else {
+			r.inheritShards(rings[i-1])
+		}
+		rings[i] = r
+		// Each generation needs a filled entry to supply a candidate to the next one.
+		_, err = r.ShuffleShard(fmt.Sprintf("tenant-%d", i), 2)
+		require.NoError(t, err)
+	}
+
+	require.NotNil(t, rings[1].prevShardCandidates, "after an update that changes shards")
+	require.Same(t, rings[1].shuffleShardCache, rings[2].shuffleShardCache, "after a Pending-only update")
+	require.Same(t, rings[1].prevShardCandidates, rings[2].prevShardCandidates, "after a Pending-only update")
+	require.NotNil(t, rings[3].prevShardCandidates, "after the second update that changes shards")
+	require.NotSame(t, rings[2].prevShardCandidates, rings[3].prevShardCandidates)
+	key := partitionShardCandidateKey{subringCacheKey: subringCacheKey{identifier: "tenant-0", shardSize: 2}}
+	require.Nil(t, rings[2].prevShardCandidates.get(key, time.Time{}), "old snapshots must release superseded candidates")
+
+	// Subrings get no previous shards of their own, or they'd keep their parent's alive. Sizes cover
+	// both ways of building a subring; see withPartitions.
+	for _, size := range []int{2, 12} {
+		sub, err := rings[3].ShuffleShard("tenant", size)
+		require.NoError(t, err)
+		assert.Nil(t, sub.prevShardCandidates, "size %d", size)
 	}
 }

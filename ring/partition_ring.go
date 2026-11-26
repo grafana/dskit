@@ -49,6 +49,9 @@ type PartitionRing struct {
 	// shuffleShardCache is used to cache subrings generated with shuffle sharding.
 	shuffleShardCache *partitionRingShuffleShardCache
 
+	// prevShardCandidates holds a bounded set of immutable shard snapshots from the previous ring.
+	prevShardCandidates *partitionRingShardCandidates
+
 	// allActive memoizes the subring of every Active partition, which every shard without lookback
 	// and with a size of at least the Active count resolves to.
 	allActive *partitionRingAllActive
@@ -246,8 +249,24 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 		return cached, nil
 	}
 
+	var prev *PartitionRing
+	if candidates := r.prevShardCandidates; candidates != nil && size < r.activePartitionsCount {
+		key := partitionShardCandidateKey{subringCacheKey: subringCacheKey{identifier: identifier, shardSize: size}}
+		var tracked bool
+		prev, tracked = candidates.lookup(key, time.Time{})
+		if prev == nil {
+			// Another request may have filled the cache before discarding the candidate.
+			if cached := r.shuffleShardCache.getSubring(identifier, size); cached != nil {
+				return cached, nil
+			}
+		}
+		if tracked {
+			defer candidates.discard(key)
+		}
+	}
+
 	// No need to pass the time if there's no lookback.
-	subring, err := r.shuffleShard(identifier, size, 0, time.Time{})
+	subring, err := r.shuffleShard(identifier, size, 0, time.Time{}, prev)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +291,25 @@ func (r *PartitionRing) ShuffleShardWithLookback(identifier string, size int, lo
 		return cached, nil
 	}
 
-	subring, err := r.shuffleShard(identifier, size, lookbackPeriod, now)
+	var prev *PartitionRing
+	if candidates := r.prevShardCandidates; candidates != nil && (lookbackPeriod > 0 || size < r.activePartitionsCount) {
+		key := partitionShardCandidateKey{
+			subringCacheKey: subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod},
+			withLookback:    true,
+		}
+		var tracked bool
+		prev, tracked = candidates.lookup(key, now)
+		if prev == nil {
+			if cached := r.shuffleShardCache.getSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
+				return cached, nil
+			}
+		}
+		if tracked {
+			defer candidates.discard(key)
+		}
+	}
+
+	subring, err := r.shuffleShard(identifier, size, lookbackPeriod, now, prev)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +330,9 @@ func (r *PartitionRing) normalizeShuffleShardSize(size int) int {
 	return size
 }
 
-func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
+// shuffleShard builds the identifier's shard. If prev, a shard from an earlier ring, holds the same
+// partitions, its indexes can be reused when isShardOf confirms that it's unchanged. prev may be nil.
+func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time, prev *PartitionRing) (*PartitionRing, error) {
 	// Normalize for callers bypassing the cache too. We still need to filter partitions below.
 	size = r.normalizeShuffleShardSize(size)
 
@@ -391,6 +430,11 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 		}
 	}
 
+	// Walking the ring is cheap next to building the subring, which re-indexes its tokens. Most
+	// ring updates change few partitions, so most shards select what they did before.
+	if prev != nil && r.isShardOf(prev, result) {
+		return prev.copyWithEmptyShardCaches()
+	}
 	return r.withPartitions(result)
 }
 
@@ -420,18 +464,59 @@ func (r *PartitionRing) allActivePartitions() (*PartitionRing, error) {
 	return r.withPartitions(partitions)
 }
 
-// inheritShards makes r reuse prev's shuffle-shard cache and all-Active subring when no shard can
-// differ between the two rings, that is, when they differ only in Pending partitions and their
-// owners. Creating a partition and registering its owners are such updates.
+// inheritShards prepares a watcher ring before publication. Pending-only updates share the previous
+// cache and all-Active memo. Other updates retain a bounded set of candidates for validation.
 func (r *PartitionRing) inheritShards(prev *PartitionRing) {
+	r.shuffleShardCache.trackFills = true
+	r.shuffleShardCache.activePartitionsCount = r.activePartitionsCount
+	if prev == nil || prev.allActive == nil {
+		return
+	}
 	// Shards, with or without lookback, never include Pending partitions or their owners. And the
 	// ring walk skips a Pending partition's tokens, so it stops where it would without them. Nor do
 	// cache keys change, because normalizeShuffleShardSize counts only non-Pending partitions.
-	if prev == nil || prev.allActive == nil || !sameExceptPending(&prev.desc, &r.desc) {
+	if !sameExceptPending(&prev.desc, &r.desc) {
+		if prev.prevShardCandidates != nil {
+			prev.prevShardCandidates.close()
+		}
+		r.prevShardCandidates = prev.shuffleShardCache.candidatesFor(r)
 		return
 	}
 	r.shuffleShardCache = prev.shuffleShardCache
+	r.prevShardCandidates = prev.prevShardCandidates
 	r.allActive = prev.allActive
+}
+
+// isShardOf reports whether sub, a shard of an earlier ring, holds exactly the given partitions of r
+// with the same descriptors and owners. A subring depends only on those and the ring options, so
+// sub then equals the shard r would build from the partitions. The exception is a token claimed by
+// two partitions, whose owner every ring already picks arbitrarily.
+func (r *PartitionRing) isShardOf(sub *PartitionRing, partitions map[int32]struct{}) bool {
+	if len(sub.desc.Partitions) != len(partitions) {
+		return false
+	}
+	for id := range partitions {
+		subPartition, ok := sub.desc.Partitions[id]
+		if !ok {
+			return false
+		}
+		partition := r.desc.Partitions[id]
+		if !partition.Equal(&subPartition) {
+			return false
+		}
+		// Both lists are sorted, and sub's descriptor holds only the owners of its partitions.
+		owners := r.ownersByPartition[id]
+		if !slices.Equal(owners, sub.ownersByPartition[id]) {
+			return false
+		}
+		for _, ownerID := range owners {
+			owner, subOwner := r.desc.Owners[ownerID], sub.desc.Owners[ownerID]
+			if !owner.Equal(&subOwner) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // sameExceptPending reports whether a and b hold the same non-Pending partitions and the same
@@ -488,16 +573,12 @@ func (r *PartitionRing) withPartitions(partitions map[int32]struct{}) (*Partitio
 		return NewPartitionRingWithOptions(r.desc.WithPartitions(partitions), r.opts)
 	}
 
-	cache, err := newPartitionRingShuffleShardCache(r.opts.ShuffleShardCacheSize)
+	subring, err := r.copyWithEmptyShardCaches()
 	if err != nil {
 		return nil, err
 	}
 
-	subring := *r
 	subring.desc = r.desc.WithPartitions(partitions)
-	subring.shuffleShardCache = cache
-	// The subring's Active partitions can differ from the parent's, so it needs its own memo.
-	subring.allActive = &partitionRingAllActive{}
 	subring.ownersByPartition = subring.desc.ownersByPartition()
 	subring.activePartitionsCount = subring.desc.activePartitionsCount()
 	subring.nonPendingPartitionsCount = subring.desc.nonPendingPartitionsCount()
@@ -505,7 +586,7 @@ func (r *PartitionRing) withPartitions(partitions map[int32]struct{}) (*Partitio
 
 	// Every token index is immutable, so full shards can share the parent's indexes.
 	if len(partitions) == len(r.desc.Partitions) {
-		return &subring, nil
+		return subring, nil
 	}
 
 	tokenCount := 0
@@ -532,7 +613,20 @@ func (r *PartitionRing) withPartitions(partitions map[int32]struct{}) (*Partitio
 		subring.ringPartitionActive = append(subring.ringPartitionActive, r.ringPartitionActive[i])
 		subring.partitionByToken[Token(token)] = id
 	}
-	return &subring, nil
+	return subring, nil
+}
+
+func (r *PartitionRing) copyWithEmptyShardCaches() (*PartitionRing, error) {
+	cache, err := newPartitionRingShuffleShardCache(r.opts.ShuffleShardCacheSize)
+	if err != nil {
+		return nil, err
+	}
+	copy := *r
+	copy.shuffleShardCache = cache
+	// Subrings must not keep the parent's candidates or all-Active memo alive.
+	copy.prevShardCandidates = nil
+	copy.allActive = &partitionRingAllActive{}
+	return &copy, nil
 }
 
 // PartitionsCount returns the number of partitions in the ring.

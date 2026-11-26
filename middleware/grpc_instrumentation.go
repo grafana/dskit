@@ -86,6 +86,12 @@ func StreamClientInstrumentInterceptor(metric *prometheus.HistogramVec, instrume
 	) (grpc.ClientStream, error) {
 		start := time.Now()
 		stream, err := streamer(ctx, desc, cc, method, opts...)
+		if err != nil {
+			// The stream was never established, so there is no completion to wait for.
+			metric.WithLabelValues(method, instrumentationLabel.getInstrumentationLabel(err)).Observe(time.Since(start).Seconds())
+			return nil, err
+		}
+
 		s := &instrumentedClientStream{
 			metric:               metric,
 			start:                start,
@@ -97,7 +103,7 @@ func StreamClientInstrumentInterceptor(metric *prometheus.HistogramVec, instrume
 			instrumentationLabel: instrumentationLabel,
 		}
 		s.awaitCompletion(ctx)
-		return s, err
+		return s, nil
 	}
 }
 

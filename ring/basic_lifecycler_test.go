@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -720,4 +721,72 @@ func getInstanceFromStore(t *testing.T, store kv.Client, instanceID string) (Ins
 	instanceDesc, ok := ringDesc.GetIngesters()[instanceID]
 
 	return instanceDesc, ok
+}
+
+// pausingCASClient pauses the first CAS call after it has been applied to the underlying store.
+type pausingCASClient struct {
+	kv.Client
+
+	calls     atomic.Int32
+	firstDone chan struct{}
+	release   chan struct{}
+}
+
+func (c *pausingCASClient) CAS(ctx context.Context, key string, f func(in interface{}) (out interface{}, retry bool, err error)) error {
+	err := c.Client.CAS(ctx, key, f)
+	if c.calls.Inc() == 1 {
+		close(c.firstDone)
+		<-c.release
+	}
+	return err
+}
+
+func TestBasicLifecycler_ConcurrentUpdatesKeepLatestState(t *testing.T) {
+	cfg := prepareBasicLifecyclerConfig()
+	lifecycler, _, store, err := prepareBasicLifecycler(t, cfg)
+	require.NoError(t, err)
+
+	pausing := &pausingCASClient{Client: store, firstDone: make(chan struct{}), release: make(chan struct{})}
+	lifecycler.store = pausing
+
+	ctx := context.Background()
+	setState := func(state InstanceState) func() error {
+		return func() error {
+			return lifecycler.updateInstance(ctx, func(_ *Desc, i *InstanceDesc) bool {
+				i.State = state
+				return true
+			})
+		}
+	}
+
+	firstErr := make(chan error, 1)
+	go func() { firstErr <- setState(JOINING)() }()
+	<-pausing.firstDone
+
+	// The second update is started while the first one has been applied to the store, but not yet
+	// to the lifecycler's local state.
+	secondErr := make(chan error, 1)
+	go func() { secondErr <- setState(ACTIVE)() }()
+
+	// Give the second update a chance to complete, if it's not blocked by the first one.
+	var secondResult error
+	secondDone := false
+	select {
+	case secondResult = <-secondErr:
+		secondDone = true
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(pausing.release)
+
+	require.NoError(t, <-firstErr)
+	if !secondDone {
+		secondResult = <-secondErr
+	}
+	require.NoError(t, secondResult)
+
+	// The last update applied to the store must be the one reflected in the local state.
+	desc, err := store.Get(ctx, testRingKey)
+	require.NoError(t, err)
+	assert.Equal(t, ACTIVE, desc.(*Desc).Ingesters[testInstanceID].State)
+	assert.Equal(t, ACTIVE, lifecycler.GetState())
 }

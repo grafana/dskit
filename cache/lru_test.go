@@ -164,3 +164,25 @@ func TestLRUCache_GetMultiWithError_PropagatesError(t *testing.T) {
 	require.Empty(t, result)
 	require.ErrorIs(t, err, backendErr)
 }
+
+func TestLRUCache_ExpiredItemsAreEvictedNotDeletedFromUnderlying(t *testing.T) {
+	var (
+		mock = NewInstrumentedMockCache()
+		ctx  = context.Background()
+	)
+
+	reg := prometheus.NewPedanticRegistry()
+	lru, err := WrapWithLRUCache(mock, "test", reg, 10000, 2*time.Hour, log.NewNopLogger())
+	require.NoError(t, err)
+
+	// The entry is still live in the underlying cache but already expired in the LRU.
+	mock.SetAsync("key", []byte("value"), time.Hour)
+	lru.lru.Add("key", &Item{Data: []byte("value"), ExpiresAt: time.Now().Add(-time.Minute)})
+
+	// Reading the key evicts the expired entry from the LRU and re-fetches it from the underlying cache.
+	result := lru.GetMulti(ctx, []string{"key"})
+	require.Equal(t, map[string][]byte{"key": []byte("value")}, result)
+
+	// The underlying cache is never asked to delete the expired entry.
+	require.Zero(t, mock.CountDeleteCalls())
+}

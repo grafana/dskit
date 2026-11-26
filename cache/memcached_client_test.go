@@ -277,6 +277,27 @@ func TestMemcachedClient_Touch(t *testing.T) {
 	require.Equal(t, int32(newExpiration.Seconds()), backend.values[key].Expiration)
 }
 
+func TestMemcachedClient_Touch_InvalidTTL(t *testing.T) {
+	for name, ttl := range map[string]time.Duration{
+		"sub-second":       500 * time.Millisecond,
+		"negative":         -time.Second,
+		"longer than 30 d": maxTTL + time.Second,
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, backend, err := setupDefaultMemcachedClient()
+			require.NoError(t, err)
+
+			require.NoError(t, client.Set(context.Background(), "foo", []byte("bar"), time.Minute))
+
+			err = client.Touch(context.Background(), "foo", ttl)
+			require.ErrorIs(t, err, ErrInvalidTTL)
+
+			// The item keeps its previous expiration.
+			require.Equal(t, int32(time.Minute.Seconds()), backend.values["foo"].Expiration)
+		})
+	}
+}
+
 func TestMemcachedClient_GetMultiWithCAS(t *testing.T) {
 	t.Run("returns values with their tokens", func(t *testing.T) {
 		ctx := context.Background()

@@ -580,7 +580,11 @@ func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Durati
 	case <-ctx.Done():
 		err = ctx.Err()
 	default:
-		err = c.client.Touch(key, int32(ttl.Seconds()), toMemcacheOptions(opts...)...)
+		if ttlSeconds, ok := toSeconds(ttl); !ok {
+			err = fmt.Errorf("%w: for touch operation on %s %s", ErrInvalidTTL, key, ttl)
+		} else {
+			err = c.client.Touch(key, ttlSeconds, toMemcacheOptions(opts...)...)
+		}
 	}
 	if err != nil {
 		c.trackError(

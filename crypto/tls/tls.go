@@ -104,7 +104,9 @@ func (cfg *ClientConfig) GetTLSConfig() (*tls.Config, error) {
 			return nil, errors.Wrapf(err, "error loading ca cert: %s", cfg.CAPath)
 		}
 		caCertPool = x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, errors.Errorf("error loading ca cert: no valid certificates found in %s", cfg.CAPath)
+		}
 
 		config.RootCAs = caCertPool
 	}

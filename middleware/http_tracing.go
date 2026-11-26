@@ -25,6 +25,10 @@ import (
 
 var tracer = otel.Tracer("dskit/middleware")
 
+// maxHeadersToAddAsSpanAttributes bounds how many request headers are attached to a
+// span, so a client cannot blow up span size by sending unbounded headers.
+const maxHeadersToAddAsSpanAttributes = 100
+
 // Dummy dependency to enforce that we have a nethttp version newer
 // than the one which implements Websockets. (No semver on nethttp)
 var _ = nethttp.MWURLTagFunc
@@ -118,11 +122,9 @@ func (t Tracer) wrapWithOTel(next http.Handler) http.Handler {
 		}
 
 		if t.traceHeaders {
-			const maxHeadersToAddAsSpanAttributes = 100
-
 			var notAddedHeaders []string
 			if len(r.Header) > maxHeadersToAddAsSpanAttributes {
-				notAddedHeaders = make([]string, len(r.Header)-maxHeadersToAddAsSpanAttributes)
+				notAddedHeaders = make([]string, 0, len(r.Header)-maxHeadersToAddAsSpanAttributes)
 			}
 
 			added := 0

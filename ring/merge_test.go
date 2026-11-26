@@ -686,3 +686,48 @@ func TestMergeFutureTimestamps_MemberlistCAS(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, heartbeat, val.(*Desc).Ingesters["ing-1"].Timestamp)
 }
+
+func TestPartitionRingDesc_MemberlistMirroredKeys(t *testing.T) {
+	const (
+		key       = "ingester-partitions"
+		mirrorKey = "ingester-partitions-rc-0"
+	)
+	ctx := context.Background()
+
+	c := GetPartitionRingCodec()
+	var cfg memberlist.KVConfig
+	flagext.DefaultValues(&cfg)
+	cfg.TCPTransport = memberlist.TCPTransportConfig{BindAddrs: []string{"127.0.0.1"}}
+	cfg.Codecs = []codec.Codec{c}
+	cfg.MirroredKeys = []string{key + "=" + mirrorKey}
+	store := memberlist.NewKV(cfg, log.NewNopLogger(), nil, prometheus.NewPedanticRegistry())
+	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, store)) })
+	client, err := memberlist.NewClient(store, c)
+	require.NoError(t, err)
+
+	getDesc := func(key string) *PartitionRingDesc {
+		val, err := client.Get(ctx, key)
+		require.NoError(t, err)
+		return val.(*PartitionRingDesc)
+	}
+
+	now := time.Now()
+	require.NoError(t, client.CAS(ctx, key, func(interface{}) (interface{}, bool, error) {
+		desc := NewPartitionRingDesc()
+		desc.AddPartition(1, PartitionActive, now)
+		desc.AddOrUpdateOwner("owner-a", OwnerActive, 1, now)
+		desc.AddOrUpdateOwner("owner-b", OwnerActive, 1, now)
+		return desc, true, nil
+	}))
+	assert.Equal(t, getDesc(key), getDesc(mirrorKey))
+
+	// The removed owner is marked as deleted in the change, so it is removed from the mirrored key too.
+	require.NoError(t, client.CAS(ctx, key, func(in interface{}) (interface{}, bool, error) {
+		desc := in.(*PartitionRingDesc)
+		desc.RemoveOwner("owner-a")
+		return desc, true, nil
+	}))
+	assert.Equal(t, []string{"owner-b"}, getDesc(mirrorKey).ownersByPartition()[1])
+	assert.Equal(t, getDesc(key), getDesc(mirrorKey))
+}

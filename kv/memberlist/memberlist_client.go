@@ -203,6 +203,10 @@ type KVConfig struct {
 	// push/pull sync doesn't re-encode unchanged entries on every pull.
 	LocalStateCacheEnabled bool `yaml:"local_state_cache_enabled" category:"experimental"`
 
+	// MirroredKeys holds pairs of keys in the form "<key>=<key>". Each change to one key of a pair
+	// is also merged into the other key.
+	MirroredKeys flagext.StringSliceCSV `yaml:"mirrored_keys" category:"experimental"`
+
 	TCPTransport TCPTransportConfig `yaml:",inline"`
 
 	// Zone-aware routing configuration.
@@ -255,6 +259,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.DeadNodeReclaimTime, prefix+"memberlist.dead-node-reclaim-time", mlDefaults.DeadNodeReclaimTime, "How soon can dead node's name be reclaimed with new address. 0 to disable.")
 	f.IntVar(&cfg.MessageHistoryBufferBytes, prefix+"memberlist.message-history-buffer-bytes", 0, "How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.")
 	f.BoolVar(&cfg.LocalStateCacheEnabled, prefix+"memberlist.local-state-cache-enabled", false, "Cache the serialized form of each key, so that push/pull sync doesn't re-encode entries that haven't changed since the last sync. Reduces CPU and lock contention in large clusters, at the cost of memory proportional to the size of the KV store.")
+	f.Var(&cfg.MirroredKeys, prefix+"memberlist.mirrored-keys", "Comma-separated list of key pairs in the form <key>=<key>. Each change to one key of a pair is also merged into the other key, in both directions. The keys must include the KV store prefix. Use it to move a value to a different key without downtime.")
 	f.BoolVar(&cfg.EnableCompression, prefix+"memberlist.compression-enabled", mlDefaults.EnableCompression, "Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization.")
 	f.StringVar(&cfg.CompressionAlgorithm, prefix+"memberlist.compression-algorithm", string(memberlist.CompressionAlgorithmLZW), fmt.Sprintf("Compression algorithm used for outgoing messages when -memberlist.compression-enabled is true. Supported values: %s. Ignored when -memberlist.compression-enabled is false.", strings.Join(supportedCompressionAlgorithms, ", ")))
 	f.DurationVar(&cfg.NotifyInterval, prefix+"memberlist.notify-interval", 0, "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.")
@@ -295,10 +300,35 @@ func (cfg *KVConfig) Validate() error {
 	if cfg.CompressionAlgorithm != "" && !slices.Contains(supportedCompressionAlgorithms, cfg.CompressionAlgorithm) {
 		return fmt.Errorf("memberlist compression algorithm %q is not supported, valid values: %s", cfg.CompressionAlgorithm, strings.Join(supportedCompressionAlgorithms, ", "))
 	}
+	if _, err := parseMirroredKeys(cfg.MirroredKeys); err != nil {
+		return err
+	}
 	if err := cfg.ZoneAwareRouting.Validate(); err != nil {
 		return err
 	}
 	return cfg.PropagationDelayTracker.Validate()
+}
+
+// parseMirroredKeys returns a map from each mirrored key to the other key of its pair.
+func parseMirroredKeys(pairs []string) (map[string]string, error) {
+	mirroredKeys := make(map[string]string, 2*len(pairs))
+	for _, pair := range pairs {
+		firstKey, secondKey, found := strings.Cut(pair, "=")
+		if !found || firstKey == "" || secondKey == "" || strings.Contains(secondKey, "=") {
+			return nil, fmt.Errorf("memberlist mirrored keys pair %q must have the form <key>=<key>", pair)
+		}
+		if firstKey == secondKey {
+			return nil, fmt.Errorf("memberlist mirrored keys pair %q must have two different keys", pair)
+		}
+		for _, key := range []string{firstKey, secondKey} {
+			if _, exists := mirroredKeys[key]; exists {
+				return nil, fmt.Errorf("memberlist mirrored key %q must be in only one pair", key)
+			}
+		}
+		mirroredKeys[firstKey] = secondKey
+		mirroredKeys[secondKey] = firstKey
+	}
+	return mirroredKeys, nil
 }
 
 // GetRejoinSeedNodes returns the seed nodes to use for periodic rejoin.
@@ -360,6 +390,9 @@ type KV struct {
 
 	// Codec registry
 	codecs map[string]codec.Codec
+
+	// mirroredKeys maps each mirrored key to the other key of its pair.
+	mirroredKeys map[string]string
 
 	// Key watchers
 	watchersMu     sync.Mutex
@@ -514,6 +547,12 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider, registerer 
 
 	for _, c := range cfg.Codecs {
 		mlkv.codecs[c.CodecID()] = c
+	}
+
+	var err error
+	mlkv.mirroredKeys, err = parseMirroredKeys(cfg.MirroredKeys)
+	if err != nil {
+		level.Error(logger).Log("msg", "memberlist mirrored keys are disabled because the config is invalid", "err", err)
 	}
 
 	// Register propagation delay tracker codec if enabled.
@@ -1392,6 +1431,7 @@ outer:
 			m.notifyWatchers(key)
 
 			m.broadcastNewValue(key, change, newver, codec, true, deleted, updated)
+			m.mirrorChange(key, change, codec, true)
 		}
 
 		return nil
@@ -1448,6 +1488,26 @@ func (m *KV) trySingleCas(key string, codec codec.Codec, f func(in interface{}) 
 	}
 
 	return change, newver, retry, deleted, updated, nil
+}
+
+// mirrorChange merges the change of key into the other key of its mirrored keys pair, if there is one.
+// The merge doesn't mark entries missing from the change as deleted, so a change from an outdated
+// state can't remove entries from the other key. Deleted entries in the change are still merged.
+func (m *KV) mirrorChange(key string, change Mergeable, codec codec.Codec, locallyGenerated bool) {
+	mirrorKey, ok := m.mirroredKeys[key]
+	if !ok || change == nil {
+		return
+	}
+
+	mirrorChange, version, deleted, updated, err := m.mergeValueForKey(mirrorKey, change, true, 0, codec.CodecID(), false, time.Time{})
+	if err != nil {
+		level.Error(m.logger).Log("msg", "failed to merge change into mirrored key", "key", key, "mirrored_key", mirrorKey, "err", err)
+		return
+	}
+	if version > 0 {
+		m.notifyWatchers(mirrorKey)
+		m.broadcastNewValue(mirrorKey, mirrorChange, version, codec, locallyGenerated, deleted, updated)
+	}
 }
 
 func (m *KV) broadcastNewValue(key string, change Mergeable, version uint, codec codec.Codec, locallyGenerated bool, deleted bool, updateTime time.Time) {
@@ -1611,6 +1671,7 @@ func (m *KV) processValueUpdate(workerCh <-chan valueUpdate, key string) {
 
 				// Don't resend original message, but only changes, if any.
 				m.broadcastNewValue(key, mod, version, update.codec, false, deleted, updated)
+				m.mirrorChange(key, mod, update.codec, false)
 			}
 
 			if version == 0 && !m.keyExists(key) {
@@ -1927,6 +1988,7 @@ func (m *KV) MergeRemoteState(data []byte, _ bool) {
 		} else if newver > 0 {
 			m.notifyWatchers(kvPair.Key)
 			m.broadcastNewValue(kvPair.Key, change, newver, codec, false, deleted, updated)
+			m.mirrorChange(kvPair.Key, change, codec, false)
 		}
 	}
 

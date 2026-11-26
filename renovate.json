@@ -90,7 +90,9 @@
     ]
   },
   "osvVulnerabilityAlerts": true,
-  "dependencyDashboard": false,
+  "dependencyDashboard": {
+    "enabled": false
+  },
   "prHourlyLimit": 10,
   "prConcurrentLimit": 20
 }

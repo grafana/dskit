@@ -189,6 +189,46 @@ func TestGetSourceIPs(t *testing.T) {
 			},
 			want: "workstation.local, 192.168.1.100",
 		},
+		{
+			name: "Forwarded with quoted IPv4",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey(forwarded): {`for="192.0.2.60";proto=http`},
+				},
+			},
+			want: "192.0.2.60, 192.168.1.100",
+		},
+		{
+			name: "Forwarded with quoted IPv6 without port",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey(forwarded): {`for="[2001:db8:cafe::17]"`},
+				},
+			},
+			want: "2001:db8:cafe::17, 192.168.1.100",
+		},
+		{
+			name: "Forwarded with quoted obfuscated identifier",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey(forwarded): {`for="_gazonk"`},
+				},
+			},
+			want: "_gazonk, 192.168.1.100",
+		},
+		{
+			name: "X-Forwarded-For with quoted IPv4",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey(xForwardedFor): {`"192.169.1.200", 10.10.13.20`},
+				},
+			},
+			want: "192.169.1.200, 192.168.1.100",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -389,6 +429,16 @@ func TestGetSourceIPsFullExtract(t *testing.T) {
 				},
 			},
 			want: "192.168.1.1, 192.168.1.100",
+		},
+		{
+			name: "Forwarded with quoted IPv4 and IPv6",
+			req: &http.Request{
+				RemoteAddr: "192.168.1.100:3454",
+				Header: map[string][]string{
+					http.CanonicalHeaderKey(forwarded): {`for="192.0.2.43", for="[2001:db8:cafe::17]"`},
+				},
+			},
+			want: "192.0.2.43, 2001:db8:cafe::17, 192.168.1.100",
 		},
 	}
 	for _, tt := range tests {

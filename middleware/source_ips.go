@@ -20,7 +20,7 @@ var (
 	xRealIP       = http.CanonicalHeaderKey("X-Real-IP")
 	// Allows to extract the host from the X-Forwarded-For header.
 	// Will strip out any spaces or double quote surrounding host.
-	xForwardedForRegex = regexp.MustCompile(`(?: *"?([^,]+)"? *)`)
+	xForwardedForRegex = regexp.MustCompile(`(?: *"?([^,"]+)"? *)`)
 )
 
 var (
@@ -30,7 +30,7 @@ var (
 	forwarded = http.CanonicalHeaderKey("Forwarded")
 	// Allows to extract the host from the for clause of the Forwarded header.
 	// Will strip out any spaces or double quote surrounding host.
-	forwardedRegex = regexp.MustCompile(`(?i)(?:for=)(?: *"?([^;,]+)"? *)`)
+	forwardedRegex = regexp.MustCompile(`(?i)(?:for=)(?: *"?([^;,"]+)"? *)`)
 )
 
 // SourceIPExtractor extracts the source IPs from a HTTP request
@@ -66,6 +66,13 @@ func extractHost(address string) string {
 	hostIP := net.ParseIP(address)
 	if hostIP != nil {
 		return hostIP.String()
+	}
+	// RFC 7239 requires IPv6 addresses to be enclosed in brackets, even
+	// when no port is given, e.g. for="[2001:db8:cafe::17]".
+	if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
+		if hostIP := net.ParseIP(address[1 : len(address)-1]); hostIP != nil {
+			return hostIP.String()
+		}
 	}
 	var err error
 	hostStr, _, err := net.SplitHostPort(address)

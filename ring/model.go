@@ -518,6 +518,10 @@ func (d *Desc) Clone() memberlist.Mergeable {
 	return &Desc{Ingesters: maps.Clone(d.Ingesters)}
 }
 
+// getTokensInfo returns the instance owning each token.
+//
+// If multiple instances own the same token, the instance with the lowest ID is
+// picked, so that the result doesn't depend on map iteration order.
 func (d *Desc) getTokensInfo() map[uint32]instanceInfo {
 	out := map[uint32]instanceInfo{}
 
@@ -528,6 +532,9 @@ func (d *Desc) getTokensInfo() map[uint32]instanceInfo {
 		}
 
 		for _, token := range instance.Tokens {
+			if prev, ok := out[token]; ok && prev.InstanceID < instanceID {
+				continue
+			}
 			out[token] = info
 		}
 	}

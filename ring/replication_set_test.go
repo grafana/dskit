@@ -2115,6 +2115,47 @@ func TestContextWithAvailableReplicas(t *testing.T) {
 	})
 }
 
+// BenchmarkDoMultiUntilQuorumWithoutSuccessfulContextCancellation measures the cost of coordinating requests across
+// many replication sets, like a query against every partition of a partitions ring. Each set has one instance per
+// zone and needs a response from one zone, and f returns immediately, so the result is the coordination overhead.
+func BenchmarkDoMultiUntilQuorumWithoutSuccessfulContextCancellation(b *testing.B) {
+	for _, numSets := range []int{10, 100, 1000, 3500} {
+		sets := make([]ReplicationSet, numSets)
+		for i := range sets {
+			sets[i] = ReplicationSet{
+				Instances: []InstanceDesc{
+					{Addr: fmt.Sprintf("zone-a-instance-%d", i), Zone: "zone-a"},
+					{Addr: fmt.Sprintf("zone-b-instance-%d", i), Zone: "zone-b"},
+				},
+				ZoneAwarenessEnabled: true,
+				MaxUnavailableZones:  1,
+			}
+		}
+
+		for _, minimizeRequests := range []bool{true, false} {
+			cfg := DoUntilQuorumConfig{MinimizeRequests: minimizeRequests}
+
+			b.Run(fmt.Sprintf("sets=%d/minimize_requests=%t", numSets, minimizeRequests), func(b *testing.B) {
+				f := func(_ context.Context, instance *InstanceDesc, cancel context.CancelCauseFunc) (*InstanceDesc, error) {
+					cancel(nil)
+					return instance, nil
+				}
+
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					results, err := DoMultiUntilQuorumWithoutSuccessfulContextCancellation(context.Background(), sets, cfg, f, func(*InstanceDesc) {})
+					if err != nil {
+						b.Fatal(err)
+					}
+					if len(results) != numSets {
+						b.Fatalf("expected %d results, got %d", numSets, len(results))
+					}
+				}
+			})
+		}
+	}
+}
+
 func BenchmarkReplicationSetZoneCount(b *testing.B) {
 	for _, instancesPerZone := range []int{1, 2, 5, 10, 100, 300} {
 		for _, zones := range []int{1, 2, 3} {

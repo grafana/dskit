@@ -114,6 +114,22 @@ func (b *BasicService) ServiceName() string {
 	return b.serviceName
 }
 
+// String returns the service name if set, or its state.
+func (b *BasicService) String() string {
+	if b == nil {
+		return "<nil>"
+	}
+
+	b.stateMu.RLock()
+	defer b.stateMu.RUnlock()
+
+	if b.serviceName != "" {
+		return b.serviceName
+	}
+
+	return fmt.Sprintf("BasicService (%s)", b.state)
+}
+
 // StartAsync is part of Service interface.
 func (b *BasicService) StartAsync(parentContext context.Context) error {
 	switched, oldState := b.switchState(New, Starting, func() {

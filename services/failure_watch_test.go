@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	e2 "github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -110,6 +111,91 @@ func TestServiceFailureWatcherClose(t *testing.T) {
 
 	// Repeated call to Close doesn't panic.
 	w.Close()
+}
+
+func TestServiceFailureWatcherClose_UnreadServiceFailure(t *testing.T) {
+	s, errorsS := errorReturningService()
+	require.NoError(t, StartAndAwaitRunning(context.Background(), s))
+
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent(), goleak.Cleanup(func(_ int) {
+		require.Error(t, StopAndAwaitTerminated(context.Background(), s))
+
+		goleak.VerifyNone(t)
+	}))
+
+	w := NewFailureWatcher()
+	defer drainFailureWatcherOnFail(t, w)
+	w.WatchService(s)
+
+	errorsS <- fmt.Errorf("service error")
+	require.Error(t, s.AwaitTerminated(context.Background()))
+
+	// Allow the listener goroutine to block sending on w.Chan() before Close() is called.
+	time.Sleep(10 * time.Millisecond)
+
+	assertFailureWatcherCloses(t, w)
+	require.Nil(t, <-w.Chan())
+}
+
+func TestServiceFailureWatcherClose_UnreadManagerFailure(t *testing.T) {
+	s, errorsS := errorReturningService()
+	m, err := NewManager(s)
+	require.NoError(t, err)
+	require.NoError(t, StartManagerAndAwaitHealthy(context.Background(), m))
+
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent(), goleak.Cleanup(func(_ int) {
+		require.NoError(t, StopManagerAndAwaitStopped(context.Background(), m))
+
+		goleak.VerifyNone(t)
+	}))
+
+	w := NewFailureWatcher()
+	defer drainFailureWatcherOnFail(t, w)
+	w.WatchManager(m)
+
+	errorsS <- fmt.Errorf("service error")
+	require.NoError(t, m.AwaitStopped(context.Background()))
+
+	// Allow the listener goroutine to block sending on w.Chan() before Close() is called.
+	time.Sleep(10 * time.Millisecond)
+
+	assertFailureWatcherCloses(t, w)
+	require.Nil(t, <-w.Chan())
+}
+
+func assertFailureWatcherCloses(t *testing.T, w *FailureWatcher) {
+	t.Helper()
+
+	closed := make(chan struct{})
+	go func() {
+		w.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		require.FailNow(t, "FailureWatcher.Close() timed out waiting for unread failure notification")
+	}
+}
+
+func drainFailureWatcherOnFail(t *testing.T, w *FailureWatcher) {
+	t.Helper()
+
+	if !t.Failed() {
+		return
+	}
+
+	for {
+		select {
+		case _, ok := <-w.Chan():
+			if !ok {
+				return
+			}
+		case <-time.After(100 * time.Millisecond):
+			return
+		}
+	}
 }
 
 // Creates service which will return first error passed to the channel.

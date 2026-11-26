@@ -15,12 +15,16 @@ var (
 type FailureWatcher struct {
 	mu                  sync.Mutex
 	ch                  chan error
+	done                chan struct{}
 	closed              bool
 	unregisterListeners []func()
 }
 
 func NewFailureWatcher() *FailureWatcher {
-	return &FailureWatcher{ch: make(chan error)}
+	return &FailureWatcher{
+		ch:   make(chan error),
+		done: make(chan struct{}),
+	}
 }
 
 // Chan returns channel for this watcher. If watcher is nil, returns nil channel.
@@ -49,7 +53,7 @@ func (w *FailureWatcher) WatchService(service Service) {
 	}
 
 	stop := service.AddListener(NewListener(nil, nil, nil, nil, func(_ State, failure error) {
-		w.ch <- errors.Wrapf(failure, "service %s failed", DescribeService(service))
+		w.notifyFailure(service, failure)
 	}))
 	w.unregisterListeners = append(w.unregisterListeners, stop)
 }
@@ -69,9 +73,22 @@ func (w *FailureWatcher) WatchManager(manager *Manager) {
 	}
 
 	stop := manager.AddListener(NewManagerListener(nil, nil, func(service Service) {
-		w.ch <- errors.Wrapf(service.FailureCase(), "service %s failed", DescribeService(service))
+		w.notifyFailure(service, service.FailureCase())
 	}))
 	w.unregisterListeners = append(w.unregisterListeners, stop)
+}
+
+func (w *FailureWatcher) notifyFailure(service Service, failure error) {
+	select {
+	case <-w.done:
+		return
+	default:
+	}
+
+	select {
+	case w.ch <- errors.Wrapf(failure, "service %s failed", DescribeService(service)):
+	case <-w.done:
+	}
 }
 
 // Close stops this failure watcher and closes channel returned by Chan() method. After closing failure watcher,
@@ -90,11 +107,13 @@ func (w *FailureWatcher) Close() {
 	if w.closed {
 		return
 	}
+	w.closed = true
+	close(w.done)
+
 	for _, stop := range w.unregisterListeners {
 		stop()
 	}
 
 	// All listeners are now stopped, and can't receive more notifications. We can close the channel.
 	close(w.ch)
-	w.closed = true
 }

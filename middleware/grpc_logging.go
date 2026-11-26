@@ -89,6 +89,14 @@ func (s GRPCServerLog) StreamServerInterceptor(srv interface{}, ss grpc.ServerSt
 		return nil
 	}
 
+	keep, reason := shouldLog(ss.Context(), err)
+	if reason != "" {
+		err = fmt.Errorf("%w (%s)", err, reason)
+	}
+	if !keep {
+		return err
+	}
+
 	entry := log.With(user.LogWith(ss.Context(), s.Log), "method", info.FullMethod, "duration", time.Since(begin))
 	if err != nil {
 		if grpcUtils.IsCanceled(err) {

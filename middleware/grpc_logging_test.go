@@ -99,6 +99,67 @@ func TestGrpcLogging(t *testing.T) {
 	}
 }
 
+func TestGrpcLogging_StreamServerInterceptor(t *testing.T) {
+	info := &grpc.StreamServerInfo{FullMethod: "Test"}
+	for name, tc := range map[string]struct {
+		inputErr    error
+		expectedErr string
+		logContains []string
+	}{
+		"error is logged": {
+			inputErr:    errors.New("yolo"),
+			expectedErr: "yolo",
+			logContains: []string{"level=warn", "err=yolo"},
+		},
+		"success is logged": {
+			logContains: []string{"level=debug", "method=Test"},
+		},
+		"DoNotLogError is not logged": {
+			inputErr:    DoNotLogError{Err: errors.New("yolo")},
+			expectedErr: "yolo",
+		},
+		"sampled error that should be logged": {
+			inputErr:    sampledError{err: errors.New("yolo"), shouldLog: true, reason: "sampled 1/10"},
+			expectedErr: "yolo (sampled 1/10)",
+			logContains: []string{`err="yolo (sampled 1/10)"`},
+		},
+		"sampled error that should not be logged": {
+			inputErr:    sampledError{err: errors.New("yolo"), shouldLog: false, reason: "sampled 1/10"},
+			expectedErr: "yolo (sampled 1/10)",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			buf := bytes.NewBuffer(nil)
+			l := GRPCServerLog{Log: log.NewLogfmtLogger(buf)}
+
+			handler := func(any, grpc.ServerStream) error { return tc.inputErr }
+
+			err := l.StreamServerInterceptor(nil, &mockServerStream{ctx: context.Background()}, info, handler)
+
+			if tc.expectedErr != "" {
+				require.EqualError(t, err, tc.expectedErr)
+				require.ErrorIs(t, err, tc.inputErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if len(tc.logContains) == 0 {
+				require.Empty(t, buf)
+			}
+			for _, content := range tc.logContains {
+				require.Contains(t, buf.String(), content)
+			}
+		})
+	}
+}
+
+type mockServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (m *mockServerStream) Context() context.Context { return m.ctx }
+
 type sampledError struct {
 	err       error
 	shouldLog bool

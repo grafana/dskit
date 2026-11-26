@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/gomemcache/memcache"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 func TestMemcachedClient_SetAsync(t *testing.T) {
@@ -473,6 +474,195 @@ func TestMemcachedClient_Name(t *testing.T) {
 	require.Equal(t, "test", client.Name())
 }
 
+func TestMemcachedClient_WithShardKey(t *testing.T) {
+	ctx := context.Background()
+	withShardKey := WithShardKey("object-a")
+
+	t.Run("every method passes the shard key to the backend", func(t *testing.T) {
+		tests := map[string]struct {
+			method string
+			calls  int
+			call   func(t *testing.T, c *MemcachedClient)
+		}{
+			"Set passes the shard key": {
+				method: "Set", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					require.NoError(t, c.Set(ctx, "foo", []byte("1"), time.Minute, withShardKey))
+				},
+			},
+			"SetAsync passes the shard key": {
+				method: "Set", calls: 1,
+				call: func(_ *testing.T, c *MemcachedClient) {
+					c.SetAsync("foo", []byte("1"), time.Minute, withShardKey)
+				},
+			},
+			"SetMultiAsync passes the shard key for every key": {
+				method: "Set", calls: 2,
+				call: func(_ *testing.T, c *MemcachedClient) {
+					c.SetMultiAsync(map[string][]byte{"foo": []byte("1"), "bar": []byte("2")}, time.Minute, withShardKey)
+				},
+			},
+			"Add passes the shard key": {
+				method: "Add", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					require.NoError(t, c.Add(ctx, "new", []byte("1"), time.Minute, withShardKey))
+				},
+			},
+			"Delete passes the shard key": {
+				method: "Delete", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					require.NoError(t, c.Delete(ctx, "foo", withShardKey))
+				},
+			},
+			"Touch passes the shard key": {
+				method: "Touch", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					require.NoError(t, c.Touch(ctx, "foo", time.Minute, withShardKey))
+				},
+			},
+			"Increment passes the shard key": {
+				method: "Increment", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					_, err := c.Increment(ctx, "foo", 1, withShardKey)
+					require.NoError(t, err)
+				},
+			},
+			"Decrement passes the shard key": {
+				method: "Decrement", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					_, err := c.Decrement(ctx, "foo", 1, withShardKey)
+					require.NoError(t, err)
+				},
+			},
+			"CompareAndSwap passes the shard key": {
+				method: "CompareAndSwap", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					res, err := c.GetMultiWithCAS(ctx, []string{"foo"}, withShardKey)
+					require.NoError(t, err)
+					require.NoError(t, c.CompareAndSwap(ctx, "foo", []byte("2"), time.Minute, res["foo"].CasID, withShardKey))
+				},
+			},
+			"GetMulti passes the shard key": {
+				method: "GetMulti", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					require.Equal(t, map[string][]byte{"foo": []byte("1")}, c.GetMulti(ctx, []string{"foo"}, withShardKey))
+				},
+			},
+			"GetMultiWithError passes the shard key": {
+				method: "GetMulti", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					res, err := c.GetMultiWithError(ctx, []string{"foo"}, withShardKey)
+					require.NoError(t, err)
+					require.Equal(t, map[string][]byte{"foo": []byte("1")}, res)
+				},
+			},
+			"GetMultiWithCAS passes the shard key": {
+				method: "GetMulti", calls: 1,
+				call: func(t *testing.T, c *MemcachedClient) {
+					res, err := c.GetMultiWithCAS(ctx, []string{"foo"}, withShardKey)
+					require.NoError(t, err)
+					require.Equal(t, []byte("1"), res["foo"].Value)
+				},
+			},
+		}
+
+		for name, tc := range tests {
+			t.Run(name, func(t *testing.T) {
+				client, backend, err := setupDefaultMemcachedClient()
+				require.NoError(t, err)
+				backend.values["foo"] = &memcache.Item{Key: "foo", Value: []byte("1")}
+
+				tc.call(t, client)
+				require.NoError(t, client.wait())
+
+				calls := backend.callsTo(tc.method)
+				require.Len(t, calls, tc.calls)
+				for _, call := range calls {
+					require.Equal(t, "object-a", call.shardKey)
+				}
+			})
+		}
+	})
+
+	t.Run("calls without a shard key or with an empty one pass none to the backend", func(t *testing.T) {
+		client, backend, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+
+		require.NoError(t, client.Set(ctx, "foo", []byte("1"), time.Minute))
+		require.NoError(t, client.Set(ctx, "bar", []byte("1"), time.Minute, WithShardKey("")))
+		require.Len(t, client.GetMulti(ctx, []string{"foo", "bar"}), 2)
+		require.NoError(t, client.Delete(ctx, "foo"))
+
+		require.Len(t, backend.calls, 4)
+		for _, call := range backend.calls {
+			require.Empty(t, call.shardKey, call.method)
+		}
+	})
+
+	t.Run("the last shard key option of a call wins", func(t *testing.T) {
+		client, backend, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+
+		require.NoError(t, client.Set(ctx, "foo", []byte("1"), time.Minute, WithShardKey("object-a"), WithShardKey("object-b")))
+
+		require.Equal(t, []backendCall{{method: "Set", shardKey: "object-b"}}, backend.callsTo("Set"))
+	})
+
+	t.Run("GetMulti passes the shard key together with the allocator", func(t *testing.T) {
+		client, backend, err := setupDefaultMemcachedClient()
+		require.NoError(t, err)
+		backend.values["foo"] = &memcache.Item{Key: "foo", Value: []byte("1")}
+
+		res := client.GetMulti(ctx, []string{"foo"}, withShardKey, WithAllocator(&nopAllocator{}))
+
+		require.Equal(t, map[string][]byte{"foo": []byte("1")}, res)
+		require.Equal(t, 1, backend.allocations)
+		require.Equal(t, []backendCall{{method: "GetMulti", shardKey: "object-a"}}, backend.callsTo("GetMulti"))
+	})
+
+	t.Run("GetMulti sends every batch with the shard key and picks no server for the keys", func(t *testing.T) {
+		keys := []string{"foo1", "foo2", "foo3", "foo4", "foo5"}
+		newClient := func() (*MemcachedClient, *mockMemcachedClientBackend, *countingServerSelector) {
+			backend := newMockMemcachedClientBackend()
+			for _, key := range keys {
+				backend.values[key] = &memcache.Item{Key: key, Value: []byte("1")}
+			}
+			selector := &countingServerSelector{mockServerSelector: &mockServerSelector{
+				servers: []mockServer{{addr: "127.0.0.1:11211"}, {addr: "127.0.0.2:11211"}},
+			}}
+			client, err := newMemcachedClient(
+				log.NewNopLogger(),
+				backend,
+				selector,
+				MemcachedClientConfig{
+					Addresses:            []string{"localhost"},
+					MaxAsyncConcurrency:  1,
+					MaxAsyncBufferSize:   10,
+					MaxGetMultiBatchSize: 2,
+				},
+				prometheus.NewPedanticRegistry(),
+				"test",
+			)
+			require.NoError(t, err)
+			return client, backend, selector
+		}
+
+		client, backend, selector := newClient()
+		require.Len(t, client.GetMulti(ctx, keys, withShardKey), len(keys))
+		calls := backend.callsTo("GetMulti")
+		require.Len(t, calls, 3)
+		for _, call := range calls {
+			require.Equal(t, "object-a", call.shardKey)
+		}
+		require.Zero(t, selector.picks.Load())
+
+		// Without the shard key, the client sorts the keys by the server of each key.
+		client, _, selector = newClient()
+		require.Len(t, client.GetMulti(ctx, keys), len(keys))
+		require.Equal(t, int32(len(keys)), selector.picks.Load())
+	})
+}
+
 func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 	mockSelector := &mockServerSelector{
 		servers: []mockServer{
@@ -513,7 +703,7 @@ func BenchmarkMemcachedClient_sortKeysByServer(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client.sortKeysByServer(keys)
+		client.sortKeysByServer(keys, "")
 	}
 }
 
@@ -548,6 +738,15 @@ type mockMemcachedClientBackend struct {
 	allocations int
 	values      map[string]*memcache.Item
 	casID       uint64 // the last CAS token handed out; every store gets a new one, as in Memcached
+
+	callsMtx sync.Mutex
+	calls    []backendCall
+}
+
+// backendCall is a call to the mock backend with the shard key of the call.
+type backendCall struct {
+	method   string
+	shardKey string
 }
 
 func newMockMemcachedClientBackend() *mockMemcachedClientBackend {
@@ -556,7 +755,35 @@ func newMockMemcachedClientBackend() *mockMemcachedClientBackend {
 	}
 }
 
+// record tracks a call with the shard key that opts set.
+func (m *mockMemcachedClientBackend) record(method string, opts []memcache.Option) {
+	options := &memcache.Options{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	m.callsMtx.Lock()
+	defer m.callsMtx.Unlock()
+	m.calls = append(m.calls, backendCall{method: method, shardKey: options.ShardKey})
+}
+
+// callsTo returns the calls to method in the order they happened.
+func (m *mockMemcachedClientBackend) callsTo(method string) []backendCall {
+	m.callsMtx.Lock()
+	defer m.callsMtx.Unlock()
+
+	var out []backendCall
+	for _, call := range m.calls {
+		if call.method == method {
+			out = append(out, call)
+		}
+	}
+	return out
+}
+
 func (m *mockMemcachedClientBackend) GetMulti(ctx context.Context, keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error) {
+	m.record("GetMulti", opts)
+
 	options := &memcache.Options{}
 	for _, opt := range opts {
 		opt(options)
@@ -582,12 +809,14 @@ func (m *mockMemcachedClientBackend) store(item *memcache.Item) {
 	m.values[item.Key] = item
 }
 
-func (m *mockMemcachedClientBackend) Set(item *memcache.Item) error {
+func (m *mockMemcachedClientBackend) Set(item *memcache.Item, opts ...memcache.Option) error {
+	m.record("Set", opts)
 	m.store(item)
 	return nil
 }
 
-func (m *mockMemcachedClientBackend) Add(item *memcache.Item) error {
+func (m *mockMemcachedClientBackend) Add(item *memcache.Item, opts ...memcache.Option) error {
+	m.record("Add", opts)
 	if _, ok := m.values[item.Key]; ok {
 		return memcache.ErrNotStored
 	}
@@ -596,31 +825,36 @@ func (m *mockMemcachedClientBackend) Add(item *memcache.Item) error {
 	return nil
 }
 
-func (m *mockMemcachedClientBackend) Delete(key string) error {
+func (m *mockMemcachedClientBackend) Delete(key string, opts ...memcache.Option) error {
+	m.record("Delete", opts)
 	delete(m.values, key)
 	return nil
 }
 
-func (m *mockMemcachedClientBackend) Touch(key string, seconds int32) error {
+func (m *mockMemcachedClientBackend) Touch(key string, seconds int32, opts ...memcache.Option) error {
+	m.record("Touch", opts)
 	m.values[key].Expiration = seconds
 	return nil
 }
 
-func (m *mockMemcachedClientBackend) Decrement(key string, delta uint64) (uint64, error) {
+func (m *mockMemcachedClientBackend) Decrement(key string, delta uint64, opts ...memcache.Option) (uint64, error) {
+	m.record("Decrement", opts)
 	value, _ := strconv.ParseUint(string(m.values[key].Value), 10, 64)
 	value -= delta
 	m.values[key].Value = []byte(strconv.FormatUint(value, 10))
 	return value, nil
 }
 
-func (m *mockMemcachedClientBackend) Increment(key string, delta uint64) (uint64, error) {
+func (m *mockMemcachedClientBackend) Increment(key string, delta uint64, opts ...memcache.Option) (uint64, error) {
+	m.record("Increment", opts)
 	value, _ := strconv.ParseUint(string(m.values[key].Value), 10, 64)
 	value += delta
 	m.values[key].Value = []byte(strconv.FormatUint(value, 10))
 	return value, nil
 }
 
-func (m *mockMemcachedClientBackend) CompareAndSwap(item *memcache.Item) error {
+func (m *mockMemcachedClientBackend) CompareAndSwap(item *memcache.Item, opts ...memcache.Option) error {
+	m.record("CompareAndSwap", opts)
 	current, ok := m.values[item.Key]
 	if !ok {
 		return memcache.ErrCacheMiss
@@ -703,6 +937,17 @@ func (s *mockServerSelector) Each(f func(net.Addr) error) error {
 }
 func (s *mockServerSelector) SetServers(_ ...string) error {
 	return nil
+}
+
+// countingServerSelector counts the servers that the client picks.
+type countingServerSelector struct {
+	*mockServerSelector
+	picks atomic.Int32
+}
+
+func (s *countingServerSelector) PickServer(key string) (net.Addr, error) {
+	s.picks.Inc()
+	return s.mockServerSelector.PickServer(key)
 }
 
 type nopAllocator struct{}

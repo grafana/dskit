@@ -45,14 +45,14 @@ var (
 // memcachedClientBackend is an interface used to mock the underlying client in tests.
 type memcachedClientBackend interface {
 	GetMulti(ctx context.Context, keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
-	Set(item *memcache.Item) error
-	Add(item *memcache.Item) error
-	Delete(key string) error
-	Decrement(key string, delta uint64) (uint64, error)
-	Increment(key string, delta uint64) (uint64, error)
-	Touch(key string, seconds int32) error
+	Set(item *memcache.Item, opts ...memcache.Option) error
+	Add(item *memcache.Item, opts ...memcache.Option) error
+	Delete(key string, opts ...memcache.Option) error
+	Decrement(key string, delta uint64, opts ...memcache.Option) (uint64, error)
+	Increment(key string, delta uint64, opts ...memcache.Option) (uint64, error)
+	Touch(key string, seconds int32, opts ...memcache.Option) error
 	Close()
-	CompareAndSwap(item *memcache.Item) error
+	CompareAndSwap(item *memcache.Item, opts ...memcache.Option) error
 	FlushAll() error
 }
 
@@ -219,7 +219,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	// for servers selection.
 	selector := &MemcachedJumpHashSelector{}
 
-	client := memcache.NewShardedFromSelector(selector, config.FreeListShards)
+	client := memcache.NewStripedFromSelector(selector, config.FreeListShards)
 	client.Timeout = config.Timeout
 	client.ConnectTimeout = config.ConnectTimeout
 	client.MinIdleConnsHeadroomPercentage = config.MinIdleConnectionsHeadroomPercentage
@@ -323,13 +323,21 @@ func (c *MemcachedClient) Name() string {
 	return c.name
 }
 
-func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duration, opts ...Option) {
+	memcacheOpts := toMemcacheOptions(opts...)
 	for k, v := range data {
-		c.SetAsync(k, v, ttl)
+		c.setAsync(k, v, ttl, memcacheOpts)
 	}
 }
 
-func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
+func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration, opts ...Option) {
+	c.setAsync(key, value, ttl, toMemcacheOptions(opts...))
+}
+
+// setAsync takes options that are already converted, so SetMultiAsync converts
+// them once for all keys. The callers convert them before the operation is
+// queued, because it runs after they return.
+func (c *MemcachedClient) setAsync(key string, value []byte, ttl time.Duration, memcacheOpts []memcache.Option) {
 	if !c.itemSizeIsAcceptable(key, value, opSet) {
 		return
 	}
@@ -339,7 +347,7 @@ func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) 
 		// a context (it is expected to keep running no matter what happens) and we don't return the
 		// error (it will be tracked via metrics instead of being returned to the caller).
 		_ = c.storeOperation(context.Background(), key, value, ttl, opSet, func(_ context.Context, key string, value []byte, ttl time.Duration) error {
-			return c.setSingleItem(key, value, ttl)
+			return c.setSingleItem(key, value, ttl, memcacheOpts)
 		})
 	})
 
@@ -360,18 +368,19 @@ func (c *MemcachedClient) itemSizeIsAcceptable(key string, value []byte, op stri
 	return true
 }
 
-func (c *MemcachedClient) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+func (c *MemcachedClient) Set(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
+	memcacheOpts := toMemcacheOptions(opts...)
 	return c.storeOperation(ctx, key, value, ttl, opSet, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			return c.setSingleItem(key, value, ttl)
+			return c.setSingleItem(key, value, ttl, memcacheOpts)
 		}
 	})
 }
 
-func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Duration) error {
+func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Duration, memcacheOpts []memcache.Option) error {
 	ttlSeconds, ok := toSeconds(ttl)
 	if !ok {
 		return fmt.Errorf("%w: for set operation on %s %s", ErrInvalidTTL, key, ttl)
@@ -381,10 +390,11 @@ func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Durat
 		Key:        key,
 		Value:      value,
 		Expiration: ttlSeconds,
-	})
+	}, memcacheOpts...)
 }
 
-func (c *MemcachedClient) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+func (c *MemcachedClient) Add(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
+	memcacheOpts := toMemcacheOptions(opts...)
 	return c.storeOperation(ctx, key, value, ttl, opAdd, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 		select {
 		case <-ctx.Done():
@@ -399,7 +409,7 @@ func (c *MemcachedClient) Add(ctx context.Context, key string, value []byte, ttl
 				Key:        key,
 				Value:      value,
 				Expiration: ttlSeconds,
-			})
+			}, memcacheOpts...)
 
 			if errors.Is(err, memcache.ErrNotStored) {
 				return fmt.Errorf("%w: for add operation on %s", ErrNotStored, key)
@@ -433,14 +443,16 @@ func toMemcacheOptions(opts ...Option) []memcache.Option {
 		return nil
 	}
 
-	base := &Options{}
-	for _, opt := range opts {
-		opt(base)
-	}
+	return memcacheOptions(newOptions(opts))
+}
 
+func memcacheOptions(options *Options) []memcache.Option {
 	var out []memcache.Option
-	if base.Alloc != nil {
-		out = append(out, memcache.WithAllocator(base.Alloc))
+	if options.Alloc != nil {
+		out = append(out, memcache.WithAllocator(options.Alloc))
+	}
+	if options.ShardKey != "" {
+		out = append(out, memcache.WithShardKey(options.ShardKey))
 	}
 
 	return out
@@ -482,8 +494,8 @@ func getMulti[T any](ctx context.Context, c *MemcachedClient, keys []string, opt
 	}
 
 	c.metrics.requests.Add(float64(len(keys)))
-	options := toMemcacheOptions(opts...)
-	batches, err := c.getMultiBatched(ctx, keys, options...)
+	options := newOptions(opts)
+	batches, err := c.getMultiBatched(ctx, keys, options.ShardKey, memcacheOptions(options)...)
 
 	hits := map[string]T{}
 	for _, items := range batches {
@@ -496,7 +508,7 @@ func getMulti[T any](ctx context.Context, c *MemcachedClient, keys []string, opt
 	return hits, err
 }
 
-func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
+func (c *MemcachedClient) Delete(ctx context.Context, key string, opts ...Option) error {
 	start := time.Now()
 	c.metrics.operations.WithLabelValues(opDelete).Inc()
 
@@ -505,7 +517,7 @@ func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
 	case <-ctx.Done():
 		err = ctx.Err()
 	default:
-		err = c.client.Delete(key)
+		err = c.client.Delete(key, toMemcacheOptions(opts...)...)
 	}
 	if err != nil {
 		c.trackError(
@@ -519,15 +531,15 @@ func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (uint64, error) {
+func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64, opts ...Option) (uint64, error) {
 	return c.incrDecr(ctx, key, opIncrement, func() (uint64, error) {
-		return c.client.Increment(key, delta)
+		return c.client.Increment(key, delta, toMemcacheOptions(opts...)...)
 	})
 }
 
-func (c *MemcachedClient) Decrement(ctx context.Context, key string, delta uint64) (uint64, error) {
+func (c *MemcachedClient) Decrement(ctx context.Context, key string, delta uint64, opts ...Option) (uint64, error) {
 	return c.incrDecr(ctx, key, opDecrement, func() (uint64, error) {
-		return c.client.Decrement(key, delta)
+		return c.client.Decrement(key, delta, toMemcacheOptions(opts...)...)
 	})
 }
 
@@ -559,7 +571,7 @@ func (c *MemcachedClient) incrDecr(ctx context.Context, key string, operation st
 	return newValue, err
 }
 
-func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Duration) error {
+func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Duration, opts ...Option) error {
 	start := time.Now()
 	c.metrics.operations.WithLabelValues(opTouch).Inc()
 
@@ -568,7 +580,7 @@ func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Durati
 	case <-ctx.Done():
 		err = ctx.Err()
 	default:
-		err = c.client.Touch(key, int32(ttl.Seconds()))
+		err = c.client.Touch(key, int32(ttl.Seconds()), toMemcacheOptions(opts...)...)
 	}
 	if err != nil {
 		c.trackError(
@@ -587,12 +599,16 @@ func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Durati
 // conflict means the item was modified since that read. It returns ErrCASConflict then,
 // memcache.ErrCacheMiss if the item no longer exists, ErrInvalidTTL as Set does, and
 // ErrItemTooLarge for a value over MaxItemSize, which Set and Add skip silently.
-func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration, casID uint64) error {
+//
+// The CAS token does not hold the shard key. If the read used a shard key, pass
+// the same shard key to CompareAndSwap.
+func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration, casID uint64, opts ...Option) error {
 	// A skipped store must not read as a successful conditional store.
 	if !c.itemSizeIsAcceptable(key, value, opCompareAndSwap) {
 		return fmt.Errorf("%w: %d bytes for compare-and-swap operation on %s", ErrItemTooLarge, len(value), key)
 	}
 
+	memcacheOpts := toMemcacheOptions(opts...)
 	return c.storeOperation(ctx, key, value, ttl, opCompareAndSwap, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 		select {
 		case <-ctx.Done():
@@ -608,7 +624,7 @@ func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value 
 				Value:      value,
 				Expiration: ttlSeconds,
 				CasID:      casID,
-			})
+			}, memcacheOpts...)
 
 			if errors.Is(err, memcache.ErrCASConflict) {
 				return fmt.Errorf("%w: for compare-and-swap operation on %s", ErrCASConflict, key)
@@ -721,7 +737,7 @@ func (c *MemcachedClient) trackError(op string, err error, msg ...interface{}) {
 	logger.Log(msg...)
 }
 
-func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
+func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, shardKey string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
 	// Do not batch if the input keys are less than the max batch size.
 	if (c.config.MaxGetMultiBatchSize <= 0) || (len(keys) <= c.config.MaxGetMultiBatchSize) {
 		// Even if we're not splitting the input into batches, make sure that our single request
@@ -759,7 +775,7 @@ func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, op
 	// Sort keys based on which memcached server they will be sharded to. Sorting keys that
 	// are on the same server together before splitting into batches reduces the number of
 	// connections required and increases the number of "gets" per connection.
-	sortedKeys := c.sortKeysByServer(keys)
+	sortedKeys := c.sortKeysByServer(keys, shardKey)
 
 	// Allocate a channel to store results for each batch request. The max concurrency will be
 	// enforced by doWithBatch.
@@ -860,7 +876,15 @@ func doWithBatch(ctx context.Context, totalSize int, batchSize int, ga gate.Gate
 // they were supplied in). Note that output is not guaranteed to be any particular order
 // *except* that keys sharded to the same server will be together. The order of keys
 // returned may change from call to call.
-func (c *MemcachedClient) sortKeysByServer(keys []string) []string {
+//
+// When shardKey is not empty, all keys are on the server of the shard key, so
+// the keys are returned in the order they were supplied in.
+func (c *MemcachedClient) sortKeysByServer(keys []string, shardKey string) []string {
+	if shardKey != "" {
+		c.metrics.serversTouched.WithLabelValues(opGetMulti).Observe(1)
+		return keys
+	}
+
 	bucketed := make(map[string][]string)
 
 	for _, key := range keys {

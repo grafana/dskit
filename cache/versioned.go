@@ -29,24 +29,24 @@ func NewVersioned(c Cache, version uint, logger log.Logger) *Versioned {
 	}
 }
 
-func (c *Versioned) SetAsync(key string, value []byte, ttl time.Duration) {
-	c.cache.SetAsync(c.addVersion(key), value, ttl)
+func (c *Versioned) SetAsync(key string, value []byte, ttl time.Duration, opts ...Option) {
+	c.cache.SetAsync(c.addVersion(key), value, ttl, opts...)
 }
 
-func (c *Versioned) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+func (c *Versioned) SetMultiAsync(data map[string][]byte, ttl time.Duration, opts ...Option) {
 	versioned := make(map[string][]byte, len(data))
 	for k, v := range data {
 		versioned[c.addVersion(k)] = v
 	}
-	c.cache.SetMultiAsync(versioned, ttl)
+	c.cache.SetMultiAsync(versioned, ttl, opts...)
 }
 
-func (c *Versioned) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return c.cache.Set(ctx, c.addVersion(key), value, ttl)
+func (c *Versioned) Set(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
+	return c.cache.Set(ctx, c.addVersion(key), value, ttl, opts...)
 }
 
-func (c *Versioned) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return c.cache.Add(ctx, c.addVersion(key), value, ttl)
+func (c *Versioned) Add(ctx context.Context, key string, value []byte, ttl time.Duration, opts ...Option) error {
+	return c.cache.Add(ctx, c.addVersion(key), value, ttl, opts...)
 }
 
 func (c *Versioned) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
@@ -78,8 +78,8 @@ func (c *Versioned) Stop() {
 	c.cache.Stop()
 }
 
-func (c *Versioned) Delete(ctx context.Context, key string) error {
-	return c.cache.Delete(ctx, c.addVersion(key))
+func (c *Versioned) Delete(ctx context.Context, key string, opts ...Option) error {
+	return c.cache.Delete(ctx, c.addVersion(key), opts...)
 }
 
 func (c *Versioned) addVersion(k string) string {

@@ -697,7 +697,7 @@ func TestGrpcStreamTrackerPrunesIdleConnections(t *testing.T) {
 	require.Contains(t, tracker.connMap, "idle")
 
 	// Now open/close a bunch of extra connections to trigger pruning.
-	for i := range streamTrackerPruneGrowth {
+	for i := range streamTrackerPruneThreshold {
 		tracker.OpenStream(fmt.Sprintf("extra%d", i))
 		tracker.CloseStream(fmt.Sprintf("extra%d", i))
 	}

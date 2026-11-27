@@ -7,7 +7,6 @@ package middleware
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -122,20 +121,19 @@ func (g *grpcStatsHandler) HandleConn(_ context.Context, _ stats.ConnStats) {
 	// Not interested.
 }
 
-// streamTrackerPruneInterval is the minimum time between removals of idle connection entries.
-const (
-	streamTrackerPruneInterval = time.Minute
-	streamTrackerPruneGrowth   = 100
-)
+// streamTrackerPruneThreshold is the number of idle connection entries that triggers their removal.
+const streamTrackerPruneThreshold = 100
 
 // StreamTracker tracks the number of streams per connection and the max.
 type StreamTracker struct {
 	grpcConcurrentStreamsByConnMax *prometheus.Desc
 
-	mu        sync.RWMutex
-	connMap   map[string]*atomic.Int32
-	lastPrune time.Time
-	lastSize  int
+	mu      sync.RWMutex
+	connMap map[string]*atomic.Int32
+	// approxZeroConns approximates the number of entries in connMap with zero streams.
+	// It is incremented when a connection's stream count drops to zero, and decremented when it rises from zero.
+	// It is reset when pruning, which holds the write lock.
+	approxZeroConns atomic.Int32
 }
 
 func NewStreamTracker(grpcConcurrentStreamsByConnMax *prometheus.Desc) *StreamTracker {
@@ -151,18 +149,19 @@ func (st *StreamTracker) openStreamSlow(connID string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if conn, ok := st.connMap[connID]; ok { // Do not overwrite new entries.
-		conn.Inc()
+		if conn.Inc() == 1 {
+			st.approxZeroConns.Dec()
+		}
 		return
 	}
 	// Prune the map occasionally, to avoid endless growth.
-	if len(st.connMap)-st.lastSize > streamTrackerPruneGrowth && time.Since(st.lastPrune) >= streamTrackerPruneInterval {
+	if st.approxZeroConns.Load() > streamTrackerPruneThreshold {
 		for id, conn := range st.connMap {
 			if conn.Load() <= 0 {
 				delete(st.connMap, id)
 			}
 		}
-		st.lastPrune = time.Now()
-		st.lastSize = len(st.connMap) + 1
+		st.approxZeroConns.Store(0)
 	}
 	st.connMap[connID] = atomic.NewInt32(1)
 }
@@ -172,8 +171,8 @@ func (st *StreamTracker) OpenStream(connID string) {
 	// can't remove the entry between the lookup and the increment.
 	st.mu.RLock()
 	conn, ok := st.connMap[connID]
-	if ok {
-		conn.Inc()
+	if ok && conn.Inc() == 1 {
+		st.approxZeroConns.Dec()
 	}
 	st.mu.RUnlock()
 	if !ok {
@@ -184,7 +183,9 @@ func (st *StreamTracker) OpenStream(connID string) {
 func (st *StreamTracker) CloseStream(connID string) {
 	st.mu.RLock()
 	if conn := st.connMap[connID]; conn != nil {
-		conn.Dec()
+		if conn.Dec() == 0 {
+			st.approxZeroConns.Inc()
+		}
 	}
 	st.mu.RUnlock()
 }

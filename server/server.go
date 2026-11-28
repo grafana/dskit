@@ -574,11 +574,15 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	// The connection TTL middleware owns a background goroutine, so it is built here rather than in
 	// BuildHTTPMiddleware, allowing Shutdown() to stop it. It is the outermost middleware so that the
 	// Connection header is set on every response, including ones short-circuited further in.
-	connectionTTLMiddleware, err := middleware.NewHTTPConnectionTTLMiddleware(cfg.HTTPServerMinConnectionAge, cfg.HTTPServerMaxConnectionAge, cfg.HTTPServerIdleConnectionCheckFrequency, reg)
-	if err != nil {
-		return nil, fmt.Errorf("error setting up HTTP connection TTL middleware: %w", err)
+	// It is only built when enabled, so that servers which don't use it don't register its metrics.
+	var connectionTTLMiddleware middleware.HTTPConnectionTTLMiddleware
+	if cfg.HTTPServerMaxConnectionAge > 0 {
+		connectionTTLMiddleware, err = middleware.NewHTTPConnectionTTLMiddleware(cfg.HTTPServerMinConnectionAge, cfg.HTTPServerMaxConnectionAge, cfg.HTTPServerIdleConnectionCheckFrequency, reg)
+		if err != nil {
+			return nil, fmt.Errorf("error setting up HTTP connection TTL middleware: %w", err)
+		}
+		httpMiddleware = append([]middleware.Interface{connectionTTLMiddleware}, httpMiddleware...)
 	}
-	httpMiddleware = append([]middleware.Interface{connectionTTLMiddleware}, httpMiddleware...)
 
 	httpServer := &http.Server{
 		ReadTimeout:       cfg.HTTPServerReadTimeout,
@@ -776,7 +780,9 @@ func (s *Server) Shutdown() {
 
 	_ = s.HTTPServer.Shutdown(ctx)
 	s.GRPC.GracefulStop()
-	s.connectionTTLMiddleware.Stop()
+	if s.connectionTTLMiddleware != nil {
+		s.connectionTTLMiddleware.Stop()
+	}
 }
 
 func newProxyProtocolListener(httpListener net.Listener, readHeaderTimeout time.Duration) net.Listener {

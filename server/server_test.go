@@ -1394,6 +1394,36 @@ func TestHTTPConnectionTTL(t *testing.T) {
 		require.NotEqual(t, first, <-remoteAddrs, "a new connection should have been established")
 	})
 
+	t.Run("registers its metrics only when enabled", func(t *testing.T) {
+		ttlMetricsRegistered := func(t *testing.T, apply func(*Config)) bool {
+			reg := prometheus.NewRegistry()
+
+			var cfg Config
+			cfg.RegisterFlags(flag.NewFlagSet("", flag.ExitOnError))
+			cfg.Registerer = reg
+			apply(&cfg)
+			setAutoAssignedPorts(DefaultNetwork, &cfg)
+
+			server, err := New(cfg)
+			require.NoError(t, err)
+			t.Cleanup(server.Shutdown)
+
+			families, err := reg.Gather()
+			require.NoError(t, err)
+			for _, family := range families {
+				if family.GetName() == "open_connections_with_ttl_total" {
+					return true
+				}
+			}
+			return false
+		}
+
+		require.False(t, ttlMetricsRegistered(t, func(*Config) {}))
+		require.True(t, ttlMetricsRegistered(t, func(cfg *Config) {
+			cfg.HTTPServerMaxConnectionAge = time.Minute
+		}))
+	})
+
 	t.Run("rejects a minimum connection age greater than the maximum", func(t *testing.T) {
 		prometheus.DefaultRegisterer = prometheus.NewRegistry()
 
